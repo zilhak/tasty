@@ -3,6 +3,9 @@
 
 mod forms;
 mod receipts;
+mod reveal;
+#[cfg(test)]
+mod reveal_tests;
 pub(crate) use forms::{AttachForm, PasskeyForm, ProfileForm};
 use receipts::enqueue;
 pub(crate) use receipts::{accept_file_result, take_file_requests};
@@ -11,7 +14,7 @@ use crate::app::remote_tool_files::{FileAction, FileRequest, FileValue, PendingT
 use std::collections::HashSet;
 use std::sync::{
     Arc, Weak,
-    atomic::{AtomicUsize, Ordering},
+    atomic::{AtomicBool, AtomicUsize, Ordering},
 };
 
 use tasty_remote_profiles::{
@@ -91,6 +94,8 @@ struct UiState {
     identity: Arc<()>,
     view: Weak<()>,
     revealed_values: std::collections::HashMap<String, (Passkey, String)>,
+    key_edit: Arc<AtomicBool>,
+    reveal_owners: std::collections::HashMap<String, Arc<AtomicBool>>,
     tab: Tab,
     profile_view: Sub,
     attach_view: Sub,
@@ -208,7 +213,14 @@ fn read_ui(ctx: &egui::Context) -> UiState {
     })
 }
 fn write_ui(ctx: &egui::Context, ui: UiState) {
-    ctx.memory_mut(|m| m.data.insert_temp(egui::Id::new(UI_MEMORY_ID), ui));
+    ctx.memory_mut(|m| {
+        let previous = m
+            .data
+            .get_temp_mut_or_default::<UiState>(egui::Id::new(UI_MEMORY_ID));
+        let mut next = ui;
+        reveal::retire_changed(previous, &mut next);
+        *previous = next;
+    });
 }
 fn clear_ui(ctx: &egui::Context) {
     ctx.memory_mut(|m| m.data.remove::<UiState>(egui::Id::new(UI_MEMORY_ID)));
@@ -1651,6 +1663,7 @@ fn draw_passkeys_tab(ui: &mut egui::Ui, th: &Theme, st: &mut UiState, passkeys: 
 
 fn draw_passkey_list(ui: &mut egui::Ui, th: &Theme, st: &mut UiState, passkeys: &Passkeys) {
     if add_button(ui, th, t("remote_tool.passkey_add")).clicked() {
+        reveal::begin_form(st);
         st.kform = PasskeyForm {
             kind: "path".into(),
             ..Default::default()
@@ -1660,6 +1673,15 @@ fn draw_passkey_list(ui: &mut egui::Ui, th: &Theme, st: &mut UiState, passkeys: 
         return;
     }
     ui.add_space(th.spacing_xs.value());
+    if let Some(error) = &st.kerr {
+        selectable_label(
+            ui,
+            error,
+            th.accent_danger(),
+            th.font_size_caption.value(),
+            false,
+        );
+    }
     if passkeys.passkeys.is_empty() {
         ui.vertical_centered(|ui| {
             ui.add_space(th.spacing_lg.value());
@@ -1699,8 +1721,11 @@ fn draw_passkey_list(ui: &mut egui::Ui, th: &Theme, st: &mut UiState, passkeys: 
                 if st.revealed.contains(&name) {
                     st.revealed.remove(&name);
                     st.revealed_values.remove(&name);
+                    st.reveal_owners.remove(&name);
                 } else if let Some(key) = passkeys.get(&name) {
+                    st.reveal_owners.insert(name.clone(), Arc::default());
                     st.revealed.insert(name);
+                    st.kerr = None;
                     enqueue(
                         ui.ctx(),
                         st,
@@ -1713,6 +1738,7 @@ fn draw_passkey_list(ui: &mut egui::Ui, th: &Theme, st: &mut UiState, passkeys: 
             }
             PasskeyRowAction::Edit => {
                 if let Some(k) = passkeys.get(&name) {
+                    reveal::begin_form(st);
                     st.kform = PasskeyForm {
                         name: k.name.clone(),
                         kind: k.kind.clone(),
@@ -1838,27 +1864,36 @@ fn draw_passkey_form(ui: &mut egui::Ui, th: &Theme, st: &mut UiState) {
 
             let f = &mut st.kform;
             ui.spacing_mut().item_spacing.y = th.spacing_sm.value();
-            text_row(ui, th, t("remote_tool.field_name"), &mut f.name, "", false);
+            let mut changed = text_row(ui, th, t("remote_tool.field_name"), &mut f.name, "", false);
             form_row(ui, th, t("remote_tool.field_kind"), |ui| {
                 for opt in KNOWN_PASSKEY_KINDS {
-                    ui.selectable_value(&mut f.kind, (*opt).to_string(), *opt);
+                    changed |= ui
+                        .selectable_value(&mut f.kind, (*opt).to_string(), *opt)
+                        .changed();
                 }
             });
             form_row(ui, th, t("remote_tool.field_value"), |ui| {
                 if f.kind == "inline" {
-                    ui.add(
-                        egui::TextEdit::multiline(&mut f.value)
-                            .desired_rows(3)
-                            .hint_text(t("remote_tool.value_inline_hint")),
-                    );
+                    changed |= ui
+                        .add(
+                            egui::TextEdit::multiline(&mut f.value)
+                                .desired_rows(3)
+                                .hint_text(t("remote_tool.value_inline_hint")),
+                        )
+                        .changed();
                 } else {
-                    ui.add(
-                        egui::TextEdit::singleline(&mut f.value)
-                            .desired_width(f32::INFINITY)
-                            .hint_text("~/.ssh/id_ed25519"),
-                    );
+                    changed |= ui
+                        .add(
+                            egui::TextEdit::singleline(&mut f.value)
+                                .desired_width(f32::INFINITY)
+                                .hint_text("~/.ssh/id_ed25519"),
+                        )
+                        .changed();
                 }
             });
+            if changed {
+                st.key_edit.store(true, Ordering::Relaxed);
+            }
             selectable_label(
                 ui,
                 t("remote_tool.passkey_value_note"),
@@ -1975,7 +2010,8 @@ fn text_row(
     value: &mut String,
     placeholder: &str,
     mono: bool,
-) {
+) -> bool {
+    let mut changed = false;
     form_row(ui, th, label, |ui| {
         let mut edit = egui::TextEdit::singleline(value)
             .desired_width(f32::INFINITY)
@@ -1983,8 +2019,9 @@ fn text_row(
         if mono {
             edit = edit.font(egui::TextStyle::Monospace);
         }
-        ui.add(edit);
+        changed = ui.add(edit).changed();
     });
+    changed
 }
 
 /// 디자인 ProfileForm 의 라벨 컬럼 폭 (LogicalPx). grid `gridTemplateColumns: 112px 1fr`.

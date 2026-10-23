@@ -14,6 +14,7 @@ pub(super) fn enqueue(ctx: &egui::Context, state: &UiState, action: FileAction) 
         queue.push(FileRequest {
             popup: Arc::downgrade(&state.identity),
             view: state.view.clone(),
+            reveal_owner: reveal::capture(state, &action),
             action,
             _pending: PendingToken::admit(state.pending.clone()),
         });
@@ -67,8 +68,8 @@ pub(crate) fn accept_file_result(
         (FileAction::Detect(_), Ok(FileValue::Detection(id, name))) => {
             state.detecting = Some(DetectJob { id, name })
         }
-        (FileAction::Reveal { key, editing }, Ok(FileValue::Revealed(value))) => {
-            reveal(&mut state, key, *editing, value)
+        (FileAction::Reveal { key, editing }, result) => {
+            reveal::settle(&mut state, request, key, *editing, result)
         }
         (FileAction::DeleteProfile(name), result) => delete_profile(&mut state, name, result),
         (FileAction::DeletePasskey(name), result)
@@ -90,21 +91,6 @@ pub(crate) fn accept_file_result(
     true
 }
 
-fn reveal(state: &mut UiState, key: &Passkey, editing: bool, value: String) {
-    if editing {
-        if state.passkey_view == Sub::Form
-            && state.kform.editing_original.as_deref() == Some(key.name.as_str())
-            && state.kform.kind == key.kind
-            && state.kform.value.is_empty()
-        {
-            state.kform.value = value;
-        }
-    } else if state.revealed.contains(&key.name) {
-        state
-            .revealed_values
-            .insert(key.name.clone(), (key.clone(), value));
-    }
-}
 fn delete_profile(state: &mut UiState, name: &str, result: Result<FileValue, String>) {
     let mut observed = false;
     for (view, error) in [

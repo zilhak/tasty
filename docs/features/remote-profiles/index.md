@@ -72,6 +72,7 @@
 ## 실행 중 저장과 탐지 완료
 
 - IPC 저장·삭제는 원 caller를 보유하고 typed receipt 뒤 실제 결과를 한 번 돌려준다. GUI는 실패한 폼·삭제 확인과 입력값을 유지하고, 같은 popup의 같은 초안에만 완료를 적용한다. popup·View가 닫혀도 접수된 저장은 끝내며 replacement observer에 reveal·완료 효과를 전달하지 않는다.
+- 자격증명 Reveal은 편집 회차와 한 번이라도 변경된 초안을 구별한다. 값을 입력한 뒤 다시 비워도 과거 preload가 덮지 않는다. 취소 후 같은 자격증명을 다시 편집하면 새 회차의 결과만 받는다. 읽기 실패는 원래의 변경 없는 폼 또는 아직 활성인 목록 Reveal에만 표시한다.
 - GUI 저장 대기 중에는 저장·삭제 버튼을 비활성화하고 편집·취소는 계속 허용한다. worker input/result와 별도로 보유하는 GUI 요청 복사본은 기존 queue 기본 count/byte 한도 안에서 접수하며, 마지막 소유자가 결과를 처리하면 예산을 돌려준다. 이는 보유값의 추정 바이트 예산이며 RSS 상한은 아니다.
 - form 편집은 보이는 변경 필드만 patch하며 표시하지 않는 list 값·foreign 필드와 최신의 미변경 필드를 유지한다. 새 Passkey는 잠금 안에서 중복을 거절한다. backend의 `ManagedCleanup::Failed`는 transport 성공과 달리 실제 부분 실패로 분류한다.
 - 명시 shell은 기존 실패 표시를 지운다. GUI는 첫 변경 patch에서 지우며, IPC upsert는 저장 결과에 표시가 남아 있을 때 CLI와 같은 expected 조건부 patch를 같은 worker 명령 안에서 실행한다. 후속 상태 단계 실패는 이미 확정된 profile·연결 자격증명을 부분 성공으로 알리고 외부 변경을 덮지 않는다.

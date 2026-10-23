@@ -38,6 +38,7 @@ pub(crate) struct FileRequest {
     pub(crate) popup: Weak<()>,
     pub(crate) view: Weak<()>,
     pub(crate) action: FileAction,
+    pub(crate) reveal_owner: Option<Weak<std::sync::atomic::AtomicBool>>,
     pub(crate) _pending: Arc<PendingToken>,
 }
 pub(crate) enum FileValue {
