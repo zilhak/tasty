@@ -140,7 +140,7 @@ fallback에서 memory.db를 쓰는 memory·agent·approval·surface.meta·teleme
 - **`max_records`**: 저장이 확정된 키만 순서대로 기억하고 최근 N건을 넘으면 넘친 옛 키의 삭제를 다음 묶음에 싣는다. 채널이 끊기면 남은 삭제를 마지막 묶음으로 보낸다. 이미 없는 키는 조용히 넘어가고 그 밖의 삭제 실패는 경고만 남긴다. 삭제한 키는 다시 시도하지 않으므로 N건보다 많이 남을 수 있다. 확정 여부를 모르는 기록도 세지 않으므로 그만큼 더 남을 수 있다. 재시작하면 이 목록은 비워지며 이전 실행이 남긴 키에는 이 상한을 적용하지 않는다.
 - **실패 집계**: 세 종류를 따로 센다. 채널이 가득 차 넣지 못한 항목은 `dropped`, writer가 접수하지 않은 항목(큐 포화·종료 중)은 `submit_rejected`, writer가 거절했거나(크기·quota) 확정하지 못했거나 확정 여부를 모르는 항목은 `store_failed`다. 세 값 모두 `output.observe_list`·`output.observe_info` 응답에 있다. 접수하지 않은 항목을 sink가 대신 저장하지 않으며, 실패한 항목은 경고를 남기고 버린다. 소비자에게 gap을 보내지 않는다.
 - **잠금**: sink는 저장소 잠금을 잡지 않는다. 저장소에 닿는 것은 writer worker다. writer 없는 시험 구성에서는 같은 실행 규칙으로 sink 스레드에서 바로 실행하며, 이때 잠금 poison은 `tasty_utils::poison::recover_mutex`로 복구하고 `tasty_memory::STORE_LOCK_WHAT`·`STORE_LOCK_POISONED`를 쓴다. `core`의 `MEMORY_WHAT`·`MEMORY_POISONED`는 같은 static을 재수출한다.
-- **종료**: surface가 닫히면 sender를 해제하고 워커 join은 미룬다. 워커는 채널에 남은 항목을 넣고 결과를 기다린 뒤(최대 30초) 종료한다. 앱 종료는 observer 워커를 회수한 뒤 writer를 drain하므로 워커가 기다리는 결과는 writer가 끝내기 전에 나온다. 앱 종료는 완료 worker만 폴링하며 5초 기한 뒤 미회수 수를 남긴다. 그때 memory writer에 새로 제출할 수 없도록 접수를 차단한다. 명시적 앱 종료를 시작한 라우터의 Drop은 다시 기다리지 않고 미회수 경고를 남긴다. 워커가 끝나기 전에 프로세스가 종료되면 남은 항목을 잃을 수 있다.
+- **종료**: surface가 닫히면 sender를 해제하고 워커 join은 미룬다. 워커는 채널에 남은 항목을 넣고 결과를 기다린 뒤(최대 30초) 종료한다. observer 워커가 정상적으로 끝났으면 그 결과를 회수한 뒤 writer를 drain한다. observer 시한을 넘겼으면 worker가 끝났다고 간주하지 않고 새 제출만 차단한 뒤 writer drain으로 진행한다. 앱 종료는 완료 worker만 폴링하며 5초 기한 뒤 미회수 수를 남긴다. 그때 memory writer에 새로 제출할 수 없도록 접수를 차단한다. 명시적 앱 종료를 시작한 라우터의 Drop은 다시 기다리지 않고 미회수 경고를 남긴다. 워커가 끝나기 전에 프로세스가 종료되면 남은 항목을 잃을 수 있다.
 
 저장 실패 처리의 근거는 [저장 계약과 writer 명부](storage-contract.md)에 있다.
 
