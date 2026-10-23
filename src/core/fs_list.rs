@@ -109,10 +109,20 @@ pub(crate) enum EntryLink {
 /// 숨김 파일도 포함한다. 개별 항목 읽기 오류는 건너뛰고 metadata 오류는 기본값으로 처리한다.
 /// `DirEntry::metadata`는 링크를 따라가지 않으므로 링크는 대상의 metadata로 종류를 정한다.
 pub(crate) fn read_dir_entries(dir: &Path) -> std::io::Result<Vec<DirEntryInfo>> {
+    read_dir_entries_while(dir, || true)
+}
+
+/// 항목 사이에 취소 여부를 확인한다. 이미 실행 중인 OS 조회 자체는 중단할 수 없다.
+pub(crate) fn read_dir_entries_while(
+    dir: &Path,
+    mut keep_reading: impl FnMut() -> bool,
+) -> std::io::Result<Vec<DirEntryInfo>> {
     let started = tracing::enabled!(target: "tasty::explorer::perf", tracing::Level::TRACE)
         .then(std::time::Instant::now);
     let mut out = Vec::new();
-    for entry in std::fs::read_dir(dir)? {
+    let mut entries = std::fs::read_dir(dir)?;
+    while keep_reading() {
+        let Some(entry) = entries.next() else { break };
         let entry = match entry {
             Ok(e) => e,
             Err(_) => continue,
@@ -453,5 +463,26 @@ mod tests {
         assert_eq!((old.size, old.modified), (new.size, new.modified));
         assert!(old.change.is_some());
         assert_ne!(old.content_key(), new.content_key());
+    }
+}
+
+#[cfg(test)]
+mod cancellation_tests {
+    #[test]
+    fn a_cancelled_directory_scan_checks_before_reading_the_next_entry() {
+        let dir = tempfile::tempdir().unwrap();
+        for i in 0..100 {
+            std::fs::write(dir.path().join(format!("item{i}")), b"").unwrap();
+        }
+        let mut checked = 0;
+        let entries = super::read_dir_entries_while(dir.path(), || {
+            checked += 1;
+            checked <= 7
+        })
+        .unwrap();
+        assert_eq!(entries.len(), 7);
+        assert_eq!(checked, 8);
+        let entries = super::read_dir_entries_while(dir.path(), || false).unwrap();
+        assert!(entries.is_empty());
     }
 }

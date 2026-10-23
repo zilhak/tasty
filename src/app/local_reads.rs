@@ -85,7 +85,7 @@ enum Request {
     ),
     Writable(PathBuf, mpsc::SyncSender<io::Result<bool>>),
     /// 하위 폴더 검색. 오래 걸리므로 결과를 나눠 보내며 그때마다 화면을 깨운다.
-    Search(search::SearchSpec, mpsc::Sender<SearchEvent>),
+    Search(search::SearchSpec, mpsc::SyncSender<SearchEvent>),
     #[cfg(test)]
     Blocked(mpsc::Receiver<()>, mpsc::SyncSender<io::Result<()>>),
 }

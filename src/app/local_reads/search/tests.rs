@@ -5,15 +5,17 @@ fn collect(root: &Path, query: &str, stop: bool) -> Vec<SearchEvent> {
 }
 
 fn collect_hidden(root: &Path, query: &str, stop: bool, show_hidden: bool) -> Vec<SearchEvent> {
-    let (sender, receiver) = mpsc::channel();
+    let (sender, receiver) = mpsc::sync_channel(SEARCH_EVENT_CAPACITY);
     let spec = SearchSpec {
         root: root.into(),
         query: query.into(),
         show_hidden,
         stop: Arc::new(AtomicBool::new(stop)),
     };
-    run(spec, sender, &|| {});
-    receiver.try_iter().collect()
+    let worker = std::thread::spawn(move || run(spec, sender, &|| {}));
+    let events = receiver.iter().collect();
+    worker.join().unwrap();
+    events
 }
 
 fn hits(events: &[SearchEvent]) -> Vec<String> {
@@ -159,4 +161,154 @@ fn hidden_folders_are_pruned_before_descent_and_extensions_filter_only_hits() {
         )),
         ["note.RS", "note.md"]
     );
+}
+
+fn full_receipt() -> (SearchQuery, mpsc::SyncSender<SearchEvent>) {
+    let (receipt, sender, _) = SearchQuery::test_channel();
+    for i in 0..SEARCH_EVENT_CAPACITY {
+        sender
+            .send(SearchEvent::Skipped(format!("queued-{i}").into()))
+            .unwrap();
+    }
+    assert!(matches!(
+        sender.try_send(SearchEvent::Skipped("extra".into())),
+        Err(mpsc::TrySendError::Full(_))
+    ));
+    (receipt, sender)
+}
+
+#[test]
+fn stop_on_a_full_channel_releases_the_worker_without_a_consumer_and_reports_done() {
+    let (mut receipt, sender) = full_receipt();
+    let stop = Arc::clone(&receipt.stop);
+    let (started, ready) = mpsc::sync_channel(1);
+    let (done, finished) = mpsc::sync_channel(1);
+    let worker = std::thread::spawn(move || {
+        let signaled = AtomicBool::new(false);
+        let sent = send_event(
+            &sender,
+            &stop,
+            &|| {
+                if !signaled.swap(true, Ordering::Relaxed) {
+                    started.send(()).unwrap();
+                }
+            },
+            SearchEvent::Hits(Vec::new()),
+        );
+        done.send(sent).unwrap();
+    });
+    ready.recv_timeout(Duration::from_secs(2)).unwrap();
+    receipt.stop();
+    assert!(!finished.recv_timeout(Duration::from_secs(2)).unwrap());
+    worker.join().unwrap();
+    let mut requests = super::super::ReadRequests {
+        pending: Vec::new(),
+        available: 0,
+    };
+    let first = receipt.poll(&mut requests);
+    assert_eq!(first.len(), SEARCH_EVENT_CAPACITY);
+    assert!(matches!(
+        receipt.poll(&mut requests).as_slice(),
+        [SearchEvent::Done {
+            stopped: true,
+            capped: false
+        }]
+    ));
+    assert!(receipt.poll(&mut requests).is_empty());
+}
+
+#[test]
+fn closing_a_full_receipt_releases_the_worker_without_draining() {
+    let (receipt, sender) = full_receipt();
+    let stop = Arc::clone(&receipt.stop);
+    let (ready, started) = mpsc::sync_channel(1);
+    let (done, finished) = mpsc::sync_channel(1);
+    let worker = std::thread::spawn(move || {
+        let signaled = AtomicBool::new(false);
+        let sent = send_event(
+            &sender,
+            &stop,
+            &|| {
+                if !signaled.swap(true, Ordering::Relaxed) {
+                    ready.send(()).unwrap();
+                }
+            },
+            SearchEvent::Done {
+                stopped: false,
+                capped: false,
+            },
+        );
+        done.send(sent).unwrap();
+    });
+    started.recv_timeout(Duration::from_secs(2)).unwrap();
+    drop(receipt);
+    assert!(!finished.recv_timeout(Duration::from_secs(2)).unwrap());
+    worker.join().unwrap();
+}
+
+#[test]
+fn a_slow_consumer_gets_every_event_in_order_under_backpressure() {
+    let (mut receipt, sender, stop) = SearchQuery::test_channel();
+    let worker = std::thread::spawn(move || {
+        for i in 0..100 {
+            assert!(send_event(
+                &sender,
+                &stop,
+                &|| {},
+                SearchEvent::Skipped(format!("{i}").into())
+            ));
+        }
+        assert!(send_event(
+            &sender,
+            &stop,
+            &|| {},
+            SearchEvent::Done {
+                stopped: false,
+                capped: false
+            }
+        ));
+    });
+    let mut requests = super::super::ReadRequests {
+        pending: Vec::new(),
+        available: 0,
+    };
+    let mut seen = Vec::new();
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while !receipt.terminal_seen {
+        assert!(Instant::now() < deadline);
+        let batch = receipt.poll(&mut requests);
+        assert!(batch.len() <= SEARCH_EVENT_CAPACITY);
+        for event in batch {
+            if let SearchEvent::Skipped(path) = event {
+                seen.push(path);
+            }
+        }
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    worker.join().unwrap();
+    assert_eq!(
+        seen,
+        (0..100)
+            .map(|i| PathBuf::from(format!("{i}")))
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn search_hit_batches_are_bounded_independently_of_the_directory_size() {
+    let dir = tempfile::tempdir().unwrap();
+    for i in 0..SEARCH_BATCH_HITS * 3 + 1 {
+        std::fs::write(dir.path().join(format!("item{i}")), b"").unwrap();
+    }
+    let events = collect(dir.path(), "item", false);
+    let sizes: Vec<_> = events
+        .iter()
+        .filter_map(|event| match event {
+            SearchEvent::Hits(batch) => Some(batch.len()),
+            _ => None,
+        })
+        .collect();
+    assert!(sizes.len() >= 4);
+    assert!(sizes.iter().all(|&n| n <= SEARCH_BATCH_HITS));
+    assert_eq!(sizes.iter().sum::<usize>(), SEARCH_BATCH_HITS * 3 + 1);
 }

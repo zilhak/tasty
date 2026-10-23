@@ -9,12 +9,16 @@ use std::sync::{Arc, mpsc};
 use std::time::{Duration, Instant};
 
 use crate::core::fs_list::find_query::FindQuery;
-use crate::core::fs_list::{DirEntryInfo, EntryLink, read_dir_entries};
+use crate::core::fs_list::{DirEntryInfo, EntryLink, read_dir_entries_while};
 
 /// 결과를 모아 보내는 간격. 폴더마다 깨우면 화면을 너무 자주 다시 그린다.
 const FLUSH_EVERY: Duration = Duration::from_millis(100);
 /// 하위 폴더 검색이 모으는 결과 수. 이만큼 찾으면 멈추고 결과는 남긴다.
 pub(crate) const SEARCH_MAX_HITS: usize = 5_000;
+/// 소비가 늦어도 사건과 묶음 크기 모두 유한하게 유지한다.
+const SEARCH_EVENT_CAPACITY: usize = 16;
+const SEARCH_BATCH_HITS: usize = 256;
+const BACKPRESSURE_POLL: Duration = Duration::from_millis(4);
 
 pub(crate) enum SearchEvent {
     Hits(Vec<DirEntryInfo>),
@@ -41,10 +45,11 @@ pub(crate) struct SearchQuery {
     request: Option<super::Request>,
     receiver: mpsc::Receiver<SearchEvent>,
     stop: Arc<AtomicBool>,
+    terminal_seen: bool,
 }
 
 pub(crate) fn search(root: PathBuf, query: String, show_hidden: bool) -> SearchQuery {
-    let (sender, receiver) = mpsc::channel();
+    let (sender, receiver) = mpsc::sync_channel(SEARCH_EVENT_CAPACITY);
     let stop = Arc::new(AtomicBool::new(false));
     SearchQuery {
         request: Some(super::Request::Search(
@@ -58,20 +63,22 @@ pub(crate) fn search(root: PathBuf, query: String, show_hidden: bool) -> SearchQ
         )),
         receiver,
         stop,
+        terminal_seen: false,
     }
 }
 
 impl SearchQuery {
     /// 실제 영수증 교체·취소를 worker 실행 순서와 관계없이 확인하는 시험 채널.
     #[cfg(test)]
-    pub(crate) fn test_channel() -> (Self, mpsc::Sender<SearchEvent>, Arc<AtomicBool>) {
-        let (sender, receiver) = mpsc::channel();
+    pub(crate) fn test_channel() -> (Self, mpsc::SyncSender<SearchEvent>, Arc<AtomicBool>) {
+        let (sender, receiver) = mpsc::sync_channel(SEARCH_EVENT_CAPACITY);
         let stop = Arc::new(AtomicBool::new(false));
         (
             Self {
                 request: None,
                 receiver,
                 stop: Arc::clone(&stop),
+                terminal_seen: false,
             },
             sender,
             stop,
@@ -85,7 +92,32 @@ impl SearchQuery {
         {
             self.request = Some(request);
         }
-        self.receiver.try_iter().collect()
+        let mut events = Vec::new();
+        for _ in 0..SEARCH_EVENT_CAPACITY {
+            let event = match self.receiver.try_recv() {
+                Ok(event) => event,
+                Err(mpsc::TryRecvError::Empty) => break,
+                Err(mpsc::TryRecvError::Disconnected) if !self.terminal_seen => {
+                    // Stop must release a full sender even while the View is not polling.
+                    if self.stop.load(Ordering::Acquire) {
+                        SearchEvent::Done {
+                            stopped: true,
+                            capped: false,
+                        }
+                    } else {
+                        SearchEvent::Failed("local search worker disconnected".into())
+                    }
+                }
+                Err(mpsc::TryRecvError::Disconnected) => break,
+            };
+            self.terminal_seen |=
+                matches!(event, SearchEvent::Done { .. } | SearchEvent::Failed(_));
+            events.push(event);
+            if self.terminal_seen {
+                break;
+            }
+        }
+        events
     }
     pub(crate) fn stop(&self) {
         self.stop.store(true, Ordering::Release);
@@ -99,18 +131,16 @@ impl Drop for SearchQuery {
 }
 
 /// worker 에서 실행한다. 보낼 곳이 닫혔으면 바로 멈춘다.
-pub(super) fn run(spec: SearchSpec, sender: mpsc::Sender<SearchEvent>, wake: &dyn Fn()) {
+pub(super) fn run(spec: SearchSpec, sender: mpsc::SyncSender<SearchEvent>, wake: &dyn Fn()) {
     let stopped = || spec.stop.load(Ordering::Acquire);
     let query = FindQuery::parse(&spec.query);
+    let send = |event| send_event(&sender, &spec.stop, wake, event);
     let mut queue = VecDeque::from([spec.root.clone()]);
     let mut batch = Vec::new();
     let mut last_flush = Instant::now();
     let mut hits = Hits::default();
     let flush = |batch: &mut Vec<DirEntryInfo>| {
-        batch.is_empty()
-            || sender
-                .send(SearchEvent::Hits(std::mem::take(batch)))
-                .is_ok()
+        batch.is_empty() || send(SearchEvent::Hits(std::mem::take(batch)))
     };
     while let Some(dir) = queue.pop_front() {
         if stopped() {
@@ -120,16 +150,16 @@ pub(super) fn run(spec: SearchSpec, sender: mpsc::Sender<SearchEvent>, wake: &dy
             hits.capped = true;
             break;
         }
-        let entries = match read_dir_entries(&dir) {
+        let entries = match read_dir_entries_while(&dir, || !stopped()) {
             Ok(entries) => entries,
             Err(error) if dir == spec.root => {
-                if sender.send(SearchEvent::Failed(error.to_string())).is_ok() {
+                if send(SearchEvent::Failed(error.to_string())) {
                     wake();
                 }
                 return;
             }
             Err(_) => {
-                if sender.send(SearchEvent::Skipped(dir)).is_err() {
+                if !send(SearchEvent::Skipped(dir)) {
                     return;
                 }
                 continue;
@@ -145,6 +175,9 @@ pub(super) fn run(spec: SearchSpec, sender: mpsc::Sender<SearchEvent>, wake: &dy
             }
             if query.matches(&entry) {
                 hits.take(entry, &mut batch);
+                if batch.len() >= SEARCH_BATCH_HITS && !flush(&mut batch) {
+                    return;
+                }
             }
         }
         if last_flush.elapsed() >= FLUSH_EVERY {
@@ -156,14 +189,39 @@ pub(super) fn run(spec: SearchSpec, sender: mpsc::Sender<SearchEvent>, wake: &dy
         }
     }
     if !flush(&mut batch)
-        || sender
-            .send(SearchEvent::Done {
-                stopped: stopped(),
-                capped: hits.capped,
-            })
-            .is_err()
+        || !send(SearchEvent::Done {
+            stopped: stopped(),
+            capped: hits.capped,
+        })
     {
         tracing::debug!("explorer search receipt dropped before the search finished");
+    }
+}
+
+/// Blocking send would strand a read worker when Stop is pressed on a full channel.
+/// Wake the consumer on backpressure and check cancellation between bounded retries.
+fn send_event(
+    sender: &mpsc::SyncSender<SearchEvent>,
+    stop: &AtomicBool,
+    wake: &dyn Fn(),
+    mut event: SearchEvent,
+) -> bool {
+    loop {
+        match sender.try_send(event) {
+            Ok(()) => {
+                wake();
+                return true;
+            }
+            Err(mpsc::TrySendError::Disconnected(_)) => return false,
+            Err(mpsc::TrySendError::Full(pending)) => {
+                if stop.load(Ordering::Acquire) {
+                    return false;
+                }
+                event = pending;
+                wake();
+                std::thread::sleep(BACKPRESSURE_POLL);
+            }
+        }
     }
 }
 
