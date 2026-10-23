@@ -53,7 +53,7 @@ const NAME_INPUT_W: LogicalPx = LogicalPx(150.0);
 const NAME_INPUT_H: LogicalPx = LogicalPx(26.0);
 /// 도구줄 세로 구분선 높이 — `height: 18`.
 const TOOLBAR_SEP_H: LogicalPx = LogicalPx(18.0);
-/// "saved automatically" 앞 체크 글리프 배율 — `transform: scale(.8)`. 자리는 원래 크기를 차지한다.
+/// 저장 방식 안내 앞 체크 글리프 배율 — `transform: scale(.8)`. 자리는 원래 크기를 차지한다.
 const SAVED_CHECK_SCALE: f32 = 0.8;
 
 struct PresetEntry {
@@ -588,7 +588,7 @@ fn detail_column(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, st: &mut Wi
         right.add_space(theme.spacing_xs.value());
         right.spacing_mut().item_spacing.x = theme.spacing_xs.value();
         right.label(
-            egui::RichText::new("saved automatically")
+            egui::RichText::new(crate::i18n::t("preset.toolbar.saved"))
                 .size(theme.font_size_caption.value())
                 .color(theme.text_muted().to_egui()),
         );

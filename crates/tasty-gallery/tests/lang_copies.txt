@@ -349,7 +349,6 @@ src/catalog/components/preset_view.rs	Pane	preset.tab.pane,settings.keybindings.
 src/catalog/components/preset_view.rs	Tab	port_scanner.column_tab,preset.tab.tab,settings.keybindings.subtab.tab,tutorial.step_tab_title
 src/catalog/components/preset_view.rs	Workspace	port_scanner.column_workspace,preset.tab.workspace,settings.keybindings.subtab.workspace,tutorial.step_workspace_title
 src/catalog/components/preset_view.rs	run	command_palette.hint_run
-src/catalog/components/preset_view.rs	saved automatically	preset.toolbar.saved
 src/catalog/components/preset_view.rs	{} presets	preset.header.count
 src/catalog/components/prim_autocomplete.rs	No matching path	explorer.address.empty
 src/catalog/components/prim_button.rs	Cancel	button.cancel,explorer.op.cancel,image_viewer.cancel,preset.popup.cancel_button,quit_modal.cancel_button,remote_attach.cancel,remote_tool.cancel,transfer.progress.cancel
