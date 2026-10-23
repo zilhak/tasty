@@ -184,4 +184,4 @@ config snapshot이 같은 묶음에서 대체되면 대체한 저장의 결과�
 
 ## IPC 발견 파일의 공개 순서
 
-`TcpIpcServer::start_with_port_file`은 bind/nonblocking 준비 → 해당 데이터 루트 notify 정리 → `publish_port_file_to`의 안전 교체 완료 → accept worker 시작 → 성공 반환 순서다. 외부 데이터 루트의 port override는 다른 루트 notify를 지우지 않는다. 실패는 시작 호출에 전파하고, 공개 뒤 worker를 시작하지 못하면 자신의 port 결과를 정리한다. 정상 Drop도 같은 소유 내용 확인을 쓰며 다른 내용으로 바뀐 파일을 지우지 않는다.
+`TcpIpcServer::start_with_port_file`은 bind/nonblocking 준비 → 해당 데이터 루트 notify 정리 → `publish_port_file_to`의 안전 교체 완료 → accept worker 시작 → 성공 반환 순서다. 외부 데이터 루트의 port override는 다른 루트 notify를 지우지 않는다. 실패는 시작 호출에 전파하고, 공개 뒤 worker를 시작하지 못하면 자신의 port 결과를 정리한다. 정상 Drop은 같은 참여 잠금을 비차단 획득한 동안 열린 파일 identity와 숫자 내용을 비교한다. 경합이면 남기고, 같은 숫자라도 새 공개 세대면 지우지 않는다. 비참여 외부 편집의 마지막 확인–unlink race는 별도 한계다.

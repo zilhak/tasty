@@ -1,5 +1,7 @@
 //! 데이터 루트의 tasty.port 조회와 저장. 기본 루트는 debug/release에 따라 구분한다.
 
+mod identity;
+
 use std::path::{Path, PathBuf};
 
 use anyhow::Result;
@@ -57,24 +59,40 @@ pub fn read_port_file_from(port_file: Option<&str>) -> Result<u16, PortFileError
 pub struct PortFilePublication {
     path: PathBuf,
     target: PathBuf,
-    fingerprint: tasty_utils::file_replace::Fingerprint,
+    contents: String,
+    identity: Option<identity::PinnedFile>,
 }
 
 impl PortFilePublication {
-    /// Best-effort teardown of this publication only. Never waits for a participant lock.
-    /// External writers must serialize startup; a nonparticipant can race the final check/unlink.
+    /// Try the participant lock once; contention or an unknown/replaced generation is preserved.
+    /// Nonparticipating writers can still race the final check/unlink.
     pub fn cleanup_if_owned(&self) -> std::io::Result<bool> {
-        use tasty_utils::file_replace::{self, Fingerprint};
+        use tasty_utils::file_replace;
+        let Some(_lock) = file_replace::try_lock(&self.path)? else {
+            return Ok(false);
+        };
+        let Some(identity) = &self.identity else {
+            return Ok(false);
+        };
         if file_replace::resolve_link(&self.path)? != self.target {
             return Ok(false);
         }
+        // Reject nonregular replacements before open (a FIFO open could wait for a peer).
         match std::fs::metadata(&self.path) {
             Ok(meta) if !meta.is_file() => return Ok(false),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(false),
             Err(e) => return Err(e),
             Ok(_) => {}
         }
-        if Fingerprint::read(&self.path)? != self.fingerprint {
+        let file = match std::fs::File::open(&self.path) {
+            Ok(file) => file,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+            Err(e) => return Err(e),
+        };
+        if !file.metadata()?.is_file() || !identity.matches(&file)? {
+            return Ok(false);
+        }
+        if !has_contents(&file, &self.contents)? {
             return Ok(false);
         }
         match std::fs::remove_file(&self.path) {
@@ -127,12 +145,30 @@ fn publish_observed(
             sync: false,
         },
     )?;
+    // Capture while the publication lock is held; the open file pins this generation's ID.
+    // Unknown identity disables deletion, never startup discovery or the numeric wire format.
+    let identity = match identity::PinnedFile::open(&path, &bytes) {
+        Ok(identity) => Some(identity),
+        Err(error) => {
+            tracing::warn!(%error, "port published without cleanup identity; preserving it on teardown");
+            None
+        }
+    };
     tracing::info!(path = %path.display(), "published port file");
     Ok(PortFilePublication {
         path,
         target,
-        fingerprint: Fingerprint::of_bytes(bytes.as_bytes()),
+        contents: bytes,
+        identity,
     })
+}
+
+fn has_contents(file: &std::fs::File, expected: &str) -> std::io::Result<bool> {
+    use std::io::Read;
+    let mut bytes = Vec::new();
+    file.take(expected.len() as u64 + 1)
+        .read_to_end(&mut bytes)?;
+    Ok(bytes == expected.as_bytes())
 }
 
 /// Blocking startup barrier. Returning Ok means the complete port is observable by discovery.

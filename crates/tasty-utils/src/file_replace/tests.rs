@@ -295,3 +295,35 @@ fn macos_custom_acl_and_extended_attribute_survive_replacement() {
     assert!(output.status.success());
     assert_eq!(String::from_utf8(output.stdout).unwrap().trim(), "kept");
 }
+
+#[test]
+fn nonblocking_participant_lock_uses_the_blocking_namespace_and_releases_on_drop() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("settings.toml");
+    // Other parallel tests spawn OS commands: inherited descriptors can briefly retain a
+    // released lock until exec. Only this test's post-release observation retries; the product
+    // try_lock and the held-lock cleanup test must still return after a single attempt.
+    let acquire_released = || {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        loop {
+            let result = try_lock(&path).unwrap();
+            if result.is_some() {
+                return result;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "released lock stayed held"
+            );
+            std::thread::yield_now();
+        }
+    };
+    let held = lock(&path).unwrap();
+    assert!(try_lock(&path).unwrap().is_none());
+    drop(held);
+    let acquired = acquire_released().expect("released participant lock");
+    assert!(try_lock(&path).unwrap().is_none());
+    drop(acquired);
+    assert!(acquire_released().is_some());
+    let bad = dir.path().join("missing/child.toml");
+    assert!(try_lock(&bad).is_err(), "path errors are not contention");
+}

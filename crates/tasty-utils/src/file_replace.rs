@@ -186,6 +186,23 @@ pub struct WriteLock {
 /// `path`의 쓰기 잠금을 잡는다. 다른 Tasty 프로세스가 쥐고 있으면 풀릴 때까지 기다린다.
 /// 메인 루프에서 부르지 않는다.
 pub fn lock(path: &Path) -> io::Result<WriteLock> {
+    let file = open_lock_file(path)?;
+    file.lock()?;
+    Ok(WriteLock { _file: file })
+}
+
+/// Try the same participant lock once. Contention leaves the file untouched and returns None.
+/// Filesystem open/resolve errors propagate; this does not promise zero-latency filesystem I/O.
+pub fn try_lock(path: &Path) -> io::Result<Option<WriteLock>> {
+    let file = open_lock_file(path)?;
+    match file.try_lock() {
+        Ok(()) => Ok(Some(WriteLock { _file: file })),
+        Err(std::fs::TryLockError::WouldBlock) => Ok(None),
+        Err(std::fs::TryLockError::Error(error)) => Err(error),
+    }
+}
+
+fn open_lock_file(path: &Path) -> io::Result<File> {
     let target = resolve_link(path)?;
     let parent = target
         .parent()
@@ -198,14 +215,12 @@ pub fn lock(path: &Path) -> io::Result<WriteLock> {
     );
     let mut name = target.as_os_str().to_owned();
     name.push(".lock");
-    let file = OpenOptions::new()
+    OpenOptions::new()
         .read(true)
         .write(true)
         .create(true)
         .truncate(false)
-        .open(PathBuf::from(name))?;
-    file.lock()?;
-    Ok(WriteLock { _file: file })
+        .open(PathBuf::from(name))
 }
 
 /// 파일 내용의 관측값. 없는 파일도 하나의 관측값이다.

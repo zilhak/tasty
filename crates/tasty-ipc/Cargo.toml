@@ -20,9 +20,16 @@ tasty-utils = { path = "../tasty-utils" }
 tasty-memory = { path = "../tasty-memory" }
 tasty-telemetry = { path = "../tasty-telemetry" }
 
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Storage_FileSystem"] }
+
 [dev-dependencies]
 tempfile = "3"
 tasty-type-appearance = { path = "../tasty-type-appearance" }
 
 [lints]
 workspace = true
+
+[[test]]
+name = "port_owner_process"
+harness = false
