@@ -642,3 +642,51 @@ fn changing_hidden_cancels_the_receipt_discards_queued_hits_and_searches_again()
     );
     finish(&mut owner);
 }
+
+#[test]
+#[ignore = "explicit serial release measurement of real search batch insertion and path index rebuild"]
+fn search_batch_index_cpu_samples() {
+    let subscriber = tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::INFO)
+        .with_test_writer()
+        .finish();
+    let _log = tracing::subscriber::set_default(subscriber);
+    let dir = tempfile::tempdir().unwrap();
+    let (_panel, mut view, mut owner) = loaded(dir.path());
+    view.search_subfolders("item");
+    let (receipt, sender, _) = SearchQuery::test_channel();
+    view.find.as_mut().unwrap().search.as_mut().unwrap().receipt = Some(receipt);
+    let mut samples = Vec::new();
+    for start in (0..5000).step_by(256) {
+        let end = (start + 256).min(5000);
+        let batch: Vec<_> = (start..end)
+            .map(|i| {
+                let name = format!("item{i:06}.txt");
+                DirEntryInfo {
+                    path: dir.path().join(&name),
+                    name,
+                    ..Default::default()
+                }
+            })
+            .collect();
+        let target = batch.last().unwrap().path.clone();
+        sender.send(SearchEvent::Hits(batch)).unwrap();
+        let started = std::time::Instant::now();
+        owner.drive(|requests| view.poll_find(requests));
+        assert_eq!(view.shown_position(&target), Some(end - 1));
+        samples.push(serde_json::json!({"hits":end,"poll_and_first_lookup_ms":started.elapsed().as_secs_f64()*1000.0}));
+    }
+    assert_eq!(view.shown_count(), 5000);
+    sender
+        .send(SearchEvent::Done {
+            stopped: false,
+            capped: true,
+        })
+        .unwrap();
+    owner.drive(|requests| view.poll_find(requests));
+    finish(&mut owner);
+    tracing::info!(
+        "EXPLORER_SEARCH_BATCH {}",
+        serde_json::json!({"batches":samples})
+    );
+}

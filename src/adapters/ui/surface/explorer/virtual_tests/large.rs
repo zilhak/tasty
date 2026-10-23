@@ -97,3 +97,71 @@ fn large_directory_cpu_samples() {
         }
     }
 }
+
+/// Real View sync and egui rendering, without an OS event loop or network transport.
+#[test]
+#[ignore = "explicit serial release measurement of first lookup, tabs, and remote Loaded sync"]
+fn index_lifecycle_cpu_samples() {
+    let subscriber = tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::INFO)
+        .with_test_writer()
+        .finish();
+    let _log = tracing::subscriber::set_default(subscriber);
+    for mode in MODES {
+        let mut h = Harness::with_count(mode, LARGE);
+        h.cell = Rect::from_min_max(Pos2::ZERO, Pos2::new(1600.0, 1000.0));
+        h.focused = true;
+        for _ in 0..5 {
+            h.frame(Vec::new());
+        }
+        let started = Instant::now();
+        h.frame(vec![Event::Text("i".into())]);
+        let first_input_frame_ms = started.elapsed().as_secs_f64() * 1000.0;
+        let entries = h.view.entries.clone();
+        h.panel.add_tab();
+        h.view.sync(&h.panel, None);
+        h.view.set_entries(entries.clone());
+        h.frame(Vec::new());
+        let started = Instant::now();
+        h.panel.active = 0;
+        h.view.sync(&h.panel, None);
+        h.view.reveal_created(&path(LARGE - 1));
+        h.frame(Vec::new());
+        let restored_tab_frame_ms = started.elapsed().as_secs_f64() * 1000.0;
+        h.view = super::super::ExplorerView::new();
+        h.view.sync(&h.panel, Some(42));
+        let request = h.view.outbox[0].request_id;
+        let started = Instant::now();
+        assert!(
+            h.view
+                .apply_remote_list_dir_result(request, &h.panel, Ok(entries))
+        );
+        let remote_apply_ms = started.elapsed().as_secs_f64() * 1000.0;
+        for _ in 0..5 {
+            h.frame(Vec::new());
+        }
+        let started = Instant::now();
+        h.frame(vec![Event::Text("i".into())]);
+        let remote_first_input_frame_ms = started.elapsed().as_secs_f64() * 1000.0;
+        let generation = h.view.entries_gen;
+        let mut remote_frames_ms = Vec::new();
+        for _ in 0..90 {
+            let started = Instant::now();
+            h.view.sync(&h.panel, Some(42));
+            h.frame(Vec::new());
+            remote_frames_ms.push(started.elapsed().as_secs_f64() * 1000.0);
+        }
+        assert_eq!(
+            h.view.entries_gen, generation,
+            "Loaded sync keeps its generation"
+        );
+        tracing::info!(
+            "EXPLORER_INDEX_LIFECYCLE {}",
+            serde_json::json!({
+                "mode":format!("{mode:?}"),"count":LARGE,"first_input_frame_ms":first_input_frame_ms,
+                "restored_tab_frame_ms":restored_tab_frame_ms,"remote_apply_ms":remote_apply_ms,
+                "remote_first_input_frame_ms":remote_first_input_frame_ms,"remote_sync_and_frame_ms":remote_frames_ms
+            })
+        );
+    }
+}
