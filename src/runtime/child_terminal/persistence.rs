@@ -1,5 +1,8 @@
 //! Owned registry commands execute one complete read/merge/replace transaction.
+mod delta;
+
 use super::{ChildTerminalRegistry, ParentKey};
+use delta::Delta;
 use std::path::{Path, PathBuf};
 use tasty_utils::file_replace::{self, Fingerprint};
 
@@ -15,8 +18,11 @@ pub(super) enum Operation {
 
 pub(super) struct Command {
     path: PathBuf,
-    registry: ChildTerminalRegistry,
+    owned: std::collections::HashSet<u32>,
+    slot: Option<u32>,
+    load_error: Option<String>,
     operation: Operation,
+    delta: Delta,
 }
 
 pub(super) struct Outcome {
@@ -27,23 +33,38 @@ pub(super) struct Outcome {
 impl Command {
     pub(super) fn new(
         path: PathBuf,
-        registry: ChildTerminalRegistry,
+        mut registry: ChildTerminalRegistry,
         operation: Operation,
     ) -> Self {
+        let present = registry.surfaces();
+        registry
+            .slot_of
+            .retain(|surface, _| present.contains(surface));
+        if let Some(slot) = registry.slot {
+            for surface in present.intersection(&registry.owned) {
+                registry.slot_of.insert(*surface, slot);
+            }
+        }
+        let empty = ChildTerminalRegistry::default();
+        let before = registry.baseline.as_deref().unwrap_or(&empty);
+        let delta = Delta::between(before, &registry);
         Self {
             path,
-            registry,
+            owned: registry.owned,
+            slot: registry.slot,
+            load_error: registry.load_error,
             operation,
+            delta,
         }
     }
 
-    pub(super) fn execute(mut self) -> Result<Outcome, String> {
+    pub(super) fn execute(self) -> Result<Outcome, String> {
         self.execute_inner()
             .map_err(|error| format!("child registry: {error:#}"))
     }
 
-    fn execute_inner(&mut self) -> anyhow::Result<Outcome> {
-        if let Some(error) = &self.registry.load_error {
+    fn execute_inner(self) -> anyhow::Result<Outcome> {
+        if let Some(error) = &self.load_error {
             anyhow::bail!("original load failed: {error}");
         }
         if let Some(parent) = self.path.parent() {
@@ -54,21 +75,24 @@ impl Command {
         if target != file_replace::resolve_link(&self.path)? {
             anyhow::bail!("registry target changed while acquiring participant lock");
         }
-        let (disk, observed) = read_observed(&self.path)?;
-        self.registry.merge_from(disk);
-        let index = self
-            .registry
-            .apply_operation(self.operation.clone())
+        let (mut disk, observed) = read_observed(&self.path)?;
+        self.delta.apply(&mut disk);
+        disk.path = Some(self.path.clone());
+        disk.owned = self.owned;
+        disk.slot = self.slot;
+        let index = disk
+            .apply_operation(self.operation)
             .map_err(anyhow::Error::msg)?;
-        let bytes = serde_json::to_vec_pretty(&self.registry)?;
+        let bytes = serde_json::to_vec_pretty(&disk)?;
         if target != file_replace::resolve_link(&self.path)?
             || observed != Fingerprint::read(&self.path)?
         {
             anyhow::bail!("registry changed outside the participant lock; not replaced");
         }
         file_replace::replace(&self.path, &bytes)?;
+        disk.checkpoint();
         Ok(Outcome {
-            registry: std::mem::take(&mut self.registry),
+            registry: disk,
             index,
         })
     }

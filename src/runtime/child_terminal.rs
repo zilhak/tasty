@@ -4,7 +4,7 @@
 //!
 //! 윈도우(engine)마다 이 레지스트리를 따로 읽는다. surface 는 한 engine 에만 있으므로 각 engine 은
 //! 자기 레이아웃 슬롯의 항목과, 자기가 등록·변경했거나 살아 있는 것을 본 surface 의 항목만 소유한다.
-//! 저장할 때 파일을 다시 읽어 소유한 항목은 메모리 값으로, 나머지는 파일 값 그대로 합친다. 정리도
+//! 저장할 때 파일을 다시 읽어 소유한 항목의 변경 필드만 반영하고 나머지는 파일 값으로 둔다. 정리도
 //! 소유한 항목만 지운다. 그래서 한 윈도우의 저장·정리가 다른 윈도우나 아직 열지 않은 윈도우의 관계를
 //! 지우지 않는다. 어느 창에도 돌아오지 않을 항목은 시작할 때([`clear_on_boot`],
 //! [`ChildTerminalRegistry::forget_slots_except`])와 engine 이 사라질 때
@@ -19,12 +19,13 @@ mod persistence;
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
 pub(crate) use crate::core::child_parent::ParentKey;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ChildEntry {
     pub child_surface_id: u32,
     pub index: u32,
@@ -62,6 +63,9 @@ pub struct ChildTerminalRegistry {
     /// A failed initial read must never authorize replacing the original.
     #[serde(skip)]
     load_error: Option<String>,
+    /// Immutable loaded/committed view; never recursively retains older baselines.
+    #[serde(skip)]
+    baseline: Option<Arc<Self>>,
     /// 항목 surface 가 속한 레이아웃 슬롯. 슬롯 engine 의 소유 판정과 시작 시 정리에 쓴다.
     #[serde(default)]
     slot_of: HashMap<u32, u32>,
@@ -96,7 +100,12 @@ impl ChildTerminalRegistry {
         s
     }
 
-    /// Merge only this engine's owned records under the participant lock, then atomically replace.
+    fn checkpoint(&mut self) {
+        self.baseline = None;
+        self.baseline = Some(Arc::new(self.clone()));
+    }
+
+    /// Apply changed owned fields to the latest file under the participant lock.
     pub fn save(&mut self) {
         if let Err(error) = self.persist(persistence::Operation::Merge) {
             tracing::warn!(%error, "child-terminal registry was not saved");
@@ -159,123 +168,6 @@ impl ChildTerminalRegistry {
         all.extend(self.last_state_report_at.keys().copied());
         all.extend(self.external_parent_of.keys().copied());
         all
-    }
-
-    /// 소유한 surface 의 항목은 그대로 두고, 나머지는 `disk` 의 값으로 바꾼다.
-    fn merge_from(&mut self, mut disk: Self) {
-        let present = self.surfaces();
-        self.slot_of.retain(|surface, _| present.contains(surface));
-        if let Some(slot) = self.slot {
-            for surface in present.intersection(&self.owned) {
-                self.slot_of.insert(*surface, slot);
-            }
-        }
-        let owned = &self.owned;
-        let others = |key: &u32| !owned.contains(key);
-        disk.parent_of.retain(|child, _| others(child));
-        for (child, parent) in std::mem::take(&mut self.parent_of) {
-            if owned.contains(&child) {
-                disk.parent_of.insert(child, parent);
-            }
-        }
-        for list in disk.children.values_mut() {
-            list.retain(|c| others(&c.child_surface_id));
-        }
-        let my_parents: HashSet<u32> = self.children.keys().copied().collect();
-        for (parent, list) in std::mem::take(&mut self.children) {
-            let mine = list
-                .into_iter()
-                .filter(|c| owned.contains(&c.child_surface_id));
-            disk.children.entry(parent).or_default().extend(mine);
-        }
-        // 이 engine 이 지운 부모 목록은 파일에서도 지운다. 다른 engine 의 빈 목록은 그대로 둔다.
-        disk.children.retain(|parent, list| {
-            !list.is_empty() || my_parents.contains(parent) || others(parent)
-        });
-        for list in disk.children.values_mut() {
-            list.sort_by_key(|c| c.index);
-        }
-        merge_owned(&mut disk.next_index, &mut self.next_index, owned);
-        merge_owned(&mut disk.idle, &mut self.idle, owned);
-        merge_owned(&mut disk.needs_input, &mut self.needs_input, owned);
-        merge_owned(
-            &mut disk.last_state_report_at,
-            &mut self.last_state_report_at,
-            owned,
-        );
-        merge_owned(&mut disk.slot_of, &mut self.slot_of, owned);
-        self.merge_external_into(&mut disk);
-        // 파일에 저장하지 않는 상한이라 disk 에는 없다. 아래 교체에서 잃지 않도록 옮긴다.
-        disk.removed_external_top = std::mem::take(&mut self.removed_external_top);
-        disk.path = self.path.take();
-        disk.owned = std::mem::take(&mut self.owned);
-        disk.slot = self.slot;
-        *self = disk;
-    }
-
-    /// External 관계를 합친다. 자식 항목은 자식 surface 의 소유로, 다음 번호는 큰 값으로 정한다.
-    /// 자식이 있었는데 합친 결과 하나도 남지 않은 부모는 목록과 다음 번호를 지운다. 단 파일의 다음
-    /// 번호가 알려진 자식의 index + 1 최댓값보다 크면 다른 engine 이 아직 등록하지 않은 예약이
-    /// 있으므로 번호를 남긴다. 자식 없이 번호만 예약된 부모도 그대로 둔다. 이 engine 의 자식이 남은
-    /// 부모의 상한은 다음 병합까지 유지해, 그 자식이 마지막으로 빠질 때 앞서 뺀 번호도 반영한다.
-    fn merge_external_into(&mut self, disk: &mut Self) {
-        let mut known: HashMap<String, u32> = std::mem::take(&mut self.removed_external_top);
-        let lists = disk.external_children.iter().chain(&self.external_children);
-        for (parent, list) in lists {
-            if let Some(top) = list.iter().map(|c| c.index.saturating_add(1)).max() {
-                let bound = known.entry(parent.clone()).or_insert(top);
-                *bound = (*bound).max(top);
-            }
-        }
-        let owned = &self.owned;
-        disk.external_parent_of
-            .retain(|child, _| !owned.contains(child));
-        for (child, parent) in std::mem::take(&mut self.external_parent_of) {
-            if owned.contains(&child) {
-                disk.external_parent_of.insert(child, parent);
-            }
-        }
-        for list in disk.external_children.values_mut() {
-            list.retain(|c| !owned.contains(&c.child_surface_id));
-        }
-        for (parent, list) in std::mem::take(&mut self.external_children) {
-            let mine = list
-                .into_iter()
-                .filter(|c| owned.contains(&c.child_surface_id));
-            disk.external_children
-                .entry(parent)
-                .or_default()
-                .extend(mine);
-        }
-        disk.external_children.retain(|_, list| !list.is_empty());
-        for list in disk.external_children.values_mut() {
-            list.sort_by_key(|c| c.index);
-        }
-        for (parent, next) in std::mem::take(&mut self.external_next_index) {
-            let slot = disk.external_next_index.entry(parent).or_insert(next);
-            *slot = (*slot).max(next);
-        }
-        for (parent, bound) in known {
-            match disk.external_children.get(&parent) {
-                Some(list) => {
-                    if list
-                        .iter()
-                        .any(|c| self.owned.contains(&c.child_surface_id))
-                    {
-                        self.removed_external_top.insert(parent, bound);
-                    }
-                }
-                None => {
-                    let reserved_elsewhere = disk
-                        .external_next_index
-                        .get(&parent)
-                        .is_some_and(|next| *next > bound);
-                    if !reserved_elsewhere {
-                        disk.external_next_index.remove(&parent);
-                    }
-                }
-            }
-        }
     }
 
     /// 자식이 남지 않은 External 부모의 목록과 다음 번호를 지운다. 지운 수를 반환한다.
@@ -652,13 +544,18 @@ pub(crate) fn clear_on_boot(settings: &crate::settings::Settings) {
 
 /// Keep the load usable for observation while refusing all writes after an invalid initial read.
 fn read_file(path: &std::path::Path) -> ChildTerminalRegistry {
-    persistence::read(path).unwrap_or_else(|error| {
-        tracing::warn!(%error, "child-terminal registry load failed; protecting original");
-        ChildTerminalRegistry {
-            load_error: Some(error),
-            ..Default::default()
-        }
-    })
+    persistence::read(path)
+        .map(|mut value| {
+            value.checkpoint();
+            value
+        })
+        .unwrap_or_else(|error| {
+            tracing::warn!(%error, "child-terminal registry load failed; protecting original");
+            ChildTerminalRegistry {
+                load_error: Some(error),
+                ..Default::default()
+            }
+        })
 }
 
 /// 뺀 External 자식의 index 로 그 부모의 상한(index + 1 최댓값)을 올린다.
@@ -696,16 +593,6 @@ fn list_in<'a>(
     match parent {
         ParentKey::Surface(parent) => children.get_mut(parent),
         ParentKey::External(parent) => external.get_mut(parent),
-    }
-}
-
-/// `owned` 키는 `mine` 의 값(없으면 삭제)으로, 나머지는 `disk` 의 값으로 둔다.
-fn merge_owned<V>(disk: &mut HashMap<u32, V>, mine: &mut HashMap<u32, V>, owned: &HashSet<u32>) {
-    disk.retain(|key, _| !owned.contains(key));
-    for (key, value) in mine.drain() {
-        if owned.contains(&key) {
-            disk.insert(key, value);
-        }
     }
 }
 

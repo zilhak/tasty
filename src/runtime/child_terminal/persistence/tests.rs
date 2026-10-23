@@ -204,3 +204,106 @@ fn lifecycle_clear_protects_corrupt_file_and_release_survives_reopen() {
     );
     assert_eq!(std::fs::read(&path).unwrap(), b"corrupt");
 }
+
+#[test]
+fn asynchronous_stale_snapshot_must_not_rewind_a_committed_reservation() {
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("children.json");
+    let mut live = registry(&path);
+    let parent = ParentKey::Surface(10);
+    let first = live.reserve_index(&parent).unwrap();
+    live.register_child(parent.clone(), entry(100, first));
+    live.persist(Operation::Merge).unwrap();
+    let reserve = Command::new(path.clone(), live.clone(), Operation::Reserve(parent));
+    live.set_idle(100, true);
+    let queued_save = Command::new(path.clone(), live, Operation::Merge);
+    assert_eq!(reserve.execute().unwrap().index, Some(1));
+    assert_eq!(read(&path).unwrap().next_index.get(&10), Some(&2));
+    queued_save.execute().unwrap();
+    assert_eq!(
+        read(&path).unwrap().next_index.get(&10),
+        Some(&2),
+        "a queued stale owned snapshot must not rewind the committed next index"
+    );
+}
+
+#[test]
+fn queued_create_then_delete_retains_the_submitted_delete_intent() {
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("children.json");
+    let mut live = registry(&path);
+    live.register_child(10, entry(100, 0));
+    let create = Command::new(path.clone(), live.clone(), Operation::Merge);
+    // Admission advances the submitted baseline, not the durable-success observation.
+    live.checkpoint();
+    assert!(live.unregister_child_by_surface(100));
+    let delete = Command::new(path.clone(), live, Operation::Merge);
+    create.execute().unwrap();
+    assert!(read(&path).unwrap().parent_of_child(100).is_some());
+    delete.execute().unwrap();
+    assert!(read(&path).unwrap().parent_of_child(100).is_none());
+}
+
+#[test]
+fn queued_toggle_back_is_applied_after_the_first_change() {
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("children.json");
+    let mut live = registry(&path);
+    live.register_child(10, entry(100, 0));
+    live.set_idle(100, false);
+    live.persist(Operation::Merge).unwrap();
+    live.set_idle(100, true);
+    let first = Command::new(path.clone(), live.clone(), Operation::Merge);
+    live.checkpoint();
+    live.set_idle(100, false);
+    let second = Command::new(path.clone(), live, Operation::Merge);
+    first.execute().unwrap();
+    assert_eq!(read(&path).unwrap().state_of(100), "idle");
+    second.execute().unwrap();
+    assert_eq!(read(&path).unwrap().state_of(100), "active");
+}
+
+#[test]
+fn unrelated_owned_fields_preserve_a_latest_external_edit() {
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("children.json");
+    let mut live = registry(&path);
+    live.register_child(10, entry(100, 0));
+    live.persist(Operation::Merge).unwrap();
+    live.update_child(&10.into(), 0, |c| c.cwd = Some("new cwd".into()));
+    let command = Command::new(path.clone(), live, Operation::Merge);
+    let mut external = registry(&path);
+    external.update_child(&10.into(), 0, |c| {
+        c.nickname = Some("external nickname".into())
+    });
+    external.persist(Operation::Merge).unwrap();
+    command.execute().unwrap();
+    let latest = read(&path).unwrap();
+    let child = latest.find_child(&10.into(), 0).unwrap();
+    assert_eq!(child.cwd.as_deref(), Some("new cwd"));
+    assert_eq!(child.nickname.as_deref(), Some("external nickname"));
+}
+
+#[test]
+fn deletion_does_not_erase_a_pending_external_reservation_already_in_the_cache() {
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("children.json");
+    let parent = ParentKey::External("codex:shared".into());
+    let mut live = registry(&path);
+    let index = live.reserve_index(&parent).unwrap();
+    live.register_child(parent.clone(), entry(100, index));
+    live.persist(Operation::Merge).unwrap();
+    let mut other = registry(&path);
+    assert_eq!(other.reserve_index(&parent), Ok(1));
+    // Refresh includes the other engine's next counter before removing the last child.
+    live.set_idle(100, true);
+    live.persist(Operation::Merge).unwrap();
+    assert_eq!(live.external_next_index.get("codex:shared"), Some(&2));
+    live.unregister_child_by_surface(100);
+    live.persist(Operation::Merge).unwrap();
+    assert_eq!(
+        read(&path).unwrap().external_next_index.get("codex:shared"),
+        Some(&2)
+    );
+    assert_eq!(live.reserve_index(&parent), Ok(2));
+}
