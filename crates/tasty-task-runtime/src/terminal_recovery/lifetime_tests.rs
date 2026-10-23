@@ -275,3 +275,185 @@ fn failed_and_unknown_ack_keep_claim_until_ordered_confirmation() {
         assert_eq!(f.retained(), 0);
     }
 }
+
+#[test]
+fn cached_settlement_cannot_remove_a_retried_running_attempt() {
+    for typed in [false, true] {
+        cached_settlement_after_retry(typed);
+    }
+}
+
+fn cached_settlement_after_retry(typed: bool) {
+    use crate::TaskEffects;
+    use crate::runner_host::handle_key;
+    use tasty_memory::{MemoryValue, Scope};
+    let f = Fixture::new();
+    if typed {
+        let graph = serde_json::from_value(serde_json::json!({
+            "contract_version":2,"tasks":[{"id":"p",
+            "command":{"kind":"run","workspace_id":1,"command":["true"]},
+            "output_schema":{"type":"int64"},"metadata":{"semaphore":{"name":"owned"}}}]
+        }))
+        .unwrap();
+        f.service
+            .task_graph_submit(&f.scope, 1, graph, false, 1)
+            .unwrap();
+    } else {
+        let task: Task = serde_json::from_value(serde_json::json!({
+            "id":"p","workspace_id":1,"name":"p","created_at":1,
+            "command":{"kind":"custom","ipc_method":"system.ping","params":{}},
+            "state":{"kind":"ready"},"on_failure":{"kind":"abort"},
+            "metadata":{"semaphore":{"name":"owned"}}
+        }))
+        .unwrap();
+        TaskStore::new(
+            &mut *f.memory.lock().unwrap(),
+            HOST_OWNER,
+            f.scope.agent_seq(),
+        )
+        .put(&task)
+        .unwrap();
+    }
+    let old = f
+        .service
+        .task_set_state(&f.scope, 1, &"p".into(), TaskState::Running, 2)
+        .unwrap()
+        .0;
+    let old_id = old.attempt.map(|a| a.id);
+    let record = |attempt: Option<&str>| {
+        let mut value =
+            serde_json::json!({"kind":"barrier_poll","data":{"workspace_id":1,"name":"owned"}});
+        if let Some(id) = attempt {
+            value["attempt_id"] = id.into();
+        }
+        value
+    };
+    let install = |attempt: Option<&str>| {
+        f.memory
+            .lock()
+            .unwrap()
+            .put(
+                HOST_OWNER,
+                &Scope::Workspace(1),
+                &handle_key("p"),
+                &MemoryValue::Json(record(attempt)),
+                &Default::default(),
+            )
+            .unwrap();
+    };
+    install(old_id.as_deref());
+    {
+        let mut mem = f.memory.lock().unwrap();
+        let mut store = tasty_agent::SemaphoreStore::new(&mut *mem, HOST_OWNER);
+        store.create(1, "owned", 2, 1).unwrap();
+        for id in ["p", "foreign"] {
+            assert!(store.acquire(1, "owned", id, None, 2).unwrap().acquired);
+        }
+    }
+    let scope = f.scope.clone();
+    let mut ticket = f
+        .service
+        .memory_access()
+        .submit(
+            f.service
+                .unit_request(0, move |tx| tx.task_cancel(&scope, 1, &"p".into(), 3)),
+        )
+        .unwrap();
+    let (result, _effects) = settle(ticket.wait_timeout(WAIT).unwrap())
+        .unwrap()
+        .into_value::<(tasty_agent::Result<(Task, Vec<Task>)>, TaskEffects)>()
+        .unwrap();
+    result.unwrap();
+    let read = || {
+        let target = Target {
+            hub: f.scope.waker_hub().clone(),
+            workspace: 1,
+            settle: Some(f.service.runner_context(&f.scope)),
+        };
+        let mut ticket = f
+            .service
+            .memory_access()
+            .submit(MemoryRequest::read(0, move |mem| {
+                Ok(load(mem, vec![target.clone()]))
+            }))
+            .unwrap();
+        settle(ticket.wait_timeout(WAIT).unwrap())
+            .unwrap()
+            .into_value::<tasty_agent::Result<Confirmed>>()
+            .unwrap()
+            .unwrap()
+    };
+    let independent = read();
+    let delayed = read();
+    deliver(independent, f.service.memory_access());
+    let until = Instant::now() + WAIT;
+    while f
+        .memory
+        .lock()
+        .unwrap()
+        .get(&Scope::Workspace(1), &handle_key("p"))
+        .unwrap()
+        .is_some()
+    {
+        f.service.memory_access().reap_detached();
+        assert!(Instant::now() < until);
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    f.drain();
+    assert_eq!(f.events(), 1);
+    f.service
+        .task_retry(&f.scope, 1, &"p".into(), false, 4)
+        .unwrap();
+    let new = f
+        .service
+        .task_set_state(&f.scope, 1, &"p".into(), TaskState::Running, 5)
+        .unwrap()
+        .0;
+    let new_id = new.attempt.map(|a| a.id);
+    if typed {
+        assert_ne!(old_id, new_id);
+    }
+    install(new_id.as_deref());
+    {
+        let mut mem = f.memory.lock().unwrap();
+        assert!(
+            tasty_agent::SemaphoreStore::new(&mut *mem, HOST_OWNER)
+                .acquire(1, "owned", "p", None, 5)
+                .unwrap()
+                .acquired
+        );
+    }
+    deliver(delayed, f.service.memory_access());
+    f.drain();
+    // The worker has its own bounded lifetime. Observe the same two-second interval as the
+    // counterexample, checking continuously rather than ending before it can run.
+    let until = Instant::now() + Duration::from_secs(2);
+    while Instant::now() < until {
+        let mut mem = f.memory.lock().unwrap();
+        let entry = mem
+            .get(&Scope::Workspace(1), &handle_key("p"))
+            .unwrap()
+            .expect("cached old settlement deleted the new running handle");
+        assert_eq!(entry.value, MemoryValue::Json(record(new_id.as_deref())));
+        let mut holders = tasty_agent::SemaphoreStore::new(&mut *mem, HOST_OWNER)
+            .get(1, "owned")
+            .unwrap()
+            .unwrap()
+            .holders
+            .into_iter()
+            .map(|h| h.id)
+            .collect::<Vec<_>>();
+        holders.sort();
+        assert_eq!(holders, ["foreign", "p"]);
+        drop(mem);
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    let current = f
+        .service
+        .task_get(&f.scope, 1, &"p".into())
+        .unwrap()
+        .unwrap();
+    assert_eq!(current.state, TaskState::Running);
+    assert_eq!(current.attempt.map(|a| a.id), new_id);
+    assert_eq!(f.events(), 0);
+}

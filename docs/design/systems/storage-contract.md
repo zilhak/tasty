@@ -305,6 +305,10 @@ memory.db 쓰기는 모두 memory writer를 지난다. writer는 종료 때 접�
 따로 읽어 정리를 시작한다. 다른 요청이 알림을 먼저 소비해도 이 확인을 생략하지 않는다. 정리는
 기존 handle의 회차·프로세스를 확인하고 종료가 확인된 뒤 자기 점유만 반환하며 외부 실행을
 재시도하지 않는다. 별도 schema나 알림 재발행으로 정리를 대신하지 않는다.
+정리 snapshot에는 같은 확인 읽기에서 얻은 task revision·회차와 handle 기록이 함께 들어간다.
+신호 전 현재 종결 기록과 handle을 대조하고 캡처한 프로세스만 대상으로 삼으며, 종료 후 같은
+기록인지 다시 대조한 단위 안에서 handle CAS 삭제와 자기 점유 반환을 한다. retry로 기록이
+바뀌거나 handle이 교체됐으면 그 snapshot은 새 회차의 handle·프로세스·점유에 손대지 않는다.
 
 TaskStore는 비종결에서 종결로 바뀌는 task 레코드와 알림 의무를 같은 atomic batch에 쓴다.
 알림은 workspace의 `tasty.agent.terminal.<UUID>` 키에 schema 1, 고유 ID, 완료 통지용 snapshot,

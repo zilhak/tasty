@@ -6,6 +6,7 @@ use tasty_memory::writer::{MemoryAccess, MemoryRequest};
 use tasty_memory::{HOST_OWNER, MemoryStorage};
 
 use crate::runner_host::RunnerContext;
+use crate::runner_thread::settle::CapturedSettlement;
 use crate::task_waker::{DeliveryToken, TaskWakerHub, TerminalSnapshot};
 
 #[derive(Clone)]
@@ -100,7 +101,7 @@ struct Delivery {
 #[derive(Default)]
 struct Confirmed {
     deliveries: Vec<Delivery>,
-    settlements: Vec<(RunnerContext, u32, Vec<tasty_agent::Task>)>,
+    settlements: Vec<(RunnerContext, u32, Vec<CapturedSettlement>)>,
 }
 
 fn load(mem: &dyn MemoryStorage, targets: Vec<Target>) -> tasty_agent::Result<Confirmed> {
@@ -141,7 +142,7 @@ fn load(mem: &dyn MemoryStorage, targets: Vec<Target>) -> tasty_agent::Result<Co
 fn ended_handles(
     mem: &dyn MemoryStorage,
     workspace: u32,
-) -> tasty_agent::Result<Vec<tasty_agent::Task>> {
+) -> tasty_agent::Result<Vec<CapturedSettlement>> {
     let entries = mem.list(
         &tasty_memory::Scope::Workspace(workspace),
         &tasty_memory::ListOpts {
@@ -154,11 +155,11 @@ fn ended_handles(
         if let Some(id) = entry
             .key
             .strip_prefix(crate::runner_host::HANDLE_KEY_PREFIX)
-            && let Some((task, _)) =
+            && let Some((task, revision)) =
                 tasty_agent::TaskStore::read_record(mem, workspace, &id.into())?
             && task.state.is_terminal()
         {
-            tasks.push(task);
+            tasks.push(CapturedSettlement::new(task, revision, entry));
         }
     }
     Ok(tasks)

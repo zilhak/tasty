@@ -37,17 +37,110 @@ pub(crate) fn settle_ended_task(ctx: &RunnerContext, workspace_id: u32, task: &T
     settle_within(ctx, workspace_id, task, KILL_CONFIRM_WAIT)
 }
 
+/// Immutable task/handle pair captured together by the ordered confirmation read.
+/// A delayed continuation must never reread a successor's handle as its own cleanup target.
+#[derive(Clone)]
+pub(crate) struct CapturedSettlement {
+    task: Task,
+    revision: u64,
+    handle: tasty_memory::MemoryEntry,
+    stored: Stored,
+}
+
+impl CapturedSettlement {
+    pub(crate) fn new(task: Task, revision: u64, handle: tasty_memory::MemoryEntry) -> Self {
+        let stored = match &handle.value {
+            MemoryValue::Json(value) => Stored::of(value),
+            _ => Stored {
+                proc: None,
+                attempt: None,
+            },
+        };
+        Self {
+            task,
+            revision,
+            handle,
+            stored,
+        }
+    }
+
+    fn matches(
+        &self,
+        mem: &dyn tasty_memory::MemoryStorage,
+        workspace: u32,
+    ) -> tasty_agent::Result<bool> {
+        let Some((task, revision)) = TaskStore::read_record(mem, workspace, &self.task.id)? else {
+            return Ok(false);
+        };
+        Ok(revision == self.revision
+            && task.state.is_terminal()
+            && task.created_at == self.task.created_at
+            && task.attempt.as_ref().map(|a| &a.id) == self.task.attempt.as_ref().map(|a| &a.id)
+            && self
+                .stored
+                .attempt
+                .as_ref()
+                .is_none_or(|id| task.attempt.as_ref().map(|a| &a.id) == Some(id))
+            && mem
+                .get(&Scope::Workspace(workspace), &self.handle.key)?
+                .as_ref()
+                == Some(&self.handle))
+    }
+}
+
+fn settle_captured(ctx: &RunnerContext, workspace: u32, captured: &CapturedSettlement) -> bool {
+    let check = captured.clone();
+    match ctx.store(move |mem| check.matches(mem, workspace)) {
+        Ok(Ok(true)) => {}
+        Ok(Ok(false)) => return true,
+        error => {
+            tracing::warn!(
+                ?error,
+                "captured cancellation identity could not be confirmed"
+            );
+            return false;
+        }
+    }
+    // Signal the captured process only, never a newly read process. Its PID/start identity is
+    // checked by RunProc; a concurrent retry cannot redirect this signal to its new handle.
+    if let Some(proc) = captured.stored.proc.filter(|p| p.started_at.is_some()) {
+        proc.terminate();
+        if !wait_until_ended(proc, BACKGROUND_CONFIRM_WAIT) {
+            return false;
+        }
+    }
+    let captured = captured.clone();
+    let result: tasty_agent::Result<()> = ctx.with_memory(move |mem| {
+        // Revalidate both identities in the same unit as CAS deletion and holdings release.
+        if captured.matches(mem, workspace)? {
+            mem.delete(
+                HOST_OWNER,
+                &Scope::Workspace(workspace),
+                &captured.handle.key,
+                Some(captured.handle.version),
+            )?;
+            release_own_holdings(mem, workspace, &captured.task);
+        }
+        Ok(())
+    });
+    if let Err(error) = result {
+        tracing::warn!(%error, "captured cancellation cleanup remains unconfirmed");
+        return false;
+    }
+    true
+}
+
 /// 취소한 task 들을 별도 스레드에서 정리한다. 호출은 기다리지 않는다.
 pub(crate) fn settle_ended_tasks_in_background(
     ctx: RunnerContext,
     workspace_id: u32,
-    tasks: Vec<Task>,
+    tasks: Vec<CapturedSettlement>,
 ) {
     let spawned = std::thread::Builder::new()
         .name(format!("agent-cancel-settle-ws{workspace_id}"))
         .spawn(move || {
             for task in &tasks {
-                settle_within(&ctx, workspace_id, task, BACKGROUND_CONFIRM_WAIT);
+                settle_captured(&ctx, workspace_id, task);
             }
         });
     if let Err(e) = spawned {
