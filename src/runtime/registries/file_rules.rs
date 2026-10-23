@@ -12,6 +12,7 @@ pub(crate) struct FileRules {
     state: Mutex<State>,
 }
 struct State {
+    #[cfg(any(feature = "gui", test))]
     table: toml::Table,
     tracker: Tracker,
     sink: Option<Submit>,
@@ -22,11 +23,12 @@ impl FileRules {
         format: &FileFormatRegistry,
         handler: &FileHandlerRegistry,
     ) -> Self {
-        let (table, document, _) = read(path, format, handler);
+        let (_table, document, _) = read(path, format, handler);
         Self {
             path: path.into(),
             state: Mutex::new(State {
-                table,
+                #[cfg(any(feature = "gui", test))]
+                table: _table,
                 tracker: Tracker::new("file:file-handlers.toml", document),
                 sink: None,
             }),
@@ -46,6 +48,7 @@ impl FileRules {
         state.tracker.install_sink(sink.clone());
         state.sink = Some(sink);
     }
+    #[cfg(any(feature = "gui", test))]
     pub(crate) fn submit(&self, format: &FileFormatRegistry, handler: &FileHandlerRegistry) {
         let mut state = self.lock();
         let exported = crate::file::handler::save::export_combined_user_config(format, handler);
@@ -86,7 +89,7 @@ impl FileRules {
                 "file handler saves are still pending; retry reload after completion".into(),
             );
         }
-        let (table, document, rejected) = read(&self.path, format, handler);
+        let (_table, document, rejected) = read(&self.path, format, handler);
         if let Some(error) = document.load_error() {
             return Err(error);
         }
@@ -98,7 +101,10 @@ impl FileRules {
         if let Some(sink) = &state.sink {
             tracker.install_sink(sink.clone());
         }
-        state.table = table;
+        #[cfg(any(feature = "gui", test))]
+        {
+            state.table = _table;
+        }
         state.tracker = tracker;
         Ok(rejected)
     }

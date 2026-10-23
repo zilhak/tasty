@@ -67,6 +67,7 @@ impl Tracker {
     pub(crate) fn replace_sink(&self, sink: Option<Submit>) {
         self.lock().sink = sink;
     }
+    #[cfg(any(feature = "gui", test))]
     pub(crate) fn update(&self, bytes: Result<Vec<u8>, String>) {
         self.update_with_receipt(bytes, true);
     }
