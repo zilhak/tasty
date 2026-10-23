@@ -61,9 +61,17 @@ fn corrupt_and_unreadable_initial_loads_protect_original_even_after_repair() {
     assert!(!error.contains("secret body"));
     assert_eq!(std::fs::read(&path).unwrap(), b"broken secret body");
     let protected = merged(&path, 101);
-    std::fs::write(&path, b"{}").unwrap();
-    assert!(protected.execute().is_err());
-    assert_eq!(std::fs::read(&path).unwrap(), b"{}");
+    let repaired = serde_json::to_vec(&ChildTerminalRegistry::default()).unwrap();
+    std::fs::write(&path, &repaired).unwrap();
+    assert!(
+        read(&path).is_ok(),
+        "the external repair must be a valid registry"
+    );
+    let error = protected.execute().err().unwrap();
+    assert!(error.contains("original load failed"));
+    assert_eq!(std::fs::read(&path).unwrap(), repaired);
+    let reloaded = merged(&path, 303).execute().unwrap();
+    assert!(reloaded.registry.parent_of_child(303).is_some());
     std::fs::remove_file(&path).unwrap();
     std::fs::create_dir(&path).unwrap();
     assert!(merged(&path, 101).execute().is_err());
