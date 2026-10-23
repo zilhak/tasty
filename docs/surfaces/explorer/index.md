@@ -465,6 +465,8 @@ Detail은 공용 Table의 `show_indexed`로 합성 상위 폴더·이름 입력 
 
 ## 검증 기준
 
+파일 작업 시험의 파일시스템 전제와 디스크 부족 주입 범위는 [파일 작업 시험](file-operations.md#파일-작업-시험의-파일시스템-전제)에 있다.
+
 - Given 내부 탭 A(X)·B(Y)·C(X) When A에서 선택·Find를 정한 뒤 B·C를 거쳐 돌아온다 Then A의 목록·선택·Find가 Loading 없이 돌아오며 같은 경로 C는 독립이다(`tab_state_tests.rs`).
 - Given 20,000개 목록의 Detail·List·Grid When A의 15,000번째 항목까지 스크롤하고 같은 폴더의 B를 연 뒤 A로 돌아온다 Then B는 맨 위에서 시작하고 A는 원래 항목의 화면 위치와 선택을 유지한다(`internal_tabs_restore_scroll_in_all_three_views`).
 - Given A의 로컬 읽기·검색 또는 원격 목록 응답 대기 When B로 바꾸거나 A를 닫는다 Then 살아 있는 A의 결과만 A에 붙고 B에는 섞이지 않으며 닫힌 A의 응답은 폐기된다(`tab_state_tests.rs`).

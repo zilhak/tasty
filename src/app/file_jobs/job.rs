@@ -144,6 +144,8 @@ pub(crate) struct Shared {
     started: Instant,
     last_wake_ms: AtomicU64,
     wake: Box<dyn Fn() + Send + Sync>,
+    #[cfg(test)]
+    write_failure_after: Mutex<Option<(u64, i32)>>,
 }
 
 impl Shared {
@@ -174,6 +176,8 @@ impl Shared {
             started: Instant::now(),
             last_wake_ms: AtomicU64::new(0),
             wake,
+            #[cfg(test)]
+            write_failure_after: Mutex::new(None),
         }
     }
     /// 아직 끝나지 않은 항목을 멈춘다. 답을 기다리던 작업도 깨운다.
@@ -954,6 +958,12 @@ fn copy_tree(
             if n == 0 {
                 break;
             }
+            #[cfg(test)]
+            if let Some((after, code)) = *lock(&shared.write_failure_after)
+                && shared.bytes_done.load(Ordering::Acquire) >= after
+            {
+                return Err(io::Error::from_raw_os_error(code));
+            }
             output.write_all(&buf[..n])?;
             *copied = copied.saturating_add(n as u64);
             shared.add_bytes(n as u64);
@@ -1117,3 +1127,7 @@ pub(crate) mod leftover;
 #[cfg(test)]
 #[path = "job_tests.rs"]
 pub(crate) mod tests;
+
+#[cfg(test)]
+#[path = "storage_failure_tests.rs"]
+mod storage_failure_tests;
