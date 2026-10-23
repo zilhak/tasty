@@ -1,4 +1,5 @@
 mod aggregate;
+mod commit_knowledge;
 mod group;
 mod observability;
 mod pressure;

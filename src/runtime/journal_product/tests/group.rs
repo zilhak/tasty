@@ -326,16 +326,7 @@ fn b1_ack_b2_failure_preserves_b3_durable_identity_pins_followers_and_prevents_c
         .query_row("SELECT count(*) FROM effect_attempts", [], |r| r.get(0))
         .unwrap();
     assert_eq!(attempts, 0);
-    let failed = fixture.worker.metrics_snapshot();
-    assert!(failed.unpublished_age_us.is_some());
-    assert_eq!(failed.publication_errors, 1);
-    assert_eq!(failed.work.pending_items, 0);
-    assert!(failed.work.handled_error >= 3);
-    assert_eq!(
-        failed.store.unwrap().commits.failed_commits,
-        0,
-        "ACK failure is not failed SQL COMMIT"
-    );
+    assert_ack_failure_metrics(&fixture.worker);
     let admission_pins: u64 = conn
         .query_row(
             "SELECT count(*) FROM payload_pins WHERE holder LIKE 'admission/%'",
@@ -418,5 +409,19 @@ fn verify_worker_recovery(home: &std::path::Path, expected_attempt: u32) {
         } else {
             "uncertain"
         }
+    );
+}
+
+fn assert_ack_failure_metrics(worker: &JournalWorker) {
+    let failed = worker.metrics_snapshot();
+    assert!(failed.publication_known);
+    assert!(failed.unpublished_age_us.is_some());
+    assert_eq!(failed.publication_errors, 1);
+    assert_eq!(failed.work.pending_items, 0);
+    assert!(failed.work.handled_error >= 3);
+    assert_eq!(
+        failed.store.unwrap().commits.failed_commits,
+        0,
+        "ACK failure is not failed SQL COMMIT"
     );
 }

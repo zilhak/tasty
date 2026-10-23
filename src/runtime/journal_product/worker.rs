@@ -2,6 +2,8 @@ mod admission;
 mod assembly;
 mod binding;
 mod capture;
+#[cfg(test)]
+mod credit_tests;
 mod effects;
 mod group;
 mod metrics;
@@ -117,19 +119,25 @@ pub(super) fn run(
         drop(queued._bytes);
         let pending_before = pending.len();
         let waiting_before = waiting.len();
-        let request =
-            match admission::ordered(request, &pending, &mut waiting, halted.is_some(), &send) {
-                admission::Order::Ready(request) => request,
-                admission::Order::Deferred => {
-                    observation.finish(super::observability::Outcome::waiting(
-                        waiting_before,
-                        waiting.len(),
-                    ));
-                    observe_admissions(&observed, &pending, &waiting);
-                    continue;
-                }
-                admission::Order::Disconnected => return,
-            };
+        let request = match admission::ordered(
+            request,
+            &pending,
+            &mut waiting,
+            halted.is_some(),
+            &send,
+            &observation,
+        ) {
+            admission::Order::Ready(request) => request,
+            admission::Order::Deferred => {
+                observation.finish(super::observability::Outcome::waiting(
+                    waiting_before,
+                    waiting.len(),
+                ));
+                observe_admissions(&observed, &pending, &waiting);
+                continue;
+            }
+            admission::Order::Disconnected => return,
+        };
         let was_halted = halted.is_some();
         let mut predecessor = capture_predecessor(&executor, &request.work, &mut halted);
         let mut followers = if matches!(request.work, Work::Resolve { .. } | Work::CancelAdmission)
@@ -167,7 +175,14 @@ pub(super) fn run(
         observation.execution_finished();
         if let Some(admission) = deferred {
             let waiting_before = waiting.len();
-            if !wait_for_credit(&pending, &mut waiting, request.ticket, admission, &send) {
+            if !wait_for_credit(
+                &pending,
+                &mut waiting,
+                request.ticket,
+                admission,
+                &send,
+                &observation,
+            ) {
                 return;
             }
             observation.finish(super::observability::Outcome::waiting(
@@ -338,9 +353,12 @@ fn wait_for_credit(
     ticket: u64,
     admission: Admission,
     send: &impl Fn(Completion) -> bool,
+    observation: &super::observability::Observation,
 ) -> bool {
     let admitted: usize = pending.values().map(|p| 1 + p.followers.len()).sum();
     if admitted + waiting.len() >= QUEUE_CAPACITY {
+        // The rejection is determined; Finished delivery may block or disconnect.
+        observation.finish(super::observability::Outcome::Error);
         return send(Completion::Finished {
             ticket,
             result: Err(JournalError::QueueFull(

@@ -174,10 +174,15 @@ impl JournalMetrics {
             }
             oldest = Some(oldest.map_or(e.submitted, |old: Instant| old.min(e.submitted)));
         }
+        let store = self.store.get().map(CommitMetricsReader::snapshot);
+        // A failed physical COMMIT requires reopen to establish its durable outcome. Keep this
+        // worker's old cut unknown even if a later scalar publication reuses its cached state.
+        let publication_known =
+            state.publication_known && store.is_none_or(|store| store.commits.failed_commits == 0);
         let age = |then: Instant| micros(self.clock.now().saturating_duration_since(then));
         JournalMetricsSnapshot {
             work,
-            store: self.store.get().map(CommitMetricsReader::snapshot),
+            store,
             queue_wait: self.queue_wait.snapshot(),
             execution: self.execution.snapshot(),
             completion: self.completion.snapshot(),
@@ -193,11 +198,10 @@ impl JournalMetrics {
             group_revision_retries: self.retries.load(Ordering::Relaxed),
             scalar_revision_retries: self.scalar_retries.get().map(|r| r.load(Ordering::Relaxed)),
             oldest_pending_age_us: oldest.map(age),
-            unpublished_age_us: state
-                .publication_known
+            unpublished_age_us: publication_known
                 .then(|| state.unpublished_since.map(age))
                 .flatten(),
-            publication_known: state.publication_known,
+            publication_known,
             open_admissions: state.open_admissions,
             waiting_admissions: state.waiting_admissions,
             admission_bytes_estimate: state.admission_bytes_estimate,

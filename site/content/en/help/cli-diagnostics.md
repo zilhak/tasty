@@ -1,4 +1,4 @@
-<!-- source-hash: 94f690044ab5 -->
+<!-- source-hash: faa11f23a6dd -->
 # CLI response delays and connection diagnostics
 
 Read this page when a `tasty` command replies slowly, cannot connect, or ends with an error such as `Error (-32061)`. It covers the difference between the reply wait bound and the task wait time, what to do for each error code, checking what this Tasty supports, and the connection counts, request queues and database state shown by `tasty list pressure`. If you are new to the CLI, start with [Driving terminals with the tasty CLI](../agents/cli.md).
@@ -83,6 +83,8 @@ Work steps are distinct from user commands, and bytes are input-size estimates. 
 changes, and `logical_requests` counts committed logical requests. Timing distributions use fixed buckets.
 A `null` `dirty_age_us` means this metric does not provide that age. `unpublished_age_us` measures
 waiting for publication acknowledgement after durable storage; reading it does not reset it.
+After an actual SQL commit failure, `publication_known` is `false` and `unpublished_age_us` is `null`.
+The cache stays unknown until a new worker reopens and revalidates the journal.
 Test configurations without a journal return `journal: null`; before the Store opens, `store` is `null`.
 
 ### Connection counts and limits (`connections`)

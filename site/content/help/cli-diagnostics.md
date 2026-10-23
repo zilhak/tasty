@@ -80,6 +80,8 @@ commit 수에 들어가지 않는 데이터베이스 압축(VACUUM)은 `vacuums`
 `logical_requests`는 확정한 논리 요청 수입니다. 시간 분포는 고정 구간에 누적됩니다.
 `dirty_age_us`가 `null`인 것은 이 계측이 그 시간을 제공하지 않는다는 뜻입니다.
 `unpublished_age_us`는 저장 뒤 화면 반영 확인을 기다린 시간이며 조회가 값을 비우지 않습니다.
+실제 SQL commit이 실패해 확정 상태를 다시 확인해야 하면 `publication_known`은 `false`,
+`unpublished_age_us`는 `null`입니다. 이 경우 저널을 다시 열어 검증할 때까지 unknown으로 유지합니다.
 저널이 없는 시험 구성은 `journal: null`, 아직 저장소가 열리지 않았으면 `store: null`입니다.
 권한·한도·빈도 제한의 거절 수는 아래 `gate_refusals`에서 확인합니다.
 

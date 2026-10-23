@@ -108,6 +108,7 @@ pub(super) fn ordered(
     waiting: &mut VecDeque<(u64, Admission)>,
     halted: bool,
     send: &impl Fn(Completion) -> bool,
+    observation: &super::super::observability::Observation,
 ) -> Order {
     if halted || waiting.is_empty() || !matches!(request.work, Work::Admit(_)) {
         return Order::Ready(request);
@@ -116,7 +117,14 @@ pub(super) fn ordered(
         unreachable!("checked admission");
     };
     // A later admission cannot take a credit ahead of an earlier waiting owner.
-    if wait_for_credit(pending, waiting, request.ticket, admission, send) {
+    if wait_for_credit(
+        pending,
+        waiting,
+        request.ticket,
+        admission,
+        send,
+        observation,
+    ) {
         Order::Deferred
     } else {
         Order::Disconnected
