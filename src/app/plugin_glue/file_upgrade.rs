@@ -20,6 +20,15 @@ struct Upgrade {
 }
 
 impl Upgrade {
+    fn fail(self, app: &mut App, mut error: Failure) {
+        error.applied |= self.applied;
+        if !error.details.is_object() {
+            error.details = serde_json::json!({});
+        }
+        error.details["partial"] = serde_json::json!(self.applied);
+        error.details["completed_items"] = serde_json::json!(self.items);
+        (self.finish)(app, Err(error));
+    }
     fn retained_bytes(&self) -> usize {
         self.entries
             .iter()
@@ -139,7 +148,12 @@ impl App {
             mgr.begin_file_swap(&write.id, upgrade.restart && write.stops_running());
         upgrade.applied |= swap;
         let id = write.id.clone();
-        self.after_plugin_retired(id, move |app| {
+        self.after_plugin_retired(id, move |app, retired| {
+            if let Err(mut error) = retired {
+                error.saved = Some(false);
+                upgrade.fail(app, error);
+                return;
+            }
             let Some(config) = app.plugin_manager.as_ref().map(|mgr| mgr.config.clone()) else {
                 (upgrade.finish)(app, Err(Failure::before("plugin manager unavailable")));
                 return;
@@ -165,14 +179,8 @@ impl App {
                         && matches!(written.item.action, BuiltinUpgradeAction::Failed { .. }),
                 },
                 move |app, result| match result {
-                    Err(mut error) => {
-                        error.applied |= upgrade.applied;
-                        if !error.details.is_object() {
-                            error.details = serde_json::json!({});
-                        }
-                        error.details["partial"] = serde_json::json!(upgrade.applied);
-                        error.details["completed_items"] = serde_json::json!(upgrade.items);
-                        (upgrade.finish)(app, Err(error));
+                    Err(error) => {
+                        upgrade.fail(app, error);
                     }
                     Ok(written) => {
                         upgrade.applied |= written.changed;

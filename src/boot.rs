@@ -912,6 +912,7 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<std::process::ExitCode> {
         app.services.poll_file_writer();
         engine.poll_child_registry_effects();
         app.finish_preset_files();
+        app.finish_plugin_files();
         app.services
             .poll_memory_replies(app.plugin_manager.as_mut());
         crate::intent::headless::settle_settings_saves(&mut app.services);
@@ -965,6 +966,7 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<std::process::ExitCode> {
         let deadline =
             crate::app::timers::min_deadline(deadline, app.journal.cleanup_poll_deadline());
         let deadline = crate::app::timers::min_deadline(deadline, app.runner_stop_poll_deadline());
+        let deadline = crate::app::timers::min_deadline(deadline, app.plugin_file_poll_deadline());
         let deadline = if app.journal.is_halted() || app.journal.pauses_observation() {
             deadline
         } else {
@@ -1045,8 +1047,9 @@ fn finish_headless_shutdown(
     app: &mut crate::app::App,
     session: &mut crate::runtime::engine_session::EngineSession,
 ) {
-    // 게이트 결과를 기다리던 요청은 실행하지 않고 종료 오류로 답한다.
     app.services.webhooks.begin_shutdown();
+    let file_drain = file_drain::begin(app, session);
+    // 게이트 결과를 기다리던 요청은 실행하지 않고 종료 오류로 답한다.
     app.gate_queue.reject_all(app.plugin_manager.as_mut());
     drain_headless_publication(app, session);
     app.journal.begin_process_shutdown();
@@ -1083,7 +1086,7 @@ fn finish_headless_shutdown(
         std::thread::sleep(std::time::Duration::from_millis(10));
     }
     observer_drain::drain(app, session);
-    file_drain::drain_engine(app, session);
+    file_drain::drain_engine(app, session, file_drain);
     drain_headless_memory_writer(app);
 }
 
@@ -1094,9 +1097,7 @@ fn drain_headless_memory_writer(app: &mut crate::app::App) {
     let mut drain = crate::app::writer_drain::WriterDrain::default();
     loop {
         let remaining = app.services.poll_memory_writer_shutdown();
-        app.services.poll_file_writer();
-        app.services
-            .poll_memory_replies(app.plugin_manager.as_mut());
+        app.collect_plugin_file_shutdown();
         if !drain.observe_writer(
             remaining,
             app.services.memory_writer_shutdown_report(),

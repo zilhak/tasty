@@ -41,7 +41,10 @@ impl App {
     /// halt 중 이벤트 루프를 깨울 가장 이른 시각. engine 해제·runner 정지 확인과 native 페이지 그림 반영을 합친다.
     pub(crate) fn halted_wake_deadline(&mut self) -> Option<std::time::Instant> {
         use crate::app::timers::min_deadline;
-        let paint = self.halted_webview_paint_deadline();
+        let paint = min_deadline(
+            self.halted_webview_paint_deadline(),
+            self.plugin_file_poll_deadline(),
+        );
         min_deadline(
             min_deadline(
                 self.engine_release_poll_deadline(),

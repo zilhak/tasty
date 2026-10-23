@@ -201,10 +201,14 @@ impl App {
                 crate::app::plugin_file_lifecycle::classify_failure,
                 move |app, result| match result.and_then(|result| result) {
                     Err(error) => finish(app, Err(error)),
-                    Ok(ready) => app.after_plugin_retired(ready.manifest.id.clone(), move |app| {
-                        let result = app.apply_installed(ready);
-                        finish(app, result);
-                    }),
+                    Ok(ready) => {
+                        app.after_plugin_retired(ready.manifest.id.clone(), move |app, retired| {
+                            let result = retired
+                                .map_err(Failure::after_file_receipt)
+                                .and_then(|()| app.apply_installed(ready));
+                            finish(app, result);
+                        })
+                    }
                 },
             );
         })?;

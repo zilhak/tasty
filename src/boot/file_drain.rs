@@ -1,24 +1,62 @@
 //! File writer drain after the headless producers have stopped.
-#[cfg(test)]
-pub(super) fn drain(app: &mut crate::app::App) {
-    drain_with(app, || {});
+use crate::app::{App, writer_drain::WriterDrain};
+use crate::runtime::engine_session::EngineSession;
+
+#[cfg(all(test, target_os = "linux"))]
+pub(super) fn drain(app: &mut App) {
+    drain_with(app, Default::default());
 }
-pub(super) fn drain_engine(
-    app: &mut crate::app::App,
-    session: &mut crate::runtime::engine_session::EngineSession,
-) {
-    drain_with(app, || session.borrow_mut().poll_child_registry_effects());
+pub(super) fn begin(app: &mut App, session: &mut EngineSession) -> WriterDrain {
+    let mut drain = Default::default();
+    drain_plugin_pipelines(app, &mut drain, &mut || {
+        session.borrow_mut().poll_child_registry_effects()
+    });
+    drain
 }
-fn drain_with(app: &mut crate::app::App, mut poll_engine: impl FnMut()) {
-    let mut drain = crate::app::writer_drain::WriterDrain::default();
+pub(super) fn drain_engine(app: &mut App, session: &mut EngineSession, drain: WriterDrain) {
+    drain_with_engine_poll(app, drain, || {
+        session.borrow_mut().poll_child_registry_effects()
+    });
+}
+#[cfg(all(test, target_os = "linux"))]
+pub(super) fn drain_with(app: &mut App, drain: WriterDrain) {
+    drain_with_engine_poll(app, drain, || {});
+}
+fn collect(app: &mut App, poll_engine: &mut impl FnMut()) {
+    app.services.poll_file_writer();
+    poll_engine();
+    app.finish_preset_files();
+    app.finish_plugin_files();
+    crate::intent::headless::settle_settings_saves(&mut app.services);
+    app.services
+        .poll_memory_replies(app.plugin_manager.as_mut());
+}
+fn drain_plugin_pipelines(app: &mut App, drain: &mut WriterDrain, poll_engine: &mut impl FnMut()) {
+    app.stop_plugin_file_producers();
+    loop {
+        reject_new_calls(app.hub.ipc_server.as_deref());
+        collect(app, poll_engine);
+        let pending = app.plugin_files_pending();
+        if !drain.keep_waiting(
+            pending,
+            std::time::Instant::now(),
+            "headless plugin file pipelines exceeded file shutdown deadline",
+        ) {
+            if pending != 0 {
+                app.expire_plugin_file_pipelines();
+                collect(app, poll_engine);
+            }
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+}
+fn drain_with_engine_poll(app: &mut App, mut drain: WriterDrain, mut poll_engine: impl FnMut()) {
+    drain_plugin_pipelines(app, &mut drain, &mut poll_engine);
     loop {
         reject_new_calls(app.hub.ipc_server.as_deref());
         let remaining = app.services.poll_file_writer_shutdown();
-        poll_engine();
-        app.finish_preset_files();
-        crate::intent::headless::settle_settings_saves(&mut app.services);
-        app.services
-            .poll_memory_replies(app.plugin_manager.as_mut());
+        collect(app, &mut poll_engine);
         if !drain.observe_writer(
             remaining,
             app.services.file_writer_shutdown_report(),
@@ -91,5 +129,36 @@ mod capture_file_tests {
     #[test]
     fn app_capture_reply_is_collected_before_timeout_with_later_work() {
         run_case(make_headless, super::drain, true);
+    }
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod plugin_file_shutdown_tests {
+    use crate::app::{
+        plugin_file_lifecycle::shutdown_tests as cases, preset_shutdown_tests::make_headless,
+    };
+    #[test]
+    fn plugin_file_shutdown_retirement_wakes_independently() {
+        cases::retirement_has_an_independent_poll_wake(make_headless);
+    }
+    #[test]
+    fn plugin_file_shutdown_deadline_rechecks_ready_result() {
+        cases::deadline_rechecks_ready_receipt(make_headless);
+    }
+    #[test]
+    fn plugin_file_shutdown_pipeline_keeps_writer_open() {
+        cases::remove_pipeline(make_headless, super::drain_with);
+    }
+    #[test]
+    fn plugin_file_shutdown_collects_final_zero() {
+        cases::final_receipt(make_headless, super::drain_with, false);
+    }
+    #[test]
+    fn plugin_file_shutdown_collects_ready_reply_on_timeout() {
+        cases::final_receipt(make_headless, super::drain_with, true);
+    }
+    #[test]
+    fn plugin_file_shutdown_unknown_and_not_started_reply_once() {
+        cases::active_unknown_and_queued_refusal(make_headless, super::drain_with);
     }
 }

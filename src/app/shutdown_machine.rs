@@ -95,6 +95,7 @@ impl App {
         if self.state.shutdown.is_some() {
             return;
         }
+        self.stop_plugin_file_producers();
         shutdown_trace::mark_start();
         self.state.shutdown = Some(ShutdownState {
             exit_code,
@@ -227,6 +228,7 @@ impl App {
     }
 
     fn shutdown_step(&mut self) -> StepOutcome {
+        self.collect_plugin_file_shutdown();
         let Some(sd) = self.state.shutdown.as_ref() else {
             return StepOutcome::Finished;
         };
@@ -387,6 +389,9 @@ impl App {
     /// 플러그인이 닫힘에 따른 파일·자식 정리를 수행할 기회를 주기 위한 순서다.
     /// 모든 종료 요청을 여기서 보낸 뒤 S4에서 함께 기다린다. shutdown_channel_order가 호출 배치를 검사한다.
     fn shutdown_step_closing_surfaces(&mut self) -> StepOutcome {
+        if self.wait_for_plugin_file_pipelines() {
+            return StepOutcome::Waiting;
+        }
         let remaining = self
             .engines
             .all_sessions_mut()
@@ -553,6 +558,7 @@ impl App {
             self.services.poll_memory_writer_shutdown()
         };
         self.services.poll_file_writer();
+        self.finish_plugin_files();
         self.finish_settings_exports();
         self.services
             .poll_memory_replies(self.plugin_manager.as_mut());
@@ -584,13 +590,34 @@ impl App {
         )
     }
 
+    fn wait_for_plugin_file_pipelines(&mut self) -> bool {
+        self.collect_plugin_file_shutdown();
+        let pending = self.plugin_files_pending();
+        let waiting = self.state.shutdown.as_mut().is_some_and(|state| {
+            state.file_drain.keep_waiting(
+                pending,
+                Instant::now(),
+                "plugin file pipelines exceeded file shutdown deadline",
+            )
+        });
+        if !waiting && pending != 0 {
+            self.expire_plugin_file_pipelines();
+            self.collect_plugin_file_shutdown();
+        }
+        waiting
+    }
+
     /// 설정 저장 producer(설정 intent·plugin 정리)가 멈춘 뒤 확정하지 못한 최신 설정을 한 번 더 넣고
     /// file writer의 접수를 막고 마지막 flush와 join을 같은 기한으로 기다린다. 저장 결과를 기다리던
     /// 요청에도 돌려준다.
     fn wait_for_file_writer_shutdown(&mut self) -> bool {
+        if self.wait_for_plugin_file_pipelines() {
+            return true;
+        }
         let remaining = self.services.poll_file_writer_shutdown();
         self.poll_child_registry_effects();
         self.finish_preset_files();
+        self.finish_plugin_files();
         self.finish_settings_exports();
         self.settle_settings_saves();
         self.services
@@ -723,3 +750,7 @@ mod capture_file_tests {
 
 #[cfg(all(test, target_os = "linux"))]
 mod settings_export_tests;
+
+#[cfg(all(test, target_os = "linux"))]
+#[path = "plugin_file_lifecycle/gui_shutdown_tests.rs"]
+mod plugin_file_shutdown_tests;

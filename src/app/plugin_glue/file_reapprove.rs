@@ -46,9 +46,11 @@ impl App {
                     move |app, result| match result.and_then(|result| result) {
                         Err(error) => finish(app, Err(error)),
                         Ok((manifest, dir, config)) => {
-                            app.after_plugin_retired(manifest.id.clone(), move |app| {
+                            app.after_plugin_retired(manifest.id.clone(), move |app, retired| {
                                 let result =
-                                    app.apply_plugin_registration(manifest, dir, config, false);
+                                    retired.map_err(Failure::after_file_receipt).and_then(|()| {
+                                        app.apply_plugin_registration(manifest, dir, config, false)
+                                    });
                                 finish(app, result);
                             })
                         }

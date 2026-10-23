@@ -393,6 +393,7 @@ fn intercept_app_layer(
             // winit proxy가 없어 성공 응답 뒤 호출자에게 루프 종료를 반환한다.
             #[cfg(debug_assertions)]
             "system.shutdown" => {
+                app.stop_plugin_file_producers();
                 send_response(
                     &cmd.response_tx,
                     crate::ipc::protocol::JsonRpcResponse::success(

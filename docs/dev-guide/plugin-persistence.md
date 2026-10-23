@@ -22,6 +22,14 @@ GUI 부팅 worker의 builtin 설치는 동기 API를 사용할 수 있다. 파�
 
 재귀 디렉터리 삭제가 오류로 끝나면 일부 파일이 이미 삭제되었을 수 있다. 이 경우 디렉터리 결과는 unknown으로 보고하며 완료한 삭제나 삭제 개수를 추측하지 않는다. 아직 실행하지 않은 설정 저장의 saved=false와 앞서 완료한 비활성 효과는 별도로 보존한다.
 
+## 메인 루프와 종료
+
+GUI와 headless는 공용 file receipt를 수거한 뒤 L1 continuation을 진행하고 원 deferred 응답을 처리한다. 구조 journal의 관측 대기 중에도 이미 접수한 파일 완료는 수거한다. retirement 대기만 기존 자식 회수 확인 주기로 독립 wake를 잡으며, worker receipt나 종료 후 Unknown에는 주기 wake를 만들지 않는다. continuation은 다음 파일 명령을 제출할 수 있으므로 완료 수거를 writer 종료와 같게 취급하지 않는다.
+
+종료 시작은 L1의 새 접수를 막는다. plugin 전체 종료 전에 manager를 유지한 채 접수된 다단계 작업을 진행하고, 같은 file writer drain 기한을 마지막 flush·join까지 이어 쓴다. 별도 기한을 새로 시작하지 않는다. 마지막 남은 수가 0이거나 기한을 넘긴 회차에도 receipt·continuation·원 응답을 순서대로 수거한다. 종료 중 enable·builtin 재시작은 수행하지 않는다.
+
+기한이 지나면 아직 worker 결과를 확인하지 못한 명령과 미완료 retirement는 Unknown으로 원 호출자에게 한 번 응답한다. 앞서 확정한 저장·비활성·삭제 효과는 보존한다. 아직 시작하지 않은 큐 명령은 저장 전 거절로 응답하고 실행하지 않는다. 미확정 lifecycle 수는 별도로 남기며 writer 자체의 실제 join 관측으로 지우지 않는다. 이미 생성된 실패 단축키 draft도 미저장 상태로 남는다. 파일 명령은 자동으로 재실행하지 않는다.
+
 ## 검증 경계
 
 호스트 크레이트의 파일 시험은 실제 잠금·외부 편집·실패·조건부 undo·주석·링크·mode를 다룬다. 이 시험만으로 GUI/headless의 공용 writer 주입과 종료 wiring을 증명하지 않는다. 실제 앱 검증은 격리된 데이터 루트와 소유한 가짜 plugin으로 저장 지연 동안 응답·프로세스가 대기하는지, 최종 응답과 종료 drain이 실제 receipt를 반영하는지 확인한다. Windows/macOS의 실행 여부는 Linux 검사 결과와 구분한다.

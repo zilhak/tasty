@@ -1,4 +1,4 @@
-<!-- source-hash: 9b006b13c487 -->
+<!-- source-hash: d561ca548a44 -->
 # Plugins
 
 Use plugins for tools such as Markdown and image viewers or AI agent integrations. Explore the bundled plugins, add new ones, and manage which tools run and what permissions they have.
@@ -11,7 +11,7 @@ Features such as the Markdown viewer, the image viewer and the Claude Code integ
 - The bundled plugins are installed automatically on first launch. After that they can be disabled or removed exactly like plugins you installed yourself. A bundled plugin you removed is not reinstalled on the next launch.
 - When a plugin is disabled, the Surface kinds · commands · menu items it added disappear with it. This takes effect right away when you disable or remove it while Tasty is running: opening a new Surface of such a kind fails with the reason that the plugin providing it is turned off or has not reconnected yet. Surfaces you already opened stay as they are and pick up again when you enable the plugin, but their scroll position and any unsaved content are lost.
 
-When you enable or disable a plugin or change its permissions, Tasty confirms the save before applying the runtime change. Installation and trust choices also report their result after saving. A failed or unconfirmed save is not reported as success.
+When you enable or disable a plugin or change its permissions, Tasty confirms the save before applying the runtime change. Installation and trust choices also report their result after saving. A failed or unconfirmed save is not reported as success. An enable saved during shutdown takes effect on the next launch; shutdown does not start a new plugin process. A change whose result remains unconfirmed at the shutdown deadline is not reported as successful or automatically replayed.
 
 ## Bundled plugins
 

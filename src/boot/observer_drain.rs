@@ -17,6 +17,7 @@ pub(super) fn drain(
         app.services.poll_memory_writer();
         app.services.poll_file_writer();
         session.borrow_mut().poll_child_registry_effects();
+        app.finish_plugin_files();
         crate::intent::headless::settle_settings_saves(&mut app.services);
         app.services
             .poll_memory_replies(app.plugin_manager.as_mut());

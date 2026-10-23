@@ -3,6 +3,7 @@
 pub(crate) mod post_commit;
 
 mod retained;
+mod shutdown;
 
 use super::{App, file_writer::command};
 use retained::{Budget, Held};
@@ -101,6 +102,10 @@ struct Pipeline {
 type Finish = Box<dyn FnOnce(&mut App)>;
 trait Pending {
     fn ready(&mut self, app: &mut App) -> Option<Finish>;
+    fn expire(self: Box<Self>) -> Finish;
+    fn poll_deadline(&self) -> Option<std::time::Instant> {
+        None
+    }
 }
 struct Accepted<T, F> {
     receipt: command::Ticket<T>,
@@ -111,6 +116,10 @@ struct Accepted<T, F> {
 impl<T: Send + 'static, F: FnOnce(&mut App, Result<T, Failure>) + 'static> Pending
     for Accepted<T, F>
 {
+    fn expire(mut self: Box<Self>) -> Finish {
+        let finish = self.finish.take().expect("file continuation consumed once");
+        Box::new(move |app| finish(app, Err(Failure::shutdown_unknown())))
+    }
     fn ready(&mut self, app: &mut App) -> Option<Finish> {
         let output = self.receipt.poll()?.map_err(|error| Failure {
             message: error.message,
@@ -133,9 +142,22 @@ impl<T: Send + 'static, F: FnOnce(&mut App, Result<T, Failure>) + 'static> Pendi
 }
 struct Retired {
     id: String,
-    finish: Option<Finish>,
+    finish: Option<RetirementFinish>,
 }
+type RetirementFinish = Box<dyn FnOnce(&mut App, Result<(), Failure>)>;
 impl Pending for Retired {
+    fn poll_deadline(&self) -> Option<std::time::Instant> {
+        Some(std::time::Instant::now() + tasty_host_plugin::process::CHILD_EXIT_POLL_INTERVAL)
+    }
+    fn expire(mut self: Box<Self>) -> Finish {
+        let finish = self
+            .finish
+            .take()
+            .expect("retirement continuation consumed once");
+        let mut error = Failure::shutdown_unknown();
+        error.details["retirement_outcome"] = serde_json::json!("unknown");
+        Box::new(move |app| finish(app, Err(error)))
+    }
     fn ready(&mut self, app: &mut App) -> Option<Finish> {
         if app
             .plugin_manager
@@ -144,7 +166,8 @@ impl Pending for Retired {
         {
             return None;
         }
-        self.finish.take()
+        let finish = self.finish.take()?;
+        Some(Box::new(move |app| finish(app, Ok(()))))
     }
 }
 #[derive(Default)]
@@ -154,6 +177,8 @@ pub(crate) struct PluginFiles {
     current: Option<Pipeline>,
     active: Option<Box<dyn Pending>>,
     closed: bool,
+    expired: bool,
+    unresolved: usize,
     #[cfg(feature = "gui")]
     pub(crate) shortcuts:
         Option<std::rc::Rc<std::cell::RefCell<super::plugin_glue::shortcut::Draft>>>,
@@ -388,14 +413,31 @@ impl App {
         self.plugin_files.closed = true;
     }
     pub(crate) fn plugin_files_pending(&self) -> usize {
-        self.plugin_files.pending()
+        self.plugin_files
+            .pending()
+            .saturating_add(self.plugin_files.unresolved)
     }
 
     pub(crate) fn after_plugin_retired(
         &mut self,
         id: String,
-        finish: impl FnOnce(&mut App) + 'static,
+        finish: impl FnOnce(&mut App, Result<(), Failure>) + 'static,
     ) {
+        if self.plugin_files.expired {
+            let retired = self
+                .plugin_manager
+                .as_mut()
+                .is_none_or(|manager| manager.poll_file_retirement(&id));
+            if retired {
+                finish(self, Ok(()));
+            } else {
+                self.plugin_files.unresolved += 1;
+                let mut error = Failure::shutdown_unknown();
+                error.details["retirement_outcome"] = serde_json::json!("unknown");
+                finish(self, Err(error));
+            }
+            return;
+        }
         let retained = self
             .plugin_files
             .current
@@ -422,6 +464,15 @@ impl App {
         classify: impl FnOnce(&T) -> command::CommandDisposition + Send + 'static,
         finish: impl FnOnce(&mut App, Result<T, Failure>) + 'static,
     ) {
+        if self.plugin_files.expired {
+            finish(
+                self,
+                Err(Failure::before(
+                    "plugin file operation not started before shutdown deadline",
+                )),
+            );
+            return;
+        }
         let (bytes, extra_retained_bytes) = bytes;
         let context_bytes = match self.plugin_files.begin_work(
             bytes,
@@ -485,3 +536,9 @@ mod shortcut_tests;
 
 #[cfg(test)]
 mod classification_tests;
+
+#[cfg(all(test, target_os = "linux"))]
+pub(crate) mod shutdown_tests;
+
+#[cfg(all(test, feature = "gui", target_os = "linux"))]
+pub(crate) mod native_tests;

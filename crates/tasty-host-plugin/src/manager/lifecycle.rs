@@ -252,8 +252,7 @@ impl PluginManager {
     /// Removal waits on the existing reaper without blocking the event loop or reviving a plugin.
     pub fn poll_file_retirement(&mut self, id: &str) -> bool {
         self.cancel_respawn_after_retire(id);
-        self.settle_finished_retirements_in_place();
-        !self.is_retiring(id)
+        self.poll_file_retirement_in_place(id)
     }
 
     /// Retire a running generation for an accepted file swap; the caller polls its completion.

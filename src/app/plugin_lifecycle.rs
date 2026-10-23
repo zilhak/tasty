@@ -59,8 +59,10 @@ impl App {
                         if let ConfigChange::Enabled { id, enabled: true } = &change
                             && !app.plugin_files.stopping()
                         {
-                            app.after_plugin_retired(id.clone(), move |app| {
-                                let result = app.apply_plugin_config(config, &change);
+                            app.after_plugin_retired(id.clone(), move |app, retired| {
+                                let result = retired
+                                    .map_err(Failure::after_file_receipt)
+                                    .and_then(|()| app.apply_plugin_config(config, &change));
                                 finish(app, result);
                             });
                             return;

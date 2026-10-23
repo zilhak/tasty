@@ -265,6 +265,28 @@ impl PluginManager {
         self.retiring.contains_key(plugin_id)
     }
 
+    /// File continuations also run when the ordinary Retire tick is paused for shutdown.
+    pub(super) fn poll_file_retirement_in_place(&mut self, id: &str) -> bool {
+        if self.retiring.get(id).is_some_and(Retiring::is_finished)
+            && let Some(retiring) = self.retiring.remove(id)
+        {
+            let ms = retiring
+                .settled_ms
+                .unwrap_or_else(|| retiring.started.elapsed().as_secs_f64() * 1000.0);
+            let outcome = self.settle_retired(retiring);
+            tracing::info!(
+                plugin_id = id,
+                ms,
+                reason = outcome.as_str(),
+                "plugin process retired"
+            );
+            if self.retiring.is_empty() {
+                self.timers.cancel(PluginTick::Retire);
+            }
+        }
+        !self.is_retiring(id)
+    }
+
     /// Transfer a pending restart to an ordered file operation without waiting.
     pub fn take_file_restart(&mut self, plugin_id: &str) -> bool {
         let restart = self.retiring.get(plugin_id).is_some_and(|r| r.respawn);

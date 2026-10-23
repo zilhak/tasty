@@ -47,8 +47,12 @@ impl App {
             },
             move |app, result| match result {
                 Err(error) => finish(app, Err(error)),
-                Ok(_) => app.after_plugin_retired(id.clone(), move |app| {
-                    app.remove_plugin_files(id, root, known, finish)
+                Ok(_) => app.after_plugin_retired(id.clone(), move |app, retired| match retired {
+                    Ok(()) => app.remove_plugin_files(id, root, known, finish),
+                    Err(mut error) => {
+                        error.saved = Some(false);
+                        finish(app, Err(after_disable(error)));
+                    }
                 }),
             },
         );

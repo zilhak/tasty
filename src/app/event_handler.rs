@@ -430,6 +430,10 @@ impl ApplicationHandler<AppEvent> for App {
             return;
         }
 
+        if self.plugin_files_pending() != 0 {
+            self.collect_plugin_file_shutdown();
+        }
+
         if self.journal.is_halted() {
             self.surface_halt_notice();
             self.ipc_pacer.loop_reached_about_to_wait();
@@ -469,12 +473,7 @@ impl ApplicationHandler<AppEvent> for App {
         self.poll_port_scans();
         self.poll_explorer_files();
         self.services.poll_memory_writer();
-        self.services.poll_file_writer();
-        self.poll_child_registry_effects();
-        self.finish_preset_files();
-        self.finish_settings_exports();
-        self.services
-            .poll_memory_replies(self.plugin_manager.as_mut());
+        self.collect_plugin_file_shutdown();
         self.services.poll_state_writer();
         self.settle_settings_saves();
         self.run_telemetry_follow_ups();
@@ -2076,6 +2075,7 @@ impl App {
         let deadline = min_deadline(deadline, self.journal.cleanup_poll_deadline());
         let deadline = min_deadline(deadline, self.engine_release_poll_deadline());
         let deadline = min_deadline(deadline, self.runner_stop_poll_deadline());
+        let deadline = min_deadline(deadline, self.plugin_file_poll_deadline());
         let deadline = if self.journal.pauses_observation() {
             deadline
         } else {

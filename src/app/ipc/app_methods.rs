@@ -29,6 +29,7 @@ impl App {
         }
         #[cfg(debug_assertions)]
         if cmd.request.method == "system.shutdown" {
+            self.stop_plugin_file_producers();
             let response = host_ipc::protocol::JsonRpcResponse::success(
                 cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
                 serde_json::json!({"shutdown": true}),

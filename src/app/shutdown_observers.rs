@@ -7,6 +7,7 @@ impl App {
         let progress = self.shutdown_poll_observer_sinks();
         self.services.poll_memory_writer();
         self.services.poll_file_writer();
+        self.finish_plugin_files();
         self.settle_settings_saves();
         self.services
             .poll_memory_replies(self.plugin_manager.as_mut());
