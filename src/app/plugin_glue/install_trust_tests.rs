@@ -1,6 +1,6 @@
 use super::*;
 use tasty_host_plugin::known_plugins::KnownPlugins;
-use tasty_host_plugin::trust_verdict::sign_manifest_for_tests;
+use tasty_host_plugin::trust_verdict::{judge, sign_manifest_for_tests};
 
 const ID: &str = "com.example.install-trust";
 
@@ -45,6 +45,16 @@ fn an_unverified_plugin_needs_an_explicit_choice_and_records_nothing_without_one
         .expect("the refusal carries the cause");
     assert_eq!(refused.cause, UnverifiedCause::Unsigned);
     assert!(err.to_string().contains("no signature"), "{err}");
+    let response = install_error_response(serde_json::json!(73), &err);
+    assert_eq!(response.id, serde_json::json!(73));
+    assert_eq!(
+        response.error.as_ref().unwrap().data.as_ref().unwrap()["plugin_id"],
+        ID
+    );
+    assert_eq!(
+        response.error.as_ref().unwrap().data.as_ref().unwrap()["unverified"],
+        "unsigned"
+    );
     assert!(
         KnownPlugins::load()
             .expect("load")

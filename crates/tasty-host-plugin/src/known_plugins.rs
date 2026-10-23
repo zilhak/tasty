@@ -19,8 +19,7 @@
 //! `unverified` 는 키를 신뢰할 수 없는 플러그인을 사용자가 경고를 보고 쓰기로 고른 기록이다.
 //! 매니페스트 내용이 바뀌면 기록과 맞지 않아 다시 묻는다.
 //!
-//! 파일 갱신은 read → 변경 → write이며 동시 쓰기를 직렬화하지 않는다.
-//! 따라서 여러 쓰기가 겹치면 변경을 잃을 수 있다.
+//! 참여자 잠금 안에서 최신 문서를 병합하고 공용 안전 교체로 기록한다.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -32,6 +31,8 @@ use serde::{Deserialize, Serialize};
 /// 사용자 데이터 루트의 외부 plugin 신뢰 목록.
 #[derive(Debug, Default, Clone, Deserialize, Serialize)]
 pub struct KnownPlugins {
+    #[serde(skip)]
+    pub(crate) origin: Option<crate::file_persistence::Origin>,
     /// plugin_id → entry. `BTreeMap` 으로 toml dump 시 순서 안정.
     #[serde(default)]
     plugins: BTreeMap<String, KnownPluginEntry>,
@@ -52,7 +53,7 @@ pub struct UnverifiedChoice {
 }
 
 /// 단일 plugin 의 trust 항목.
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct KnownPluginEntry {
     /// base64-encoded 32-byte ed25519 pubkey.
     pub pubkey: String,
@@ -96,30 +97,29 @@ impl KnownPlugins {
         let Some(path) = Self::path() else {
             return Ok(Self::default());
         };
-        match std::fs::read_to_string(&path) {
-            Ok(text) => toml::from_str::<Self>(&text)
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e)),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Self::default()),
-            Err(e) => Err(e),
-        }
+        Self::load_from(path)
     }
 
-    /// 파일에 atomic write — `<path>.tmp` 에 쓴 후 rename. 부모 디렉토리가 없으면
-    /// 생성한다.
+    pub fn load_from(path: PathBuf) -> std::io::Result<Self> {
+        let table = crate::file_persistence::read(&path)?;
+        let mut known: Self = crate::file_persistence::decode(&table)?;
+        known.origin = Some(crate::file_persistence::Origin::new(
+            path,
+            Ok(crate::file_persistence::encode(&known)?),
+        ));
+        Ok(known)
+    }
+
+    /// Latest document edit under one participating lock. Runtime callers execute on the file worker.
+    pub fn update<T>(edit: impl FnOnce(&mut Self) -> std::io::Result<T>) -> std::io::Result<T> {
+        let path = Self::path()
+            .ok_or_else(|| std::io::Error::other("known-plugins.toml path unavailable"))?;
+        crate::file_persistence::update_known(&path, edit)
+    }
+
+    /// Synchronizing callers wait for secure replacement; runtime submits the owned update instead.
     pub fn save(&self) -> std::io::Result<()> {
-        let Some(path) = Self::path() else {
-            return Err(std::io::Error::other(
-                "tasty_home unavailable; cannot persist known-plugins.toml",
-            ));
-        };
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        let serialized = toml::to_string_pretty(self).map_err(std::io::Error::other)?;
-        let tmp = path.with_extension("toml.tmp");
-        std::fs::write(&tmp, serialized)?;
-        std::fs::rename(&tmp, &path)?;
-        Ok(())
+        crate::file_persistence::save_known(self)
     }
 
     /// plugin_id 로 entry 조회. 없으면 None.

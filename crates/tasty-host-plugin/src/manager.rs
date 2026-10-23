@@ -2,6 +2,8 @@
 //! GUI 부팅은 활성 plugin을 시작하고 headless는 필요한 시점에 시작할 수 있다.
 //! pump가 응답·이벤트·주기 작업을 처리하며 종료 시 shutdown_all로 정리한다.
 
+pub mod file_config;
+
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};

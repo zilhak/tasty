@@ -65,6 +65,7 @@ mod offview_window_events;
 pub(crate) mod persistence;
 pub(crate) mod plugin_events;
 pub(crate) mod plugin_failure_notice;
+pub(crate) mod plugin_file_lifecycle;
 #[cfg(feature = "gui")]
 pub(crate) mod plugin_glue;
 pub(crate) mod plugin_lifecycle;
@@ -218,6 +219,7 @@ pub(crate) struct App {
     #[cfg(feature = "gui")]
     pub(crate) modal_shake: Option<ModalShake>,
     pub(crate) plugin_manager: Option<plugin::PluginManager>,
+    pub(crate) plugin_files: plugin_file_lifecycle::PluginFiles,
     /// VM은 전용 워커 스레드가 소유한다. 초기화 실패 시 None.
     pub(crate) lua_engine: Option<tasty_lua::LuaEngine>,
     /// 자동실행 스크립트가 일으킨 이벤트로 같은 스크립트를 다시 실행하지 않게 한다.
@@ -396,6 +398,7 @@ impl App {
             tray_menu_ids: None,
             modal_shake: None,
             plugin_manager: None,
+            plugin_files: Default::default(),
             lua_engine: crate::hooks::lua::init_engine(),
             lua_autofire: crate::hooks::autofire::AutofireGuard::new(),
             lua_runs: crate::hooks::lua_runs::LuaRuns::default(),
@@ -461,6 +464,7 @@ impl App {
             stream_inbound_rx,
             remote_file_jobs: Default::default(),
             plugin_manager: None,
+            plugin_files: Default::default(),
             lua_engine: crate::hooks::lua::init_engine(),
             lua_autofire: crate::hooks::autofire::AutofireGuard::new(),
             lua_runs: crate::hooks::lua_runs::LuaRuns::default(),

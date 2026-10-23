@@ -1,84 +1,220 @@
-//! 플러그인 enable/disable 실행. GUI·헤드리스·IPC가 같은 함수를 사용한다.
-//!
-//! 요청 decode와 외부 오류 코드 매핑은 IPC 어댑터가 맡는다. 여기서는 매니저 변경,
-//! surface kind 철회, 결과 CoreEvent 생성만 한다. 이벤트 소비는 호출자가 맡는다.
-
+use super::App;
+use super::plugin_file_lifecycle::{Failure, Reply};
 use crate::app::command::CoreEvent;
-use crate::plugin::PluginManager;
-use crate::runtime::surface_registry::SurfaceKindRegistry;
+#[cfg(feature = "gui")]
+use crate::app::command::PluginRegistryChange;
+use serde_json::{Value, json};
+use tasty_host_plugin::manager::file_config::ConfigChange;
 
-/// 생명주기 중 enable/disable만 다룬다. 설치·삭제·권한 변경은 별도 경로다.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum PluginToggle {
-    Enable,
-    Disable,
-}
-
-/// 지정한 토글을 실행한다.
-pub(crate) fn toggle(
-    mgr: Option<&mut PluginManager>,
-    registry: &SurfaceKindRegistry,
-    toggle: PluginToggle,
-    plugin_id: String,
-) -> anyhow::Result<Vec<CoreEvent>> {
-    match toggle {
-        PluginToggle::Enable => enable(mgr, plugin_id),
-        PluginToggle::Disable => disable(mgr, registry, plugin_id),
+impl App {
+    /// Preparation happens in admission order, after the preceding receipt updated the cache.
+    pub(crate) fn enqueue_plugin_config(
+        &mut self,
+        change: ConfigChange,
+        finish: impl FnOnce(&mut App, Result<Value, Failure>) + 'static,
+    ) -> Result<(), Failure> {
+        self.plugin_files.enqueue(move |app| {
+            app.start_plugin_config(change, finish);
+        })?;
+        (self.services.reply_wake())();
+        Ok(())
     }
-}
 
-/// 지정한 플러그인만 시작한다.
-pub(crate) fn enable(
-    mgr: Option<&mut PluginManager>,
-    plugin_id: String,
-) -> anyhow::Result<Vec<CoreEvent>> {
-    let Some(mgr) = mgr else {
-        anyhow::bail!("plugin manager not initialized");
-    };
-    mgr.enable(&plugin_id)?;
-    Ok(vec![CoreEvent::PluginEnableToggled {
-        plugin_id,
-        enabled: true,
-    }])
-}
-
-/// 실행 중이었다면 PluginUnloaded를 내고 선언한 surface kind도 등록 해제한다.
-/// 종료 이유는 User다. remove는 매니저를 직접 호출하므로 App::plugin_remove에서 종류를 해제한다.
-pub(crate) fn disable(
-    mgr: Option<&mut PluginManager>,
-    registry: &SurfaceKindRegistry,
-    plugin_id: String,
-) -> anyhow::Result<Vec<CoreEvent>> {
-    let Some(mgr) = mgr else {
-        anyhow::bail!("plugin manager not initialized");
-    };
-    let was_running = mgr.is_running(&plugin_id);
-    mgr.disable(&plugin_id)?;
-    registry.withdraw_plugin(&plugin_id);
-    let mut events = vec![CoreEvent::PluginEnableToggled {
-        plugin_id: plugin_id.clone(),
-        enabled: false,
-    }];
-    if was_running {
-        events.push(CoreEvent::PluginUnloaded {
-            plugin_id,
-            reason: tasty_plugin_protocol::events::LifecycleReason::User,
-        });
-    }
-    Ok(events)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_toggle_without_a_manager_reports_the_same_error() {
-        let registry = SurfaceKindRegistry::new();
-        for t in [PluginToggle::Enable, PluginToggle::Disable] {
-            let err = toggle(None, &registry, t, "com.example.x".into())
-                .expect_err("매니저 없이 성공하면 안 된다");
-            assert_eq!(err.to_string(), "plugin manager not initialized", "{t:?}");
+    pub(crate) fn start_plugin_config(
+        &mut self,
+        change: ConfigChange,
+        finish: impl FnOnce(&mut App, Result<Value, Failure>) + 'static,
+    ) {
+        let app = self;
+        let request = app
+            .plugin_manager
+            .as_ref()
+            .ok_or_else(|| Failure::before("plugin manager not initialized"))
+            .and_then(|mgr| mgr.prepare_config_change(&change).map_err(Failure::before));
+        match request {
+            Err(error) => finish(app, Err(error)),
+            Ok(request) => app.run_plugin_file(
+                request.retained_bytes(),
+                move || request.execute().map_err(|e| e.to_string()),
+                |result| match result {
+                    Ok(config) => super::file_writer::command::value_bytes(config),
+                    Err(e) => e.len(),
+                },
+                crate::app::plugin_file_lifecycle::classify_result,
+                move |app, result| match result.and_then(|result| result.map_err(Failure::before)) {
+                    Err(error) => finish(app, Err(error)),
+                    Ok(config) => {
+                        if let ConfigChange::Enabled { id, enabled: true } = &change
+                            && !app.plugin_files.stopping()
+                        {
+                            app.after_plugin_retired(id.clone(), move |app| {
+                                let result = app.apply_plugin_config(config, &change);
+                                finish(app, result);
+                            });
+                            return;
+                        }
+                        let result = app.apply_plugin_config(config, &change);
+                        finish(app, result);
+                    }
+                },
+            ),
         }
+    }
+
+    pub(crate) fn reply_plugin_config(
+        &mut self,
+        id: Value,
+        change: ConfigChange,
+    ) -> tasty_ipc::protocol::JsonRpcResponse {
+        let verb = match &change {
+            ConfigChange::Enabled { enabled: true, .. } => Some("enable"),
+            ConfigChange::Enabled { enabled: false, .. } => Some("disable"),
+            _ => None,
+        };
+        let reply = Reply::default();
+        let done = reply.clone();
+        if let Err(error) = self.enqueue_plugin_config(change, move |_, result| {
+            done.finish(result.map_err(|mut error| {
+                if let Some(verb) = verb {
+                    error.message = format!("{verb} failed: {}", error.message);
+                }
+                error
+            }));
+        }) {
+            let mut error = error;
+            if let Some(verb) = verb {
+                error.message = format!("{verb} failed: {}", error.message);
+            }
+            reply.finish(Err(error));
+        }
+        self.plugin_file_reply(id, reply)
+    }
+
+    pub(crate) fn plugin_file_reply(
+        &self,
+        id: Value,
+        reply: Reply,
+    ) -> tasty_ipc::protocol::JsonRpcResponse {
+        self.services.reply_with_file(
+            id.clone(),
+            move || reply.poll(),
+            move |_, result| match result {
+                Ok(body) => tasty_ipc::protocol::JsonRpcResponse::success(id, body),
+                Err(error) => {
+                    let data = error.response_data();
+                    tasty_ipc::protocol::JsonRpcResponse::error_with_data(
+                        id,
+                        -32000,
+                        error.message,
+                        data,
+                    )
+                }
+            },
+        )
+    }
+
+    fn apply_plugin_config(
+        &mut self,
+        config: tasty_host_plugin::PluginsConfig,
+        change: &ConfigChange,
+    ) -> Result<Value, Failure> {
+        if self.plugin_files.stopping()
+            && matches!(change, ConfigChange::Enabled { enabled: true, .. })
+        {
+            if let Some(mgr) = self.plugin_manager.as_mut() {
+                mgr.config = config;
+            }
+            return Err(Failure {
+                message: "plugin enable saved for next start; host is shutting down".into(),
+                saved: Some(true),
+                applied: false,
+                details: Value::Null,
+            });
+        }
+        let mgr = self.plugin_manager.as_mut().ok_or_else(|| Failure {
+            message: "plugin manager disappeared after file commit".into(),
+            saved: Some(true),
+            applied: false,
+            details: Value::Null,
+        })?;
+        let was_running = match change {
+            ConfigChange::Enabled { id, .. } => mgr.is_running(id),
+            _ => false,
+        };
+        mgr.apply_config_change(config, change)
+            .map_err(|e| Failure {
+                message: e.to_string(),
+                saved: Some(true),
+                applied: false,
+                details: Value::Null,
+            })?;
+        let (body, events) = config_result(mgr, change, was_running);
+        if let ConfigChange::Enabled { id, enabled: false } = change {
+            self.services
+                .registries
+                .surface_registry
+                .withdraw_plugin(id);
+        }
+        #[cfg(feature = "gui")]
+        self.cascade_plugin_events(events);
+        #[cfg(not(feature = "gui"))]
+        crate::app::plugin_events::cascade_toggle_events_headless(
+            self.plugin_manager.as_mut().expect("manager checked"),
+            &self.services.registries.plugin_hook_events,
+            events,
+        );
+        Ok(body)
+    }
+}
+
+fn config_result(
+    mgr: &crate::plugin::PluginManager,
+    change: &ConfigChange,
+    was_running: bool,
+) -> (Value, Vec<CoreEvent>) {
+    match change {
+        ConfigChange::Enabled { id, enabled } => {
+            let mut body = if *enabled {
+                json!({"enabled":id})
+            } else {
+                json!({"disabled":id})
+            };
+            if *enabled {
+                body["start"] = crate::ipc::handler::plugin::start_json(mgr.start_status(id));
+            }
+            let mut events = vec![CoreEvent::PluginEnableToggled {
+                plugin_id: id.clone(),
+                enabled: *enabled,
+            }];
+            if !enabled && was_running {
+                events.push(CoreEvent::PluginUnloaded {
+                    plugin_id: id.clone(),
+                    reason: tasty_plugin_protocol::events::LifecycleReason::User,
+                });
+            }
+            (body, events)
+        }
+        ConfigChange::Permission { id, token, grant } => {
+            #[cfg(feature = "gui")]
+            let events = vec![CoreEvent::PluginRegistryChanged {
+                plugin_id: id.clone(),
+                change: if *grant {
+                    PluginRegistryChange::PermissionGranted {
+                        permission: token.clone(),
+                    }
+                } else {
+                    PluginRegistryChange::PermissionRevoked {
+                        permission: token.clone(),
+                    }
+                },
+            }];
+            #[cfg(not(feature = "gui"))]
+            let events = {
+                let _grant = grant;
+                Vec::new()
+            };
+            (json!({"id":id,"permission":token}), events)
+        }
+        ConfigChange::Shortcuts(_) => (json!({}), vec![]),
     }
 }

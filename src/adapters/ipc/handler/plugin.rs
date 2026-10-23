@@ -46,7 +46,7 @@ fn failure_json(failure: Option<&tasty_host_plugin::manager::PluginFailure>) -> 
 }
 
 /// 가장 최근 기동 요청의 세대와 상태(`starting`·`connected`·`failed`·`cancelled`).
-fn start_json(status: Option<&tasty_host_plugin::manager::StartStatus>) -> Value {
+pub(crate) fn start_json(status: Option<&tasty_host_plugin::manager::StartStatus>) -> Value {
     match status {
         Some(s) => json!({
             "generation": s.generation,
@@ -453,60 +453,29 @@ pub fn is_lifecycle_toggle_method(method: &str) -> bool {
     LIFECYCLE_TOGGLE_METHODS.contains(&method)
 }
 
-/// 생명주기 토글을 처리하고 CoreEvent의 후속 처리는 호출자에게 맡긴다.
-pub fn dispatch_lifecycle_toggle(
-    mgr: Option<&mut PluginManager>,
-    registry: &crate::runtime::surface_registry::SurfaceKindRegistry,
+/// Both routers defer the original response until the shared worker receipt and runtime effects.
+pub(crate) fn dispatch_lifecycle_toggle(
+    app: &mut crate::app::App,
     method: &str,
     id: Value,
     params: &Value,
-) -> Option<(JsonRpcResponse, Vec<crate::app::command::CoreEvent>)> {
-    use crate::app::plugin_lifecycle::PluginToggle;
-
+) -> Option<JsonRpcResponse> {
     if !is_lifecycle_toggle_method(method) {
         return None;
     }
-    let plugin_id = match params.get("id").and_then(|v| v.as_str()) {
-        Some(s) => s.to_string(),
-        None => {
-            return Some((
-                JsonRpcResponse::invalid_params(id, "Missing 'id' parameter"),
-                Vec::new(),
-            ));
-        }
+    let Some(plugin_id) = params.get("id").and_then(Value::as_str) else {
+        return Some(JsonRpcResponse::invalid_params(
+            id,
+            "Missing 'id' parameter",
+        ));
     };
-    let pid_for_response = plugin_id.clone();
-    let (verb, key, toggle) = match method {
-        "plugin.enable" => ("enable", "enabled", PluginToggle::Enable),
-        "plugin.disable" => ("disable", "disabled", PluginToggle::Disable),
-        other => {
-            return Some((
-                JsonRpcResponse::internal_error(
-                    id,
-                    format!("LIFECYCLE_TOGGLE_METHODS 에 '{other}' 가 있으나 dispatch arm 이 없다"),
-                ),
-                Vec::new(),
-            ));
-        }
-    };
-    let mut mgr = mgr;
-    let result =
-        crate::app::plugin_lifecycle::toggle(mgr.as_deref_mut(), registry, toggle, plugin_id);
-    let response = match result {
-        Ok(events) => {
-            // enable 은 연결을 기다리지 않는다. 호출자는 이 세대로 `plugin.show` 의 `start` 를 본다.
-            let mut body = json!({ key: pid_for_response });
-            if method == "plugin.enable" {
-                body["start"] = start_json(
-                    mgr.as_deref()
-                        .and_then(|m| m.start_status(&pid_for_response)),
-                );
-            }
-            return Some((JsonRpcResponse::success(id, body), events));
-        }
-        Err(e) => JsonRpcResponse::error(id, -32000, format!("{verb} failed: {e}")),
-    };
-    Some((response, Vec::new()))
+    Some(app.reply_plugin_config(
+        id,
+        tasty_host_plugin::manager::file_config::ConfigChange::Enabled {
+            id: plugin_id.to_owned(),
+            enabled: method == "plugin.enable",
+        },
+    ))
 }
 
 #[cfg(test)]

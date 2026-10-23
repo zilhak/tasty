@@ -11,7 +11,7 @@ use sha2::{Digest, Sha256};
 
 use crate::bundle_sig::{
     SigVerifyError, TrustDecision, UntrustedReason, parse_manifest_basics, pubkey_fingerprint,
-    read_pubkey_sidecar, signature_verifies_with, verify_bundle_signature,
+    read_pubkey_sidecar, signature_verifies_with,
 };
 use crate::known_plugins::{KnownPluginEntry, KnownPlugins, UnverifiedChoice};
 
@@ -84,8 +84,12 @@ pub enum TrustVerdict {
 
 /// 서명과 신뢰 DB, 미인증 선택 기록으로 판정한다.
 pub fn judge(dir: &Path) -> TrustVerdict {
-    match judge_signature(dir) {
-        TrustVerdict::Unverified(_) if unverified_choice_matches(dir) => {
+    judge_with(dir, &KnownPlugins::load().unwrap_or_default())
+}
+
+pub fn judge_with(dir: &Path, known: &KnownPlugins) -> TrustVerdict {
+    match judge_signature_with(dir, known) {
+        TrustVerdict::Unverified(_) if unverified_choice_matches(dir, known) => {
             TrustVerdict::AcceptedUnverified
         }
         verdict => verdict,
@@ -94,7 +98,11 @@ pub fn judge(dir: &Path) -> TrustVerdict {
 
 /// 미인증 선택 기록을 보지 않고 서명과 키 신뢰만으로 판정한다.
 pub fn judge_signature(dir: &Path) -> TrustVerdict {
-    match verify_bundle_signature(dir) {
+    judge_signature_with(dir, &KnownPlugins::load().unwrap_or_default())
+}
+
+pub fn judge_signature_with(dir: &Path, known: &KnownPlugins) -> TrustVerdict {
+    match crate::bundle_sig::verify_bundle_signature_with(dir, known) {
         Ok(TrustDecision::Trusted) => TrustVerdict::Trusted,
         Ok(TrustDecision::Untrusted {
             fingerprint,
@@ -165,17 +173,10 @@ pub fn manifest_sha256(dir: &Path) -> std::io::Result<String> {
 }
 
 /// 이 폴더의 매니페스트 ID에 같은 내용으로 고른 미인증 선택 기록이 있는지.
-fn unverified_choice_matches(dir: &Path) -> bool {
+fn unverified_choice_matches(dir: &Path, known: &KnownPlugins) -> bool {
     let (plugin_id, _) = parse_manifest_basics(dir);
     let Ok(digest) = manifest_sha256(dir) else {
         return false;
-    };
-    let known = match KnownPlugins::load() {
-        Ok(k) => k,
-        Err(e) => {
-            tracing::warn!("known-plugins.toml load failed: {e}");
-            return false;
-        }
     };
     known
         .unverified_choice(&plugin_id)
@@ -185,36 +186,61 @@ fn unverified_choice_matches(dir: &Path) -> bool {
 /// 신뢰 DB에서 한 플러그인 ID의 두 기록을 바꾸기 전 값. 실패한 설치·등록을 되돌린다.
 #[derive(Debug, Clone)]
 pub struct TrustRecordUndo {
+    path: std::path::PathBuf,
     plugin_id: String,
     entry: Option<KnownPluginEntry>,
     unverified: Option<UnverifiedChoice>,
+    expected: Option<(Option<KnownPluginEntry>, Option<UnverifiedChoice>)>,
 }
 
 impl TrustRecordUndo {
-    fn capture(db: &KnownPlugins, plugin_id: &str) -> Self {
+    fn capture(db: &KnownPlugins, plugin_id: &str, path: std::path::PathBuf) -> Self {
         Self {
+            path,
             plugin_id: plugin_id.to_string(),
             entry: db.lookup(plugin_id).cloned(),
             unverified: db.unverified_choice(plugin_id).cloned(),
+            expected: None,
         }
     }
 
     /// 이 ID의 두 기록을 바꾸기 전 값으로 되돌린다. 다른 ID의 기록은 건드리지 않는다.
     pub fn restore(self) -> std::io::Result<()> {
-        let mut db = KnownPlugins::load()?;
-        match self.entry {
-            Some(entry) => db.add(self.plugin_id.clone(), entry),
-            None => {
-                db.remove(&self.plugin_id);
+        crate::file_persistence::update_known(&self.path, |db| {
+            let current = (
+                db.lookup(&self.plugin_id).cloned(),
+                db.unverified_choice(&self.plugin_id).cloned(),
+            );
+            let previous = (self.entry.clone(), self.unverified.clone());
+            if current == previous {
+                return Ok(());
             }
-        }
-        match self.unverified {
-            Some(choice) => db.accept_unverified(self.plugin_id, choice),
-            None => {
-                db.forget_unverified(&self.plugin_id);
+            if self.expected.as_ref() != Some(&current) {
+                return Err(std::io::Error::other(
+                    "plugin trust record changed; rollback not applied",
+                ));
             }
-        }
-        db.save()
+            match self.entry {
+                Some(entry) => db.add(self.plugin_id.clone(), entry),
+                None => {
+                    db.remove(&self.plugin_id);
+                }
+            }
+            match self.unverified {
+                Some(choice) => db.accept_unverified(self.plugin_id, choice),
+                None => {
+                    db.forget_unverified(&self.plugin_id);
+                }
+            }
+            Ok(())
+        })
+    }
+
+    fn expect_current(&mut self, db: &KnownPlugins) {
+        self.expected = Some((
+            db.lookup(&self.plugin_id).cloned(),
+            db.unverified_choice(&self.plugin_id).cloned(),
+        ));
     }
 }
 
@@ -225,19 +251,32 @@ pub fn record_unverified_choice(
     cause: &UnverifiedCause,
     accepted_at: String,
 ) -> std::io::Result<TrustRecordUndo> {
+    let path = KnownPlugins::path()
+        .ok_or_else(|| std::io::Error::other("known-plugins.toml path unavailable"))?;
+    record_unverified_choice_in(path, dir, plugin_id, cause, accepted_at)
+}
+
+pub fn record_unverified_choice_in(
+    path: std::path::PathBuf,
+    dir: &Path,
+    plugin_id: &str,
+    cause: &UnverifiedCause,
+    accepted_at: String,
+) -> std::io::Result<TrustRecordUndo> {
     let manifest_sha256 = manifest_sha256(dir)?;
-    let mut db = KnownPlugins::load()?;
-    let undo = TrustRecordUndo::capture(&db, plugin_id);
-    db.accept_unverified(
-        plugin_id.to_string(),
-        UnverifiedChoice {
-            manifest_sha256,
-            cause: cause.token().to_string(),
-            accepted_at,
-        },
-    );
-    db.save()?;
-    Ok(undo)
+    crate::file_persistence::update_known(&path, |db| {
+        let mut undo = TrustRecordUndo::capture(db, plugin_id, path.clone());
+        db.accept_unverified(
+            plugin_id.to_string(),
+            UnverifiedChoice {
+                manifest_sha256,
+                cause: cause.token().to_string(),
+                accepted_at,
+            },
+        );
+        undo.expect_current(db);
+        Ok(undo)
+    })
 }
 
 /// 키 신뢰 항목을 기록한다. 되돌릴 값을 돌려준다.
@@ -245,20 +284,57 @@ pub fn record_trusted_key(
     plugin_id: &str,
     entry: KnownPluginEntry,
 ) -> std::io::Result<TrustRecordUndo> {
-    let mut db = KnownPlugins::load()?;
-    let undo = TrustRecordUndo::capture(&db, plugin_id);
-    db.add(plugin_id.to_string(), entry);
-    db.save()?;
-    Ok(undo)
+    let path = KnownPlugins::path()
+        .ok_or_else(|| std::io::Error::other("known-plugins.toml path unavailable"))?;
+    record_trusted_key_in(path, plugin_id, entry)
+}
+
+pub fn record_trusted_key_in(
+    path: std::path::PathBuf,
+    plugin_id: &str,
+    entry: KnownPluginEntry,
+) -> std::io::Result<TrustRecordUndo> {
+    crate::file_persistence::update_known(&path, |db| {
+        let mut undo = TrustRecordUndo::capture(db, plugin_id, path.clone());
+        db.add(plugin_id.to_string(), entry);
+        undo.expect_current(db);
+        Ok(undo)
+    })
+}
+
+/// Reapprove only permissions while retaining the latest key under the same participating lock.
+pub fn reapprove_permissions_in(
+    path: std::path::PathBuf,
+    plugin_id: &str,
+    permissions: Vec<String>,
+    trusted_at: String,
+) -> std::io::Result<TrustRecordUndo> {
+    crate::file_persistence::update_known(&path, |db| {
+        let mut entry = db
+            .lookup(plugin_id)
+            .cloned()
+            .ok_or_else(|| std::io::Error::other("plugin trust record missing"))?;
+        let mut undo = TrustRecordUndo::capture(db, plugin_id, path.clone());
+        entry.permissions = permissions;
+        entry.trusted_at = trusted_at;
+        db.add(plugin_id.to_owned(), entry);
+        undo.expect_current(db);
+        Ok(undo)
+    })
 }
 
 /// 플러그인을 제거할 때 미인증 선택 기록도 지운다. 다시 설치하면 다시 묻는다.
 pub fn forget_unverified_choice(plugin_id: &str) -> std::io::Result<()> {
-    let mut db = KnownPlugins::load()?;
-    if db.forget_unverified(plugin_id).is_some() {
-        db.save()?;
-    }
-    Ok(())
+    let path = KnownPlugins::path()
+        .ok_or_else(|| std::io::Error::other("known-plugins.toml path unavailable"))?;
+    forget_unverified_choice_in(&path, plugin_id)
+}
+
+pub fn forget_unverified_choice_in(path: &Path, plugin_id: &str) -> std::io::Result<()> {
+    crate::file_persistence::update_known(path, |db| {
+        db.forget_unverified(plugin_id);
+        Ok(())
+    })
 }
 
 /// 시험용. `seed` 키로 매니페스트에 서명해 `.sig` 를 쓰고 공개 키를 돌려준다.

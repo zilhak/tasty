@@ -29,6 +29,8 @@ const FILE_NAME: &str = "plugins.toml";
 
 #[derive(Debug, Default, Clone, Deserialize, Serialize)]
 pub struct PluginsConfig {
+    #[serde(skip)]
+    pub(crate) origin: Option<crate::file_persistence::Origin>,
     #[serde(default)]
     pub disabled: PluginsDisabled,
     /// 사용자가 제거한 기본 제공 플러그인 id 목록. 다음 부팅 시 bundle에서
@@ -78,7 +80,7 @@ pub struct PluginGrants {
 }
 
 impl PluginsConfig {
-    fn path() -> Option<PathBuf> {
+    pub(crate) fn path() -> Option<PathBuf> {
         tasty_utils::path::tasty_home().map(|d| d.join(FILE_NAME))
     }
 
@@ -87,31 +89,28 @@ impl PluginsConfig {
             Some(p) => p,
             None => return Self::default(),
         };
-        if !path.exists() {
-            return Self::default();
-        }
-        match std::fs::read_to_string(&path) {
-            Ok(s) => match toml::from_str::<PluginsConfig>(&s) {
-                Ok(cfg) => cfg,
-                Err(e) => {
-                    tracing::warn!("plugins.toml parse error: {} — using defaults", e);
-                    Self::default()
-                }
-            },
-            Err(e) => {
-                tracing::warn!("plugins.toml read error: {} — using defaults", e);
-                Self::default()
+        Self::load_from(path)
+    }
+
+    pub fn load_from(path: PathBuf) -> Self {
+        let loaded = crate::file_persistence::read(&path)
+            .and_then(|table| crate::file_persistence::decode::<Self>(&table));
+        let (mut config, baseline) = match loaded {
+            Ok(config) => {
+                let baseline = crate::file_persistence::encode(&config).map_err(|e| e.to_string());
+                (config, baseline)
             }
-        }
+            Err(error) => {
+                tracing::warn!(file = "plugins.toml", cause = %error, "plugin settings unavailable; protecting original");
+                (Self::default(), Err(error.to_string()))
+            }
+        };
+        config.origin = Some(crate::file_persistence::Origin::new(path, baseline));
+        config
     }
 
     pub fn save(&self) -> anyhow::Result<()> {
-        let path = Self::path().ok_or_else(|| anyhow::anyhow!("no tasty home directory"))?;
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        let s = toml::to_string_pretty(self)?;
-        std::fs::write(&path, s)?;
+        crate::file_persistence::save_config(self)?;
         Ok(())
     }
 

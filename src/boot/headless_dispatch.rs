@@ -270,23 +270,13 @@ fn intercept_app_layer(
     // 지정한 플러그인만 켜야 하므로 전체 discover_and_start 대신 공용 enable/disable을 사용한다.
     if crate::ipc::handler::plugin::is_lifecycle_toggle_method(&cmd.request.method) {
         super::headless_plugins::ensure_plugin_manager_metadata(app, &engine.as_ref());
-        let hook_events = engine.runtime.plugin_hook_events.clone();
-        let surface_registry = engine.runtime.surface_registry.clone();
-        if let Some((resp, events)) = crate::ipc::handler::plugin::dispatch_lifecycle_toggle(
-            app.plugin_manager.as_mut(),
-            &surface_registry,
+        if let Some(resp) = crate::ipc::handler::plugin::dispatch_lifecycle_toggle(
+            app,
             &cmd.request.method,
             cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
             &cmd.request.params,
         ) {
-            if let Some(mgr) = app.plugin_manager.as_mut() {
-                crate::app::plugin_events::cascade_toggle_events_headless(
-                    mgr,
-                    &hook_events,
-                    events,
-                );
-            }
-            send_response(&cmd.response_tx, resp);
+            app.services.send_handled(&cmd.response_tx, resp);
             return Some(Intercepted::Answered);
         }
     }

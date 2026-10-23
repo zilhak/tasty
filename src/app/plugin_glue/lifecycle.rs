@@ -2,11 +2,20 @@
 //! 결과 이벤트의 후속 처리는 App이 담당한다.
 
 use crate::app::App;
-use crate::app::command::{CoreEvent, PluginRegistryChange};
-use crate::plugin::manifest::{Permission, SurfaceKindRendering};
-use crate::plugin::{Manifest, PluginManager, PluginPackage};
+use crate::app::command::CoreEvent;
+#[cfg(test)]
+use crate::app::command::PluginRegistryChange;
+#[cfg(test)]
+use crate::plugin::Manifest;
+#[cfg(test)]
+use crate::plugin::PluginManager;
+use crate::plugin::PluginPackage;
+use crate::plugin::manifest::SurfaceKindRendering;
 
-fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> std::io::Result<()> {
+pub(super) fn copy_dir_recursive(
+    src: &std::path::Path,
+    dst: &std::path::Path,
+) -> std::io::Result<()> {
     std::fs::create_dir_all(dst)?;
     for entry in std::fs::read_dir(src)? {
         let entry = entry?;
@@ -19,27 +28,6 @@ fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> std::io::
         }
     }
     Ok(())
-}
-
-/// 매니페스트에 선언되고 사용자에게 허용된 권한만 매니저에 반영한다.
-fn refresh_plugin_permissions(mgr: &mut PluginManager, plugin_id: &str) {
-    let Some(pkg) = mgr
-        .packages()
-        .iter()
-        .find(|p| p.manifest.id == plugin_id)
-        .cloned()
-    else {
-        return;
-    };
-    let granted = mgr.config.granted_permissions(plugin_id);
-    let perms: std::collections::HashSet<Permission> = pkg
-        .manifest
-        .parsed_permissions()
-        .unwrap_or_default()
-        .into_iter()
-        .filter(|p| granted.contains(&p.as_token()))
-        .collect();
-    mgr.set_plugin_permissions(plugin_id, perms);
 }
 
 fn register_plugin_surface_kinds(
@@ -115,20 +103,7 @@ fn collect_window_declared_events(plugin_id: &str, pkg: &PluginPackage) -> Vec<C
     events
 }
 
-/// Windows에서는 실행 중인 파일을 지울 수 없어 disable 뒤 프로세스 회수까지 기다린다.
-/// 제거할 플러그인이므로 남아 있는 재시작 예약은 사용하지 않는다.
-fn stop_before_remove(mgr: &mut PluginManager, plugin_id: &str) {
-    if let Err(e) = mgr.disable(plugin_id) {
-        tracing::warn!("disable before remove failed: {e}");
-    }
-    if mgr.wait_retired(plugin_id) {
-        tracing::debug!(
-            plugin_id,
-            "remove dropped a pending restart — the plugin is being removed"
-        );
-    }
-}
-
+#[cfg(test)]
 fn copy_into_plugins(
     src: &std::path::Path,
     dest_root: &std::path::Path,
@@ -139,7 +114,8 @@ fn copy_into_plugins(
 }
 
 /// 이번 설치가 만든 폴더를 지운다. 설치 전 `dest` 가 없었음을 호출자가 확인했다.
-fn remove_partial_install(dest: &std::path::Path) {
+#[cfg(test)]
+pub(super) fn remove_partial_install(dest: &std::path::Path) {
     if dest.exists()
         && let Err(e) = std::fs::remove_dir_all(dest)
     {
@@ -151,6 +127,7 @@ fn remove_partial_install(dest: &std::path::Path) {
 }
 
 /// 복사한 플러그인이 패키지 목록에 없는 이유. 신뢰 판정의 거부 사유가 있으면 그것을 쓴다.
+#[cfg(test)]
 fn not_registered_reason(mgr: &PluginManager, plugin_id: &str) -> String {
     use tasty_host_plugin::discovery::RejectionReason;
     match mgr.rejected.iter().find(|r| r.id == plugin_id) {
@@ -172,6 +149,7 @@ fn not_registered_reason(mgr: &PluginManager, plugin_id: &str) -> String {
 }
 
 /// 패키지 목록에 들어간 플러그인의 명령·번역·권한을 등록하고 비활성 설정이 없으면 실행한다.
+#[cfg(test)]
 fn register_installed(
     mgr: &mut PluginManager,
     manifest: &Manifest,
@@ -209,13 +187,14 @@ fn register_installed(
 }
 
 /// [`App::plugin_install`] 의 본체. 매니저만 쓰므로 시험이 App 없이 부를 수 있다.
-fn manifest_digest(dir: &std::path::Path) -> anyhow::Result<String> {
+pub(super) fn manifest_digest(dir: &std::path::Path) -> anyhow::Result<String> {
     tasty_host_plugin::trust_verdict::manifest_sha256(dir).map_err(|e| {
         anyhow::anyhow!("invalid plugin at source: cannot read tasty-plugin.toml: {e}")
     })
 }
 
 /// `reviewed` 는 화면이 보인 매니페스트의 SHA-256 이다. 있으면 지금 내용과 같아야 설치한다.
+#[cfg(test)]
 pub(crate) fn install_into(
     mgr: &mut PluginManager,
     src_path: &std::path::Path,
@@ -277,213 +256,6 @@ pub(crate) fn install_into(
 }
 
 impl App {
-    /// 신뢰 판정과 `choice` 를 확인한 뒤 설치하고 권한을 허용하며, 비활성 설정이 없으면 실행한다.
-    /// 판정에서 거부되거나 복사·등록에 실패하면 이번 시도가 만든 폴더와 신뢰 기록을 되돌린다.
-    /// JSON-RPC 응답 코드는 호출자가 정한다.
-    pub(crate) fn plugin_install(
-        &mut self,
-        src_path: std::path::PathBuf,
-        choice: &super::install_trust::InstallChoice,
-        reviewed: Option<&str>,
-    ) -> anyhow::Result<Vec<CoreEvent>> {
-        let Some(mgr) = self.plugin_manager.as_mut() else {
-            anyhow::bail!("plugin manager not initialized (no main window yet)");
-        };
-        install_into(mgr, &src_path, choice, reviewed)
-    }
-
-    /// 확인 필요 탭의 "그래도 등록". 플러그인 폴더에서 거부된 미인증 플러그인을 쓰기로 한 선택을
-    /// 기록하고 설치와 같은 방식으로 등록한다. 실패하면 선택 기록을 되돌린다.
-    pub(crate) fn plugin_register_unverified(
-        &mut self,
-        plugin_id: &str,
-        reviewed: &str,
-    ) -> anyhow::Result<Vec<CoreEvent>> {
-        let Some(mgr) = self.plugin_manager.as_mut() else {
-            anyhow::bail!("plugin manager not initialized");
-        };
-        let dir = mgr
-            .rejected
-            .iter()
-            .find(|r| r.id == plugin_id)
-            .map(|r| r.dir.clone())
-            .ok_or_else(|| anyhow::anyhow!("plugin '{plugin_id}' is not waiting for a choice"))?;
-        // 확인 필요 탭이 보인 내용과 다르면 그 선택으로 등록하지 않는다.
-        if manifest_digest(&dir)? != reviewed {
-            anyhow::bail!(
-                "the manifest of '{plugin_id}' changed after it was shown; reopen the Plugins window and review it again"
-            );
-        }
-        let manifest =
-            Manifest::load(&dir).map_err(|e| anyhow::anyhow!("load manifest failed: {e}"))?;
-        let undo = super::install_trust::authorize(
-            &dir,
-            &manifest.id,
-            &manifest.permissions,
-            &super::install_trust::InstallChoice::AllowUnverified,
-        )?;
-        mgr.refresh_packages();
-        if !mgr.packages().iter().any(|p| p.manifest.id == manifest.id) {
-            let reason = not_registered_reason(mgr, &manifest.id);
-            super::install_trust::undo(undo, &manifest.id);
-            mgr.refresh_packages();
-            anyhow::bail!("plugin '{}' was not registered: {reason}", manifest.id);
-        }
-        register_installed(mgr, &manifest, &dir)
-    }
-
-    pub(crate) fn plugin_remove(&mut self, plugin_id: String) -> anyhow::Result<Vec<CoreEvent>> {
-        let hook_event_registry = self.services.registries.plugin_hook_events.clone();
-        let surface_registry = self.services.registries.surface_registry.clone();
-        let Some(mgr) = self.plugin_manager.as_mut() else {
-            anyhow::bail!("plugin manager not initialized");
-        };
-        stop_before_remove(mgr, &plugin_id);
-        // IPC disable을 거치지 않고 제거하는 경우에도 등록된 kind를 철회한다.
-        surface_registry.withdraw_plugin(&plugin_id);
-        let plugin_dir = crate::plugin::plugin_root()
-            .ok_or_else(|| anyhow::anyhow!("could not resolve plugins directory"))?
-            .join(&plugin_id);
-        if !plugin_dir.exists() {
-            anyhow::bail!("plugin '{plugin_id}' not installed");
-        }
-        std::fs::remove_dir_all(&plugin_dir)
-            .map_err(|e| anyhow::anyhow!("remove dir failed: {e}"))?;
-        // 번들 플러그인이 다음 부팅에 자동 재설치되지 않도록 제거 의사를 기록한다.
-        // GUI와 IPC가 공유하는 이 경로에 두며 upgrade_builtins의 restore_removed로 되돌린다.
-        crate::plugin::mark_builtin_removed(mgr, &plugin_id);
-        // 다시 설치하면 미인증 경고를 다시 보이도록 선택 기록을 지운다.
-        if let Err(e) = tasty_host_plugin::trust_verdict::forget_unverified_choice(&plugin_id) {
-            tracing::warn!("known-plugins.toml update failed after removing '{plugin_id}': {e}");
-        }
-        // 제거 후 재설치할 때 과거 비활성 설정을 물려받지 않게 지운다.
-        if mgr.config.enable(&plugin_id)
-            && let Err(e) = mgr.config.save()
-        {
-            tracing::warn!("plugins.toml save failed after clearing disabled mark: {e}");
-        }
-        // packages만 지우면 namespace 예약이 남을 수 있어 설치 목록과 파생 표를 함께 갱신한다.
-        mgr.refresh_packages();
-        mgr.command_registry.unregister_plugin(&plugin_id);
-        crate::i18n::unregister_namespace(&plugin_id);
-        mgr.recompute_extensions();
-        hook_event_registry.unregister(&plugin_id);
-        mgr.debug_assert_extensions_fresh();
-        Ok(vec![CoreEvent::PluginRegistryChanged {
-            plugin_id,
-            change: PluginRegistryChange::Removed,
-        }])
-    }
-
-    /// GUI와 헤드리스가 같은 enable 구현을 사용한다.
-    pub(crate) fn plugin_enable(&mut self, plugin_id: String) -> anyhow::Result<Vec<CoreEvent>> {
-        crate::app::plugin_lifecycle::enable(self.plugin_manager.as_mut(), plugin_id)
-    }
-
-    /// GUI와 헤드리스가 같은 disable 구현을 사용한다.
-    pub(crate) fn plugin_disable(&mut self, plugin_id: String) -> anyhow::Result<Vec<CoreEvent>> {
-        let surface_registry = self.services.registries.surface_registry.clone();
-        crate::app::plugin_lifecycle::disable(
-            self.plugin_manager.as_mut(),
-            &surface_registry,
-            plugin_id,
-        )
-    }
-
-    pub(crate) fn plugin_grant(
-        &mut self,
-        plugin_id: String,
-        token: String,
-    ) -> anyhow::Result<Vec<CoreEvent>> {
-        let Some(mgr) = self.plugin_manager.as_mut() else {
-            anyhow::bail!("plugin manager not initialized");
-        };
-        if Permission::from_token(&token).is_none() {
-            anyhow::bail!("unknown permission '{token}'");
-        }
-        let pkg = mgr
-            .packages()
-            .iter()
-            .find(|p| p.manifest.id == plugin_id)
-            .cloned()
-            .ok_or_else(|| anyhow::anyhow!("plugin '{plugin_id}' not installed"))?;
-        if !pkg.manifest.permissions.iter().any(|p| p == &token) {
-            anyhow::bail!(
-                "plugin '{plugin_id}' does not declare permission '{token}' in its manifest"
-            );
-        }
-        let _added = mgr.config.grant(&plugin_id, &token);
-        if let Err(e) = mgr.config.save() {
-            tracing::warn!("plugins.toml save failed: {e}");
-        }
-        refresh_plugin_permissions(mgr, &plugin_id);
-        // 확장 연결과 namespace 소유 상태(agent provider 자격)가 허가 권한을 읽는다.
-        mgr.recompute_extensions();
-        Ok(vec![CoreEvent::PluginRegistryChanged {
-            plugin_id,
-            change: PluginRegistryChange::PermissionGranted { permission: token },
-        }])
-    }
-
-    pub(crate) fn plugin_revoke(
-        &mut self,
-        plugin_id: String,
-        token: String,
-    ) -> anyhow::Result<Vec<CoreEvent>> {
-        let Some(mgr) = self.plugin_manager.as_mut() else {
-            anyhow::bail!("plugin manager not initialized");
-        };
-        let _removed = mgr.config.revoke(&plugin_id, &token);
-        if let Err(e) = mgr.config.save() {
-            tracing::warn!("plugins.toml save failed: {e}");
-        }
-        refresh_plugin_permissions(mgr, &plugin_id);
-        // 확장 연결과 namespace 소유 상태(agent provider 자격)가 허가 권한을 읽는다.
-        mgr.recompute_extensions();
-        Ok(vec![CoreEvent::PluginRegistryChanged {
-            plugin_id,
-            change: PluginRegistryChange::PermissionRevoked { permission: token },
-        }])
-    }
-
-    /// 번들 갱신 결과와 함께 실제 Upgraded·Reinstalled 항목마다 Installed 이벤트를 반환한다.
-    pub(crate) fn plugin_upgrade_builtins(
-        &mut self,
-        force: bool,
-        restore_removed: Vec<String>,
-        restore_all: bool,
-        restart_running: bool,
-    ) -> anyhow::Result<(tasty_host_plugin::BuiltinUpgradeReport, Vec<CoreEvent>)> {
-        let Some(mgr) = self.plugin_manager.as_mut() else {
-            anyhow::bail!("plugin manager not initialized");
-        };
-        let report = tasty_host_plugin::upgrade_builtins(
-            mgr,
-            force,
-            &restore_removed,
-            restore_all,
-            restart_running,
-        );
-
-        let mut events = Vec::new();
-        for item in &report.items {
-            let new_version = match &item.action {
-                tasty_host_plugin::BuiltinUpgradeAction::Upgraded { to, .. } => Some(to.clone()),
-                tasty_host_plugin::BuiltinUpgradeAction::Reinstalled { version, .. } => {
-                    Some(version.clone())
-                }
-                _ => None,
-            };
-            if let Some(version) = new_version {
-                events.push(CoreEvent::PluginRegistryChanged {
-                    plugin_id: item.id.clone(),
-                    change: PluginRegistryChange::Installed { version },
-                });
-            }
-        }
-        Ok((report, events))
-    }
-
     /// hello가 끝난 플러그인의 hook·surface kind를 등록하고 Loaded 이벤트를 전달한다.
     /// surface_registry가 없으면 surface 등록은 건너뛰며 이 hello 결과를 재시도용으로 보관하지 않는다.
     pub(crate) fn finalize_plugin_hello(&mut self, hello_pairs: Vec<(String, String)>) {

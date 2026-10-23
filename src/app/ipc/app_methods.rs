@@ -481,28 +481,16 @@ impl App {
                 } else {
                     crate::app::plugin_glue::install_trust::InstallChoice::VerifiedOnly
                 };
-                match self.plugin_install(path, &choice, None) {
-                    Ok(events) => {
-                        let installed_id = events
-                            .iter()
-                            .find_map(|ev| match ev {
-                                crate::app::command::CoreEvent::PluginRegistryChanged {
-                                    plugin_id,
-                                    ..
-                                } => Some(plugin_id.clone()),
-                                _ => None,
-                            })
-                            .unwrap_or_default();
-                        self.cascade_plugin_events(events);
-                        host_ipc::protocol::JsonRpcResponse::success(
-                            id,
-                            serde_json::json!({ "installed": installed_id }),
-                        )
-                    }
-                    Err(e) => {
-                        crate::app::plugin_glue::install_trust::install_error_response(id, &e)
-                    }
+                let reply = crate::app::plugin_file_lifecycle::Reply::default();
+                let done = reply.clone();
+                if let Err(error) =
+                    self.enqueue_plugin_install(path, choice, None, true, move |_, result| {
+                        done.finish(result)
+                    })
+                {
+                    reply.finish(Err(error));
                 }
+                self.plugin_file_reply(id, reply)
             }
             "plugin.remove" => {
                 let plugin_id = match cmd.request.params.get("id").and_then(|v| v.as_str()) {
@@ -518,32 +506,24 @@ impl App {
                         return IpcStep::Handled;
                     }
                 };
-                let pid_for_response = plugin_id.clone();
-                match self.plugin_remove(plugin_id) {
-                    Ok(events) => {
-                        self.cascade_plugin_events(events);
-                        host_ipc::protocol::JsonRpcResponse::success(
-                            id,
-                            serde_json::json!({ "removed": pid_for_response }),
-                        )
-                    }
-                    Err(e) => host_ipc::protocol::JsonRpcResponse::error(id, -32000, e.to_string()),
+                let reply = crate::app::plugin_file_lifecycle::Reply::default();
+                let done = reply.clone();
+                if let Err(error) =
+                    self.enqueue_plugin_remove(plugin_id, move |_, result| done.finish(result))
+                {
+                    reply.finish(Err(error));
                 }
+                self.plugin_file_reply(id, reply)
             }
             // 상태 변경은 헤드리스와 공유하고 결과 이벤트의 전달만 빌드별로 처리한다.
             "plugin.enable" | "plugin.disable" => {
-                let surface_registry = self.services.registries.surface_registry.clone();
-                let Some((response, events)) = host_ipc::handler::plugin::dispatch_lifecycle_toggle(
-                    self.plugin_manager.as_mut(),
-                    &surface_registry,
+                host_ipc::handler::plugin::dispatch_lifecycle_toggle(
+                    self,
                     cmd.request.method.as_str(),
                     id,
                     &cmd.request.params,
-                ) else {
-                    unreachable!("plugin.enable/disable is missing from the toggle table");
-                };
-                self.cascade_plugin_events(events);
-                response
+                )
+                .expect("plugin toggle method")
             }
             "plugin.grant" => {
                 let plugin_id = match cmd.request.params.get("id").and_then(|v| v.as_str()) {
@@ -577,21 +557,14 @@ impl App {
                         return IpcStep::Handled;
                     }
                 };
-                let pid_for_response = plugin_id.clone();
-                let perm_for_response = token.clone();
-                match self.plugin_grant(plugin_id, token) {
-                    Ok(events) => {
-                        self.cascade_plugin_events(events);
-                        host_ipc::protocol::JsonRpcResponse::success(
-                            id,
-                            serde_json::json!({
-                                "id": pid_for_response,
-                                "permission": perm_for_response,
-                            }),
-                        )
-                    }
-                    Err(e) => host_ipc::protocol::JsonRpcResponse::error(id, -32000, e.to_string()),
-                }
+                self.reply_plugin_config(
+                    id,
+                    tasty_host_plugin::manager::file_config::ConfigChange::Permission {
+                        id: plugin_id,
+                        token,
+                        grant: true,
+                    },
+                )
             }
             "plugin.revoke" => {
                 let plugin_id = match cmd.request.params.get("id").and_then(|v| v.as_str()) {
@@ -625,21 +598,14 @@ impl App {
                         return IpcStep::Handled;
                     }
                 };
-                let pid_for_response = plugin_id.clone();
-                let perm_for_response = token.clone();
-                match self.plugin_revoke(plugin_id, token) {
-                    Ok(events) => {
-                        self.cascade_plugin_events(events);
-                        host_ipc::protocol::JsonRpcResponse::success(
-                            id,
-                            serde_json::json!({
-                                "id": pid_for_response,
-                                "permission": perm_for_response,
-                            }),
-                        )
-                    }
-                    Err(e) => host_ipc::protocol::JsonRpcResponse::error(id, -32000, e.to_string()),
-                }
+                self.reply_plugin_config(
+                    id,
+                    tasty_host_plugin::manager::file_config::ConfigChange::Permission {
+                        id: plugin_id,
+                        token,
+                        grant: false,
+                    },
+                )
             }
             "plugin.grant_agent_permission" => {
                 host_ipc::handler::session::handle_grant_agent_permission(
@@ -685,25 +651,18 @@ impl App {
                     .get("restart_running")
                     .and_then(|v| v.as_bool())
                     .unwrap_or(false);
-                match self.plugin_upgrade_builtins(
+                let reply = crate::app::plugin_file_lifecycle::Reply::default();
+                let done = reply.clone();
+                if let Err(error) = self.enqueue_builtin_upgrade(
                     force,
                     restore_removed,
                     restore_all,
                     restart_running,
+                    move |_, result| done.finish(result),
                 ) {
-                    Ok((report, events)) => {
-                        self.cascade_plugin_events(events);
-                        match serde_json::to_value(&report) {
-                            Ok(v) => host_ipc::protocol::JsonRpcResponse::success(id, v),
-                            Err(e) => host_ipc::protocol::JsonRpcResponse::error(
-                                id,
-                                -32603,
-                                format!("serialize report failed: {e}"),
-                            ),
-                        }
-                    }
-                    Err(e) => host_ipc::protocol::JsonRpcResponse::error(id, -32000, e.to_string()),
+                    reply.finish(Err(error));
                 }
+                self.plugin_file_reply(id, reply)
             }
             "plugin.audit_follow" => {
                 host_ipc::handler::audit::handle_follow(&self.services, id, &cmd.request.params)

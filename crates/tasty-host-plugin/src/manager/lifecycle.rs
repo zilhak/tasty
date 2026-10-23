@@ -249,6 +249,44 @@ impl PluginManager {
         self.recompute_shared_tables();
     }
 
+    /// Removal waits on the existing reaper without blocking the event loop or reviving a plugin.
+    pub fn poll_file_retirement(&mut self, id: &str) -> bool {
+        self.cancel_respawn_after_retire(id);
+        self.settle_finished_retirements_in_place();
+        !self.is_retiring(id)
+    }
+
+    /// Retire a running generation for an accepted file swap; the caller polls its completion.
+    pub fn begin_file_swap(&mut self, id: &str, stop_running: bool) -> (bool, bool) {
+        let restart = self.take_file_restart(id);
+        let swapping = stop_running && self.is_running(id);
+        if swapping {
+            self.start_tracker.cancelled(id);
+            if let Some(process) = self.processes.remove(id) {
+                self.retire_process(id, process, false);
+            }
+            self.forget_plugin_runtime(id, "plugin swap restart");
+        }
+        (swapping, restart)
+    }
+
+    pub fn finish_file_swap(&mut self, id: &str) -> anyhow::Result<()> {
+        self.swap_respawn_internal(id)
+    }
+
+    /// Receipt-confirmed package changes avoid another filesystem scan on the event loop.
+    pub fn replace_committed_package(&mut self, id: &str, package: Option<PluginPackage>) {
+        self.packages.retain(|p| p.manifest.id != id);
+        self.rejected.retain(|p| p.id != id);
+        if let Some(package) = package {
+            self.packages.push(package);
+        }
+        self.packages
+            .sort_by(|a, b| a.manifest.id.cmp(&b.manifest.id));
+        self.sync_ipc_namespaces_from_packages();
+        self.recompute_shared_tables();
+    }
+
     /// 설치 목록으로 namespace 소유자를 갱신한다. 실행 여부는 호출 검증에서 따로 확인한다.
     /// 소유자 조회를 위해 플러그인을 실행할 필요가 없고, 비활성 플러그인도
     /// 없는 메서드와 구분할 수 있다.
@@ -601,6 +639,22 @@ impl PluginManager {
 
     /// CLI/IPC용 — plugin 활성화. 활성화 즉시 spawn 시도.
     pub fn enable(&mut self, plugin_id: &str) -> anyhow::Result<()> {
+        if !self.packages.iter().any(|p| p.manifest.id == plugin_id) {
+            anyhow::bail!("plugin '{plugin_id}' not installed");
+        }
+        let mut config = self.config.clone();
+        config.enable(plugin_id);
+        self.config = crate::file_persistence::ConfigUpdate::between(&self.config, &config)?
+            .with_enabled_intent(plugin_id, true)
+            .execute()?;
+        if self.wait_retired(plugin_id) {
+            tracing::debug!(plugin_id, "enable took over a pending restart");
+        }
+        self.enable_committed(plugin_id)
+    }
+
+    /// Apply a confirmed configuration without doing file I/O on the lifecycle thread.
+    pub fn enable_committed(&mut self, plugin_id: &str) -> anyhow::Result<()> {
         // 설치 목록을 확인하기 전에는 설정·수명주기 상태를 바꾸지 않는다.
         let pkg = self
             .packages
@@ -608,8 +662,12 @@ impl PluginManager {
             .find(|p| p.manifest.id == plugin_id)
             .cloned()
             .ok_or_else(|| anyhow::anyhow!("plugin '{plugin_id}' not installed"))?;
-        self.config.enable(plugin_id);
-        self.config.save()?;
+        if self.config.is_disabled(plugin_id) {
+            anyhow::bail!("plugin configuration is still disabled");
+        }
+        if self.is_retiring(plugin_id) {
+            anyhow::bail!("plugin generation is still retiring");
+        }
         self.auto_disabled.remove(plugin_id);
         self.start_tracker.reset_reporting(plugin_id);
         self.recompute_extensions();
@@ -629,14 +687,6 @@ impl PluginManager {
             );
         }
 
-        // disable로 회수 중인 프로세스가 있으면 끝까지 기다린 뒤 실행한다.
-        // 회수 과정에서 가져온 재시작 예약은 아래 실행으로 대신한다.
-        if self.wait_retired(plugin_id) {
-            tracing::debug!(
-                plugin_id,
-                "enable took over a pending restart — started below instead"
-            );
-        }
         if !self.processes.contains_key(plugin_id) {
             self.ensure_listener();
             self.start_plugin_internal(&pkg);
@@ -647,6 +697,19 @@ impl PluginManager {
 
     /// CLI/IPC용 — plugin 비활성화. 살아있는 process는 graceful shutdown.
     pub fn disable(&mut self, plugin_id: &str) -> anyhow::Result<()> {
+        if !self.packages.iter().any(|p| p.manifest.id == plugin_id) {
+            anyhow::bail!("plugin '{plugin_id}' not installed");
+        }
+        let mut config = self.config.clone();
+        config.disable(plugin_id);
+        self.config = crate::file_persistence::ConfigUpdate::between(&self.config, &config)?
+            .with_enabled_intent(plugin_id, false)
+            .execute()?;
+        self.disable_committed(plugin_id)
+    }
+
+    /// Retire only after the configuration receipt succeeds; no file I/O occurs here.
+    pub fn disable_committed(&mut self, plugin_id: &str) -> anyhow::Result<()> {
         // enable 과 같은 설치 경계. 실패한 요청은 disabled 흔적도 남기지 않는다.
         let pkg = self
             .packages
@@ -654,8 +717,9 @@ impl PluginManager {
             .find(|p| p.manifest.id == plugin_id)
             .ok_or_else(|| anyhow::anyhow!("plugin '{plugin_id}' not installed"))?;
         let cs_owner_id = completion_strategy_owner_id(pkg).to_string();
-        self.config.disable(plugin_id);
-        self.config.save()?;
+        if !self.config.is_disabled(plugin_id) {
+            anyhow::bail!("plugin configuration is still enabled");
+        }
         self.recompute_extensions();
         let was_running = self.processes.contains_key(plugin_id);
         // 결과가 나기 전의 기동은 취소로 끝낸다.

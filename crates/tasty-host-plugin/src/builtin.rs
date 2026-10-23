@@ -5,6 +5,8 @@
 //! 설치본 버전이 더 높으면 건너뛰며 --force로 덮어쓸 수 있다.
 //! 설치 절차: docs/dev-guide/plugin-development.md#91-실행-중인-tasty-에-번들-플러그인만-반복-갱신-호스트-재빌드재시작-불필요.
 
+pub mod file_upgrade;
+
 use std::collections::HashSet;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
@@ -195,7 +197,7 @@ fn prune_dest_not_in_src(src: &Path, dest: &Path) -> std::io::Result<()> {
             if entry.file_type()?.is_dir() {
                 std::fs::remove_dir_all(entry.path())?;
             } else {
-                std::fs::remove_file(entry.path())?;
+                tasty_utils::file_replace::remove(&entry.path())?;
             }
         }
     }
@@ -512,6 +514,7 @@ pub fn install_builtins_if_needed(mgr: &mut PluginManager) {
     };
     let bundle = bundle_root();
 
+    let before = mgr.config.clone();
     let mut config_dirty = false;
     for spec in BUILTINS {
         let dest = dest_root.join(spec.id);
@@ -534,7 +537,7 @@ pub fn install_builtins_if_needed(mgr: &mut PluginManager) {
             config_dirty = true;
         }
     }
-    if config_dirty && let Err(e) = mgr.config.save() {
+    if config_dirty && let Err(e) = file_upgrade::persist_boot_config(mgr, before) {
         tracing::warn!("install_builtins: save plugins.toml failed: {e}");
     }
 }
@@ -833,8 +836,9 @@ fn restore_removed_builtins(
     restore_removed: &[String],
     restore_all: bool,
 ) {
+    let before = mgr.config.clone();
     let removed_cleared = apply_restore_removed(mgr, restore_removed, restore_all);
-    if removed_cleared && let Err(e) = mgr.config.save() {
+    if removed_cleared && let Err(e) = file_upgrade::persist_boot_config(mgr, before) {
         tracing::warn!("upgrade_builtins: save plugins.toml after unmark failed: {e}");
     }
 }
@@ -933,60 +937,8 @@ fn verify_builtin_bundle_trust(
     src: &Path,
     dest: &Path,
 ) -> Result<(), BuiltinUpgradeItem> {
-    #[cfg(not(debug_assertions))]
-    {
-        use crate::bundle_sig::{TrustDecision, verify_bundle_signature};
-        match verify_bundle_signature(src) {
-            Ok(TrustDecision::Trusted) => Ok(()),
-            Ok(TrustDecision::Untrusted {
-                plugin_id,
-                fingerprint,
-                reason,
-                ..
-            }) => {
-                // builtin 업데이트는 신뢰되지 않은 서명을 거절한다. 여기서 승인 UI를 열지 않는다.
-                tracing::warn!(
-                    "builtin '{}' is untrusted (reason: {reason:?}, fp: {fingerprint})",
-                    plugin_id
-                );
-                Err(BuiltinUpgradeItem {
-                    id: spec.id.into(),
-                    action: BuiltinUpgradeAction::Skipped {
-                        installed_version: read_installed_version(dest).map(|v| v.to_string()),
-                        bundle_version: None,
-                        reason: format!("untrusted: {reason:?}"),
-                    },
-                })
-            }
-            Err(e) => {
-                tracing::warn!("builtin '{}' bundle signature check failed: {e}", spec.id);
-                Err(BuiltinUpgradeItem {
-                    id: spec.id.into(),
-                    action: BuiltinUpgradeAction::Skipped {
-                        installed_version: read_installed_version(dest).map(|v| v.to_string()),
-                        bundle_version: None,
-                        reason: format!("signature-invalid: {e}"),
-                    },
-                })
-            }
-        }
-    }
-    #[cfg(debug_assertions)]
-    {
-        // debug 빌드는 서명 검증 결과를 로그로만 남기고 설치를 건너뛰지 않으므로
-        // 설치 대상 경로를 읽을 일이 없다 — release 갈래에서만 쓰인다.
-        let _ = dest;
-        match crate::bundle_sig::verify_bundle_signature(src) {
-            Ok(_) => {}
-            Err(e) => {
-                tracing::debug!(
-                    "dev bundle '{}' signature check: {e} (debug build = ignored)",
-                    spec.id
-                );
-            }
-        }
-        Ok(())
-    }
+    let known = crate::known_plugins::KnownPlugins::load().unwrap_or_default();
+    file_upgrade::verify_trust(spec, src, dest, &known)
 }
 
 /// dest 미존재 시 번들에서 신규 설치. 성공 → Reinstalled(changed), 실패 → Failed.
@@ -1228,6 +1180,7 @@ fn finalize_builtin_upgrades(mgr: &mut PluginManager, dest_root: &Path, changed_
     // 디스크가 바뀌었으니 PluginManager state 재계산.
     mgr.refresh_packages();
     mgr.recompute_extensions();
+    let before = mgr.config.clone();
     let mut config_dirty = false;
     for id in changed_ids {
         let dest = dest_root.join(id);
@@ -1246,7 +1199,7 @@ fn finalize_builtin_upgrades(mgr: &mut PluginManager, dest_root: &Path, changed_
             }
         }
     }
-    if config_dirty && let Err(e) = mgr.config.save() {
+    if config_dirty && let Err(e) = file_upgrade::persist_boot_config(mgr, before) {
         tracing::warn!("upgrade_builtins: save plugins.toml failed: {e}");
     }
 }
@@ -1274,8 +1227,9 @@ pub fn mark_builtin_removed(mgr: &mut PluginManager, id: &str) {
     if !is_builtin_plugin(id) {
         return;
     }
+    let before = mgr.config.clone();
     if mgr.config.mark_builtin_removed(id)
-        && let Err(e) = mgr.config.save()
+        && let Err(e) = file_upgrade::persist_boot_config(mgr, before)
     {
         tracing::warn!("mark_builtin_removed: save plugins.toml failed: {e}");
     }

@@ -6,9 +6,7 @@
 use std::path::Path;
 
 use tasty_host_plugin::known_plugins::KnownPluginEntry;
-use tasty_host_plugin::trust_verdict::{
-    self, TrustRecordUndo, TrustVerdict, UnverifiedCause, judge,
-};
+use tasty_host_plugin::trust_verdict::{self, TrustRecordUndo, TrustVerdict, UnverifiedCause};
 
 /// 설치·등록할 때 사용자가 고른 것.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -55,21 +53,36 @@ fn now_rfc3339() -> String {
 
 /// `dir` 의 판정과 `choice` 로 설치·등록해도 되는지 정하고, 고른 것을 신뢰 DB에 남긴다.
 /// 기록을 바꿨으면 되돌릴 값을 돌려준다. 거부하면 아무것도 기록하지 않는다.
+#[cfg(test)]
 pub(crate) fn authorize(
     dir: &Path,
     plugin_id: &str,
     permissions: &[String],
     choice: &InstallChoice,
 ) -> anyhow::Result<Option<TrustRecordUndo>> {
+    let path = tasty_host_plugin::known_plugins::KnownPlugins::path()
+        .ok_or_else(|| anyhow::anyhow!("known-plugins.toml path unavailable"))?;
+    authorize_in(path, dir, plugin_id, permissions, choice)
+}
+
+pub(crate) fn authorize_in(
+    path: std::path::PathBuf,
+    dir: &Path,
+    plugin_id: &str,
+    permissions: &[String],
+    choice: &InstallChoice,
+) -> anyhow::Result<Option<TrustRecordUndo>> {
+    let known = tasty_host_plugin::known_plugins::KnownPlugins::load_from(path.clone())?;
     let save_err = |e: std::io::Error| anyhow::anyhow!("save known-plugins.toml failed: {e}");
-    match (judge(dir), choice) {
+    match (trust_verdict::judge_with(dir, &known), choice) {
         (TrustVerdict::Trusted | TrustVerdict::AcceptedUnverified, _) => Ok(None),
         (
             TrustVerdict::PermissionsChanged { fingerprint, .. },
             InstallChoice::TrustKey { pubkey_b64 },
         ) => {
             let pubkey = decode_matching_key(dir, pubkey_b64)?;
-            trust_verdict::record_trusted_key(
+            trust_verdict::record_trusted_key_in(
+                path.clone(),
                 plugin_id,
                 key_entry(&pubkey, permissions, fingerprint),
             )
@@ -94,7 +107,8 @@ pub(crate) fn authorize(
                     trust_verdict::PUBKEY_MISMATCH
                 );
             }
-            trust_verdict::record_trusted_key(
+            trust_verdict::record_trusted_key_in(
+                path.clone(),
                 plugin_id,
                 key_entry(&pubkey, permissions, fingerprint),
             )
@@ -106,7 +120,7 @@ pub(crate) fn authorize(
             cause.describe()
         ),
         (TrustVerdict::Unverified(cause), InstallChoice::AllowUnverified) => {
-            trust_verdict::record_unverified_choice(dir, plugin_id, &cause, now_rfc3339())
+            trust_verdict::record_unverified_choice_in(path, dir, plugin_id, &cause, now_rfc3339())
                 .map(Some)
                 .map_err(save_err)
         }
@@ -147,6 +161,7 @@ fn key_entry(pubkey: &[u8; 32], permissions: &[String], fingerprint: String) -> 
 
 /// `plugin.install` 실패 응답. 미인증이라 거부했으면 `data` 에 원인을 실어, 호출자가 메시지를
 /// 파싱하지 않고 경고와 선택 방법을 보일 수 있게 한다.
+#[cfg(test)]
 pub(crate) fn install_error_response(
     id: serde_json::Value,
     e: &anyhow::Error,
@@ -166,6 +181,7 @@ pub(crate) fn install_error_response(
 }
 
 /// 되돌릴 기록이 있으면 되돌린다. 실패는 원래 오류를 가리지 않도록 로그로만 남긴다.
+#[cfg(test)]
 pub(crate) fn undo(undo: Option<TrustRecordUndo>, plugin_id: &str) {
     if let Some(undo) = undo
         && let Err(e) = undo.restore()

@@ -198,6 +198,14 @@ pub fn pubkey_fingerprint(pk: &[u8; 32]) -> String {
 ///    - 매칭 + 서명 검증 실패 → 무시하고 다음 단계로 (DB 의 키와 sig 가 안 맞음).
 /// 4. 위 모두 실패 → `Untrusted { UnknownKey }`.
 pub fn verify_bundle_signature(dir: &Path) -> Result<TrustDecision, SigVerifyError> {
+    verify_bundle_signature_with(dir, &KnownPlugins::load().unwrap_or_default())
+}
+
+/// Verify against an already captured trust store; worker callers must not resolve another home.
+pub fn verify_bundle_signature_with(
+    dir: &Path,
+    known: &KnownPlugins,
+) -> Result<TrustDecision, SigVerifyError> {
     let (digest, sig_array) = read_digest_and_sig(dir)?;
     let sig = Signature::from_bytes(&sig_array);
 
@@ -215,7 +223,6 @@ pub fn verify_bundle_signature(dir: &Path) -> Result<TrustDecision, SigVerifyErr
 
     // Step 2: known_plugins.toml lookup. load 실패는 비치명 (DB 없을 수 있음).
     let (plugin_id, manifest_permissions) = parse_manifest_basics(dir);
-    let known = KnownPlugins::load().unwrap_or_default();
 
     if let Some(entry) = known.lookup(&plugin_id)
         && let Some(db_pk) = entry.pubkey_bytes()

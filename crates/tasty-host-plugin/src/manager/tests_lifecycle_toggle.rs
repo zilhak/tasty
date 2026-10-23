@@ -53,3 +53,86 @@ fn unknown_toggles_preserve_existing_config_and_recovery_state() {
         assert!(!mgr.is_running(MISSING));
     }
 }
+
+fn installed(home: &HomeEnvGuard) -> PluginManager {
+    let mut mgr = PluginManager::new(Arc::new(NoopWakerFactory));
+    let manifest = toml::from_str(
+        r#"
+manifest_version=1
+id="com.example.test"
+name="test"
+version="1.0.0"
+api_version="1"
+permissions=["fs.read"]
+[entry]
+type="process"
+command="unused"
+"#,
+    )
+    .unwrap();
+    mgr.set_packages_for_tests(vec![crate::PluginPackage {
+        dir: home.path().join("plugin"),
+        manifest,
+    }]);
+    mgr
+}
+
+#[test]
+fn prepared_permission_waits_for_receipt_and_failure_keeps_cache_unchanged() {
+    use super::file_config::ConfigChange;
+    let home = HomeEnvGuard::tasty_home();
+    let mut mgr = installed(&home);
+    let change = ConfigChange::Permission {
+        id: "com.example.test".into(),
+        token: "fs.read".into(),
+        grant: true,
+    };
+    let request = mgr.prepare_config_change(&change).unwrap();
+    assert!(
+        mgr.config
+            .granted_permissions("com.example.test")
+            .is_empty()
+    );
+    assert!(!home.path().join("plugins.toml").exists());
+    let committed = std::thread::spawn(move || request.execute())
+        .join()
+        .unwrap()
+        .unwrap();
+    assert!(
+        mgr.config
+            .granted_permissions("com.example.test")
+            .is_empty()
+    );
+    mgr.apply_config_change(committed, &change).unwrap();
+    assert!(
+        mgr.config
+            .granted_permissions("com.example.test")
+            .contains("fs.read")
+    );
+    let before = toml::to_string(&mgr.config).unwrap();
+    std::fs::write(home.path().join("plugins.toml"), "PRIVATE = [[[\n").unwrap();
+    let disabled = ConfigChange::Enabled {
+        id: "com.example.test".into(),
+        enabled: false,
+    };
+    assert!(
+        mgr.prepare_config_change(&disabled)
+            .unwrap()
+            .execute()
+            .is_err()
+    );
+    assert_eq!(toml::to_string(&mgr.config).unwrap(), before);
+    assert!(!mgr.config.is_disabled("com.example.test"));
+}
+
+#[test]
+fn failed_legacy_toggle_does_not_mutate_live_state_or_recovery_flags() {
+    let home = HomeEnvGuard::tasty_home();
+    let mut mgr = installed(&home);
+    mgr.auto_disabled.insert("com.example.test".into());
+    std::fs::create_dir(home.path().join("plugins.toml")).unwrap();
+    assert!(mgr.disable("com.example.test").is_err());
+    assert!(!mgr.config.is_disabled("com.example.test"));
+    assert!(mgr.is_auto_disabled("com.example.test"));
+    assert_eq!(mgr.retiring_count(), 0);
+}

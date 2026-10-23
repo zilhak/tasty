@@ -265,6 +265,13 @@ impl PluginManager {
         self.retiring.contains_key(plugin_id)
     }
 
+    /// Transfer a pending restart to an ordered file operation without waiting.
+    pub fn take_file_restart(&mut self, plugin_id: &str) -> bool {
+        let restart = self.retiring.get(plugin_id).is_some_and(|r| r.respawn);
+        self.cancel_respawn_after_retire(plugin_id);
+        restart
+    }
+
     /// 회수가 끝날 때까지 기다린다. 파일 삭제·교체나 명시적 enable에 사용한다.
     /// true이면 재시작 예약도 가져온 것이므로, 쓰기 뒤 start_if_still_wanted로 이어야 한다.
     #[must_use = "true means a restart was pending on this retirement and is now yours to carry \

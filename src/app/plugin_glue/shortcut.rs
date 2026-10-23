@@ -5,29 +5,8 @@ use crate::app::window_access::engines_mut;
 use crate::plugin::registry_state::shortcut_override_display;
 use crate::{plugin, settings_ui, shortcuts};
 
-/// 실제 설정이 바뀐 항목만 반환해 변경 이벤트를 보낸다.
-fn apply_single_shortcut_override(
-    mgr: &mut plugin::PluginManager,
-    plugin_id: String,
-    command_id: String,
-    value: Option<plugin::registry_state::ShortcutOverride>,
-) -> Option<(String, String, Option<String>, Option<String>)> {
-    let prev_display =
-        shortcut_override_display(mgr.config.shortcut_override(&plugin_id, &command_id));
-    let new_display = match &value {
-        Some(ov) => shortcut_override_display(Some(ov)),
-        None => None,
-    };
-    let local_changed = match value {
-        Some(ov) => {
-            mgr.config
-                .set_shortcut_override(&plugin_id, &command_id, ov);
-            true
-        }
-        None => mgr.config.clear_shortcut_override(&plugin_id, &command_id),
-    };
-    local_changed.then_some((plugin_id, command_id, new_display, prev_display))
-}
+pub(crate) type Draft =
+    std::collections::BTreeMap<(String, String), Option<plugin::registry_state::ShortcutOverride>>;
 
 fn emit_shortcut_changed_events(
     mgr: &mut plugin::PluginManager,
@@ -54,26 +33,79 @@ impl App {
             Option<plugin::registry_state::ShortcutOverride>,
         >,
     ) {
+        self.queue_plugin_shortcut_draft(draft, false);
+    }
+
+    pub(crate) fn queue_plugin_shortcut_draft(&mut self, draft: Draft, retry: bool) {
         if draft.is_empty() {
             return;
         }
-        let Some(mgr) = self.plugin_manager.as_mut() else {
-            tracing::warn!("plugin shortcut draft dropped: plugin manager not initialized");
-            return;
+        let draft = match self.plugin_files.coalesce_shortcuts(draft) {
+            Ok(()) => return,
+            Err(draft) => draft,
         };
-        let mut changed = false;
-        let mut emit_queue: Vec<(String, String, Option<String>, Option<String>)> = Vec::new();
-        for ((plugin_id, command_id), value) in draft {
-            if let Some(entry) = apply_single_shortcut_override(mgr, plugin_id, command_id, value) {
-                changed = true;
-                emit_queue.push(entry);
+        let mut edits = std::mem::take(&mut self.plugin_files.failed_shortcuts);
+        edits.extend(draft);
+        let pending = std::rc::Rc::new(std::cell::RefCell::new(edits));
+        let values = pending.clone();
+        let start = move |app: &mut App| {
+            if app
+                .plugin_files
+                .shortcuts
+                .as_ref()
+                .is_some_and(|pending| std::rc::Rc::ptr_eq(pending, &values))
+            {
+                app.plugin_files.shortcuts = None;
             }
-        }
-        if changed {
-            if let Err(e) = mgr.config.save() {
-                tracing::warn!("plugins.toml save failed after shortcut update: {e}");
+            let draft = std::mem::take(&mut *values.borrow_mut());
+            let mut events = Vec::new();
+            if let Some(mgr) = app.plugin_manager.as_ref() {
+                for ((id, command), value) in &draft {
+                    let before =
+                        shortcut_override_display(mgr.config.shortcut_override(id, command));
+                    let after = shortcut_override_display(value.as_ref());
+                    if before != after {
+                        events.push((id.clone(), command.clone(), after, before));
+                    }
+                }
             }
-            emit_shortcut_changed_events(mgr, emit_queue);
+            let change = tasty_host_plugin::manager::file_config::ConfigChange::Shortcuts(
+                draft
+                    .iter()
+                    .map(|((id, cmd), value)| (id.clone(), cmd.clone(), value.clone()))
+                    .collect(),
+            );
+            app.start_plugin_config(change, move |app, result| match result {
+                Ok(_) => {
+                    app.plugin_files.settle_shortcuts(draft, true);
+                    if let Some(mgr) = app.plugin_manager.as_mut() {
+                        emit_shortcut_changed_events(mgr, events);
+                    }
+                }
+                Err(error) => {
+                    app.plugin_files.settle_shortcuts(draft, false);
+                    tracing::warn!(error=%error.message,"plugin shortcuts were not saved");
+                    app.toast_settings_result(error.message, crate::adapters::ui::ToastKind::Error);
+                }
+            });
+        };
+        let admitted = if retry {
+            self.plugin_files.enqueue_shortcut_retry(start)
+        } else {
+            self.plugin_files.enqueue(start)
+        };
+        match admitted {
+            Ok(()) => {
+                self.plugin_files.shortcuts = Some(pending);
+                (self.services.reply_wake())();
+            }
+            Err(error) => {
+                self.plugin_files
+                    .failed_shortcuts
+                    .extend(std::mem::take(&mut *pending.borrow_mut()));
+                tracing::warn!(error=%error.message,"plugin shortcuts not accepted");
+                self.toast_settings_result(error.message, crate::adapters::ui::ToastKind::Error);
+            }
         }
     }
 
