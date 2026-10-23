@@ -40,6 +40,12 @@ Remote의 established tunnel과 늦은 연결 결과는 retirement worker가 chi
 - 정상 GUI 종료와 DB 오류 안내 모달의 종료는 App 상태 머신을 거쳐 `event_loop.exit()`로 요청한다. 오류 모달은 종료 상태만 요청하고 프로세스를 직접 끝내지 않는다.
 - 오류 모달로 종료할 때는 fallback 표시 상태로 마지막 checkpoint를 덮어쓰지 않도록 새 layout 저장을 생략한다. 이미 접수한 journal 작업과 자원 회수는 계속 처리한다. `App` Drop 뒤 boot가 요청된 종료 코드를 반환한다.
 
+## 파일 저장 완료와 원 요청 응답
+
+GUI의 file writer 대기와 headless의 최종 file drain은 file receipt를 먼저 수거해 cache를 반영하고, 이어 이미 접수한 preset capture의 완료를 App에서 수거한 뒤 deferred 응답을 처리한다. 마지막 남은 작업 수가 0이거나 대기 기한이 지난 회차에도 이 순서를 지킨다. cache에 저장 결과가 반영된 것만으로는 App이 보관한 원 IPC·plugin 요청에 응답한 것이 아니다.
+
+완료 수거는 새 capture를 접수하지 않는다. 이미 끝난 capture는 원 요청에 한 번만 응답하며, writer의 뒤 작업이 남아 기한이 지난 경우에도 앞서 확인한 저장 결과를 버리지 않는다. 아직 끝나지 않은 저장을 성공으로 처리하거나 기한 초과를 join 완료로 바꾸지는 않는다.
+
 ## GPU와 native display 수명
 
 Linux에서 `src/boot.rs`의 `run_gui`는 `App` 생성 전에 winit의 `OwnedDisplayHandle`을

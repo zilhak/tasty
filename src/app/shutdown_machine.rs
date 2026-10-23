@@ -582,6 +582,7 @@ impl App {
     /// 요청에도 돌려준다.
     fn wait_for_file_writer_shutdown(&mut self) -> bool {
         let remaining = self.services.poll_file_writer_shutdown();
+        self.finish_preset_files();
         self.settle_settings_saves();
         self.services
             .poll_memory_replies(self.plugin_manager.as_mut());
@@ -650,6 +651,59 @@ impl App {
                 }
             }
             _ => {}
+        }
+    }
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod capture_file_tests {
+    use super::*;
+    use crate::app::preset_shutdown_tests::{make_gui, run_case};
+    use winit::platform::x11::EventLoopBuilderExtX11;
+    #[test]
+    fn app_capture_reply_is_collected_before_final_zero_and_timeout_returns() {
+        let event_loop = winit::event_loop::EventLoop::<crate::AppEvent>::with_user_event()
+            .with_x11()
+            .with_any_thread(true)
+            .build()
+            .unwrap();
+        for timeout in [true, false] {
+            let proxy = event_loop.create_proxy();
+            run_case(
+                || make_gui(proxy),
+                |app| {
+                    let mut file_drain = crate::app::writer_drain::WriterDrain::default();
+                    if timeout {
+                        let now = Instant::now();
+                        assert!(file_drain.keep_waiting(1, now, "test timeout"));
+                        assert!(!file_drain.keep_waiting(
+                            1,
+                            now + crate::app::writer_drain::WRITER_DRAIN_TIMEOUT,
+                            "test timeout"
+                        ));
+                    }
+                    app.state.shutdown = Some(ShutdownState {
+                        exit_code: 0,
+                        save_final_view: false,
+                        phase: ShutdownPhase::StoppingPlugins,
+                        final_view_sequence: None,
+                        port_scan_deadline: None,
+                        profile_detection_deadline: None,
+                        screenshot_deadline: None,
+                        explorer_files_deadline: None,
+                        runner_stop_deadline: Instant::now(),
+                        observer_drain: Default::default(),
+                        observer_started: None,
+                        observer_reported: false,
+                        memory_drain: Default::default(),
+                        state_drain: Default::default(),
+                        file_drain,
+                        journal_deadline: None,
+                    });
+                    assert!(!app.wait_for_file_writer_shutdown());
+                },
+                timeout,
+            );
         }
     }
 }

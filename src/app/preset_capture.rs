@@ -1,4 +1,7 @@
 //! Nonblocking preset capture entry points; saved data outlives its originating View.
+#[cfg(all(test, target_os = "linux"))]
+pub(crate) mod shutdown_tests;
+
 use super::{App, journal::PresetCaptureReply};
 use crate::ipc::{
     protocol::JsonRpcResponse,

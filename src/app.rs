@@ -608,6 +608,8 @@ mod preset_editor;
 pub(crate) mod settings_files;
 
 mod preset_capture;
+#[cfg(all(test, target_os = "linux"))]
+pub(crate) use preset_capture::shutdown_tests as preset_shutdown_tests;
 
 #[cfg(feature = "gui")]
 pub(crate) mod explorer_files;

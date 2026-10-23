@@ -21,6 +21,8 @@ use crate::runtime::engine_session::{EngineId, EngineSession};
 use crate::runtime::journal_product::{
     Completion, EngineSelection, JournalWorker, Request, ResultValue, Work,
 };
+#[cfg(all(test, target_os = "linux"))]
+pub(crate) use capture::PresetCaptureCompletion;
 #[cfg(feature = "gui")]
 pub(crate) use capture::PresetCaptureNotice;
 pub(crate) use capture::{PendingPresetSave, PresetCaptureOutput, PresetCaptureReply};
