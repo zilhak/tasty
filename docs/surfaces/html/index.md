@@ -17,7 +17,7 @@
 
 서버는 생성·복원 URL과 `html.open`의 최신 요청 URL을 GUI/headless 공통 source 세대로 관리한다. 파일 source의 부모가 전송 root·cwd이며 HTTP(S)는 전달받은 cwd를 보관한다. snapshot 영속화와 native commit 관측은 별개다. [HTML 전송 계약](../../dev-guide/html-transfer.md)에 따라 Linux GUI client는 완성된 파일 entry를 받아 native WebView로 표시한다. 양쪽 entry viewer 협상이 없거나 client HTML plugin이 미등록이면 placeholder/deferred를 유지한다. 하위 리소스와 HTTP(S)는 아직 지원하지 않는다. client 파일·네트워크로 대체하지 않는다.
 
-원격 주소는 읽기 전용이며 Reload만 제공한다. 100000 bytes를 넘는 entry는 Allow·Decline을 기다린다. Decline은 수신을 끝내고 skipped tag를 남긴다. 크기 → 스크립트 → 페이지 순서로 배치한다. 스크립트는 client 설정으로 판정하며 원격 설정·허용을 전달하지 않는다. Allow는 이미 스캔한 body를 재사용하고 사용자 Reload는 새 요청으로 누적량·크기 허용을 초기화한다. 같은 지문은 기존 스크립트 허용을 유지하고 다른 지문은 다시 차단한다. metadata 이후 30초 credit timeout은 크기 질문 대기 중에도 흐르며 실패 뒤 늦은 Allow는 무효다. Reload로 새 요청을 시작한다. 완료한 본문은 연결이 끊겨도 보존하지만 Reload는 비활성이다. 재연결은 새 connection epoch로 다시 받는다.
+원격 주소는 읽기 전용이며 Reload만 제공한다. 100000 bytes를 넘는 entry는 Allow·Decline을 기다린다. Decline은 수신을 끝내고 skipped tag를 남긴다. 크기 → 스크립트 → 페이지 순서로 배치한다. 스크립트는 client 설정으로 판정하며 원격 설정·허용을 전달하지 않는다. Allow는 이미 스캔한 body를 재사용하고 사용자 Reload는 새 요청으로 누적량·크기 허용을 초기화한다. 같은 지문은 기존 스크립트 허용을 유지하고 다른 지문은 다시 차단한다. 에이전트의 `surface.html_reload`도 새 entry를 요청하되 호스트 출처이므로 배너 열람을 이어받지 않는다. metadata 이후 30초 credit timeout은 크기 질문 대기 중에도 흐르며 실패 뒤 늦은 Allow는 무효다. Reload로 새 요청을 시작한다. 완료한 본문은 연결이 끊겨도 보존하지만 Reload는 비활성이다. 재연결은 새 connection epoch로 다시 받는다.
 
 ## 목적
 
@@ -74,7 +74,7 @@ HTML / 웹 콘텐츠를 보는 **`html` surface 종류**를 제공한다. `rende
   - 같은 redraw에서는 사용자 탐색 큐를 먼저, 에이전트 히스토리 큐를 다음에 처리한다.
   - 창이 없는 parked 세션의 surface도 대상 확인을 통과해 `queued: true`로 답하고, 요청은 그 세션의 큐에 쌓인다. 창이 복원되면 첫 redraw가 WebView를 새로 만들고 초기 로드를 시작한 뒤 큐를 적용한다. 새 WebView는 히스토리가 없고 아직 commit한 문서도 없어 뒤로·앞으로·새로고침 모두 갈 곳 없는 이동으로 버려진다(코드 순서와 공통 주소 선택 규칙에 따른 서술이며 실제 실행으로 재지 않았다).
   - 핸들러가 관측 사본(`surface.html_nav`가 읽는 값)으로 미리 판정하지 않는 이유: 사본은 redraw 때만 갱신된다. Linux 실제 실행에서 뒤로 간 뒤 3초 동안 다른 요청 없이 기다렸다가 앞으로를 요청하면, 사본의 `can_go_forward`가 아직 `false`라 4회 중 2회 갈 수 있는 이동을 거절했다. 그래서 판정은 적용 시점의 backend 값으로만 한다.
-  - html이 아닌 surface와 없는 surface는 `surface.html_nav`와 같이 invalid params로 거절한다. mirror workspace의 html leaf는 콘텐츠 mirror가 없어 client에서 빈 surface이므로 같은 이유로 거절하고 원격 호스트로 전달하지 않는다([원격 attach의 kind별 지원](../../features/remote-attach/index.md#surface-단위-vs-workspace-단위)). 헤드리스 빌드는 `-32017`로 답한다.
+  - html이 아닌 surface와 없는 surface는 `surface.html_nav`와 같이 invalid params로 거절한다. 협상된 HTML mirror의 Reload는 새 entry를 받고 수신량·크기 허용을 초기화한다. Back·Forward는 적용하지 않으며 미지원 placeholder는 거절한다. 원격 호스트로 스크립트 허용을 전달하지 않는다. 헤드리스 빌드는 `-32017`로 답한다.
   - 멱등 계약은 Mutate다. 앞 이동이 적용된 뒤(다른 redraw)에 같은 요청을 다시 보내면 두 단계 이동하거나 두 번 새로고침한다(Linux 측정: 약 0.1초 간격으로 보낸 뒤로 두 번은 다른 redraw에 적용되어 c에서 a까지 갔다, 3회).
   - 같은 redraw에 들어간 요청들은 모두 이동 전 항목을 기준으로 판정하고 실행한다. 앞 이동의 commit 전이기 때문이다. Linux(WebKitGTK)에서 측정한 결과는 다음과 같다. 요청을 한 redraw에 모으려고 debug `gpu-stall`로 이벤트 루프를 멈춘 사이에 보냈고, 적용 로그의 두 줄 간격은 0.02~0.27ms였다.
     - 뒤로 두 번: 두 번째도 갈 곳이 있다고 판정해 실행했지만 한 단계만 이동했다(c → b, 3회).
@@ -338,7 +338,7 @@ OS별 구현은 다음과 같다.
 - Given 에이전트가 연 html surface에서 A 다음 B로 이동했다 When `tasty surface html-back --surface <id>` Then 응답의 `queued`는 `true`이고 다음 redraw 뒤 `surface.html_nav`의 `url`은 A, `can_go_forward`는 `true`이며 포커스된 surface와 활성 탭은 그대로다.
 - Given 사용자가 보던 html surface When 에이전트가 `html-back`·`html-forward`·`html-reload`로 스크립트가 있는 문서를 연다 Then commit 뒤 `banner.phase`는 `hidden`, `banner.pending_view`는 `true`이고 사용자가 그 surface를 선택할 때 `blocked`가 된다.
 - Given 히스토리 처음에 있는 html surface When `html-back` Then 응답은 성공(`queued: true`)이고 다음 redraw에서 로드가 일어나지 않으며 배너 판정도 바뀌지 않는다. `html-forward`(끝)·문서 없는 `html-reload`도 같다.
-- Given 터미널·markdown surface, 없는 surface 또는 mirror workspace의 html leaf When `surface.html_back`·`surface.html_forward`·`surface.html_reload` Then invalid params로 거절하고 큐에 넣지 않는다.
+- Given 터미널·markdown surface, 없는 surface 또는 미지원 placeholder When `surface.html_back`·`surface.html_forward`·`surface.html_reload` Then invalid params로 거절하고 큐에 넣지 않는다.
 - Given 빈 html 탭(`tasty new tab --type html`) Then 위쪽에 placeholder가 있는 주소 띠가 보이고 아래는 html 글리프·"No page loaded"·주소창 힌트다.
 - Given 빈 html 탭 When 주소 띠에 `/tmp/x/index.html`을 입력하고 Enter Then 그 파일이 열리고 띠가 그 경로를 보인다.
 - Given `/tmp/x/index.html`이 열린 탭 When `b.html`을 입력 Then `/tmp/x/b.html`을 연다. Given 웹 문서 `https://example.com/a/` When `b.html` Then `https://example.com/a/b.html`을 연다. Given cwd가 `/tmp/y`인 빈 탭 When `c.html` Then `/tmp/y/c.html`을 연다.

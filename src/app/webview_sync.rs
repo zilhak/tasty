@@ -1,5 +1,8 @@
 //! App synchronizes native WebView effects against the originating runtime resources.
 //! Native windows, geometry caches and input handles remain owned by MainView.
+mod navigation;
+use navigation::{apply_agent_history_step, apply_user_nav};
+
 use crate::plugin::PluginManager;
 use crate::plugin_bridge::remote_surface::RemoteSurface;
 use crate::runtime::engine_access::EngineMut;
@@ -428,53 +431,6 @@ fn host_load_marks_origin(current: Option<&str>, url: &str) -> bool {
     !crate::model::is_same_document_fragment_move(current, url)
 }
 
-/// 사용자 탐색을 실행한다. 로드가 일어나지 않을 조작(히스토리 끝, 문서 없는 새로고침)은
-/// 사용자 출처 표지를 남기지 않도록 버린다. 호스트 로드 경로(`webview_url`)는 바꾸지 않으므로
-/// 페이지 안 링크 이동처럼 snapshot에 남지 않는다.
-fn apply_user_nav(
-    view: &MainView,
-    engine: &crate::runtime::engine_access::EngineRef<'_>,
-    sid: u32,
-    nav: crate::webview::WebViewUserNav,
-) {
-    use crate::webview::WebViewUserNav;
-    if let Some(rs) = find_remote_surface(view, engine, sid)
-        && rs.html_mirror.is_some()
-    {
-        if matches!(nav, WebViewUserNav::Reload)
-            && rs
-                .lock_html_mirror()
-                .is_some_and(|mut mirror| mirror.user_reload())
-        {
-            rs.with_html_script(|state| {
-                state.on_user_load_requested();
-                state.on_load_started();
-            });
-        }
-        return;
-    }
-    let Some(wv) = view.webviews.get(&sid) else {
-        tracing::warn!("webview user navigation {nav:?}: surface {sid} has no webview");
-        return;
-    };
-    let mark_user_origin = match plan_user_nav(&nav, &wv.nav_info()) {
-        UserNavPlan::Skip => {
-            tracing::debug!("WebView surface {sid}: user navigation {nav:?} has nothing to load");
-            return;
-        }
-        UserNavPlan::Navigate { mark_user_origin } => mark_user_origin,
-    };
-    if mark_user_origin && let Some(rs) = find_remote_surface(view, engine, sid) {
-        rs.with_html_script(|st| st.on_user_load_requested());
-    }
-    match nav {
-        WebViewUserNav::Back => wv.go_back(),
-        WebViewUserNav::Forward => wv.go_forward(),
-        WebViewUserNav::Reload => wv.reload(),
-        WebViewUserNav::Open(url) => wv.load_url(&url),
-    }
-}
-
 /// 에이전트 히스토리 이동 한 건에 할 일.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum AgentStepPlan {
@@ -502,38 +458,6 @@ fn plan_agent_history_step(
 fn mark_agent_step(plan: AgentStepPlan, st: &mut tasty_model::html_script::HtmlScriptState) {
     if plan == AgentStepPlan::Navigate {
         st.on_host_load_requested();
-    }
-}
-
-/// 에이전트 히스토리 이동을 실행한다. 판정은 적용 시점의 backend 값으로 한다.
-fn apply_agent_history_step(
-    view: &MainView,
-    engine: &crate::runtime::engine_access::EngineRef<'_>,
-    sid: u32,
-    step: crate::webview::WebViewHistoryStep,
-) {
-    use crate::webview::WebViewHistoryStep;
-    let Some(wv) = view.webviews.get(&sid) else {
-        tracing::warn!("webview agent history {step:?}: surface {sid} has no webview");
-        return;
-    };
-    let info = wv.nav_info();
-    let plan = plan_agent_history_step(step, &info);
-    tracing::debug!(
-        "WebView surface {sid}: agent history {step:?} -> {plan:?} (back={}, forward={})",
-        info.can_go_back,
-        info.can_go_forward
-    );
-    if plan == AgentStepPlan::Skip {
-        return;
-    }
-    if let Some(rs) = find_remote_surface(view, engine, sid) {
-        rs.with_html_script(|st| mark_agent_step(plan, st));
-    }
-    match step {
-        WebViewHistoryStep::Back => wv.go_back(),
-        WebViewHistoryStep::Forward => wv.go_forward(),
-        WebViewHistoryStep::Reload => wv.reload(),
     }
 }
 
@@ -760,7 +684,7 @@ fn sync_webviews(
         view.webview_policy_plugin_epoch = plugin_epoch;
     }
     // 주소창 포커스 단축키는 주소 띠가 있는 html 페이지에서만 가져가고 다른 WebView 페이지에는 남긴다.
-    // mirror workspace 의 html leaf 는 띠를 숨기므로 넣지 않는다.
+    // mirror 주소 띠는 읽기 전용이므로 편집 단축키 대상에서 제외한다.
     view.webview_key_bridge.set_address_surfaces(
         view.webviews
             .keys()
