@@ -200,8 +200,8 @@ host popup을 위에 배치한다. 이 호출은 parent와 child를 모두 `Area
 
 `has_egui_overlay_open` 에 무대가 들어가 있어도 나머지 둘은 각자의 조건을 확인한다 — 그 함수의
 프로덕션 소비처는 WebView 표시 하나뿐이다. 게다가 `keyboard_overlay_open()` 은 **정의가
-하나인데 소비 지점이 여덟**이고, 그 여덟이 무대에 대해 같은 답을 필요로 하지 않는다. 그래서
-무대는 각 지점에서 명시적으로 판정한다. 아래 열 곳이 전부다.
+하나인데 소비 지점이 아홉**이고, 그 아홉이 무대에 대해 같은 답을 필요로 하지 않는다. 그래서
+무대는 각 지점에서 명시적으로 판정한다. 아래 열한 곳이 전부다.
 
 | # | 지점 | 무대 항 | 근거 |
 |---|------|--------|------|
@@ -215,8 +215,9 @@ host popup을 위에 배치한다. 이 호출은 parent와 child를 모두 `Area
 | 8 | `src/adapters/ui/egui_panels.rs` explorer 타입어헤드 게이트 | `\|\| fullscreen_stage_active()` | 필수. 무대 콘텐츠는 1이 egui로 들여보낸 키를 쓰는데, 그 키가 같은 egui `Context`의 이벤트 큐에 들어가 뒤에 있는 explorer 패널에도 전달된다. 무대 항을 빼면 무대에서 입력한 글자가 뒤쪽 explorer의 선택을 움직인다 |
 | 9 | `src/adapters/ipc/handler/debug_state.rs` `ui.state` 의 `keyboard_shortcuts_gated` | `fullscreen_stage_active() \|\|` | 게이트가 아니라 게이트 상태를 보고하는 값이지만 무대 항이 필요하다. 이 필드는 단축키가 매처까지 도달했는지를 알려주는데, 무대가 떠 있으면 2의 0단계에서 먼저 소비한다. 무대 항을 빼면 무대 중에도 "막히지 않았다"고 보고해, 단축키가 왜 동작하지 않았는지 확인할 수 없게 된다 |
 | 10 | `src/view/main/file_drag.rs` `poll_outbound_drag` | `fullscreen_stage_active() \|\|` | 필수. 외부 앱으로 끌어내는 OS 드래그는 렌더한 오버레이로 덮을 수 없다. 무대나 키보드 오버레이가 떠 있으면 진행 중인 드래그를 취소하고 새 드래그를 시작하지 않는다 |
+| 11 | `src/adapters/ui/input/explorer_ime.rs` X11 조합 종료 키 소유권 | `\|\| fullscreen_stage_active()` | 무대·popup이 키를 받는 동안 배경 탐색기 목록이 raw 누름의 조합 소유권을 기록하거나 재전달 키를 소비하지 않는다. 주소·Find·이름 입력도 목록 소유권에서 제외한다 |
 
-1·3·4·5·8 이 같은 항을 각자 OR 하는 모양이라 "`keyboard_overlay_open()` 정의 안으로 넣으면
+1·3·4·5·8·11 이 같은 항을 각자 OR 하는 모양이라 "`keyboard_overlay_open()` 정의 안으로 넣으면
 되지 않나" 가 자연스러운 질문이다. 넣지 않은 이유는 2 다 — 그 지점은 무대에 대해 다른
 답(0단계 게이트가 이미 처리)을 쓰고 있고, 정의를 바꾸면 이 술어의 의미가 "키보드 오버레이"
 에서 "키보드 오버레이 또는 무대" 로 넓어져 앞으로의 호출자에게도 그 결정이 따라붙는다.

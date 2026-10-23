@@ -48,11 +48,28 @@ fn focused_explorer_panel<'a>(
     engine.find_surface_by_id(focused)?.explorer()
 }
 
-fn focused_explorer_surface_id(
+pub(super) fn focused_explorer_surface_id(
     state: &crate::state::MainViewState,
     engine: &crate::runtime::engine_read::EngineRead<'_>,
 ) -> Option<u32> {
     focused_explorer_panel(state, engine).map(|p| p.id)
+}
+
+#[cfg(target_os = "linux")]
+pub(crate) fn explorer_composition_list_key(
+    kb: &crate::settings::KeybindingSettings,
+    key: &winit::keyboard::Key,
+    mods: winit::keyboard::ModifiersState,
+) -> bool {
+    explorer_keys::list_step(kb, key, mods).is_some()
+        || [
+            &kb.explorer_open,
+            &kb.explorer_clear_selection,
+            &kb.explorer_trash,
+            &kb.explorer_rename,
+        ]
+        .into_iter()
+        .any(|bindings| matches_any_binding(bindings, key, mods))
 }
 
 /// 미리보기 토글·Properties 단축키. 포커스된 탐색기만 바꾼다.

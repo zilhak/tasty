@@ -14,6 +14,16 @@ use crate::{App, AppEvent};
 use tasty_ipc::stream_hub::{PumpOutcome, StreamHub};
 
 impl ApplicationHandler<AppEvent> for App {
+    #[cfg(target_os = "linux")]
+    fn device_event(
+        &mut self,
+        event_loop: &ActiveEventLoop,
+        _device_id: winit::event::DeviceId,
+        event: winit::event::DeviceEvent,
+    ) {
+        self.observe_explorer_device_key(event_loop, event);
+    }
+
     #[allow(clippy::cognitive_complexity)] // complexity-exempt: 이벤트별 핸들러에 위임하는 평면 match이며 플랫폼 cfg를 포함한다. 분기를 한곳에서 볼 수 있도록 유지한다.
     fn user_event(&mut self, event_loop: &ActiveEventLoop, event: AppEvent) {
         let _stall_guard = stall_watchdog::Guard::enter(Site::UserEvent);

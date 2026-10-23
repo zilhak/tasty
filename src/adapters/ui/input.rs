@@ -2,5 +2,7 @@
 
 pub mod click_cursor;
 pub mod double_tap;
+#[cfg(target_os = "linux")]
+pub(crate) mod explorer_ime;
 pub mod shortcuts;
 pub mod synthetic;

@@ -176,6 +176,12 @@ explorer 같은 egui surface에 포커스가 있으면 한 번의 키 입력이 
 않는 것이 여기서는 오히려 맞는 판단이다. Ctrl과 Cmd 조합은 egui-winit이 텍스트 이벤트를
 아예 만들지 않으므로 이 문제가 없다.
 
+## X11 탐색기 조합 종료 키
+
+X11 XIM은 한 물리 키로 조합을 확정하고, 같은 키를 나중에 `KeyboardInput`으로 다시 보낼 수 있다. 빈 Preedit나 Commit 뒤에 도착했다는 사실만으로 새 누름이라고 판단하지 않는다. `DeviceEvent::Key`의 raw 누름이 XIM 필터보다 먼저 도착하는 경로에서 탐색기 목록의 조합 소유권을 물리 키별로 기록하고, 재전달된 목록 동작 키를 소비한다. 이동·열기·선택 해제·이름 변경·휴지통 바인딩을 설정에서 바꿔도 같은 매처를 사용한다.
+
+기록은 새 물리 누름마다 교체하고 창 포커스 변경 때 비운다. XIM이 이전 키를 재전달하지 않았어도 다음 실제 누름을 막지 않는다. raw release가 먼저 도착할 수 있으므로 release만으로 기록을 버리지 않는다. 목록과 같은 surface의 조합에만 적용하며 주소·Find·이름 입력, popup, 터미널과 다른 OS의 키 경로는 이 처리로 바꾸지 않는다.
+
 ## 합성 키 이벤트 (winit)
 
 winit은 X11·Windows에서 창이 포커스를 얻으면 이미 눌린 키의 `Pressed`, 잃으면 `Released`를 합성한다(`WindowEvent::KeyboardInput { is_synthetic: true, .. }`). macOS·Wayland에서는 합성하지 않는다.

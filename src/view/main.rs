@@ -53,6 +53,8 @@ pub struct MainView {
     pub(crate) clipboard: ClipboardContext,
     pub(crate) ime_preedit: Option<ImePreeditState>,
     pub(crate) ime_request_target: Option<ime::CompositionTarget>,
+    #[cfg(target_os = "linux")]
+    pub(crate) explorer_ime_keys: crate::adapters::ui::input::explorer_ime::ExplorerImeKeys,
     pub(crate) proxy: winit::event_loop::EventLoopProxy<AppEvent>,
     pub(crate) text_selection: Option<TextSelection>,
     /// vi-style 키보드 복사 모드. Some 일 때 키 입력이 PTY 로 전달되지 않고
@@ -213,6 +215,8 @@ impl MainView {
             dragging_divider: None,
             clipboard: ClipboardContext::new(display),
             ime_preedit: None,
+            #[cfg(target_os = "linux")]
+            explorer_ime_keys: Default::default(),
             ime_request_target: None,
             proxy,
             text_selection: None,
@@ -406,6 +410,11 @@ impl MainView {
         // If a modal is active, block all input events before they reach egui.
         // Only allow non-input events (resize, redraw, scale factor, focus) through.
         if modal_blocks_input(ctx.modal_active, &event) {
+            return ViewAction::None;
+        }
+
+        #[cfg(target_os = "linux")]
+        if self.consume_explorer_ime_key(engine, &event) {
             return ViewAction::None;
         }
 

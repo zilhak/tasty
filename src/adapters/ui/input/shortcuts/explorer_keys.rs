@@ -13,7 +13,7 @@ use crate::view::main::MainView;
 use crate::view::ui::View as _;
 
 /// 이동 키와 Shift 로 늘리는 키. `EXPLORER_LIST_BINDING_FIELDS` 와 같은 순서다.
-fn list_step(
+pub(super) fn list_step(
     kb: &crate::settings::KeybindingSettings,
     key: &Key,
     mods: ModifiersState,
