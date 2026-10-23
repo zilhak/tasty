@@ -74,18 +74,27 @@ impl App {
         );
     }
 
-    /// surface마다 기다리지 않고 미뤄 둔 observer 워커 회수를 종료 전에 마친다.
-    /// join_retired는 동기적으로 기다리므로 이 단계의 렌더가 지연될 수 있다.
-    pub(super) fn shutdown_join_observer_sinks(&mut self) {
-        let t = Instant::now();
-        for engine in self.engines_mut().windowed_and_parked() {
-            engine.observer_router.join_retired();
+    /// Disconnect sink producers without waiting on their I/O.
+    pub(super) fn shutdown_begin_observer_sinks(&mut self) {
+        for session in self.engines.all_sessions_mut() {
+            session.observer_router.begin_shutdown();
         }
-        tracing::info!(
-            target: "tasty::shutdown",
-            ms = shutdown_trace::elapsed_ms(t),
-            "S3b observer_sink_join (deferred close-path joins)"
-        );
+    }
+
+    pub(super) fn shutdown_poll_observer_sinks(
+        &mut self,
+    ) -> crate::output_observer::ShutdownProgress {
+        let mut progress = crate::output_observer::ShutdownProgress::default();
+        for session in self.engines.all_sessions_mut() {
+            progress.merge(session.observer_router.poll_shutdown());
+        }
+        progress
+    }
+
+    pub(super) fn shutdown_fence_observer_submissions(&self) {
+        for session in self.engines.all_sessions() {
+            session.observer_router.fence_submissions();
+        }
     }
 
     /// shutdown_step_closing_surfaces에서 surface.closed를 보낸 뒤 호출한다.

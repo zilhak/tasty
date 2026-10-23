@@ -23,3 +23,11 @@ pub(crate) fn elapsed_ms(since: Instant) -> f64 {
 pub(crate) fn duration_ms(d: std::time::Duration) -> f64 {
     d.as_secs_f64() * 1000.0
 }
+
+/// A joined worker and a clean sink outcome are separate observations.
+pub(crate) fn observer_outcome(
+    progress: crate::output_observer::ShutdownProgress,
+    elapsed: std::time::Duration,
+) {
+    progress.record_outcome(elapsed);
+}

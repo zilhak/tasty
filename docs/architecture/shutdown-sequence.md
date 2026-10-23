@@ -1,6 +1,6 @@
 # 종료 시퀀스 — 종료 cascade + Drop tail
 
-GUI 종료는 일반 종료의 `App::begin_shutdown`과 오류 종료의 `begin_error_shutdown`이 공유하는 `start_shutdown`에서 `ShutdownPhase` 상태 머신을 설치해 진행한다. 표시할 윈도우가 있으면 대기 단계 사이에 종료 화면을 그리며, 없으면 같은 단계를 블로킹 루프로 실행한다. Observer join이나 프로세스 kill·wait처럼 동기 대기가 있는 단계에서는 렌더링도 기다릴 수 있다. 선택 이유는 종료 설계를 따른다.
+GUI 종료는 일반 종료의 `App::begin_shutdown`과 오류 종료의 `begin_error_shutdown`이 공유하는 `start_shutdown`에서 `ShutdownPhase` 상태 머신을 설치해 진행한다. 표시할 윈도우가 있으면 대기 단계 사이에 종료 화면을 그리며, 없으면 같은 단계를 블로킹 루프로 실행한다. 프로세스 kill·wait처럼 동기 대기가 있는 단계에서는 렌더링도 기다릴 수 있다. 선택 이유는 종료 설계를 따른다.
 
 계측은 `event_loop.exit()`까지의 종료 단계와 `run_app` 반환 뒤 `App`을 drop하는 정리 구간(Drop tail)을 나눈다. 후자는 종료 화면을 더 그리지 않는 구간이며, App 해제까지의 소요는 `shutdown_total_with_drop`으로 확인한다.
 
@@ -17,8 +17,9 @@ ReclaimingBootWorker
   부팅 중 worker 결과를 회수할 기회 제공
 ClosingSurfaces
   원 runner receipt 관측 → shutdown 통지 → surface lifecycle 정리
-  observer join → plugin shutdown 요청
+  observer sender 종료 → plugin shutdown 요청
 StoppingPlugins
+  observer 완료 worker polling(5s); 대기 사이 렌더링과 종료 오류 응답 계속
   Remote의 socket/SSH 실제 retirement receipt
   profile/port/screenshot worker의 실제 남은 수
   plugin shutdown/kill/wait 관측
@@ -29,12 +30,12 @@ run_app 반환 → drop_app_with_trace → shutdown_total_with_drop → display 
 
 진행 중 worker의 대기 상한이 지나면 미회수 수 또는 해당 retirement의 TimedOut 관측을 기록한다. timeout은 실제 join 완료를 뜻하지 않는다. Task runner의 `RunnerStopObservation::WorkerFailed`는 이와 달리 실제 join 뒤 확인한 worker 실패다. `Joined`와 성공 여부는 다르지만 두 관측 모두 원 thread의 join은 끝났다는 뜻이다. 정상 EngineRegistry의 retiring owner를 해제하는 경로는 원 runner와 물리 자원 receipt를 기다리며 앱 종료의 상한과 구별한다.
 
-Remote의 established tunnel과 늦은 연결 결과는 retirement worker가 child wait를 수행한다. App 스레드가 정상 Remote 세션의 SshTunnel을 직접 blocking Drop하는 경로로 설명하지 않는다. CLI의 동기 SshTunnel Drop과 예외적인 Drop tail은 별도다. observer join이나 plugin 강제 종료 후 wait 등 남은 동기 구간은 실제 지연을 측정해야 한다.
+Remote의 established tunnel과 늦은 연결 결과는 retirement worker가 child wait를 수행한다. App 스레드가 정상 Remote 세션의 SshTunnel을 직접 blocking Drop하는 경로로 설명하지 않는다. CLI의 동기 SshTunnel Drop과 예외적인 Drop tail은 별도다. plugin 강제 종료 후 wait 등 남은 동기 구간은 실제 지연을 측정해야 한다.
 
 
 - `start_shutdown`을 공통 진입점으로 사용해 시작 시각과 단계 순서를 맞춘다. Layout 저장은 surface 닫기보다 먼저 수행한다.
 - 이미 종료 중이면 중복 요청은 바로 반환하며 단계가 처음으로 돌아가지 않는다.
-- 상태 머신으로 나눴다고 모든 단계가 짧게 끝나는 것은 아니다. checkpoint 완료 대기, observer join, 강제 종료 뒤 wait 등의 실제 대기를 함께 측정한다.
+- 상태 머신으로 나눴다고 모든 단계가 짧게 끝나는 것은 아니다. checkpoint 완료 대기, 강제 종료 뒤 wait 등의 실제 대기를 함께 측정한다.
 - S4에서 프로세스 목록을 비웠다면 `PluginProcess::drop`에 남은 대상은 없다. 예외 경로에서 남은 대상의 drop은 kill과 wait를 수행할 수 있다.
 - 정상 GUI 종료와 DB 오류 안내 모달의 종료는 App 상태 머신을 거쳐 `event_loop.exit()`로 요청한다. 오류 모달은 종료 상태만 요청하고 프로세스를 직접 끝내지 않는다.
 - 오류 모달로 종료할 때는 fallback 표시 상태로 마지막 checkpoint를 덮어쓰지 않도록 새 layout 저장을 생략한다. 이미 접수한 journal 작업과 자원 회수는 계속 처리한다. `App` Drop 뒤 boot가 요청된 종료 코드를 반환한다.
@@ -256,3 +257,11 @@ S4a 는 세 회 모두 plugin 마다 1.6~3.8 ms 였다.
 - 이 문서 — 종료를 프레임 구동으로 전개하고 로딩 화면을 씌운 결정
 
 일반 종료와 오류 모달 종료가 같은 이벤트 회차에 겹치면 오류 종료 코드와 최종 화면 저장 생략을 우선한다. DAG 조회 워커는 종료 시작부터 새 요청을 받지 않으며 View I/O 회수 단계에서 완료를 기다린다.
+
+## Observer sink 종료
+
+GUI S3는 surface 닫힘을 전달한 뒤 전체 observer sender(전체 surface 구독 포함)를 닫는다. 별도 단계가 완료된 JoinHandle만 회수하며, 기다리는 동안 종료 프레임과 IPC 종료 오류 응답을 계속 처리한다. headless도 runner·자원 producer 정리 뒤 observer를 같은 방식으로 폴링하고 file/memory writer를 닫는다.
+
+5초 기한은 첫 polling 대기에서 고정된다. 기한을 넘기면 pending handle은 원 router에 남고, memory sink의 새 writer 제출을 짧은 접수 잠금으로 차단한 뒤 저장 writer 종료로 진행한다. 이미 writer에 접수한 요청은 취소하지 않는다. 아직 제출하지 못한 observer 항목은 거절·미확정으로 남을 수 있다. S3b는 pending·실제 joined·panic·저장 실패·drop 수와 clean 여부를 따로 기록한다. join된 worker도 panic이나 저장 실패가 있으면 clean이 아니다.
+
+Router Drop은 다시 기다리지 않는다. 이미 끝난 worker만 회수하고 남은 수를 경고하며 미완료 handle을 해제한다. 해당 스레드는 프로세스가 살아 있는 동안 실행될 수 있지만 프로세스 종료 때 accepted output을 잃을 수 있다. Drop이나 프로세스 종료 코드0을 저장 완료 근거로 사용하지 않는다. 명시적 output.observe_stop은 기존 동기 join 계약을 유지한다.

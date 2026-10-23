@@ -310,9 +310,9 @@ writer를 거치는 IPC 요청은 결과가 나온 뒤 응답한다. 핸들러�
 
 ### 종료 순서
 
-GUI는 종료 상태기계가 layout 저장(S1) → 부팅 worker 회수(S2) → surface 닫기와 observer sink join(S3) → 플러그인·보조 worker 정리, 그 뒤 memory writer·state.db writer·file writer의 drain·join(S4) 순으로 진행한 뒤 이벤트 루프를 끝낸다. 그다음 instance 파일을 지우고 App을 drop한다. App의 첫 필드인 journal worker가 먼저 join되고, `services`(memory·state·file writer)와 IPC 서버(포트 파일 삭제)는 그 뒤에 drop된다.
+GUI는 종료 상태기계가 layout 저장(S1) → 부팅 worker 회수(S2) → surface 닫기와 observer sink 완료 폴링(S3) → 플러그인·보조 worker 정리, 그 뒤 memory writer·state.db writer·file writer의 drain·join(S4) 순으로 진행한 뒤 이벤트 루프를 끝낸다. 그다음 instance 파일을 지우고 App을 drop한다. App의 첫 필드인 journal worker가 먼저 join되고, `services`(memory·state·file writer)와 IPC 서버(포트 파일 삭제)는 그 뒤에 drop된다.
 
-headless는 publication을 비운 뒤 journal worker를 stop하고(join은 App drop 때), runner·보조 worker를 회수한 뒤 file writer, memory writer를 차례로 drain·join한다. layout 저장·observer 일괄 join·state.db writer 단계는 없다.
+headless는 publication을 비운 뒤 journal worker를 stop하고(join은 App drop 때), runner·보조 worker를 회수한 뒤 file writer, memory writer를 차례로 drain·join한다. layout 저장·state.db writer 단계는 없다. observer producer는 writer drain 전에 완료를 폴링하며, 시한 뒤 새 memory 제출을 차단하고 미회수를 남긴다.
 
 memory.db 쓰기는 모두 memory writer를 지난다. writer는 종료 때 접수를 막고 마지막 flush cut까지 실행한 뒤 join하며, 소유한 저장소를 그때 닫는다. 종료 요청보다 늦게 도착한 요청 게이트 대기 요청은 `-32000`으로 거절한다([요청 게이트](#요청-게이트)).
 

@@ -8,7 +8,7 @@
 
 use std::collections::VecDeque;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, RecvTimeoutError};
 use std::time::Duration;
 
@@ -31,8 +31,25 @@ const BATCH_RECORDS: usize = super::SINK_CHANNEL_CAP;
 /// router의 정보 조회와 공유하는 sink 집계.
 #[derive(Debug, Default)]
 pub(super) struct SinkTally {
+    pub(super) worker_failed: AtomicBool,
+    submissions_closed: std::sync::Mutex<bool>,
     pub(super) submit_rejected: AtomicU64,
     pub(super) store_failed: AtomicU64,
+}
+
+impl SinkTally {
+    pub(super) fn close_submissions(&self) {
+        *self.submissions() = true;
+    }
+
+    fn submissions(&self) -> std::sync::MutexGuard<'_, bool> {
+        self.submissions_closed.lock().unwrap_or_else(|error| {
+            tracing::warn!("observer submission fence poisoned; closing admission");
+            let mut closed = error.into_inner();
+            *closed = true;
+            closed
+        })
+    }
 }
 
 enum Op {
@@ -156,6 +173,21 @@ impl MemorySink {
             mode: BatchMode::Independent,
             ops: writes,
         };
+        // Production submit only takes the writer queue lock. Closing this fence waits for
+        // that bounded admission, never disk I/O, so no sink submits after writer drain starts.
+        let tally = self.tally.clone();
+        let closed = tally.submissions();
+        if *closed {
+            tally
+                .submit_rejected
+                .fetch_add(records as u64, Ordering::Relaxed);
+            tracing::warn!(
+                observer = self.observer_id,
+                records,
+                "observer submission fenced before writer shutdown"
+            );
+            return;
+        }
         match self.memory.submit(request) {
             Ok(ticket) => self.in_flight.push_back(InFlight { ticket, ops }),
             Err(error) => {
@@ -196,6 +228,7 @@ impl MemorySink {
                         batches = self.in_flight.len(),
                         "observer memory sink: gave up waiting for writer results"
                     );
+                    self.tally.worker_failed.store(true, Ordering::Release);
                     self.in_flight.clear();
                 }
                 return;

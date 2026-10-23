@@ -1,6 +1,6 @@
 //! 종료를 단계별로 진행하고 대기가 필요하면 로딩 화면을 그린다.
 //! 바로 끝나는 종료는 화면을 그리지 않으며, 그릴 창이 없으면 같은 단계를 블로킹으로 실행한다.
-//! 저장·observer join 같은 동기 작업까지 비동기로 바꾸지는 않는다.
+//! observer sink는 완료한 handle만 회수한다. plugin kill/wait 등 남은 동기 구간은 별도다.
 //! 종료 중에는 일반 IPC·Intent·플러그인 처리를 멈추고 큐에 쌓인 IPC 요청을 거절한다.
 //! 계측 마커: docs/architecture/shutdown-sequence.md.
 
@@ -63,6 +63,9 @@ pub(crate) struct ShutdownState {
     explorer_files_deadline: Option<Instant>,
     runner_stop_deadline: Instant,
     /// memory·state·file writer drain의 기한. 각각 첫 대기에서 정하고 넘기면 미회수로 두고 진행한다.
+    observer_drain: crate::app::writer_drain::WriterDrain,
+    observer_started: Option<Instant>,
+    observer_reported: bool,
     memory_drain: crate::app::writer_drain::WriterDrain,
     state_drain: crate::app::writer_drain::WriterDrain,
     file_drain: crate::app::writer_drain::WriterDrain,
@@ -103,6 +106,9 @@ impl App {
             screenshot_deadline: Some(Instant::now() + Duration::from_secs(5)),
             explorer_files_deadline: Some(Instant::now() + Duration::from_secs(5)),
             runner_stop_deadline: Instant::now() + Duration::from_secs(5),
+            observer_drain: Default::default(),
+            observer_started: None,
+            observer_reported: false,
             memory_drain: Default::default(),
             state_drain: Default::default(),
             file_drain: Default::default(),
@@ -407,11 +413,32 @@ impl App {
         }
         self.emit_shutdown_initiated();
         self.shutdown_close_surfaces();
-        self.shutdown_join_observer_sinks();
+        self.shutdown_begin_observer_sinks();
         self.remote.begin_shutdown();
         self.begin_plugin_shutdown();
         self.set_shutdown_phase(ShutdownPhase::StoppingPlugins);
         StepOutcome::Advanced
+    }
+
+    fn wait_for_observer_shutdown(&mut self) -> bool {
+        let progress = self.shutdown_poll_observer_sinks();
+        let state = self.state.shutdown.as_mut().expect("shutdown phase");
+        if state.observer_started.is_none() && progress.pending != 0 {
+            tracing::info!(target: "tasty::shutdown", pending = progress.pending, "observer_sink_wait_started");
+        }
+        let started = *state.observer_started.get_or_insert_with(Instant::now);
+        if state.observer_drain.keep_waiting(
+            progress.pending,
+            Instant::now(),
+            "observer shutdown timed out; sink workers remain unjoined",
+        ) {
+            return true;
+        }
+        if !std::mem::replace(&mut state.observer_reported, true) {
+            shutdown_trace::observer_outcome(progress, started.elapsed());
+        }
+        self.shutdown_fence_observer_submissions();
+        false
     }
 
     fn wait_for_port_scan_shutdown(&mut self) -> bool {
@@ -499,7 +526,8 @@ impl App {
         false
     }
     fn shutdown_step_stopping_plugins(&mut self) -> StepOutcome {
-        if self.wait_for_port_scan_shutdown()
+        if self.wait_for_observer_shutdown()
+            || self.wait_for_port_scan_shutdown()
             || self.wait_for_profile_shutdown()
             || self.wait_for_screenshot_shutdown()
             || self.wait_for_explorer_file_shutdown()

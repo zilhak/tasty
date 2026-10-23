@@ -18,6 +18,8 @@ pub(crate) mod headless_stream;
 pub(crate) mod home_in_use;
 pub(crate) mod locale;
 pub(crate) mod locale_font;
+#[cfg(not(feature = "gui"))]
+mod observer_drain;
 pub(crate) mod os;
 #[cfg(feature = "gui")]
 pub(crate) mod single_instance;
@@ -1104,6 +1106,7 @@ fn finish_headless_shutdown(
         }
         std::thread::sleep(std::time::Duration::from_millis(10));
     }
+    observer_drain::drain(app, session);
     file_drain::drain(app);
     drain_headless_memory_writer(app);
 }

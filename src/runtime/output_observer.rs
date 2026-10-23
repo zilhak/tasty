@@ -2,6 +2,11 @@
 //! 유한 채널이 가득 차면 해당 항목을 버린다. 등록 정보는 저장하지 않는다.
 
 mod memory_sink;
+mod shutdown;
+#[cfg(test)]
+mod shutdown_tests;
+
+pub use shutdown::ShutdownProgress;
 
 use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
@@ -87,13 +92,16 @@ pub struct ObserverRouter {
     /// 줄바꿈 전의 불완전한 줄. 길이 제한은 없다.
     line_buffers: HashMap<u32, LineBuffer>,
     /// surface를 닫는 동안 worker를 기다리지 않도록 join을 미룬다.
-    /// 끝난 worker를 회수하고 나머지는 join_retired 또는 Drop에서 기다린다.
+    /// 끝난 worker만 회수한다. 종료 시한 뒤에도 미회수 handle은 이 owner에 남는다.
     retired: Vec<RetiredSink>,
+    shutdown_progress: ShutdownProgress,
 }
 
 struct RetiredSink {
     id: ObserverId,
     join: JoinHandle<()>,
+    tally: std::sync::Arc<memory_sink::SinkTally>,
+    dropped: u64,
 }
 
 struct ObserverEntry {
@@ -155,6 +163,7 @@ impl ObserverRouter {
             observers: HashMap::new(),
             line_buffers: HashMap::new(),
             retired: Vec::new(),
+            shutdown_progress: ShutdownProgress::default(),
         }
     }
 
@@ -214,10 +223,11 @@ impl ObserverRouter {
                     .open(path)
                     .map_err(|e| ObserverError::FileOpen(e.to_string()))?;
                 let worker_id = id;
+                let tally = sink_tally.clone();
                 Some(
                     thread::Builder::new()
                         .name(format!("tasty-observer-file-{worker_id}"))
-                        .spawn(move || run_file_sink(worker_id, file, rx))
+                        .spawn(move || run_file_sink(worker_id, file, rx, tally))
                         .map_err(|e| ObserverError::ThreadSpawn(e.to_string()))?,
                 )
             }
@@ -261,39 +271,6 @@ impl ObserverRouter {
             tracing::warn!("observer {id} sink thread panicked: {e:?}");
         }
         Ok(())
-    }
-
-    /// sender를 닫고 join을 미룬다. worker는 채널 잔여 항목을 받을 수 있지만
-    /// 저장 오류·worker panic·프로세스 종료에 따른 손실까지 막지는 못한다.
-    fn retire(&mut self, id: ObserverId, entry: ObserverEntry) {
-        drop(entry.tx);
-        if let Some(join) = entry.join {
-            self.retired.push(RetiredSink { id, join });
-        }
-    }
-
-    /// 완료로 표시된 worker만 join하고 나머지는 다음 회수로 미룬다.
-    fn reap_finished(&mut self) {
-        let mut still_running = Vec::with_capacity(self.retired.len());
-        for r in self.retired.drain(..) {
-            if r.join.is_finished() {
-                if let Err(e) = r.join.join() {
-                    tracing::warn!("observer {} sink thread panicked: {e:?}", r.id);
-                }
-            } else {
-                still_running.push(r);
-            }
-        }
-        self.retired = still_running;
-    }
-
-    /// 남은 worker를 모두 기다린다. 저장 I/O가 지연되면 이 호출도 기다린다.
-    pub fn join_retired(&mut self) {
-        for r in self.retired.drain(..) {
-            if let Err(e) = r.join.join() {
-                tracing::warn!("observer {} sink thread panicked: {e:?}", r.id);
-            }
-        }
     }
 
     #[cfg(test)]
@@ -408,21 +385,6 @@ impl Default for ObserverRouter {
     }
 }
 
-impl Drop for ObserverRouter {
-    fn drop(&mut self) {
-        let ids: Vec<ObserverId> = self.observers.keys().copied().collect();
-        for id in ids {
-            if let Err(error) = self.unregister(id)
-                && !matches!(error, ObserverError::NotFound(_))
-            {
-                tracing::warn!(?error, "observer cleanup failed");
-            }
-        }
-        // 명시적 종료 절차를 거치지 않은 Drop도 남은 worker 종료를 기다린다.
-        self.join_retired();
-    }
-}
-
 fn parse_and_filter_items(entry: &ObserverEntry, line: &str, line_idx: u32) -> Vec<ParsedItem> {
     let mut items: Vec<ParsedItem> = Vec::new();
     for p in &entry.parser_handles {
@@ -496,6 +458,7 @@ fn run_file_sink(
     observer_id: ObserverId,
     mut file: File,
     rx: std::sync::mpsc::Receiver<ParsedItem>,
+    tally: std::sync::Arc<memory_sink::SinkTally>,
 ) {
     while let Ok(item) = rx.recv() {
         let now = unix_ms_now();
@@ -510,11 +473,17 @@ fn run_file_sink(
         let line = match serde_json::to_string(&record) {
             Ok(s) => s,
             Err(e) => {
+                tally
+                    .worker_failed
+                    .store(true, std::sync::atomic::Ordering::Release);
                 tracing::warn!("observer {observer_id} file sink serialize: {e}");
                 continue;
             }
         };
         if let Err(e) = writeln!(file, "{line}") {
+            tally
+                .worker_failed
+                .store(true, std::sync::atomic::Ordering::Release);
             tracing::warn!("observer {observer_id} file sink write: {e}");
             return;
         }
@@ -685,7 +654,7 @@ mod tests {
     }
 
     #[test]
-    fn dropping_the_router_reaps_retired_workers_even_without_s3b() {
+    fn polling_shutdown_reaps_accepted_records_before_router_drop() {
         let dir = tempfile::tempdir().unwrap();
         let sink = dir.path().join("dropped.jsonl");
         let mut r = ObserverRouter::new();
@@ -698,14 +667,15 @@ mod tests {
         }
 
         r.drop_surface(3);
-        drop(r); // join_retired 를 명시적으로 부르지 않는다.
+        r.join_retired();
+        drop(r);
 
         let written = std::fs::read_to_string(&sink).unwrap();
         let lines: Vec<&str> = written.lines().collect();
         assert_eq!(
             lines.len(),
             expected,
-            "라우터 drop 만으로도 수락된 항목이 전부 기록된다"
+            "종료 polling 뒤 수락된 항목이 전부 기록된다"
         );
         assert!(
             lines.last().unwrap().contains("/tmp/drop-probe-63"),
