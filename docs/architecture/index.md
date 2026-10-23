@@ -227,7 +227,7 @@ ports-and-adapters 배치:
 
 | 문서 | 설명 |
 |------|------|
-| [boot-sequence](boot-sequence.md) | 첫 윈도우 부팅 상태 머신(BootPhase) — hidden 생성→로딩 프레임→표시, 프레임 구동 대기, 부팅 계측(T1~T7) |
+| [boot-sequence](boot-sequence.md) | 첫 윈도우 부팅 상태 머신(BootPhase) — hidden 생성→로딩 프레임→표시, 프레임 구동 대기, 헤드리스 메모리 초기화 모듈, 부팅 계측(T1~T7) |
 | [shutdown-sequence](shutdown-sequence.md) | 정상·오류 모달의 공통 종료와 exit status, native webview 숨김·cascade·Drop tail, observer의 일반 retirement 완료 대기·앱 종료 비동기 회수와 timeout, writer별 실제 flush·join과 cut 이후 시간 관측·debug 콜백 raw 표본, GPU 해제까지 유지하는 native display 수명, 종료 계측(S1~S5), 최종 file receipt·preset 원 요청 응답 순서 |
 | [close-sequence](close-sequence.md) | 확정 닫기 · 원 자원 retirement receipt · 불명 결과와 명령 완료 · engine/슬롯 해제 |
 | [event-store](event-store.md) | 구조 journal 저장 계약의 수치·보조 규칙 — 요청별 savepoint·물리 transaction 공유·private SQL 조회 실패의 전체 rollback·batch별 ACK·최초 엔진 binding의 고정 metadata 제출, 실제 SQL commit·worker 구간 계측, import 전송 identity, 잠금 없는 쓰기, ID 예약 경계, 로그 보존, projection 출력, 신규 admission 예산·쓰기 크기 상한, 구조 journal의 App 연결 |

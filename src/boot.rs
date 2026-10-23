@@ -11,6 +11,8 @@ mod file_drain;
 #[cfg(not(feature = "gui"))]
 pub(crate) mod headless_dispatch;
 #[cfg(not(feature = "gui"))]
+mod headless_memory;
+#[cfg(not(feature = "gui"))]
 pub(crate) mod headless_plugins;
 #[cfg(not(feature = "gui"))]
 pub(crate) mod headless_stream;
@@ -500,37 +502,6 @@ fn fire_terminal_hooks(
     }
 }
 
-/// 메모리 저장소 초기화 실패는 로그를 남기고 None으로 반환해 계속 실행한다.
-#[cfg(not(feature = "gui"))]
-fn boot_memory(
-    boot_settings: &crate::settings::Settings,
-) -> Option<std::sync::Arc<std::sync::Mutex<tasty_memory::MemoryStore>>> {
-    let memory_config = tasty_memory::MemoryConfig {
-        entry_max_bytes: boot_settings
-            .memory
-            .entry_max_mb
-            .saturating_mul(1024 * 1024),
-        secret_quota_per_owner_bytes: boot_settings
-            .memory
-            .secret_quota_mb_per_plugin
-            .saturating_mul(1024 * 1024),
-        regular_quota_total_bytes: boot_settings
-            .memory
-            .regular_quota_mb_total
-            .saturating_mul(1024 * 1024),
-    };
-    match tasty_memory::init_with_config(memory_config) {
-        Ok(arc) => {
-            maintain_memory_at_boot(&arc);
-            Some(arc)
-        }
-        Err(e) => {
-            tracing::warn!("memory.db init at boot failed: {e}");
-            crate::boot::wiring::memory_fallback_after(&e)
-        }
-    }
-}
-
 /// IPC가 시작됐을 때만 라우터에 의존하는 훅·완료 전략·웹훅을 초기화한다.
 #[cfg(not(feature = "gui"))]
 fn start_ipc_and_seed(
@@ -889,7 +860,7 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<std::process::ExitCode> {
     // 명시 지정한 웹훅 포트를 열지 못해도 데몬은 시작한다. 원인은 경고 알림과 webhook.config로 남는다.
     let webhook = crate::webhook::prepare(cli.webhook_port, &boot_settings.webhook);
 
-    let memory_arc = boot_memory(&boot_settings);
+    let memory_arc = headless_memory::boot_memory(&boot_settings);
     // 비정상 종료한 프로세스가 남긴 디스크 스크롤백을 설정과 관계없이 백그라운드에서 회수한다.
     tasty_terminal::disk_scrollback::spawn_orphan_reclaim();
 

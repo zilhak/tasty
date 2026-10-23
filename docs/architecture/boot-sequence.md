@@ -60,6 +60,8 @@ finish_boot
 
 첫 요청이 없어도 필요한 초기화는 부팅에서 수행한다. 플러그인 설치·namespace 표 등록과 프로세스 기동은 구분한다. 판단 기준은 [플러그인 제작 가이드](../dev-guide/plugin-development.md)에 있다.
 
+`run_headless`의 메모리 저장소 초기화는 `src/boot/headless_memory.rs`의 `boot_memory`가 맡는다. 기존 부팅 정비와 오류 시 대체 저장소 연결을 수행한 뒤 같은 위치에서 App을 생성하며, IPC·플러그인·엔진 초기화 순서는 유지한다.
+
 지금 명부에 오른 일과 조합별 자리:
 
 | 일 | headless | gui |
