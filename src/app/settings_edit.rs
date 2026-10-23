@@ -30,7 +30,6 @@ pub(crate) struct SettingsEdits {
 pub(crate) struct SettingsEditOwner {
     pub(crate) format: std::sync::Arc<crate::file::format::FileFormatRegistry>,
     pub(crate) handler: std::sync::Arc<crate::file::handler::FileHandlerRegistry>,
-    pub(crate) path: Option<std::path::PathBuf>,
 }
 impl super::App {
     pub(crate) fn apply_settings_edits(&mut self, owner: SettingsEditOwner, edits: SettingsEdits) {
@@ -43,11 +42,7 @@ impl super::App {
         {
             self.surface_bashrc_save_failure(&error);
         }
-        let SettingsEditOwner {
-            format,
-            handler,
-            path,
-        } = owner;
+        let SettingsEditOwner { format, handler } = owner;
         let hook = crate::hook_handler::global();
         let mut files_changed = false;
         let mut hooks_changed = false;
@@ -56,12 +51,15 @@ impl super::App {
             files_changed |= files;
             hooks_changed |= hooks;
         }
-        if files_changed
-            && let Some(path) = path
-            && let Err(error) =
-                crate::file::handler::save::save_combined_user_config(&format, &handler, &path)
-        {
-            tracing::warn!(%error,"settings file handler save failed");
+        if files_changed {
+            if let Some(rules) = &self.services.registries.file_rules {
+                rules.submit(&format, &handler);
+            } else {
+                super::file_consumers::report(
+                    "file-handlers.toml",
+                    vec!["file path is unavailable".into()],
+                );
+            }
         }
         if hooks_changed
             && let Some(path) = crate::hook_handler::user_config_path()

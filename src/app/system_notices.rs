@@ -12,6 +12,12 @@ impl App {
             return;
         };
         for notice in crate::system_notice::take() {
+            if notice.source == "settings-file-writer" {
+                self.toast_settings_result(
+                    notice.body.clone(),
+                    crate::adapters::ui::ToastKind::Warning,
+                );
+            }
             let (engine_id, ws_id, surface_id) = self
                 .surface_notice_target(notice.surface_id)
                 .map_or((fallback.0, fallback.1, 0), |(e, w)| {

@@ -359,7 +359,7 @@ worker는 묶음·flush마다 메인 루프를 깨운다. 2ms 간격 유입이�
 
 ### 계측 범위
 
-- `system.pressure.file_writer`는 config·즐겨찾기 snapshot writer의 접수·묶음·대체·예산 통계다. `file_writes`의 replaced/failed/unknown은 그 writer backend의 성공한 파일 교체·저장 실패·결과 불명 횟수이며 묶음 수와 다르다. 부팅 동기 저장과 아직 writer로 옮기지 않은 파일 소비자의 쓰기는 이 값에 포함하지 않는다. writer가 없는 시험 구성은 null이다. 이 항목은 새 성능 기준선이나 실제 메인 루프 지연 측정을 뜻하지 않는다.
+- `system.pressure.file_writer`는 config·즐겨찾기·파일 registry snapshot writer의 접수·묶음·대체·예산 통계다. `file_writes`의 replaced/failed/unknown은 그 writer backend의 성공한 파일 교체·저장 실패·결과 불명 횟수이며 묶음 수와 다르다. 부팅 동기 저장과 아직 writer로 옮기지 않은 파일 소비자의 쓰기는 이 값에 포함하지 않는다. writer가 없는 시험 구성은 null이다. 이 항목은 새 성능 기준선이나 실제 메인 루프 지연 측정을 뜻하지 않는다.
 
 - `system.pressure.db`는 memory.db, `system.pressure.state_db`는 state.db writer의 commit을 같은 `DbLatencyStats` 형식(commit 수·시간 합·최댓값·평균·`writes_per_commit`)으로 센다. journal.db의 commit은 이 값에 없다.
 - state.db의 commit 계측은 writer 묶음의 commit만 센다. 부팅의 한 번 읽기·스키마 생성과 transaction 없이 혼자 실행하는 튜토리얼 읽기는 세지 않는다. `writes_per_commit`은 대체된 목록을 뺀, 그 commit에서 실행한 요청 수다. 접수·묶음·대체·재시도·거절 수는 `system.pressure.state_writer`가 memory writer와 같은 형식으로 싣는다.

@@ -141,6 +141,31 @@ impl FileFormatRegistry {
         inner.dirty = true;
     }
 
+    /// Replace user contributions from one already-read document. Parse errors keep old values.
+    pub fn replace_user_config_text(&self, text: &str) -> Result<(), String> {
+        let decls = parse_detector_section(text).map_err(|e| e.to_string())?;
+        let priorities = parse_extension_priority_section(text).map_err(|e| e.to_string())?;
+        for decl in &decls {
+            crate::config::validate_detector_decl(decl, false).map_err(|e| e.to_string())?;
+        }
+        let mut inner = self.lock_write();
+        Self::purge_user_contributions(&mut inner);
+        for decl in decls {
+            install_one(
+                &mut inner,
+                &self.next_install_order,
+                decl,
+                RuleOrigin::User,
+                false,
+            );
+        }
+        for priority in priorities {
+            install_extension_priority(&mut inner, priority, RuleOrigin::User);
+        }
+        inner.dirty = true;
+        Ok(())
+    }
+
     /// user config 파일을 읽어 detector/extension-priority 선언을 파싱한다. 파일이
     /// 없으면 빈 목록(= user override 전부 해제), 읽기/파싱 실패는 이미 warn 로그
     /// 후 `None`(호출자는 기존 user config 를 그대로 유지).

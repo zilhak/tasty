@@ -12,23 +12,20 @@ pub(crate) struct ReloadFileHandlersOutcome {
 }
 
 impl AppServices {
-    pub(crate) fn reload_file_handlers(&self) -> ReloadFileHandlersOutcome {
-        let path = user_config_path();
-        self.registries.file_format.reload_user_config(&path);
-        let rejected = self.registries.file_handler.reload_user_config(&path);
+    pub(crate) fn reload_file_handlers(&self) -> Result<ReloadFileHandlersOutcome, String> {
+        crate::app::file_consumers::poll(&self.registries);
+        let rules = self
+            .registries
+            .file_rules
+            .as_ref()
+            .ok_or("file handler path is unavailable")?;
+        let rejected = rules.reload(&self.registries.file_format, &self.registries.file_handler)?;
+        let path = rules.path().to_owned();
         let exists = path.exists();
-        ReloadFileHandlersOutcome {
+        Ok(ReloadFileHandlersOutcome {
             path,
             exists,
             rejected,
-        }
+        })
     }
-}
-
-/// Tasty 홈을 찾지 못하면 공용 임시 경로를 쓴다. 그 위치에 파일이 있으면 읽을 수 있다.
-fn user_config_path() -> PathBuf {
-    tasty_utils::path::tasty_home()
-        .map(|d| d.join("file-handlers.toml"))
-        // 이유: 홈이 없을 때 쓰는 공유 설정 경로이며 인스턴스별로 격리하지 않는다.
-        .unwrap_or_else(|| std::env::temp_dir().join("tasty-file-handlers.toml"))
 }

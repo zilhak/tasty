@@ -12,7 +12,6 @@ struct SettingsInitData {
     settings: crate::settings::Settings,
     file_format: Arc<crate::file::format::FileFormatRegistry>,
     file_handler: Arc<crate::file::handler::FileHandlerRegistry>,
-    user_config_path: Option<std::path::PathBuf>,
     plugin_pages: Vec<tasty_host_plugin::SettingsPageEntry>,
 }
 
@@ -69,7 +68,6 @@ impl App {
         self.settings_edit_owner = Some(crate::app::settings_edit::SettingsEditOwner {
             format: init.file_format.clone(),
             handler: init.file_handler.clone(),
-            path: init.user_config_path,
         });
         let mut modal = view::SettingsView::new(
             gpu,
@@ -101,8 +99,6 @@ impl App {
 
         let file_format = self.services.registries.file_format.clone();
         let file_handler = self.services.registries.file_handler.clone();
-        let user_config_path =
-            tasty_utils::path::tasty_home().map(|d| d.join("file-handlers.toml"));
         let plugin_pages: Vec<tasty_host_plugin::SettingsPageEntry> = self
             .plugin_manager
             .as_ref()
@@ -113,7 +109,6 @@ impl App {
             settings,
             file_format,
             file_handler,
-            user_config_path,
             plugin_pages,
         }
     }

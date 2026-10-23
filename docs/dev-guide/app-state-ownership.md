@@ -170,6 +170,9 @@ EngineRef/EngineMut의 참조 필드와 Session의 암묵적 Deref를 검사한�
 
 전역 registry의 실제 Arc 소유자는 AppServices.registries이며 EngineRuntime과 PluginManager는 같은 인스턴스를 공유한다. 등록·철회와 설정 저장은 창이 없는 상태에서도 App에서 실행한다. 추가 창의 View 조립이 실패하면 pending Engine은 retiring 관계에서 이미 수락한 실행 의무와 필수 통지를 마친 뒤 해제된다. 이 실패는 저장된 slot의 사용자 폐기가 아니므로 기존 stream을 삭제하거나 실패한 View 선택으로 checkpoint를 덮지 않는다.
 
+파일 detector·handler 사용자 문서와 디스크 revision은 `RuntimeRegistries.file_rules`가 소유한다. View는 편집 결과만 돌려주고 App이 두 registry의 사용자 export를 합쳐 file writer에 제출한다. 원본 관측은 부팅의 한 번 읽기와 공유하며, 완료·실패 수거는 writer wake acknowledge 뒤에 한다. registry 내부 effective 재계산용 dirty를 디스크 저장 완료로 사용하지 않는다. 명시적 reload는 pending 저장이 없을 때 같은 경로의 문서로 두 registry와 원본 관측을 함께 바꾼다. 저장 실패는 메모리 적용을 되돌리지 않고 설정 결과 토스트와 알림으로 남긴다.
+
+
 ### 레거시 복원 메타데이터 정리
 
 슬롯의 레거시 레이아웃 이관이 성공했고 최초 incarnation을 명시적으로 복원할 때, worker는 이관 기록에서 정리 여부만 반환한다. App은 실행 자원 복원 전에 PTY 범위를 침범한 Surface scope를 기존 메모리 저장소에서 삭제하고 오류를 기록한다. 삭제는 해당 scope의 regular·secret 영역에 함께 적용된다. 같은 incarnation을 다시 복원하면 DB View checkpoint가 있어도 이 정리를 재시도한다. 새 incarnation, 복원 비활성, headless 새 시작, 이관 실패, 다른 저널의 명시적 가져오기는 이 레거시 정리를 실행하지 않는다. 메모리 쓰기 소유권은 App에 있고 worker에는 전달하지 않는다.

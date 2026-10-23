@@ -209,14 +209,12 @@ impl AppServices {
         if let Some(parts) = self.file_writer.as_mut() {
             parts.poll();
         }
-        #[cfg(feature = "gui")]
         crate::app::file_consumers::poll(&self.registries);
     }
 
     /// 확정하지 못한 최신 설정을 한 번 더 넣은 뒤 접수를 멈추고 마지막 flush 뒤 worker를 끝내게 한다.
     /// 남은 worker 수를 돌려준다. 기다리지 않는다. 설정 저장 producer가 멈춘 뒤 부른다.
     pub(crate) fn poll_file_writer_shutdown(&mut self) -> usize {
-        #[cfg(feature = "gui")]
         crate::app::file_consumers::before_shutdown(&self.registries);
         self.settings_saves.collect_completed();
         self.settings_saves.retry_latest_before_shutdown();
@@ -225,7 +223,6 @@ impl AppServices {
             .as_mut()
             .map_or(0, |parts| parts.writer.poll_shutdown());
         self.settings_saves.collect_completed();
-        #[cfg(feature = "gui")]
         if remaining == 0 {
             crate::app::file_consumers::after_shutdown(&self.registries);
         }

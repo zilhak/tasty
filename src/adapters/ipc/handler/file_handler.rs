@@ -15,7 +15,10 @@ use crate::file::format::{DetectDepth, FileTarget};
 use tasty_ipc::protocol::JsonRpcResponse;
 
 pub fn handle_reload(core: &AppServices, id: serde_json::Value) -> JsonRpcResponse {
-    let outcome = core.reload_file_handlers();
+    let outcome = match core.reload_file_handlers() {
+        Ok(outcome) => outcome,
+        Err(error) => return JsonRpcResponse::internal_error(id, error),
+    };
     JsonRpcResponse::success(
         id,
         json!({

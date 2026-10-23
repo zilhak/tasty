@@ -175,6 +175,14 @@ Explorer·포트 즐겨찾기는 프로세스 공용 `SharedList` 원본을 바�
 
 종료는 producer 중단 후 남은 receipt를 거두고, 최신 dirty에 실행 중인 요청이 없으면 한 번 더 제출한 뒤 기존 file writer를 close·flush·join한다. 미확정 목록은 종료 로그에도 남긴다. `system.pressure.file_snapshots`의 목록별 visible/committed/pending으로 화면 revision과 저장 완료·대기를 구분한다. 두 즐겨찾기는 GUI 기능이며 headless는 이 목록을 생성하거나 저장하지 않는다.
 
+### 파일 registry snapshot
+
+`RuntimeRegistries.file_rules`는 `file-handlers.toml`의 읽은 원본·문서·디스크 revision을 소유한다. 부팅은 한 번 읽은 같은 내용으로 detector와 handler를 설치한다. 설정 창 Save는 두 registry의 사용자 contribution과 확장자 우선순위를 하나로 직렬화해 기존 file writer에 제출하며, host/plugin contribution은 저장하지 않는다. 다른 최상위 절은 유지한다. 메모리 적용과 저장 완료는 별개이고 `system.pressure.file_snapshots.file_handlers`가 visible/committed/pending을 표시한다. registry 내부의 effective 값 재계산용 dirty와 디스크 dirty는 다른 상태다.
+
+worker는 공용 참여자 잠금·fingerprint·링크 대상 검사 뒤 교체한다. 읽기 실패·문법/선언 파싱 실패 원본과 외부 편집은 덮지 않는다. 성공 receipt만 committed를 전진시키며 실패·거절·결과 불명은 표시값을 유지하고 dirty를 남긴다. GUI는 최종 저장 실패를 설정 결과 토스트와 파일명·원인·복구 안내가 있는 알림으로 보여준다. 종료 전에 최신 dirty의 pending이 없으면 한 번 재접수하고 같은 writer를 drain한다. GUI·headless 모두 이 경계를 조립한다. 초기 읽기와 명시적 reload는 다음 registry 조회의 입력을 정하는 동기 읽기이며 파일 쓰기는 하지 않는다.
+
+`file_handler.reload`는 해당 프로세스가 처음 읽은 경로에서 한 번 읽어 두 registry를 갱신한다. 저장 pending 중에는 아직 완료되지 않은 snapshot과 충돌하지 않도록 오류로 답한다. 읽기/파싱 실패도 오류로 답하고 이전 registry와 원본 관측을 유지한다. 성공한 명시적 reload는 저장되지 않은 표시 변경을 파일 내용으로 바꾸며, 새로 읽은 상태를 visible=committed의 다음 revision으로 잡는다. 주석·공백·키 순서까지 보존하는 편집기는 아니며 pretty TOML로 저장한다.
+
 ## 소비자 분류
 
 | 분류 | 소비자 | 스레드 | 요청 하나 안에서 하는 일 |
@@ -266,7 +274,8 @@ writer를 거치는 IPC 요청은 결과가 나온 뒤 응답한다. 핸들러�
 | `remote-profiles.toml` | CLI는 `RemoteFileStore::profile`, 기존 host 소비자는 `RemoteProfiles::save` | CLI는 호출 스레드, 기존 IPC·탐지는 메인 루프 | CLI는 예(공용 교체·sync), 기존 save는 아니요 | 명령 API는 최신 TOML을 참여 잠금 안에서 patch한다. 기존 save 호출자는 참여하지 않는다 |
 | `passkeys.toml`과 `passkeys/<이름>` | CLI는 `RemoteFileStore::passkey`, 기존 host 목록은 `Passkeys::save`; inline 파일은 `materialize_inline_in` | CLI는 호출 스레드, 기존 IPC는 메인 루프 | CLI 목록은 공용 교체·sync, 기존 save는 직접 쓰기. inline은 Unix 0600·Windows 보호 ACL을 payload 전에 적용한 임시 파일을 sync 후 rename | CLI 명령은 목록 참여 잠금 사용. inline 파일 자체도 참여 잠금 사용. 파일 사이 transaction은 없고 부분 성공·관리파일 정리는 owned 결과로 구분한다 |
 | `plugins.toml` | 플러그인 등록 상태 저장 | 메인 루프, GUI boot worker(내장 플러그인 설치) | 아니요 | 없음 |
-| `known-plugins.toml`, hook·파일 handler 사용자 설정, 테마 파일 | 각 crate의 저장 함수 | 메인 루프 | 테마만 아니요, 나머지는 예 | 없음 |
+| `file-handlers.toml` | `FileRules::submit`이 합친 snapshot 접수, file writer가 교체 | file writer | 예(공용 교체, fsync 없음) | 참여자 잠금·원본 fingerprint/링크 대상 비교 |
+| `known-plugins.toml`, hook 사용자 설정, 테마 파일 | 각 crate의 저장 함수 | 메인 루프 | 테마만 아니요, 나머지는 예 | 없음 |
 | `debug.log`·crash/hang 보고·`launch.log`·observer file sink | 로그 기록 | 각 기록 스레드 | append | `launch.log`는 두 번째 프로세스가 파일 잠금 안에서 쓴다 |
 
 `notify/<surface>.log`는 호스트가 쓰지 않는다. 플러그인 프로세스가 쓰고 호스트는 IPC 시작 때 디렉터리를 정리한다.

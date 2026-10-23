@@ -1,7 +1,9 @@
 //! Owned file snapshots and storage-neutral receipts. Only the worker calls `write`.
+pub(crate) mod tracker;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
+#[cfg(feature = "gui")]
 use serde::de::DeserializeOwned;
 use tasty_utils::file_replace::{self, Fingerprint};
 
@@ -24,7 +26,18 @@ pub(crate) struct Document {
 }
 
 impl Document {
+    #[cfg(feature = "gui")]
     pub(crate) fn load<T: DeserializeOwned + Default>(path: PathBuf) -> (T, Arc<Self>) {
+        Self::load_with(path, |text| match text {
+            Some(text) => toml::from_str(text).map_err(|e| e.to_string()),
+            None => Ok(T::default()),
+        })
+    }
+
+    pub(crate) fn load_with<T: Default>(
+        path: PathBuf,
+        parse: impl FnOnce(Option<&str>) -> Result<T, String>,
+    ) -> (T, Arc<Self>) {
         let loaded = (|| {
             let target = file_replace::resolve_link(&path).map_err(|e| e.to_string())?;
             let bytes = match std::fs::read(&path) {
@@ -35,10 +48,10 @@ impl Document {
             let (value, content) = match bytes {
                 Some(bytes) => {
                     let text = std::str::from_utf8(&bytes).map_err(|e| e.to_string())?;
-                    let value = toml::from_str(text).map_err(|e| e.to_string())?;
+                    let value = parse(Some(text))?;
                     (value, Fingerprint::of_bytes(&bytes))
                 }
-                None => (T::default(), Fingerprint::Missing),
+                None => (parse(None)?, Fingerprint::Missing),
             };
             Ok((value, Observation { target, content }))
         })();
@@ -56,6 +69,10 @@ impl Document {
                 observed: Mutex::new(observed),
             }),
         )
+    }
+
+    pub(crate) fn load_error(&self) -> Option<String> {
+        self.observed.lock().unwrap().as_ref().err().cloned()
     }
 
     fn write(&self, bytes: &[u8]) -> Result<(), String> {

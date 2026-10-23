@@ -14,6 +14,23 @@ pub fn save_combined_user_config(
     file_handler: &FileHandlerRegistry,
     path: &Path,
 ) -> std::io::Result<()> {
+    let text = export_combined_user_config(file_format, file_handler);
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    if !parent.exists() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let mut tmp = tempfile::NamedTempFile::new_in(parent)?;
+    tmp.write_all(text.as_bytes())?;
+    tmp.flush()?;
+    tmp.persist(path).map_err(|e| e.error)?;
+    Ok(())
+}
+
+/// Serialize both user contributions without performing file I/O.
+pub fn export_combined_user_config(
+    file_format: &FileFormatRegistry,
+    file_handler: &FileHandlerRegistry,
+) -> String {
     let mut text = String::new();
     let fmt = file_format.export_user_config();
     let hnd = file_handler.export_user_config();
@@ -26,15 +43,7 @@ pub fn save_combined_user_config(
         }
         text.push_str(&hnd);
     }
-    let parent = path.parent().unwrap_or_else(|| Path::new("."));
-    if !parent.exists() {
-        std::fs::create_dir_all(parent)?;
-    }
-    let mut tmp = tempfile::NamedTempFile::new_in(parent)?;
-    tmp.write_all(text.as_bytes())?;
-    tmp.flush()?;
-    tmp.persist(path).map_err(|e| e.error)?;
-    Ok(())
+    text
 }
 
 #[cfg(test)]

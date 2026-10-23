@@ -122,13 +122,18 @@ pub(super) fn handle_system_pressure(
     body["memory_writer"] = writer_stats_json(core.memory_writer_stats());
     body["state_writer"] = writer_stats_json(core.state_writer_stats());
     body["state_db"] = state_db_json(core.state_db_latency().as_ref());
-    #[cfg(feature = "gui")]
     {
         let status = |(visible, committed, pending)| json!({"visible": visible, "committed": committed, "pending": pending});
         body["file_snapshots"] = json!({
-            "explorer_favorites": status(core.registries.explorer_favorites.save_status()),
-            "port_favorites": status(core.registries.port_favorites.save_status()),
+            "file_handlers": core.registries.file_rules.as_ref().map(|rules| status(rules.status())),
         });
+        #[cfg(feature = "gui")]
+        {
+            body["file_snapshots"]["explorer_favorites"] =
+                status(core.registries.explorer_favorites.save_status());
+            body["file_snapshots"]["port_favorites"] =
+                status(core.registries.port_favorites.save_status());
+        }
     }
     let files = core.file_writer_stats();
     body["file_writer"] = writer_stats_json(files.as_ref().map(|(writer, _)| *writer));

@@ -1,5 +1,5 @@
 //! Shared file consumers use the existing file writer without depending on settings revisions.
-#[cfg(test)]
+#[cfg(all(test, feature = "gui"))]
 mod wake_tests;
 
 use std::sync::Arc;
@@ -30,37 +30,70 @@ pub(crate) fn sink(queue: Handle<FileExecutor>) -> Submit {
 
 pub(crate) fn attach(registries: &RuntimeRegistries, queue: Handle<FileExecutor>) {
     let sink = sink(queue);
-    registries.explorer_favorites.install_sink(sink.clone());
-    registries.port_favorites.install_sink(sink);
+    if let Some(rules) = &registries.file_rules {
+        rules.install_sink(sink.clone());
+    }
+    #[cfg(feature = "gui")]
+    {
+        registries.explorer_favorites.install_sink(sink.clone());
+        registries.port_favorites.install_sink(sink);
+    }
 }
 
 pub(crate) fn poll(registries: &RuntimeRegistries) {
-    report(
-        "explorer-favorites.toml",
-        registries.explorer_favorites.poll(),
-    );
-    report("port-favorites.toml", registries.port_favorites.poll());
+    if let Some(rules) = &registries.file_rules {
+        report("file-handlers.toml", rules.poll());
+    }
+    #[cfg(feature = "gui")]
+    {
+        report(
+            "explorer-favorites.toml",
+            registries.explorer_favorites.poll(),
+        );
+        report("port-favorites.toml", registries.port_favorites.poll());
+    }
 }
 
-fn report(file: &str, errors: Vec<String>) {
+pub(crate) fn report(file: &str, errors: Vec<String>) {
     for error in errors {
-        tracing::warn!(file, %error, "favorites were not saved");
+        tracing::warn!(file, %error, "file snapshot was not saved");
         crate::system_notice::post(crate::system_notice::SystemNotice::warning(
-            "file-writer",
-            crate::i18n::t("storage_notice.favorites_save_title").into(),
-            crate::i18n::t_fmt2("storage_notice.favorites_save_body", file, &error),
+            if file == "file-handlers.toml" {
+                "settings-file-writer"
+            } else {
+                "file-writer"
+            },
+            crate::i18n::t("storage_notice.file_save_title").into(),
+            crate::i18n::t_fmt2("storage_notice.file_save_body", file, &error),
         ));
     }
 }
 
 pub(crate) fn before_shutdown(registries: &RuntimeRegistries) {
     poll(registries);
-    registries.explorer_favorites.retry_latest_before_shutdown();
-    registries.port_favorites.retry_latest_before_shutdown();
+    if let Some(rules) = &registries.file_rules {
+        rules.before_shutdown();
+    }
+    #[cfg(feature = "gui")]
+    {
+        registries.explorer_favorites.retry_latest_before_shutdown();
+        registries.port_favorites.retry_latest_before_shutdown();
+    }
 }
 
 pub(crate) fn after_shutdown(registries: &RuntimeRegistries) {
     poll(registries);
+    if let Some(rules) = &registries.file_rules
+        && let Some((visible, committed)) = rules.finish_shutdown()
+    {
+        tracing::warn!(
+            file = "file-handlers.toml",
+            visible,
+            committed,
+            "file remains unsaved at shutdown"
+        );
+    }
+    #[cfg(feature = "gui")]
     for (name, unsaved) in [
         (
             "explorer-favorites.toml",

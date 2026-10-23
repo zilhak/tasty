@@ -394,6 +394,23 @@ impl FileHandlerRegistry {
         rejected
     }
 
+    /// Validate before a shared detector/handler document changes either registry.
+    pub fn validate_user_config_text(text: &str) -> Result<(), String> {
+        parse_user_handler_section(text)
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    }
+
+    /// Replace user contributions from one already-read document.
+    pub fn replace_user_config_text(&self, text: &str) -> Result<Vec<RejectedUserHandler>, String> {
+        let decls = parse_user_handler_section(text).map_err(|e| e.to_string())?;
+        let mut inner = self.lock_write();
+        Self::purge_user_owned(&mut inner);
+        let rejected = install_user_decls(&mut inner, decls);
+        inner.dirty = true;
+        Ok(rejected)
+    }
+
     /// user config 파일을 읽어 handler 선언을 파싱한다. 파일이 없으면 빈 목록(=
     /// user override 전부 해제), 읽기/파싱 실패는 이미 warn 로그 후 `None`(호출자는
     /// 기존 user config 를 그대로 유지).
