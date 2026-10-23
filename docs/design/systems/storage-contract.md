@@ -362,6 +362,7 @@ memory·state·file writer는 같은 `WriterStatsSnapshot`을 쓰고 `system.pre
 - `batch_wait`는 묶음의 가장 오래된 접수부터 worker의 묶음 처리 시작까지, `batch_execution`은 그 시작부터 결과 전달까지다. 후자는 busy 재시도 대기와 결과 전달을 포함하고 receipt 소비는 포함하지 않는다. `executor_execution`은 실제 executor 호출별 시간이며 재시도 대기를 제외하고 잡힌 panic 호출은 포함한다. 모두 같은 `Clock`을 쓴다.
 - 세 시간 분포는 `samples`·`sum_us`·`max_us`와 고정 구간(`le_us`·`counts`)이다. 마이크로초 미만은 0으로 버리되 표본 수에는 포함한다. 경계는 포함 상한이고 마지막 칸은 초과 구간이다. 표본 0의 합·최댓값·칸 수는 0이며 평균이나 percentile을 관측했다고 해석하지 않는다. 원시 표본을 보관하지 않으므로 정확한 percentile은 계산할 수 없다.
 - `completed_ok`·`completed_rejected`·`completed_failed`·`completed_unknown`·`completed_lost`는 접수한 요청의 종결 결과다. 대체된 요청도 대체한 요청의 결과로 분류한다. worker가 버린 queued ticket도 lost이며 receipt를 먼저 버려도 접수 작업은 계속된다. flush는 요청·묶음·종결 수에서 제외한다.
+- `queued_items`·`queued_bytes`는 아직 묶음 처리에 dispatch하지 않은 요청의 수·입력 바이트다. 실행·재시도 중인 요청과 읽지 않은 완료 결과는 제외한다. flush도 제외한다.
 - `pending_items`·`pending_bytes`는 아직 종결되지 않은 요청의 수와 원래 입력 바이트다. `oldest_pending_age_us`는 그중 가장 오래된 접수의 나이이며 없으면 `null`이다. 대기·실행·재시도·대체·receipt 포기를 거쳐 종결될 때까지 유지한다. 읽지 않은 완료 결과는 여기서 빠지지만 기존 `held_*` 예산에는 남는다.
 - 고정 크기 원자 카운터·분포와 최대 `queue_items`개의 seq·시각·바이트만 보관한다. 경로·키·내용·오류 본문을 저장하지 않는다. 카운터 누계는 기존 u64 규칙을 따르고 시간 변환은 u64 최댓값으로 제한한다. metrics 잠금 안에서 저장소·디스크 I/O나 결과 대기를 하지 않는다.
 

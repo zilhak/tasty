@@ -18,6 +18,8 @@ pub(super) fn writer_stats_json(
         completed_failed,
         completed_unknown,
         completed_lost,
+        queued_items,
+        queued_bytes,
         pending_items,
         pending_bytes,
         oldest_pending_age_us,
@@ -46,6 +48,7 @@ pub(super) fn writer_stats_json(
         "executor_execution": duration_json(executor_execution),
         "completed_ok": completed_ok, "completed_rejected": completed_rejected,
         "completed_failed": completed_failed, "completed_unknown": completed_unknown, "completed_lost": completed_lost,
+        "queued_items": queued_items, "queued_bytes": queued_bytes,
         "pending_items": pending_items, "pending_bytes": pending_bytes,
         "oldest_pending_age_us": oldest_pending_age_us,
         "admitted": admitted,
@@ -84,6 +87,8 @@ mod tests {
             *tasty_telemetry::HistogramSnapshot::bounds_us()
         );
         let mut stats = tasty_utils::batch_writer::WriterStatsSnapshot {
+            queued_items: 2,
+            queued_bytes: 20,
             admitted_bytes: 91,
             batch_bytes: 80,
             batch_bytes_max: 40,
@@ -103,6 +108,8 @@ mod tests {
         stats.batch_wait.counts[0] = 1;
         let value = writer_stats_json(Some(stats));
         for (key, expected) in [
+            ("queued_items", 2),
+            ("queued_bytes", 20),
             ("admitted_bytes", 91),
             ("batch_bytes", 80),
             ("batch_bytes_max", 40),

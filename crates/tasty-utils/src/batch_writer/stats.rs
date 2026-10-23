@@ -88,8 +88,7 @@ impl WriterStats {
         now: Instant,
     ) -> WriterStatsSnapshot {
         let load = |a: &AtomicU64| a.load(Ordering::Relaxed);
-        let (pending_items, pending_bytes, oldest_pending_age_us, outcomes) =
-            self.pending.snapshot(now);
+        let pending = self.pending.snapshot(now);
         WriterStatsSnapshot {
             admitted_bytes: load(&self.admitted_bytes),
             batch_bytes: load(&self.batch_bytes),
@@ -97,14 +96,16 @@ impl WriterStats {
             batch_wait: self.batch_wait.snapshot(),
             batch_execution: self.batch_execution.snapshot(),
             executor_execution: self.executor_execution.snapshot(),
-            completed_ok: outcomes[0],
-            completed_rejected: outcomes[1],
-            completed_failed: outcomes[2],
-            completed_unknown: outcomes[3],
-            completed_lost: outcomes[4],
-            pending_items,
-            pending_bytes,
-            oldest_pending_age_us,
+            completed_ok: pending.outcomes[0],
+            completed_rejected: pending.outcomes[1],
+            completed_failed: pending.outcomes[2],
+            completed_unknown: pending.outcomes[3],
+            completed_lost: pending.outcomes[4],
+            pending_items: pending.items,
+            pending_bytes: pending.bytes,
+            queued_items: pending.queued_items,
+            queued_bytes: pending.queued_bytes,
+            oldest_pending_age_us: pending.oldest,
             admitted: load(&self.admitted),
             rejected_saturated: load(&self.rejected_saturated),
             rejected_closed: load(&self.rejected_closed),
@@ -142,6 +143,9 @@ pub struct WriterStatsSnapshot {
     pub completed_lost: u64,
     /// Unsettled accepted work; excludes ready unread results, unlike held_*.
     pub pending_items: u64,
+    /// Accepted work not yet dispatched to run_batch; excludes in-flight, retry and unread results.
+    pub queued_items: u64,
+    pub queued_bytes: u64,
     pub pending_bytes: u64,
     /// None when no unsettled work. Generic requests include reads, so this is not domain dirty age.
     pub oldest_pending_age_us: Option<u64>,

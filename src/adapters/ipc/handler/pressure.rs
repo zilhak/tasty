@@ -558,7 +558,7 @@ mod tests {
         assert_eq!(v["batch_sizes"]["le"], json!([1, 4, 16, 64, 256]));
         assert_eq!(v["batch_sizes"]["counts"], json!([1, 1, 0, 0, 0, 0]));
         assert_eq!(v["peak_bytes"], 40);
-        assert_eq!(v.as_object().unwrap().len(), 28);
+        assert_eq!(v.as_object().unwrap().len(), 30);
     }
 
     #[test]

@@ -325,15 +325,18 @@ fn run_batch<X: Executor>(
     tally: &mut Tally,
     batch: Vec<Pending<X>>,
 ) {
+    let started = shared.clock.now();
     let _batch_timer =
-        super::measurement::Timer::new(&shared.stats.batch_execution, &*shared.clock);
+        super::measurement::Timer::since(&shared.stats.batch_execution, &*shared.clock, started);
+    shared
+        .stats
+        .pending
+        .start_batch(batch.iter().map(|request| request.seq));
     if let Some(first) = batch.first() {
-        shared.stats.batch_wait.record(
-            shared
-                .clock
-                .now()
-                .saturating_duration_since(first.admitted_at),
-        );
+        shared
+            .stats
+            .batch_wait
+            .record(started.saturating_duration_since(first.admitted_at));
     }
     let bytes = batch
         .iter()

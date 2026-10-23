@@ -71,6 +71,11 @@ fn manual_clock_separates_batch_wait_executor_time_and_retry_backoff() {
         ),
         (2, 20, Some(33))
     );
+    assert_eq!(
+        (blocked.queued_items, blocked.queued_bytes),
+        (0, 0),
+        "both coalesced requests are in flight"
+    );
     gate.open();
     eventually("batch measured", || {
         handle.stats().batch_execution.samples == 1
@@ -242,6 +247,10 @@ fn actual_worker_panic_accounts_queued_lost_work_even_when_receipts_are_abandone
     let queued = handle.submit(req(2)).unwrap();
     drop((first, queued));
     assert_eq!(handle.stats().pending_items, 2);
+    assert_eq!(
+        (handle.stats().queued_items, handle.stats().queued_bytes),
+        (1, 10)
+    );
     gate.open();
     eventually("panic join", || writer.poll_shutdown() == 0);
     let s = handle.stats();
@@ -256,6 +265,7 @@ fn actual_worker_panic_accounts_queued_lost_work_even_when_receipts_are_abandone
         (1, 1, 0, 0, 0)
     );
     assert_eq!(s.oldest_pending_age_us, None);
+    assert_eq!((s.queued_items, s.queued_bytes), (0, 0));
 }
 
 #[test]
@@ -269,6 +279,13 @@ fn rejected_admission_never_enters_pending_tracker_and_abandon_does_not_free_it_
     );
     let first = rig.handle.submit(req(1)).unwrap();
     let second = rig.handle.submit(req(2)).unwrap();
+    assert_eq!(
+        (
+            rig.handle.stats().queued_items,
+            rig.handle.stats().queued_bytes
+        ),
+        (2, 20)
+    );
     assert!(matches!(
         rig.handle.submit(req(3)),
         Err(SubmitError::Saturated { .. })

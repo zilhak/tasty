@@ -61,10 +61,18 @@ pub(super) struct Timer<'a> {
 
 impl<'a> Timer<'a> {
     pub(super) fn new(histogram: &'a DurationStats, clock: &'a dyn Clock) -> Self {
+        Self::since(histogram, clock, clock.now())
+    }
+
+    pub(super) fn since(
+        histogram: &'a DurationStats,
+        clock: &'a dyn Clock,
+        started: std::time::Instant,
+    ) -> Self {
         Self {
             histogram,
             clock,
-            started: clock.now(),
+            started,
         }
     }
 }

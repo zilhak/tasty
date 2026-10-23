@@ -72,7 +72,7 @@ commit 수에 들어가지 않는 데이터베이스 압축(VACUUM)은 `vacuums`
 `state_writer`와 `state_db`는 최근 파일과 튜토리얼 진행을 저장하는 대기열의 같은 수와 commit 시간입니다.
 헤드리스 실행이나 `state.db`를 열지 못한 실행에서는 `null`입니다.
 
-저장 대기열의 `batch_wait`는 묶음이 실행되기 전 대기, `batch_execution`은 재시도 대기까지 포함한 묶음 처리, `executor_execution`은 실제 처리 호출의 시간 분포입니다. 단위는 마이크로초이며 `samples`가 0이면 아직 관측하지 않은 것입니다. `pending_bytes`와 `oldest_pending_age_us`는 끝나지 않은 요청의 입력 크기와 가장 오래된 나이입니다. 미완료 요청이 없으면 나이는 `null`입니다. 이미 끝났지만 결과를 읽지 않은 요청은 `held_bytes`에 남을 수 있습니다. 이 나이는 파일의 미저장 변경 나이가 아니며, 완료 수나 묶음 수가 실제 디스크 commit 수를 뜻하지도 않습니다.
+저장 대기열의 `batch_wait`는 묶음이 실행되기 전 대기, `batch_execution`은 재시도 대기까지 포함한 묶음 처리, `executor_execution`은 실제 처리 호출의 시간 분포입니다. 단위는 마이크로초이며 `samples`가 0이면 아직 관측하지 않은 것입니다. `queued_items`·`queued_bytes`는 아직 실행에 넘기지 않은 대기열만 셉니다. `pending_bytes`와 `oldest_pending_age_us`는 끝나지 않은 요청의 입력 크기와 가장 오래된 나이입니다. 미완료 요청이 없으면 나이는 `null`입니다. 이미 끝났지만 결과를 읽지 않은 요청은 `held_bytes`에 남을 수 있습니다. 이 나이는 파일의 미저장 변경 나이가 아니며, 완료 수나 묶음 수가 실제 디스크 commit 수를 뜻하지도 않습니다.
 
 권한·한도·빈도 제한의 거절 수는 아래 `gate_refusals`에서 확인합니다.
 
