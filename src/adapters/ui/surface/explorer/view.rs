@@ -10,6 +10,8 @@ pub(crate) mod marquee;
 pub(crate) mod ops;
 mod path_index;
 pub(crate) mod poll;
+#[cfg(test)]
+mod remote_cache_tests;
 mod remote_reload;
 mod selection;
 mod tab_state;
@@ -54,7 +56,11 @@ enum RemoteLoadState {
     },
     /// 서버가 보낸 원본(Name/Asc) 엔트리 — main list/tree 소비처가 각자 필요한 형태로
     /// (재정렬/디렉토리만 필터) 파생한다.
-    Loaded(Vec<DirEntryInfo>),
+    Loaded {
+        entries: Vec<DirEntryInfo>,
+        /// 새 응답은 한 번 적용한다. 이후 같은 정렬의 프레임은 목록을 재사용한다.
+        applied: bool,
+    },
     Error(String),
 }
 
@@ -625,7 +631,14 @@ impl ExplorerView {
             .unwrap_or(true);
         let refresh = self.reload_requested;
         self.reload_requested = false;
-        if !refresh && self.loaded.as_ref() == Some(&key) && self.state == LoadState::Ok {
+        if !refresh
+            && self.loaded.as_ref() == Some(&key)
+            && self.state == LoadState::Ok
+            && matches!(
+                self.remote_state.get(dir),
+                Some(RemoteLoadState::Loaded { applied: true, .. })
+            )
+        {
             return;
         }
 
@@ -672,7 +685,7 @@ impl ExplorerView {
 
         self.state = match self.remote_state.get(dir) {
             Some(RemoteLoadState::Loading { .. }) | None => LoadState::Loading,
-            Some(RemoteLoadState::Loaded(raw)) => {
+            Some(RemoteLoadState::Loaded { entries: raw, .. }) => {
                 let mut entries = raw.clone();
                 sort_entries(&mut entries, sort_column, sort_dir);
                 self.set_entries(entries);
@@ -690,6 +703,9 @@ impl ExplorerView {
                 }
             }
         };
+        if let Some(RemoteLoadState::Loaded { applied, .. }) = self.remote_state.get_mut(dir) {
+            *applied = true;
+        }
         self.loaded = Some(key);
     }
 
@@ -712,8 +728,13 @@ impl ExplorerView {
             dir.clone(),
             tree_dirs(entries.iter().filter(|e| e.is_dir).cloned()),
         );
-        self.remote_state
-            .insert(dir, RemoteLoadState::Loaded(entries));
+        self.remote_state.insert(
+            dir,
+            RemoteLoadState::Loaded {
+                entries,
+                applied: false,
+            },
+        );
     }
 
     /// 기다리는 요청의 응답을 경로 캐시에 반영한다. 현재 디렉터리이면 본문도 갱신하며
@@ -759,8 +780,13 @@ impl ExplorerView {
                     self.state = LoadState::Ok;
                     self.retain_listed_selection();
                 }
-                self.remote_state
-                    .insert(dir, RemoteLoadState::Loaded(entries));
+                self.remote_state.insert(
+                    dir,
+                    RemoteLoadState::Loaded {
+                        entries,
+                        applied: is_current,
+                    },
+                );
             }
             Err(reason) => {
                 if is_current {
@@ -1364,7 +1390,10 @@ mod tests {
         assert!(view.apply_remote_list_dir_result(id, &panel, Ok(Vec::new())));
         view.remote_state.insert(
             "/remote/project/sub".into(),
-            RemoteLoadState::Loaded(Vec::new()),
+            RemoteLoadState::Loaded {
+                entries: Vec::new(),
+                applied: false,
+            },
         );
         view.tree_children
             .insert("/remote/project/sub".into(), Vec::new());
