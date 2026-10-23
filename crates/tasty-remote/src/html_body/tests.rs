@@ -336,3 +336,24 @@ fn nested_routes_preserve_query_fragment_mime_and_reject_unsafe_metadata() {
         );
     }
 }
+
+#[test]
+fn native_view_retirement_preserves_body_but_revokes_all_old_bindings() {
+    let mut store = EntryBodyStore::default();
+    store.begin(id());
+    assert!(store.native_binding().is_none());
+    let received = entry(id());
+    store.publish(Arc::clone(&received));
+    let old = store.native_binding().unwrap();
+    assert!(old.is_current(&store));
+    store.retire_native_view();
+    assert!(!old.is_current(&store));
+    assert!(Arc::ptr_eq(&received, store.current().unwrap()));
+    let current = store.native_binding().unwrap();
+    assert_ne!(old, current);
+    assert!(current.is_current(&store));
+    store.disconnect();
+    assert!(current.is_current(&store));
+    store.clear();
+    assert!(!current.is_current(&store));
+}

@@ -26,10 +26,8 @@ pub(super) fn attach_script_gate(
                     tracing::debug!("html script scan finished after the event loop closed");
                 }
             }));
-    let gate = if let Some(mirror) = rs.lock_html_mirror() {
-        gate.with_received_source(crate::webview::entry_response::EntryResponseSource::new(
-            &mirror.bodies,
-        ))
+    let gate = if let Some(source) = wv.entry_response_source() {
+        gate.with_received_source(source)
     } else {
         gate
     };

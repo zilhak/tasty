@@ -162,17 +162,28 @@ impl ScriptGate {
         self
     }
 
+    fn received_current(&self) -> bool {
+        self.received
+            .as_ref()
+            .is_none_or(EntryResponseSource::is_current)
+    }
     fn lock(&self) -> MutexGuard<'_, HtmlScriptState> {
         tasty_utils::poison::recover_mutex(self.state.lock(), STATE_WHAT, &STATE_POISON_REPORTED)
     }
 
     /// 지금 적용할 JS 값. macOS는 서브프레임 navigation의 preferences에 쓴다.
     pub fn effective_js(&self) -> bool {
+        if !self.received_current() {
+            return false;
+        }
         self.lock().effective_js()
     }
 
     /// 전역 sandbox 설정이 바뀌었다.
     pub fn set_sandbox(&self, sandbox: bool) -> bool {
+        if !self.received_current() {
+            return false;
+        }
         let js = self.lock().set_sandbox(sandbox);
         tracing::debug!(
             "WebView surface {}: html script sandbox={sandbox} -> js={js}",
@@ -183,6 +194,9 @@ impl ScriptGate {
 
     /// main frame 로드가 시작됐다.
     pub fn load_started(&self) -> bool {
+        if !self.received_current() {
+            return false;
+        }
         let js = self.lock().on_load_started();
         tracing::debug!(
             "WebView surface {}: html script load started -> js={js}",
@@ -240,6 +254,9 @@ impl ScriptGate {
     // 이유: Windows backend와 시험만 쓴다.
     #[cfg_attr(not(any(windows, test)), allow(dead_code))]
     pub fn main_response_scanned(&self, url: &str, scan: Option<ScriptScan>) -> bool {
+        if !self.received_current() {
+            return false;
+        }
         let js = self.lock().on_main_response(url, scan);
         tracing::debug!(
             "WebView surface {}: html script response {} resumed with its scan detection={:?} -> js={js}",
@@ -318,6 +335,9 @@ impl ScriptGate {
 
     /// 스캔 결과를 상태에 붙이고 호스트를 깨운다. 낡은 결과면 `None`.
     fn finish_scan(&self, ticket: ScanTicket, scan: Option<ScriptScan>) -> Option<bool> {
+        if !self.received_current() {
+            return None;
+        }
         let js = self.lock().on_scan_finished(ticket, scan);
         tracing::debug!(
             "WebView surface {}: html script scan finished detection={:?} -> {}",
@@ -336,6 +356,9 @@ impl ScriptGate {
 
     /// main frame 문서가 commit됐다. `url`은 응답 단계가 없었을 때만 쓴다.
     pub fn committed(&self, url: Option<&str>) -> bool {
+        if !self.received_current() {
+            return false;
+        }
         let mut st = self.lock();
         let received = self
             .received
@@ -357,6 +380,9 @@ impl ScriptGate {
 
     /// main frame 로드가 끝났다. commit 없이 끝났으면 되돌릴 JS 값을 준다.
     pub fn finished(&self) -> Option<bool> {
+        if !self.received_current() {
+            return None;
+        }
         let restore = self.lock().on_load_finished();
         if let Some(js) = restore {
             tracing::debug!(
@@ -370,6 +396,9 @@ impl ScriptGate {
     /// main frame 로드가 실패했다. 다음 commit까지 배너와 탭 표지를 내린다.
     /// 로드 종료는 [`Self::finished`]로 따로 알린다.
     pub fn failed(&self) {
+        if !self.received_current() {
+            return;
+        }
         self.lock().on_load_failed();
         tracing::debug!(
             "WebView surface {}: html script load failed -> banner and marker hidden until a commit",
@@ -381,6 +410,9 @@ impl ScriptGate {
     // 이유: Linux는 fragment 이동에 로드 신호가 오지 않아 이 판정을 쓰지 않는다.
     #[cfg_attr(target_os = "linux", allow(dead_code))]
     pub fn is_fragment_move(&self, url: &str) -> bool {
+        if !self.received_current() {
+            return false;
+        }
         let received = self.received.as_ref().and_then(|source| source.entry(url));
         let source_url = received
             .as_ref()

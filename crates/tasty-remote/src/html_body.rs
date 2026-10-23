@@ -1,7 +1,9 @@
 //! Immutable native response data and entry scan publication; no filesystem or network access.
+mod native_view;
 mod navigation;
 mod resources;
 mod response_wait;
+pub use native_view::NativeViewBinding;
 pub use navigation::{FileNavigation, FileTarget};
 pub use resources::{Fetch as NativeResourceFetch, NativeResources};
 pub use response_wait::{ResourceFailure, ResponseWait};
@@ -211,12 +213,14 @@ pub struct EntryBodyStore {
     resources: Option<NativeResources>,
     resources_enabled: bool,
     navigation: Option<FileNavigation>,
+    view_owner: Arc<()>,
 }
 impl EntryBodyStore {
     pub fn begin(&mut self, id: TransferId) -> bool {
         if self.expected == Some(id) {
             return false;
         }
+        self.view_owner = Arc::new(());
         self.expected = Some(id);
         self.entry = None;
         self.resources = None;
@@ -299,6 +303,7 @@ impl EntryBodyStore {
         self.expected = self.entry.as_ref().map(|entry| entry.response.generation());
     }
     pub fn clear(&mut self) {
+        self.view_owner = Arc::new(());
         self.navigation = None;
         self.resources = None;
         self.expected = None;

@@ -11,6 +11,7 @@ pub(crate) struct NativeWebviewBinding {
     surface: u32,
     source: Weak<Mutex<Option<String>>>,
     mirror: Option<Weak<Mutex<tasty_remote::html_mirror::HtmlMirror>>>,
+    document: Option<tasty_remote::html_body::NativeViewBinding>,
 }
 impl NativeWebviewBinding {
     pub(crate) fn capture(engine: &EngineRef<'_>, surface: u32) -> Option<Self> {
@@ -23,6 +24,9 @@ impl NativeWebviewBinding {
             surface,
             source: Arc::downgrade(&remote.webview_url),
             mirror: remote.html_mirror.as_ref().map(Arc::downgrade),
+            document: remote
+                .lock_html_mirror()
+                .and_then(|m| m.body_store().native_binding()),
         })
     }
     pub(crate) fn current(&self, engine: &crate::runtime::engine_access::EngineRef<'_>) -> bool {
@@ -34,6 +38,10 @@ impl NativeWebviewBinding {
                 .and_then(|surface| surface.as_any().downcast_ref::<RemoteSurface>())
                 .is_some_and(|remote| {
                     Arc::downgrade(&remote.webview_url).ptr_eq(&self.source)
+                        && self.document
+                            == remote
+                                .lock_html_mirror()
+                                .and_then(|m| m.body_store().native_binding())
                         && match (&self.mirror, &remote.html_mirror) {
                             (None, None) => true,
                             (Some(old), Some(current)) => old.ptr_eq(&Arc::downgrade(current)),

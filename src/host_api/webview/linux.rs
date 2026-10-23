@@ -107,6 +107,10 @@ fn open_xfixes(display: *mut x11_dl::xlib::Display) -> Option<x11_dl::xfixes::Xl
 }
 
 impl PlatformWebView {
+    pub(crate) fn entry_response_source(&self) -> Option<EntryResponseSource> {
+        self.entry_source.clone()
+    }
+
     pub fn new(
         window: &(impl HasWindowHandle + HasDisplayHandle),
         bounds: WebViewBounds,
@@ -821,6 +825,9 @@ impl PlatformWebView {
 impl Drop for PlatformWebView {
     fn drop(&mut self) {
         self.assert_origin_thread();
+        if let Some(source) = &self.entry_source {
+            source.retire();
+        }
         // GDK 연결의 지연 요청이 이미 지운 X 창을 참조할 수 있어 정리 중 오류 트랩으로 기록한다.
         let trap: Option<gdkx11::X11Display> = self.gdk_window.display().downcast().ok();
         if let Some(d) = &trap {

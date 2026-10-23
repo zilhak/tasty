@@ -77,3 +77,8 @@ completed body만 `Resource::body`로 제공한다. 완료 시 수신 buffer의 
 native 주 문서 이동 의도는 원 entry identity·source generation·root 상대 target을 캡처한다. transport owner가 새 document를 만들 때 이전 entry cancel은 생략하고 서버의 root handoff 요청으로 이전 문서 전체를 취소한다. 하위 전송 취소는 그대로 보낸다. 사용자 Reload는 그 target을 현재 서버 source의 새 root에서 연다. native의 주 문서 분류·callback 연결 및 capability 활성화는 별도이며 현재 viewer는 entry만 표시한다.
 
 Linux wrapper는 native 창과 수명을 소유하며, 탐색·응답 정책 callback 등록은 `src/host_api/webview/linux/navigation_policy.rs`에서 수행한다. callback은 같은 생성 스레드의 WebView와 원 script gate·entry source·탐색 queue를 사용한다.
+
+
+native view 소유권은 immutable 본문 수명과 구분한다. `NativeViewBinding`은 여섯 부분 entry identity·source generation과 view owner의 weak allocation identity를 함께 비교한다. 새 문서·clear와 명시적 native view retirement는 이전 callback 권한을 회수한다. native view만 retire할 때는 완성 body/cache를 보존할 수 있다. App의 native binding과 script gate도 이 identity를 캡처하여 이전 view의 늦은 load·commit·failure·scan 결과가 현재 문서 상태를 바꾸지 못하게 한다. 일반 local WebView의 기존 script gate 동작은 유지한다.
+
+각 native WebView와 script gate는 같은 `EntryResponseSource` clone의 live 표지를 공유한다. 세 OS의 wrapper는 native 자원을 정리하기 전에 그 표지를 retire한다. 본문을 재사용해 다른 native view를 만들 때에도 이전 view의 callback은 새 gate를 변경하지 못한다.

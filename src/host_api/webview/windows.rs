@@ -162,6 +162,10 @@ fn transient(msg: impl std::fmt::Display) -> super::WebViewCreateError {
 }
 
 impl PlatformWebView {
+    pub(crate) fn entry_response_source(&self) -> Option<EntryResponseSource> {
+        self.entry_source.clone()
+    }
+
     pub fn new(
         window: &impl HasWindowHandle,
         bounds: WebViewBounds,
@@ -1065,6 +1069,9 @@ impl PlatformWebView {
 
 impl Drop for PlatformWebView {
     fn drop(&mut self) {
+        if let Some(source) = &self.entry_source {
+            source.retire();
+        }
         // SAFETY: controller.Close()는 webview2 자원 해제, DestroyWindow는 child HWND 정리.
         // 둘 다 self가 처음 만들어진 main thread에서 Drop이 호출된다는 전제 (PlatformWebView는
         // !Send/!Sync 기본 — COM 객체 포함).
