@@ -220,6 +220,14 @@ impl HtmlMirror {
         self.reload = true;
         true
     }
+    /// Native work awaiting admission and aggregate consent still keep the host receiving page.
+    pub fn receiving(&self) -> bool {
+        self.document.as_ref().is_none_or(HtmlDocument::receiving)
+            || self
+                .body_store()
+                .resources_mut()
+                .is_some_and(|resources| resources.has_pending())
+    }
     pub fn state(&self) -> Option<ReceiveState> {
         self.document
             .as_ref()?

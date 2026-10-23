@@ -271,3 +271,41 @@ fn stop_keeps_completed_document_navigable_while_disconnect_refuses_new_document
     assert!(!mirror.poll_navigation());
     assert!(mirror.body_store().current().is_some());
 }
+
+#[test]
+fn queued_native_work_and_terminal_paused_work_keep_receiving_until_resolved() {
+    let mut mirror = ready();
+    assert!(!mirror.receiving());
+    let queued = request(&mirror, "queued.css");
+    assert!(mirror.receiving());
+    drop(queued);
+    mirror.poll_resources();
+    assert!(!mirror.receiving());
+    let _active = start(&mut mirror, "at-limit.css", 2);
+    mirror.receive(css_metadata(next(2), 10));
+    mirror.document.as_mut().unwrap().received = DOCUMENT_BYTES;
+    assert!(mirror.credit().is_none());
+    mirror.receive(HtmlReply::HtmlFailure {
+        id: next(2),
+        reason: "credit wait expired".into(),
+    });
+    mirror.poll_resources();
+    assert!(mirror.receiving());
+    let _pending = request(&mirror, "after-pause.css");
+    assert!(!mirror.continue_receiving(next(9)));
+    assert!(mirror.take_resource_fetches().is_empty());
+    assert!(mirror.continue_receiving(id()));
+    assert!(mirror.receiving());
+    let jobs = mirror.take_resource_fetches();
+    assert_eq!(jobs.len(), 1);
+    assert_eq!(jobs[0].relative, "after-pause.css");
+    assert!(
+        mirror
+            .bind_resource(jobs.into_iter().next().unwrap(), next(3))
+            .is_some()
+    );
+    mirror.stop(id());
+    mirror.poll_resources();
+    assert!(!mirror.receiving());
+    assert!(mirror.body_store().current().is_some());
+}

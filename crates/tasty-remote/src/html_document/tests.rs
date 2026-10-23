@@ -161,3 +161,31 @@ fn timeout_during_size_question_retires_allowance_until_a_fresh_request() {
     assert!(d.credit(retry).is_some());
     assert!(!d.receive(HtmlReply::HtmlCancelled { id: id() }));
 }
+
+#[test]
+fn cumulative_pause_remains_receiving_after_the_last_worker_ends() {
+    for cancelled in [false, true] {
+        let mut document = document(10);
+        document.received = DOCUMENT_BYTES;
+        assert!(document.credit(id()).is_none());
+        assert!(document.paused);
+        let terminal = if cancelled {
+            HtmlReply::HtmlCancelled { id: id() }
+        } else {
+            HtmlReply::HtmlFailure {
+                id: id(),
+                reason: "credit wait expired".into(),
+            }
+        };
+        assert!(document.receive(terminal));
+        assert!(
+            document.receiving(),
+            "aggregate consent is still pending after the last worker ends"
+        );
+        document.continue_receiving();
+        assert!(!document.receiving());
+        document.paused = true;
+        document.stop();
+        assert!(!document.receiving());
+    }
+}

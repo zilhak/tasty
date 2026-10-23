@@ -281,15 +281,16 @@ impl HtmlDocument {
         cancel
     }
     pub fn receiving(&self) -> bool {
-        self.resources.values().any(|r| {
-            matches!(
-                r.state,
-                ReceiveState::Metadata
-                    | ReceiveState::SizeNotice
-                    | ReceiveState::Ready
-                    | ReceiveState::Receiving
-            )
-        })
+        self.paused
+            || self.resources.values().any(|r| {
+                matches!(
+                    r.state,
+                    ReceiveState::Metadata
+                        | ReceiveState::SizeNotice
+                        | ReceiveState::Ready
+                        | ReceiveState::Receiving
+                )
+            })
     }
 }
 

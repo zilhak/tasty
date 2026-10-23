@@ -82,7 +82,7 @@ pub(crate) fn snapshot(remote: &RemoteSurface, target: SurfaceBinding) -> Option
         size_notice: notice.map(|m| m.size),
         waiting: document.map_or(0, |d| d.notices.len().saturating_sub(1)),
         paused: document.is_some_and(|d| d.paused),
-        receiving: document.is_none_or(|d| d.receiving())
+        receiving: mirror.receiving()
             || (state == Some(ReceiveState::Complete) && !ready && mirror.failure.is_none()),
         ready,
         failed: mirror.failure.is_some()

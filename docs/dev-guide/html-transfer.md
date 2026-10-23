@@ -88,3 +88,5 @@ native view 소유권은 immutable 본문 수명과 구분한다. `NativeViewBin
 Linux의 MIME·CSP·no-store·nosniff 응답 헤더 구성은 본문 stream 생성과 분리된 helper에서 처리한다.
 
 Linux 하위 파일 응답은 native GIO read의 cancellable에 직접 연결한다. body가 완성되기 전에는 바이트를 내보내지 않고, 첫 read 완료 전에 MIME·CSP·길이 헤더를 확정한다. native Abort는 그 read의 waiter만 해제하며 같은 URI의 다른 waiter를 취소하지 않는다. 첫 read 전 스트림과 진행 중 read를 각각 256개로 제한하고, view 종료 시 아직 시작하지 않은 waiter와 async read를 함께 취소한다. 마지막 WebView가 사라진 뒤에도 준비된 GTask 완료 콜백은 GTK에서 처리한다. 브라우저가 소비한 바이트와 응답 MIME은 native component 시험으로 확인하며 WebResource 자료 조회와 전체 App 렌더 검증을 구분한다.
+
+누적 Continue/Stop 질문은 마지막 활성 파일이 실패·취소되어도 receiving 상태를 유지한다. 아직 transfer admission을 받지 않은 native 대기 큐도 같은 수신 상태에 포함한다. Continue는 남은 큐를 이어 가며 이미 실패한 요청을 다시 열지 않는다. Stop은 대기·질문을 끝내고 완료 entry는 보존한다. 실패한 파일의 새 시도는 사용자 Reload의 새 문서 identity로 처리하며 이전 질문의 늦은 결정은 적용하지 않는다.
