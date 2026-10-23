@@ -1,17 +1,20 @@
 //! Isolated WebKit file responses. Pending requests never read client paths or use ambient network.
+mod deferred_stream;
+mod pending_reads;
+
 use super::EntryResponseSource;
 use gtk::prelude::*;
 use gtk::{gio, glib};
-use std::{
-    cell::{Cell, RefCell},
-    rc::Rc,
-    sync::Arc,
-};
-use tasty_remote::html_body::{ENTRY_SCHEME, NativeBodyResponse, ResourceFailure};
+use std::sync::Arc;
+use tasty_remote::html_body::{ENTRY_SCHEME, NativeBodyResponse};
+
 use webkit2gtk::{
     SecurityManagerExt, URIRequestExt, URISchemeRequest, URISchemeRequestExt, URISchemeResponse,
     URISchemeResponseExt, WebContext, WebContextExt, WebView, WebViewExt,
 };
+pub(crate) fn callbacks_pending() -> bool {
+    pending_reads::callbacks_pending()
+}
 struct BodyBytes(Arc<NativeBodyResponse>);
 impl AsRef<[u8]> for BodyBytes {
     fn as_ref(&self) -> &[u8] {
@@ -62,10 +65,8 @@ pub(in crate::host_api::webview) fn webview(source: EntryResponseSource) -> WebV
         security.register_uri_scheme_as_secure(ENTRY_SCHEME);
         security.register_uri_scheme_as_cors_enabled(ENTRY_SCHEME);
     }
-    let alive = Rc::new(Cell::new(true));
-    let pending: Rc<RefCell<Vec<glib::JoinHandle<()>>>> = Rc::default();
-    let callbacks = Rc::clone(&pending);
-    let active = Rc::clone(&alive);
+    let pending = pending_reads::PendingReads::default();
+    let callbacks = pending.clone();
     let provider = source.clone();
     context.register_uri_scheme(ENTRY_SCHEME, move |request| {
         let Some(uri) = request
@@ -83,39 +84,24 @@ pub(in crate::host_api::webview) fn webview(source: EntryResponseSource) -> WebV
             fail(request, "unsupported remote file route");
             return;
         }
-        {
-            let mut pending = callbacks.borrow_mut();
-            pending.retain(|handle| !handle.source().is_destroyed());
-            if pending.len() >= 256 {
-                fail(request, "remote file response capacity");
-                return;
-            }
+        if !callbacks.available() {
+            fail(request, "remote file response capacity");
+            return;
         }
         let Some(wait) = provider.request(uri.as_str()) else {
             fail(request, "retired remote document");
             return;
         };
-        let request = request.clone();
-        let provider = provider.clone();
-        let alive = Rc::clone(&active);
-        let task = glib::MainContext::default().spawn_local(async move {
-            let result = wait.await;
-            if !alive.get() {
-                return;
-            }
-            match result {
-                Ok(body) => finish(&request, &provider, body),
-                Err(
-                    ResourceFailure::Declined
-                    | ResourceFailure::Stopped
-                    | ResourceFailure::Cancelled
-                    | ResourceFailure::Disconnected
-                    | ResourceFailure::Denied
-                    | ResourceFailure::Failed,
-                ) => fail(&request, "remote file response ended"),
-            }
-        });
-        callbacks.borrow_mut().push(task);
+        // Finishing the response installs WebKit's exact per-request GIO cancellable. No bytes
+        // leave this deferred stream until the complete body and final metadata are available.
+        let Some(stream) = deferred_stream::DeferredStream::new(provider.clone(), wait, &callbacks)
+        else {
+            fail(request, "remote file stream capacity");
+            return;
+        };
+        let response = URISchemeResponse::new(&stream, -1);
+        stream.set_response(&response);
+        request.finish_with_response(&response);
     });
     let view = WebView::with_context(&context);
     let main = source.clone();
@@ -129,11 +115,8 @@ pub(in crate::host_api::webview) fn webview(source: EntryResponseSource) -> WebV
         }
     });
     view.connect_destroy(move |_| {
-        alive.set(false);
         source.lost_native_view();
-        for task in pending.borrow_mut().drain(..) {
-            task.abort();
-        }
+        pending.close();
     });
     if let Some(settings) = WebViewExt::settings(&view) {
         use webkit2gtk::SettingsExt;

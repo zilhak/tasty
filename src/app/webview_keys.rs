@@ -28,6 +28,8 @@ impl App {
                 needs_poll = true;
             }
         }
+        #[cfg(target_os = "linux")]
+        let any_webview = any_webview || crate::webview::entry_response::callbacks_pending();
         if !any_webview {
             return false;
         }

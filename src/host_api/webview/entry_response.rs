@@ -156,6 +156,11 @@ pub(crate) const FILE_CSP: &str = "default-src 'none'; script-src 'self' 'unsafe
 #[cfg(target_os = "linux")]
 pub(super) mod linux;
 
+#[cfg(target_os = "linux")]
+pub(crate) fn callbacks_pending() -> bool {
+    linux::callbacks_pending()
+}
+
 #[cfg(target_os = "macos")]
 pub(super) mod macos;
 

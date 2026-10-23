@@ -4,7 +4,7 @@ use base64::Engine;
 use tasty_ipc::html_transfer::{HtmlMetadata, HtmlReply, HtmlSource, TransferId};
 use tasty_model::html_script::HtmlScriptState;
 use tasty_remote::html_document::HtmlDocument;
-fn id() -> TransferId {
+pub(super) fn id() -> TransferId {
     TransferId {
         epoch: 1,
         surface_id: 7,
@@ -14,7 +14,7 @@ fn id() -> TransferId {
         transfer: 4,
     }
 }
-fn entry() -> Arc<ReceivedEntry> {
+pub(super) fn entry() -> Arc<ReceivedEntry> {
     let id = id();
     let bytes = b"<script>globalThis.received=true</script>";
     let mut document = HtmlDocument::new(id.epoch, id.surface_id, id.binding, id.document);
@@ -50,7 +50,7 @@ fn entry() -> Arc<ReceivedEntry> {
             .unwrap(),
     )
 }
-fn store(body: Arc<ReceivedEntry>) -> Arc<Mutex<EntryBodyStore>> {
+pub(super) fn store(body: Arc<ReceivedEntry>) -> Arc<Mutex<EntryBodyStore>> {
     let mut store = EntryBodyStore::default();
     store.begin(id());
     assert!(store.publish(body));
