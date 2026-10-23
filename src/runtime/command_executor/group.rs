@@ -156,6 +156,12 @@ impl<D: JournalDecider<State: Clone>> Executor<D> {
         prepared: Result<GroupCommand<D::Command>, ExecError<D::Rejection>>,
         gate: &GroupGate<'_, D::Rejection>,
     ) -> Step<D::Rejection> {
+        // Builders may preserve their existing request-error API (for example completion
+        // validation returns String). The transaction retains the typed SQL failure's fatal
+        // state, which must take precedence over every builder result, including a swallowed error.
+        if group.is_poisoned() {
+            return Step::Fatal(store_error(StoreError::GroupAborted));
+        }
         let request = match prepared {
             Ok(GroupCommand::Ready(request)) => request,
             Ok(GroupCommand::Stored(record)) => {

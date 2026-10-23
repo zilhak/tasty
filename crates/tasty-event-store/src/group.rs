@@ -1,4 +1,6 @@
 //! Several logical requests in one fenced physical transaction. Not an independent worker.
+use std::cell::Cell;
+
 use crate::command::find_by_key;
 use crate::metrics::WriteTransaction;
 use crate::{CommitOutcome, CommitRequest, EventStore, StoreError, StoreResult, WriterEpoch};
@@ -12,7 +14,7 @@ pub struct CommitGroup<'a> {
     effect_limit: u64,
     logical: u64,
     bytes: usize,
-    poisoned: bool,
+    poisoned: Cell<bool>,
 }
 
 impl EventStore {
@@ -27,7 +29,7 @@ impl EventStore {
             effect_limit,
             logical: 0,
             bytes: 0,
-            poisoned: false,
+            poisoned: Cell::new(false),
         })
     }
 }
@@ -35,7 +37,7 @@ impl EventStore {
 impl CommitGroup<'_> {
     /// Request failures roll back only that request. SQLite failures require dropping this group.
     pub fn append(&mut self, request: &CommitRequest) -> StoreResult<CommitOutcome> {
-        if self.poisoned {
+        if self.poisoned.get() {
             return Err(StoreError::GroupAborted);
         }
         if request.writer_epoch != self.epoch {
@@ -45,14 +47,14 @@ impl CommitGroup<'_> {
             });
         }
         if let Err(error) = self.tx.execute_batch("SAVEPOINT journal_request") {
-            self.poisoned = true;
+            self.poisoned.set(true);
             return Err(error.into());
         }
         let result = self.append_in(request);
         match result {
             Ok((outcome, bytes)) => {
                 if let Err(error) = self.tx.execute_batch("RELEASE journal_request") {
-                    self.poisoned = true;
+                    self.poisoned.set(true);
                     return Err(error.into());
                 }
                 if matches!(outcome, CommitOutcome::Committed { .. }) {
@@ -62,13 +64,14 @@ impl CommitGroup<'_> {
                 Ok(outcome)
             }
             Err(error) => {
-                self.poisoned = matches!(error, StoreError::Sqlite(_)) || self.tx.is_autocommit();
+                self.poisoned
+                    .set(matches!(error, StoreError::Sqlite(_)) || self.tx.is_autocommit());
                 if !self.tx.is_autocommit()
                     && let Err(rollback) = self
                         .tx
                         .execute_batch("ROLLBACK TO journal_request; RELEASE journal_request")
                 {
-                    self.poisoned = true;
+                    self.poisoned.set(true);
                     return Err(rollback.into());
                 }
                 Err(error)
@@ -99,7 +102,7 @@ impl CommitGroup<'_> {
     }
 
     pub fn read_batch(&self, batch: crate::BatchId) -> StoreResult<crate::StoredBatch> {
-        crate::read::load_batch(&self.tx, batch)
+        self.read(|| crate::read::load_batch(&self.tx, batch))
     }
 
     pub fn lookup_command(
@@ -107,10 +110,14 @@ impl CommitGroup<'_> {
         key: &crate::CommandKey,
         digest: &[u8],
     ) -> StoreResult<crate::CommandLookup> {
-        Ok(match find_by_key(&self.tx, key)? {
-            None => crate::CommandLookup::Miss,
-            Some(record) if record.request_digest == digest => crate::CommandLookup::Hit(record),
-            Some(record) => crate::CommandLookup::DigestMismatch(record),
+        self.read(|| {
+            Ok(match find_by_key(&self.tx, key)? {
+                None => crate::CommandLookup::Miss,
+                Some(record) if record.request_digest == digest => {
+                    crate::CommandLookup::Hit(record)
+                }
+                Some(record) => crate::CommandLookup::DigestMismatch(record),
+            })
         })
     }
 
@@ -123,7 +130,7 @@ impl CommitGroup<'_> {
     }
 
     pub fn is_poisoned(&self) -> bool {
-        self.poisoned
+        self.poisoned.get()
     }
 
     pub fn writer_epoch(&self) -> WriterEpoch {
@@ -131,15 +138,28 @@ impl CommitGroup<'_> {
     }
 
     pub fn command(&self, id: &str) -> StoreResult<Option<crate::CommandRecord>> {
-        crate::command::find_by_id(&self.tx, id)
+        self.read(|| crate::command::find_by_id(&self.tx, id))
     }
 
     pub fn effect(&self, id: &str) -> StoreResult<Option<crate::EffectRecord>> {
-        crate::effect::find_by_id(&self.tx, id)
+        self.read(|| crate::effect::find_by_id(&self.tx, id))
+    }
+
+    // Keep fatal state on the transaction view even when a caller maps the typed error into
+    // a request error. Expected misses and domain validation failures do not poison the group.
+    fn read<T>(&self, read: impl FnOnce() -> StoreResult<T>) -> StoreResult<T> {
+        if self.poisoned.get() {
+            return Err(StoreError::GroupAborted);
+        }
+        let result = read();
+        if matches!(&result, Err(StoreError::Sqlite(_))) || self.tx.is_autocommit() {
+            self.poisoned.set(true);
+        }
+        result
     }
 
     pub fn finish(self) -> StoreResult<()> {
-        if self.poisoned {
+        if self.poisoned.get() {
             return Err(StoreError::GroupAborted);
         }
         if self.logical == 0 {
@@ -149,3 +169,6 @@ impl CommitGroup<'_> {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod read_tests;

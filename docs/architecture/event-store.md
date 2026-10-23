@@ -15,7 +15,11 @@
 앞 요청도 key 조회와 누적 effect 한도에 포함된다. 각 요청의 command ID·batch cut·최초 응답은
 독립적으로 남으며, 거절된 요청의 부분 쓰기는 그 savepoint까지 되돌린다.
 
-SQLite 오류나 자동 transaction rollback이 발생하면 그룹은 더 쓰거나 확정할 수 없다.
+SQLite 쓰기·private 조회(`command`, key, `effect`, batch) 오류나 자동 transaction rollback이
+발생하면 그룹은 더 읽거나 쓰거나 확정할 수 없다. 조회의 정상적인 없음·digest 불일치·알려진
+요청 검증 오류는 이 fatal 상태와 구분한다. completion builder가 오류를 요청용 문자열로 바꿔도
+executor는 transaction의 fatal 상태를 우선 확인하여 앞선 사적 상태·성공 응답을 함께 버리고
+전체 그룹을 실패·halt 처리한다. COMMIT 전에는 어떤 앞선 응답도 공개하지 않는다.
 `finish`의 물리 COMMIT 오류는 자동 재실행하지 않는다. 그룹을 버리면 아직 확정하지 않은
 모든 요청을 되돌린다. 중복 요청만 있는 그룹에는 성공 COMMIT을 추가하지 않는다.
 단건 `commit`도 이 경계를 사용하며, restore import와 checkpoint의 원자 경계는 유지한다.

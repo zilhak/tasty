@@ -206,3 +206,27 @@ fn internal_byte_boundary_splits_without_rejecting_a_valid_request() {
     next.finish().unwrap();
     assert_eq!(store.stream_revision(&StreamId::new("a")).unwrap(), Some(2));
 }
+
+#[test]
+fn sql_effect_read_fault_from_an_existing_view_rolls_back_the_prefix() {
+    let (_dir, mut store, epoch) = fresh();
+    store
+        .conn
+        .execute_batch(
+            "ALTER TABLE effects RENAME TO effects_real;
+        CREATE VIEW effects AS SELECT * FROM effects_real WHERE group_missing_function();",
+        )
+        .unwrap();
+    let before = store.commit_statistics();
+    let mut group = store.begin_commit_group(epoch).unwrap();
+    group.append(&request(epoch, 1)).unwrap();
+    assert!(matches!(
+        group.effect("missing"),
+        Err(StoreError::Sqlite(_))
+    ));
+    assert!(group.is_poisoned());
+    assert!(matches!(group.finish(), Err(StoreError::GroupAborted)));
+    assert!(store.command("c1").unwrap().is_none());
+    assert_eq!(store.current_cut().unwrap().last_batch, None);
+    assert_eq!(store.commit_statistics(), before);
+}
