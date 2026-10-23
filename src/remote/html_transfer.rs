@@ -158,9 +158,7 @@ impl EngineMut<'_> {
                 w.cancel.store(true, Ordering::Release);
                 return;
             }
-            if matches!(msg, HtmlRequest::HtmlCancel { .. }) {
-                w.cancel.store(true, Ordering::Release);
-            } else if w.commands.try_send(msg).is_err() {
+            if matches!(msg, HtmlRequest::HtmlCancel { .. }) || w.commands.try_send(msg).is_err() {
                 w.cancel.store(true, Ordering::Release);
             }
             return;

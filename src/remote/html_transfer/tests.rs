@@ -203,7 +203,7 @@ fn cancel_generation_close_timeout_and_reused_connection_release_owned_worker() 
     ));
     let mut f = Fixture::new(&path);
     reply(&f.rx);
-    let original = std::mem::replace(&mut f.source, Arc::default());
+    let original = std::mem::take(&mut f.source);
     drop(original);
     f.hub.unregister(41);
     f.join();

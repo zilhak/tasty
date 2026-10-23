@@ -18,7 +18,7 @@ wire DTO는 `crates/tasty-ipc/src/html_transfer.rs`에 있다. 모든 요청/응
 2. worker가 정규 파일 여부·크기·root를 열린 handle로 확인하고 `html_metadata`를 보낸다. metadata에는 typed source, source generation, root, cwd, size, regular가 있다. HTTP source는 regular=false metadata 뒤 proxy 미지원 실패로 끝나며 HTTP 실행이나 client network fallback이 없다. 파일 종류·경로 확인 실패는 oversized로 분류하지 않는다.
 3. `html_read`는 정확한 다음 raw offset과 allowance를 보낸다. 100000 bytes 이하는 별도 크기 허용 없이 credit을 발급한다. 초과 파일은 metadata 뒤 Allow를 기다린다. Decline은 cancel이다. 처음 보낼 때도 metadata와 body를 분리한다.
 4. credit 하나는 최대 48KiB raw bytes의 base64 `html_chunk` 하나를 허용한다. 마지막 chunk 뒤 `html_complete`가 온다. 빈 파일은 credit 뒤 complete만 온다. 큰 본문 전체를 JSON 하나로 만들지 않는다.
-5. `html_cancel`, source 교체·surface 수명 종료·connection retirement·30초 credit 무응답은 worker의 handle과 buffer를 해제한다. 명시적 취소는 `html_cancelled`, 파일 판 변경이나 timeout은 `html_failure`다. 끊긴 registration에 대한 응답을 새 registration으로 넘기지 않는다.
+5. `html_cancel`, source 교체·surface 수명 종료·connection retirement·30초 credit 무응답은 worker의 handle과 buffer를 해제한다. 취소는 credit queue를 기다리지 않고 atomic 표지를 설정한다. 명시적 취소는 `html_cancelled`, 파일 판 변경이나 timeout은 `html_failure`다. 끊긴 registration에 대한 응답을 새 registration으로 넘기지 않는다.
 
 entry는 attach workspace holder만 요청한다. markdown 조회와 같은 SSH 신뢰 경계와 engine 전체 조회 범위를 사용하며 새 permission token은 없다. 원 grant와 StreamHub registration을 요청 소유권에 기록하고 후속 read에서도 검사한다. transfer 번호는 한 connection에서 단조 증가해야 하며 종료된 identity를 재사용하지 않는다. 동시에 살아 있는 worker는 process 전체에서 최대 8개이며 engine별 map도 8개로 제한한다. worker command queue는 1개다. engine 소멸 때는 취소를 요청하고 미완 thread의 join handle을 bounded retirement 목록으로 옮긴다. 해당 슬롯은 실제 join 뒤에만 재사용한다. 파일 시스템 읽기가 반환하지 않으면 취소 완료로 보고하지 않으며 새 요청의 입장 예산도 반환하지 않는다. 중복 credit·offset 오류는 전송을 중단한다. 출력 queue 손실 때는 원 registration을 끊어 불완전 본문을 정상 완료로 처리하지 않는다.
 
