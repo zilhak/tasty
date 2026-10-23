@@ -1,9 +1,11 @@
 //! Portable finite HTTP executor, independent of native WebViews and stream dispatch.
 //! The caller validates attach ownership and owns one document generation. Reusing a response
-//! never opens a second upstream request. HTTPS/upgrade handling belongs to a later adapter.
+//! never opens a second upstream request. TLS verification is per client; native TLS termination is a separate adapter.
 mod body;
 pub mod endpoint;
 mod headers;
+pub mod local_tls;
+mod tls;
 mod transfer;
 mod types;
 pub use body::{Body, Upload, UploadBuilder};
@@ -47,20 +49,7 @@ struct BackendInner {
 impl Backend {
     pub fn new(limits: Limits, runtime: tokio::runtime::Handle) -> Result<Self> {
         limits.validate()?;
-        let client = reqwest::Client::builder()
-            .no_proxy()
-            .redirect(reqwest::redirect::Policy::none())
-            .retry(reqwest::retry::never())
-            .no_gzip()
-            .no_brotli()
-            .no_deflate()
-            .no_zstd()
-            .http1_only()
-            .pool_max_idle_per_host(0)
-            .connect_timeout(limits.connect_timeout)
-            .read_timeout(limits.read_timeout)
-            .build()
-            .map_err(|_| Error::Network)?;
+        let client = tls::client(&limits)?;
         Ok(Self {
             inner: Arc::new(BackendInner {
                 client,
@@ -91,7 +80,7 @@ impl Backend {
         entry_url: &str,
         allow_cross_origin: bool,
     ) -> Result<Document> {
-        let origin = parse_http(entry_url)?.origin().ascii_serialization();
+        let origin = parse_web(entry_url)?.origin().ascii_serialization();
         Ok(Document {
             inner: Arc::new(DocumentInner {
                 backend: self.inner.clone(),
@@ -105,9 +94,9 @@ impl Backend {
         })
     }
 }
-fn parse_http(url: &str) -> Result<reqwest::Url> {
-    let mut url = reqwest::Url::parse(url).map_err(|_| Error::Invalid("absolute HTTP URL"))?;
-    if url.scheme() != "http" || url.host_str().is_none() {
+fn parse_web(url: &str) -> Result<reqwest::Url> {
+    let mut url = reqwest::Url::parse(url).map_err(|_| Error::Invalid("absolute HTTP(S) URL"))?;
+    if !["http", "https"].contains(&url.scheme()) || url.host_str().is_none() {
         return Err(Error::UnsupportedScheme);
     }
     if !url.username().is_empty() || url.password().is_some() {
@@ -198,7 +187,7 @@ impl Document {
         if !request.upload.belongs_to(&self.inner.backend.quota) {
             return Err(Error::Invalid("upload backend ownership"));
         }
-        let url = parse_http(&request.url)?;
+        let url = parse_web(&request.url)?;
         if !self.inner.allow_cross_origin && url.origin().ascii_serialization() != self.inner.origin
         {
             return Err(Error::Invalid("cross-origin policy"));

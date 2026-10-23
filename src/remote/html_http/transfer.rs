@@ -71,65 +71,15 @@ pub(super) async fn run(
     let started = std::time::Instant::now();
     let mut response = tokio::select! {biased;_=stop.changed()=>return Err(Error::Cancelled),r=tokio::time::timeout(budget,request.send())=>r.map_err(|_|Error::Timeout)?.map_err(network)?};
     budget = budget.saturating_sub(started.elapsed());
-    if response
-        .headers()
-        .get(reqwest::header::CONTENT_TYPE)
-        .and_then(|h| h.to_str().ok())
-        .is_some_and(|h| {
-            h.split(';')
-                .next()
-                .is_some_and(|h| h.trim().eq_ignore_ascii_case("text/event-stream"))
-        })
-    {
-        return Err(Error::UnsupportedStreaming);
-    }
-    // The upload bytes may still be owned by the transport until response headers arrive.
+    // The transport can own upload bytes until response headers arrive.
     let _upload_lease = lease;
-    if response.status() == reqwest::StatusCode::SWITCHING_PROTOCOLS {
-        return Err(Error::UnsupportedUpgrade);
-    }
-    let head = ResponseHead {
+    let (head, encoding) = metadata(
+        &response,
         id,
-        logical_url: url.to_string(),
-        status: response.status().as_u16(),
-        headers: super::headers::response(response.headers(), inner.backend.limits.header_bytes)?,
-        encoded_length: response.content_length(),
-        has_body: response_has_body
-            && response.status().as_u16() != 204
-            && response.status().as_u16() != 304,
-    };
-    if response
-        .headers()
-        .get_all(reqwest::header::CONTENT_ENCODING)
-        .iter()
-        .count()
-        > 1
-    {
-        return Err(Error::UnsupportedEncoding);
-    }
-    let mut encoding = response
-        .headers()
-        .get(reqwest::header::CONTENT_ENCODING)
-        .map(|h| {
-            h.to_str()
-                .map(str::to_ascii_lowercase)
-                .map_err(|_| Error::UnsupportedEncoding)
-        })
-        .transpose()?
-        .unwrap_or_default();
-    if !head.has_body {
-        encoding.clear();
-    }
-    if !["", "identity", "gzip", "deflate"].contains(&encoding.as_str()) {
-        return Err(Error::UnsupportedEncoding);
-    }
-    if head.has_body
-        && head
-            .encoded_length
-            .is_some_and(|n| n > inner.backend.limits.encoded_bytes as u64)
-    {
-        return Err(Error::Quota("encoded bytes"));
-    }
+        url.to_string(),
+        response_has_body,
+        &inner.backend.limits,
+    )?;
     send(events, Event::Head(head.clone()), cancel).await?;
     let mut encoded = Vec::new();
     let mut lease = body::Lease::new(inner.backend.quota.clone());
@@ -242,4 +192,71 @@ pub(super) async fn run(
         encoded,
         decoded,
     }))
+}
+
+fn metadata(
+    response: &reqwest::Response,
+    id: ResponseId,
+    logical_url: String,
+    response_has_body: bool,
+    limits: &Limits,
+) -> Result<(ResponseHead, String)> {
+    if response
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|h| h.to_str().ok())
+        .is_some_and(|h| {
+            h.split(';')
+                .next()
+                .is_some_and(|h| h.trim().eq_ignore_ascii_case("text/event-stream"))
+        })
+    {
+        return Err(Error::UnsupportedStreaming);
+    }
+    if response.status() == reqwest::StatusCode::SWITCHING_PROTOCOLS {
+        return Err(Error::UnsupportedUpgrade);
+    }
+    let head = ResponseHead {
+        id,
+        logical_url,
+        status: response.status().as_u16(),
+        headers: super::headers::response(response.headers(), limits.header_bytes)?,
+        encoded_length: response.content_length(),
+        has_body: response_has_body
+            && response.status().as_u16() != 204
+            && response.status().as_u16() != 304,
+    };
+    if response
+        .headers()
+        .get_all(reqwest::header::CONTENT_ENCODING)
+        .iter()
+        .count()
+        > 1
+    {
+        return Err(Error::UnsupportedEncoding);
+    }
+    let mut encoding = response
+        .headers()
+        .get(reqwest::header::CONTENT_ENCODING)
+        .map(|h| {
+            h.to_str()
+                .map(str::to_ascii_lowercase)
+                .map_err(|_| Error::UnsupportedEncoding)
+        })
+        .transpose()?
+        .unwrap_or_default();
+    if !head.has_body {
+        encoding.clear();
+    }
+    if !["", "identity", "gzip", "deflate"].contains(&encoding.as_str()) {
+        return Err(Error::UnsupportedEncoding);
+    }
+    if head.has_body
+        && head
+            .encoded_length
+            .is_some_and(|n| n > limits.encoded_bytes as u64)
+    {
+        return Err(Error::Quota("encoded bytes"));
+    }
+    Ok((head, encoding))
 }

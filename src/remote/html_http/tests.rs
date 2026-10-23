@@ -351,7 +351,7 @@ async fn policy_stale_credit_and_upload_offsets_fail_closed() {
     let b = backend();
     let d = b.document(key(1), &s.url("/"), false).unwrap();
     let mut r = request(&b, &s, "/echo", 1, b"");
-    r.url = "https://127.0.0.1:1".into();
+    r.url = "wss://127.0.0.1:1".into();
     assert!(matches!(d.open(r), Err(Error::UnsupportedScheme)));
     let mut r = request(&b, &s, "/echo", 1, b"");
     r.url = "http://127.0.0.1:1".into();
@@ -698,4 +698,40 @@ async fn encoded_and_shared_payload_failures_reclaim_and_tombstone() {
     }];
     assert!(matches!(d.open(req), Err(Error::UnsupportedUpgrade)));
     assert_eq!(s.count(), 2);
+}
+
+#[tokio::test]
+async fn https_origin_policy_rejects_scheme_and_port_changes_before_network() {
+    let b = backend();
+    let d = b
+        .document(key(1), "https://example.invalid/", false)
+        .unwrap();
+    for url in ["http://example.invalid/", "https://example.invalid:444/"] {
+        let r = Request {
+            id: id(1, 1),
+            source_generation: 4,
+            method: "GET".into(),
+            url: url.into(),
+            headers: vec![],
+            upload: b.upload().finish(),
+        };
+        assert!(matches!(
+            d.open(r),
+            Err(Error::Invalid("cross-origin policy"))
+        ));
+    }
+    let r = Request {
+        id: id(1, 1),
+        source_generation: 4,
+        method: "GET".into(),
+        url: "https://user:secret@example.invalid/".into(),
+        headers: vec![],
+        upload: b.upload().finish(),
+    };
+    assert!(matches!(
+        d.open(r),
+        Err(Error::Invalid(
+            "URL userinfo; use native Authorization header"
+        ))
+    ));
 }
