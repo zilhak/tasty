@@ -64,6 +64,23 @@ fn drain(core: &mut Core) {
     assert!(MemoryReplies::poll(core).is_empty());
 }
 
+fn counts_after_bootstrap(core: &Core) -> crate::app::file_writer::FileWriteCounts {
+    // Child-registry startup reads share this queue; settle them before measuring port commands.
+    core.registries.child_terminals.wait_bootstrap();
+    let fence = core
+        .file_command_queue()
+        .unwrap()
+        .flush(batch_writer::FlushPoint::START)
+        .unwrap();
+    fence
+        .wait_timeout(Duration::from_secs(5))
+        .expect("bootstrap file fence completed")
+        .expect("bootstrap file work succeeded");
+    let (queue, counts) = core.file_writer_stats().unwrap();
+    assert_eq!(queue.pending_items, 0);
+    assert_eq!(queue.held_items, 0);
+    counts
+}
 #[test]
 fn held_runtime_port_commands_answer_original_callers_once_and_preserve_latest_sections() {
     let _home = crate::test_support::TastyHomeGuard::new();
@@ -72,6 +89,7 @@ fn held_runtime_port_commands_answer_original_callers_once_and_preserve_latest_s
     let path = crate::webhook::config::config_path();
     std::fs::write(&path, "format=2\nport=40000\n").unwrap();
     let mut core = core();
+    let before = counts_after_bootstrap(&core);
     let held = file_replace::lock(&path).unwrap();
     let first = park(&core, call(&core, &mut session, 741, json!({"port":41000})));
     let second = park(
@@ -94,7 +112,8 @@ fn held_runtime_port_commands_answer_original_callers_once_and_preserve_latest_s
             .1
             .operations
             .replace
-            .attempts,
+            .attempts
+            - before.operations.replace.attempts,
         0
     );
     drop(held);
@@ -111,10 +130,21 @@ fn held_runtime_port_commands_answer_original_callers_once_and_preserve_latest_s
     assert!(first.try_recv().is_err());
     assert!(second.try_recv().is_err());
     let counts = core.file_writer_stats().unwrap().1;
-    assert_eq!(counts.operations.replace.succeeded, 2);
-    assert_eq!(counts.commands.known_success, 2);
-    assert_eq!(counts.commands.unclassified, 0);
+    assert_eq!(
+        counts.operations.replace.succeeded - before.operations.replace.succeeded,
+        2
+    );
+    assert_eq!(
+        counts.commands.known_success - before.commands.known_success,
+        2
+    );
+    assert_eq!(
+        counts.commands.unclassified - before.commands.unclassified,
+        0
+    );
     drain(&mut core);
+    assert!(first.try_recv().is_err());
+    assert!(second.try_recv().is_err());
 }
 
 #[test]

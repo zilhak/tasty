@@ -263,7 +263,9 @@ mod tests {
                 tasty_ipc::stream::RESIZE_ACK_CAPABILITY,
                 tasty_ipc::stream::INPUT_ACK_CAPABILITY,
                 tasty_ipc::explorer_op::CAPABILITY,
-                tasty_ipc::html_transfer::CAPABILITY
+                tasty_ipc::html_transfer::CAPABILITY,
+                tasty_ipc::html_transfer::VIEWER_CAPABILITY,
+                tasty_ipc::html_transfer::RESOURCE_CAPABILITY
             ])
         );
     }

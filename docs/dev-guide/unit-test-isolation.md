@@ -209,6 +209,21 @@ unclassified 증가 0을 그대로 검사하고, 종료 drain 뒤 원 호출자�
 고정 sleep이나 조용한 폴링 구간을 완료로 간주하거나, 초기 작업 수를 상수로 빼지 않는다.
 계측 조회는 receipt를 소비하지 않으며, flush 결과는 준비 여부를 검사한 뒤 다시 꺼내지 않는다.
 
+Webhook port 명령 시험도 같은 초기화·기준값 경계를 사용한다. 두 포트 명령의 교체·논리 성공
+증가량은 각각 2이며 unclassified 증가는 0이어야 한다. 최신 외부 섹션과 원 호출자 응답을
+확인한 뒤, 종료 drain 뒤에도 응답이 중복되지 않는지 검사한다.
+
+### 부팅 소유권 인계와 descriptor 명부
+
+`memory_store_has_one_owner`는 메모리 저장소를 writer로 넘기기 전의 부팅 인계와 실행 중 공유를
+구분한다. 추출된 headless 부팅 모듈에서는 `boot_memory`의 정확한 반환 시그니처만 인계로
+인정한다. 같은 파일에 새 공유 필드를 붙이거나 함수 이름·위치를 바꾼 입력은 실제 스캐너로
+검출한다. writer 연결부의 `Arc::try_unwrap` 단독 소유 확인은 그대로 유지한다.
+
+Attach descriptor의 capability 시험은 실제 광고 배열 전체를 순서대로 비교한다. 현재 공통
+descriptor의 HTML entry·resource 항목도 포함하며 GUI와 headless 시험에서 같은 계약을 확인한다.
+부분집합 비교로 누락·추가 항목을 숨기지 않는다.
+
 ### 자식 CLI의 실제 argv를 확인하는 시험
 
 Codex의 `session/spawn_runtime_tests.rs`는 TUI 명령의 인자를 Python mock에 전달하고,

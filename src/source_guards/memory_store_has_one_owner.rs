@@ -43,7 +43,56 @@ const HANDOVER: &[(&str, &str)] = &[
     ),
 ];
 
-fn shipping_hits() -> (Vec<String>, usize) {
+const HEADLESS_HANDOVER: &str = "src/boot/headless_memory.rs";
+
+struct Hit {
+    location: String,
+    handover: bool,
+}
+
+fn is_handover(rel: &str, lines: &[&str], index: usize) -> bool {
+    if HANDOVER.iter().any(|(file, _)| *file == rel) {
+        return true;
+    }
+    if rel != HEADLESS_HANDOVER {
+        return false;
+    }
+    let Some(signature) = index
+        .checked_sub(2)
+        .and_then(|start| lines.get(start..=index))
+    else {
+        return false;
+    };
+    // Only the extracted bootstrap return type is an ownership handoff, not the whole module.
+    signature.iter().map(|line| line.trim()).eq([
+        "pub(super) fn boot_memory(",
+        "boot_settings: &crate::settings::Settings,",
+        ") -> Option<std::sync::Arc<std::sync::Mutex<tasty_memory::MemoryStore>>> {",
+    ])
+}
+
+fn hits_in_file(rel: &str, raw: &str) -> Vec<Hit> {
+    let masked = mask_non_code(raw);
+    let lines: Vec<&str> = masked.lines().collect();
+    let gated = cfg_gated_lines(&lines, "test");
+    lines
+        .iter()
+        .enumerate()
+        .filter_map(|(index, line)| {
+            if gated.get(index).copied().unwrap_or(false)
+                || !SHARED_FORMS.iter().any(|form| line.contains(form))
+            {
+                return None;
+            }
+            Some(Hit {
+                location: format!("{rel}:{}  {}", index + 1, line.trim()),
+                handover: is_handover(rel, &lines, index),
+            })
+        })
+        .collect()
+}
+
+fn shipping_hits() -> (Vec<Hit>, usize) {
     let root = super::repo_root();
     let sources = super::rust_sources();
     let test_only = shipping_scope::test_only_files(&root, &sources);
@@ -55,17 +104,7 @@ fn shipping_hits() -> (Vec<String>, usize) {
             continue;
         }
         files += 1;
-        let masked = mask_non_code(raw);
-        let lines: Vec<&str> = masked.lines().collect();
-        let gated = cfg_gated_lines(&lines, "test");
-        for (i, line) in lines.iter().enumerate() {
-            if gated.get(i).copied().unwrap_or(false) {
-                continue;
-            }
-            if SHARED_FORMS.iter().any(|form| line.contains(form)) {
-                hits.push(format!("{rel}:{}  {}", i + 1, line.trim()));
-            }
-        }
+        hits.extend(hits_in_file(&rel, raw));
     }
     (hits, files)
 }
@@ -77,27 +116,26 @@ fn only_the_memory_writer_owns_the_store_in_shipping_code() {
         files >= 200,
         "제품 소스를 {files}개만 수집했다(하한 200). 순회 범위를 확인한다."
     );
-    let offenders: Vec<&String> = hits
-        .iter()
-        .filter(|hit| {
-            !HANDOVER
-                .iter()
-                .any(|(file, _)| hit.starts_with(&format!("{file}:")))
-        })
-        .collect();
+    let offenders: Vec<&Hit> = hits.iter().filter(|hit| !hit.handover).collect();
     assert!(
         offenders.is_empty(),
         "제품 코드가 memory.db 저장소를 잠금으로 공유한다:\n{}\n저장소는 memory writer가 소유한다. \
          읽기·쓰기는 MemoryAccess로 writer에 요청을 넣는다.",
         offenders
             .iter()
-            .map(|s| format!("  {s}"))
+            .map(|s| format!("  {}", s.location))
             .collect::<Vec<_>>()
             .join("\n")
     );
+    assert!(
+        hits.iter()
+            .any(|hit| hit.handover && hit.location.starts_with(HEADLESS_HANDOVER)),
+        "extracted headless boot return must be the recorded handoff"
+    );
     for (file, reason) in HANDOVER {
         assert!(
-            hits.iter().any(|hit| hit.starts_with(&format!("{file}:"))),
+            hits.iter()
+                .any(|hit| hit.location.starts_with(&format!("{file}:"))),
             "인계 자리로 적힌 `{file}`({reason})에 저장소 감싸기가 없다. 옮겨졌으면 명부를 고친다."
         );
     }
@@ -128,7 +166,33 @@ fn the_scan_skips_test_items_but_sees_shipping_lines() {
     assert!(gated[field], "cfg(test) 필드가 제품 줄로 잡혔다");
     let (hits, _) = shipping_hits();
     assert!(
-        hits.iter().any(|h| h.starts_with("src/boot/wiring.rs:")),
+        hits.iter()
+            .any(|h| h.location.starts_with("src/boot/wiring.rs:")),
         "제품 줄(부팅 인계)을 잡지 못했다"
     );
+}
+
+#[test]
+fn extracted_headless_handoff_does_not_hide_runtime_sharing() {
+    let raw = include_str!("../boot/headless_memory.rs");
+    let baseline = hits_in_file(HEADLESS_HANDOVER, raw);
+    assert_eq!(baseline.len(), 1);
+    assert!(baseline[0].handover);
+
+    let shared = format!(
+        "{raw}\nstruct RuntimeShare {{ memory: std::sync::Arc<std::sync::Mutex<tasty_memory::MemoryStore>> }}"
+    );
+    let hits = hits_in_file(HEADLESS_HANDOVER, &shared);
+    assert_eq!(hits.iter().filter(|hit| hit.handover).count(), 1);
+    let offenders: Vec<_> = hits.iter().filter(|hit| !hit.handover).collect();
+    assert_eq!(offenders.len(), 1);
+    assert!(offenders[0].location.contains("RuntimeShare"));
+
+    let renamed = raw.replace("pub(super) fn boot_memory(", "pub(super) fn other_memory(");
+    let renamed = hits_in_file(HEADLESS_HANDOVER, &renamed);
+    assert_eq!(renamed.len(), 1);
+    assert!(!renamed[0].handover);
+    let elsewhere = hits_in_file("src/runtime/shared_memory.rs", raw);
+    assert_eq!(elsewhere.len(), 1);
+    assert!(!elsewhere[0].handover);
 }
