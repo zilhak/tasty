@@ -1,6 +1,6 @@
 [package]
 name = "tasty-plugin-claude"
-version = "0.1.235"
+version = "0.1.236"
 edition = "2024"
 license = "MIT"
 description = "External Tasty plugin: Claude Code CLI integration"
@@ -21,6 +21,7 @@ anyhow = "1"
 regex = "1"
 directories = "6"
 shell-escape = "0.1"
+uuid = { version = "1", features = ["v4"] }
 
 [dev-dependencies]
 tempfile = "3"

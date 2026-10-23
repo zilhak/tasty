@@ -730,7 +730,8 @@ fn start_claude_with_options<H: HostCall>(
     permission_mode: Option<&str>,
     options: &crate::session_options::SessionOptions,
 ) -> Result<(), IpcMethodError> {
-    options.record(host, surface_id)?;
+    let session_id = uuid::Uuid::new_v4().to_string();
+    options.record(host, surface_id, &session_id)?;
     // Stop 이 부착 게이트 수를 셀 수 있도록 붙인 settings 경로를 남긴다.
     crate::stop_pairing::record_settings_file(host, surface_id, profile_file);
     record_launch_prompt(host, surface_id, prompt.is_some());
@@ -763,7 +764,7 @@ fn start_claude_with_options<H: HostCall>(
     };
 
     // Add invocation flags before the positional prompt (which may itself start with '-').
-    let flags = options.flags();
+    let flags = format!(" --session-id {session_id}{}", options.flags());
     if !flags.is_empty() {
         let at = agent_prefix.len() + "claude".len();
         text.insert_str(at, &flags);

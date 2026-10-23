@@ -70,17 +70,113 @@ impl SessionOptions {
         out
     }
 
-    /// Store even an empty object: a fresh respawn must not inherit a previous session's options.
-    pub fn record<H: HostCall>(&self, host: &H, surface_id: u32) -> Result<(), IpcMethodError> {
+    /// Bind pending invocation options to the exact session ID passed to Claude.
+    pub fn record<H: HostCall>(
+        &self,
+        host: &H,
+        surface_id: u32,
+        session: &str,
+    ) -> Result<(), IpcMethodError> {
         host.call(
             "surface.meta.set",
             json!({
-                "surface_id": surface_id, "key": META_KEY, "value": self.json().to_string(),
+                "surface_id": surface_id, "key": META_KEY,
+                "value": bound_json(session, true, self).to_string(),
             }),
         )
         .map_err(IpcMethodError::from)?;
         Ok(())
     }
+}
+
+fn bound_json(session: &str, pending: bool, options: &SessionOptions) -> Value {
+    json!({"schema": 2, "session": session, "pending": pending, "options": options.json()})
+}
+
+#[derive(Debug)]
+enum SurfaceOptions {
+    Missing,
+    Legacy(SessionOptions),
+    Bound {
+        session: String,
+        pending: bool,
+        options: SessionOptions,
+    },
+}
+
+fn read_meta<H: HostCall>(
+    host: &H,
+    surface: u32,
+    key: &str,
+    tr: &Translator,
+) -> Result<Option<String>, IpcMethodError> {
+    let reply = host
+        .call(
+            "surface.meta.get",
+            json!({"surface_id": surface, "key": key}),
+        )
+        .map_err(IpcMethodError::from)?;
+    match reply.get("value") {
+        Some(Value::Null) => Ok(None),
+        Some(Value::String(text)) => Ok(Some(text.clone())),
+        _ => Err(IpcMethodError::invalid_params(
+            &tr.t_fmt("claude.params.invalid_session_option", key),
+        )),
+    }
+}
+
+fn surface_options<H: HostCall>(
+    host: &H,
+    surface: u32,
+    tr: &Translator,
+) -> Result<SurfaceOptions, IpcMethodError> {
+    let Some(text) = read_meta(host, surface, META_KEY, tr)? else {
+        return Ok(SurfaceOptions::Missing);
+    };
+    let invalid = || {
+        IpcMethodError::invalid_params(&tr.t_fmt("claude.params.invalid_session_option", META_KEY))
+    };
+    let value: Value =
+        serde_json::from_str(&text).map_err(|e| IpcMethodError::new(e.to_string()))?;
+    if !value.is_object() {
+        return Err(invalid());
+    }
+    if let Some(schema) = value.get("schema") {
+        if schema != 2 {
+            return Err(invalid());
+        }
+        let session = value
+            .get("session")
+            .and_then(Value::as_str)
+            .filter(|id| tasty_plugin_agent_common::reboot::is_safe_session_id(id))
+            .ok_or_else(invalid)?;
+        let pending = value
+            .get("pending")
+            .and_then(Value::as_bool)
+            .ok_or_else(invalid)?;
+        let options = value
+            .get("options")
+            .filter(|v| v.is_object())
+            .ok_or_else(invalid)?;
+        return Ok(SurfaceOptions::Bound {
+            session: session.into(),
+            pending,
+            options: SessionOptions::parse(options, tr)?,
+        });
+    }
+    Ok(SurfaceOptions::Legacy(SessionOptions::parse(&value, tr)?))
+}
+
+/// A previous process must not consume a fresh launch's pending selection, including {}.
+pub(crate) fn stale_start<H: HostCall>(
+    host: &H,
+    surface: u32,
+    session: &str,
+    tr: &Translator,
+) -> Result<bool, IpcMethodError> {
+    Ok(
+        matches!(surface_options(host, surface, tr)?, SurfaceOptions::Bound {session: owner, pending: true, ..} if owner != session),
+    )
 }
 
 fn record_path(data_dir: Option<&Path>, session: &str) -> Option<PathBuf> {
@@ -94,8 +190,9 @@ fn record_path(data_dir: Option<&Path>, session: &str) -> Option<PathBuf> {
     )
 }
 
-/// Surface meta is authoritative while launching; the session file survives closed-tab restore.
-/// Corrupt records are errors rather than silently dropping an explicit selection.
+/// Only matching session metadata can override a durable session record. Old unbound metadata
+/// is trusted only when the pre-existing settings-owner marker identifies this same session.
+/// Host/file read errors propagate; only a genuinely absent record means omitted options.
 pub(crate) fn load<H: HostCall>(
     host: &H,
     surface: u32,
@@ -103,34 +200,51 @@ pub(crate) fn load<H: HostCall>(
     session: &str,
     tr: &Translator,
 ) -> Result<SessionOptions, IpcMethodError> {
-    let meta = host
-        .call(
-            "surface.meta.get",
-            json!({ "surface_id": surface, "key": META_KEY }),
-        )
-        .map_err(IpcMethodError::from)?;
-    let text = if let Some(value) = meta.get("value").filter(|v| !v.is_null()) {
-        Some(
-            value
-                .as_str()
-                .ok_or_else(|| {
-                    IpcMethodError::invalid_params(
-                        &tr.t_fmt("claude.params.invalid_session_option", META_KEY),
-                    )
-                })?
-                .to_string(),
-        )
-    } else if let Some(path) = record_path(data_dir, session) {
-        match std::fs::read_to_string(path) {
-            Ok(text) => Some(text),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
-            Err(e) => return Err(IpcMethodError::new(e.to_string())),
+    let mut ambiguous_legacy = false;
+    match surface_options(host, surface, tr)? {
+        SurfaceOptions::Bound {
+            session: owner,
+            options,
+            ..
+        } if owner == session => return Ok(options),
+        SurfaceOptions::Legacy(options) => {
+            let owner = read_meta(
+                host,
+                surface,
+                crate::stop_pairing::SETTINGS_SESSION_META_KEY,
+                tr,
+            )?;
+            if owner
+                .as_deref()
+                .is_some_and(|id| !tasty_plugin_agent_common::reboot::is_safe_session_id(id))
+            {
+                return Err(IpcMethodError::invalid_params(
+                    tr.t("claude.params.unowned_session_options"),
+                ));
+            }
+            if owner.as_deref() == Some(session) {
+                return Ok(options);
+            }
+            ambiguous_legacy = owner.is_none() && options != SessionOptions::default();
         }
-    } else {
-        None
+        _ => {}
+    }
+    let absent = || {
+        if ambiguous_legacy {
+            Err(IpcMethodError::invalid_params(
+                tr.t("claude.params.unowned_session_options"),
+            ))
+        } else {
+            Ok(SessionOptions::default())
+        }
     };
-    let Some(text) = text else {
-        return Ok(SessionOptions::default());
+    let Some(path) = record_path(data_dir, session) else {
+        return absent();
+    };
+    let text = match std::fs::read_to_string(path) {
+        Ok(text) => text,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return absent(),
+        Err(e) => return Err(IpcMethodError::new(e.to_string())),
     };
     let value: Value =
         serde_json::from_str(&text).map_err(|e| IpcMethodError::new(e.to_string()))?;
@@ -195,7 +309,7 @@ pub(crate) fn session_start<H: HostCall>(
             calls.push(PlannedCall::MetaSet {
                 surface_id,
                 key: META_KEY,
-                value: options.json().to_string(),
+                value: bound_json(session_id, false, &options).to_string(),
             });
             store(data_dir, session_id, &options);
         }

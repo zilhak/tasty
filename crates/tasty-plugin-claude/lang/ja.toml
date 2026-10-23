@@ -33,6 +33,7 @@ no_data_dir = "plugin data directory が利用できません(ホストが TASTY
 io_error = "checklist marker ファイルの入出力に失敗しました: {}"
 
 [claude.params]
+unowned_session_options = "一致するセッション所有者または保存済みセッション記録がないため、旧形式のClaudeモデル・effort設定を復元できません。既存の復元情報は保持しました。"
 invalid_session_option = "無効なセッションオプション: {}。空でなく、ハイフンで始まらず、空白・制御文字を含まない文字列を指定してください。"
 invalid_effort = "無効なeffortです。指定可能な値: {}。"
 missing_surface_id = "必須パラメータ 'surface'(または 'surface_id')がありません"

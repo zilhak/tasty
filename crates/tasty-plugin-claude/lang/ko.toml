@@ -33,6 +33,7 @@ no_data_dir = "호스트가 TASTY_PLUGIN_DATA_DIR을 제공하지 않아 플러�
 io_error = "체크리스트 활성 파일 읽기·쓰기 실패: {}"
 
 [claude.params]
+unowned_session_options = "일치하는 세션 소유자나 저장된 세션 기록이 없어 이전 Claude 모델·effort 옵션을 복원할 수 없습니다. 기존 복원 정보는 보존했습니다."
 invalid_session_option = "잘못된 세션 옵션: {}. 비어 있지 않고 하이픈으로 시작하지 않으며 공백·제어 문자가 없는 문자열을 사용하세요."
 invalid_effort = "잘못된 effort입니다. 허용값: {}."
 missing_surface_id = "필수 파라미터 'surface'(또는 'surface_id') 누락"

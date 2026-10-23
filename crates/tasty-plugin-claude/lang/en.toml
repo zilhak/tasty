@@ -33,6 +33,7 @@ no_data_dir = "plugin data directory not available (host did not inject TASTY_PL
 io_error = "checklist marker I/O failed: {}"
 
 [claude.params]
+unowned_session_options = "Cannot restore legacy Claude model/effort options without a matching session owner or saved session record. Existing restore information was preserved."
 invalid_session_option = "Invalid session option: {}. Use a nonempty string token that does not start with a hyphen or contain whitespace/control characters."
 invalid_effort = "Invalid effort. Expected one of: {}."
 missing_surface_id = "Missing required 'surface' (or 'surface_id') parameter"

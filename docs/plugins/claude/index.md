@@ -16,7 +16,10 @@
 - `model`은 alias, full model ID, provider ARN·deployment 식별자 등을 받으며 모델 목록을 하드코딩하지 않는다. 비어 있는 값, 문자열 외 타입(null 포함), 하이픈으로 시작하는 값, 공백·제어 문자는 `terminal.spawn` 전에 거절한다. 셸 특수 문자는 인자로 인용한다.
 - `effort`는 `low`·`medium`·`high`·`xhigh`·`max`·`ultracode`를 받는다. `ultracode`는 일반 effort 단계가 아니라 xhigh와 Ultracode를 요청하는 CLI 값이다. 설치된 Claude Code 2.1.307 도움말은 앞의 다섯 값만 표시하지만, [공식 CLI 문서](https://code.claude.com/docs/en/cli-reference)는 2.1.203부터 `ultracode`를 지원한다고 명시한다. 실제 지원·조정은 Claude CLI·모델·조직 정책에 따른다.
 - `--profile-file` 또는 `--profile`과 함께 써도 원본 프로필은 바꾸지 않는다. 명시한 CLI 모델·effort가 프로필의 model·effortLevel보다 우선한다. 기존 permission-mode 충돌 검사와 훅·프로필 병합은 유지한다.
-- SessionStart 훅은 명시값을 `claude-session-options` 메타데이터와 plugin 데이터의 `session-options/<session-id>.json`에 기록하고, 프로필을 반영한 `restore.command`에 다시 붙인다. 같은 세션의 닫은 탭 복원·앱 복원·reboot에서도 유지한다. 종료 시 live 메타데이터는 지우고 세션 기록은 복원을 위해 보존한다. 새 respawn은 명시값을 승계하지 않는다. 기록이 잘못됐으면 경고하고 옵션 없는 복원 명령으로 대체하지 않는다.
+- 모델·effort 선택 인자는 `spawn`에만 제공한다. `launch`·`respawn`·`reboot`에 새 선택 인자를 추가하지 않는다. 새 child spawn/respawn 실행은 UUID를 미리 정해 Claude의 `--session-id`로 전달하고, 옵션이 없어도 해당 실행의 소유 세션 ID를 기록한다. `reboot`는 기존 세션 ID와 선택값을 유지한다.
+- `claude-session-options` surface 메타데이터의 schema 2는 `session`·`pending`·`options`를 함께 기록한다. 첫 SessionStart가 소유 ID와 일치해야 pending 실행을 확정한다. 그 전에 도착한 다른 세션의 늦은 SessionStart는 상태·복원·프로필 기록을 변경하지 않는다. pending 중 이전 세션을 reboot하는 요청도 종료 절차 전에 거절한다.
+- 확정된 옵션은 plugin 데이터의 `session-options/<session-id>.json`과 프로필을 반영한 `restore.command`에 기록한다. 같은 세션의 닫은 탭 복원·앱 복원·reboot에 유지한다. `/resume`으로 다른 ID를 선택하거나 `startup`·`clear`·`fork`가 다른 ID를 보고하면 그 세션의 저장 기록을 읽으며, 다른 세션 surface의 선택값을 복사하지 않는다. 기록이 실제로 없으면 미지정이다. 새 respawn은 이전 선택값을 승계하지 않는다. 종료 시 live 메타데이터만 지우고 세션별 파일은 보존한다.
+- schema 표지가 없는 이전 평평한 surface 옵션은 기존 settings 소유 세션 표지가 같은 ID일 때만 승계한다. 소유자를 모르는 명시값은 같은 세션의 파일 기록으로 복구하고, 그 기록도 없으면 오류로 남기며 빈값으로 덮지 않는다. 기존 평평한 세션 파일 형식은 유지한다. 호스트 조회·파일 읽기 실패, 잘못된 JSON과 알 수 없는 schema는 정상 미지정으로 취급하지 않으며, 옵션 없는 복원 명령으로 대체하지 않는다.
 - spawn 응답의 `requested_session_options`는 요청값이다. 터미널 생성·명령 전달은 provider의 모델 수락·응답 성공을 뜻하지 않는다. Tasty는 provider 거절을 성공으로 바꾸거나 다른 모델로 재시도하지 않는다. Claude 자체의 effort 조정·fallback 정책과 실제 사용 모델은 Claude 화면·응답에서 확인한다.
 
 ## Tasty 자식에서 지우는 세션 변수

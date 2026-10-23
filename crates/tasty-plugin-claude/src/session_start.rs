@@ -2,6 +2,8 @@
 
 use std::path::Path;
 
+use serde_json::Value;
+
 use tasty_plugin_agent_common::host_call::HostCall as HostCallSink;
 use tasty_plugin_sdk::i18n::Translator;
 
@@ -156,4 +158,75 @@ pub(crate) fn apply_session_start_profile(
         },
         other => other.clone(),
     }));
+}
+
+/// 세션 시작·종료에서 프로필 복원 기록과 settings meta 를 맞추는 호출을 덧붙인다.
+#[allow(clippy::too_many_arguments)] // reason: 훅 처리기가 가진 입력을 그대로 넘겨받는다.
+pub(crate) fn session_lifecycle_calls<H: HostCallSink>(
+    calls: &mut Vec<HostCall>,
+    host: &H,
+    event: &str,
+    surface_id: u32,
+    session: Option<&str>,
+    params: &Value,
+    data_dir: Option<&Path>,
+    tr: &Translator,
+) {
+    // surface 메타데이터는 복원 시 유지되지 않으므로 복원 명령에도 프로필을 넣는다.
+    if event == "session-start"
+        && let Some(session_id) = session
+    {
+        match crate::session_options::stale_start(host, surface_id, session_id, tr) {
+            Ok(false) => {}
+            other => {
+                // Also protect callers that plan lifecycle calls without the full hook handler.
+                calls.clear();
+                tracing::warn!(
+                    "claude session-start ignored while launch ownership cannot be established: {other:?}"
+                );
+                return;
+            }
+        }
+        let meta = crate::reboot::attached_profile_summary(host, surface_id);
+        let plan = plan_session_start_profile(session_id, &meta, data_dir, tr);
+        apply_session_start_profile(calls, surface_id, session_id, &plan);
+        crate::session_options::session_start(calls, host, surface_id, data_dir, session_id, tr);
+
+        calls.extend(crate::stop_pairing::settings_file_for_resumed_session(
+            surface_id,
+            params.get("source").and_then(Value::as_str),
+            plan.profile_file.as_deref(),
+        ));
+        calls.push(HostCall::MetaSet {
+            surface_id,
+            key: crate::stop_pairing::SETTINGS_SESSION_META_KEY,
+            value: session_id.to_string(),
+        });
+        // reboot 중 session-end가 남긴 종료 표시를 새 session-start 기록으로 갱신한다.
+        if let Some(record) = &plan.restamp {
+            profile_attach::store(data_dir, session_id, record);
+        }
+        // 종료 훅이 오지 않은 세션의 오래된 기록도 정리한다.
+        profile_attach::sweep(data_dir);
+    }
+    if event == "session-end" {
+        let reason = params.get("reason").and_then(Value::as_str);
+        if !matches!(reason, Some("clear" | "resume"))
+            && session.is_some()
+            && crate::stop_pairing::settings_owner_session(host, surface_id).as_deref() == session
+        {
+            // Keep the session file for closed-tab restore, but do not attach these options to
+            // an unrelated process later started manually in the same terminal.
+            calls.push(HostCall::MetaUnset {
+                surface_id,
+                key: crate::session_options::META_KEY,
+            });
+        }
+        calls.extend(crate::stop_pairing::settings_file_after_session_end(
+            surface_id,
+            params.get("reason").and_then(Value::as_str),
+            session,
+            crate::stop_pairing::settings_owner_session(host, surface_id).as_deref(),
+        ));
+    }
 }

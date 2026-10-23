@@ -121,7 +121,7 @@ fn session_record_survives_lost_surface_metadata_and_default_clears_reused_surfa
     let dir = tempfile::tempdir().unwrap();
     let host = Host::default();
     let first = SessionOptions::parse(&json!({"model": "opus", "effort": "max"}), &tr()).unwrap();
-    first.record(&host, 101).unwrap();
+    first.record(&host, 101, "session-a").unwrap();
     store(Some(dir.path()), "session-a", &first);
     assert_eq!(
         load(&host, 999, Some(dir.path()), "session-a", &tr()).unwrap(),
@@ -131,14 +131,28 @@ fn session_record_survives_lost_surface_metadata_and_default_clears_reused_surfa
         load(&host, 999, Some(dir.path()), "session-b", &tr()).unwrap(),
         SessionOptions::default()
     );
-    SessionOptions::default().record(&host, 101).unwrap();
+    SessionOptions::default()
+        .record(&host, 101, "session-new")
+        .unwrap();
     assert_eq!(
         load(&host, 101, Some(dir.path()), "session-a", &tr()).unwrap(),
-        SessionOptions::default()
+        first
     );
     assert!(record_path(Some(dir.path()), "../escape").is_none());
     std::fs::write(record_path(Some(dir.path()), "broken").unwrap(), "{broken").unwrap();
     assert!(load(&host, 999, Some(dir.path()), "broken", &tr()).is_err());
+}
+
+#[cfg(unix)]
+fn assert_cli_session_owner(host: &Host, surface: u32, args: &mut Vec<String>) {
+    assert_eq!(args.remove(0), "--session-id");
+    let id = args.remove(0);
+    tracing::info!("mock CLI launch: session_id={id}, argv={args:?}");
+    assert_eq!(uuid::Uuid::parse_str(&id).unwrap().get_version_num(), 4);
+    let meta: Value =
+        serde_json::from_str(&host.meta.lock().unwrap()[&(surface, META_KEY.into())]).unwrap();
+    assert_eq!(meta["session"], id);
+    assert_eq!(meta["pending"], true);
 }
 
 /// Exercise the real spawn handler, then run its shell command against an isolated mock CLI.
@@ -200,7 +214,9 @@ fn isolated_mock_cli_receives_independent_child_argv_profiles_and_omission() {
             .output()
             .unwrap();
         assert!(output.status.success(), "{:?}", output);
-        argv.push(serde_json::from_slice::<Vec<String>>(&output.stdout).unwrap());
+        let mut args = serde_json::from_slice::<Vec<String>>(&output.stdout).unwrap();
+        assert_cli_session_owner(&host, 101 + argv.len() as u32, &mut args);
+        argv.push(args);
     }
     assert_eq!(
         argv[0],
@@ -235,7 +251,7 @@ fn isolated_mock_cli_receives_independent_child_argv_profiles_and_omission() {
         .unwrap();
     assert_eq!(rejected.status.code(), Some(42));
     assert_eq!(
-        serde_json::from_slice::<Vec<String>>(&rejected.stdout).unwrap(),
+        serde_json::from_slice::<Vec<String>>(&rejected.stdout).unwrap()[2..],
         argv[1]
     );
     tracing::info!("mock rejection: shell rc=42; one invocation, no fallback-model argument");
@@ -264,7 +280,7 @@ fn hook_restore_and_reboot_preserve_options_and_settings_without_permission_pers
     assert!(matches!(&calls[0], PlannedCall::MetaSet {value, ..}
         if value == "claude -r sess-a --settings \"/profile.json\" --model 'provider/model[1m]' --effort ultracode"));
     assert!(matches!(&calls[1], PlannedCall::MetaSet {key, value, ..}
-        if *key == META_KEY && value == &options.json().to_string()));
+        if *key == META_KEY && value == &bound_json("sess-a", false, &options).to_string()));
     let reboot =
         crate::reboot::resume_with_options("sess-a", Some("/profile.json"), Some("plan"), &options);
     assert_eq!(
@@ -297,4 +313,101 @@ fn registered_profile_is_not_edited_by_explicit_model_and_effort() {
     let command = format!("claude --settings {}{}", quote_path(&file), options.flags());
     assert!(command.ends_with(" --model opus --effort high"));
     assert_eq!(std::fs::read_to_string(&source).unwrap(), body);
+}
+
+#[test]
+fn r1_old_metadata_migrates_only_with_session_ownership_or_a_matching_durable_record() {
+    let dir = tempfile::tempdir().unwrap();
+    let host = Host::default();
+    let a = SessionOptions::parse(&json!({"model":"opus", "effort":"high"}), &tr()).unwrap();
+    let b = SessionOptions::parse(&json!({"model":"sonnet"}), &tr()).unwrap();
+    host.meta
+        .lock()
+        .unwrap()
+        .insert((42, META_KEY.into()), a.json().to_string());
+    // Unknown ownership cannot justify binding an old explicit model to an arbitrary session.
+    assert!(load(&host, 42, Some(dir.path()), "session-a", &tr()).is_err());
+    assert!(!record_path(Some(dir.path()), "session-a").unwrap().exists());
+    store(Some(dir.path()), "session-b", &b);
+    assert_eq!(
+        load(&host, 42, Some(dir.path()), "session-b", &tr()).unwrap(),
+        b
+    );
+    host.meta.lock().unwrap().insert(
+        (42, crate::stop_pairing::SETTINGS_SESSION_META_KEY.into()),
+        "session-a".into(),
+    );
+    assert_eq!(
+        load(&host, 42, Some(dir.path()), "session-a", &tr()).unwrap(),
+        a
+    );
+    assert_eq!(
+        load(&host, 42, Some(dir.path()), "new-session", &tr()).unwrap(),
+        SessionOptions::default()
+    );
+    let mut calls = Vec::new();
+    session_start(&mut calls, &host, 42, Some(dir.path()), "session-a", &tr());
+    assert!(matches!(&calls[0], PlannedCall::MetaSet { value, .. }
+        if serde_json::from_str::<Value>(value).unwrap()["session"] == "session-a"));
+}
+
+#[test]
+fn r1_missing_records_are_distinct_from_host_read_failures_corruption_and_io_errors() {
+    struct FailedHost;
+    impl HostCall for FailedHost {
+        fn call(&self, _: &str, _: Value) -> Result<Value, tasty_plugin_sdk::PluginError> {
+            Err(tasty_plugin_sdk::PluginError::HostClosed)
+        }
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let host = Host::default();
+    assert_eq!(
+        load(&host, 42, Some(dir.path()), "absent", &tr()).unwrap(),
+        SessionOptions::default()
+    );
+    assert!(load(&FailedHost, 42, Some(dir.path()), "absent", &tr()).is_err());
+    let path = record_path(Some(dir.path()), "unreadable").unwrap();
+    std::fs::create_dir_all(&path).unwrap(); // EISDIR on read, even under privileged test users.
+    assert!(load(&host, 42, Some(dir.path()), "unreadable", &tr()).is_err());
+    for corrupt in [
+        "bad JSON",
+        "null",
+        r#"{"schema":99}"#,
+        r#"{"schema":2,"session":"a","pending":false,"options":null}"#,
+    ] {
+        host.meta
+            .lock()
+            .unwrap()
+            .insert((42, META_KEY.into()), corrupt.into());
+        assert!(
+            load(&host, 42, Some(dir.path()), "absent", &tr()).is_err(),
+            "{corrupt}"
+        );
+    }
+}
+
+#[test]
+fn r1_malformed_meta_reply_is_not_a_successful_omitted_option() {
+    struct MalformedHost(Value);
+    impl HostCall for MalformedHost {
+        fn call(&self, _: &str, _: Value) -> Result<Value, tasty_plugin_sdk::PluginError> {
+            Ok(self.0.clone())
+        }
+    }
+    for reply in [json!({}), json!({"value": 42}), json!({"value": false})] {
+        let host = MalformedHost(reply);
+        assert!(load(&host, 42, None, "session-a", &tr()).is_err());
+        assert!(stale_start(&host, 42, "session-a", &tr()).is_err());
+    }
+    assert_eq!(
+        load(
+            &MalformedHost(json!({"value": null})),
+            42,
+            None,
+            "session-a",
+            &tr()
+        )
+        .unwrap(),
+        SessionOptions::default()
+    );
 }

@@ -13,9 +13,7 @@ use tasty_plugin_agent_common::host_call::HostCall as HostCallSink;
 use crate::checklist;
 use crate::error_scan::ErrorScanner;
 use crate::profile_attach;
-use crate::session_start::{
-    apply_session_start_profile, plan_session_start_profile, session_start_state,
-};
+use crate::session_start::{session_lifecycle_calls, session_start_state};
 use crate::state::{ClaudeState, lock_state};
 use crate::stop_pairing::{Expired, Settled, StopKind, StopPairing, lock_pairing};
 
@@ -260,6 +258,12 @@ pub(crate) fn handle_claude_hook<H: HostCallSink>(
         .get("session")
         .and_then(|v| v.as_str())
         .map(String::from);
+    if event == "session-start"
+        && let Some(session) = session.as_deref()
+        && crate::session_options::stale_start(host, surface_id, session, tr)?
+    {
+        return Ok(json!({"ignored": "stale_session_start"}));
+    }
     let message = params.get("message").and_then(|v| v.as_str());
     let notification_type = params.get("notification_type").and_then(|v| v.as_str());
     let error = params.get("error").and_then(|v| v.as_str());
@@ -1067,66 +1071,6 @@ fn log_subagent_stop(surface_id: u32) {
     );
 }
 
-/// 세션 시작·종료에서 프로필 복원 기록과 settings meta 를 맞추는 호출을 덧붙인다.
-#[allow(clippy::too_many_arguments)] // reason: 훅 처리기가 가진 입력을 그대로 넘겨받는다.
-fn session_lifecycle_calls<H: HostCallSink>(
-    calls: &mut Vec<HostCall>,
-    host: &H,
-    event: &str,
-    surface_id: u32,
-    session: Option<&str>,
-    params: &Value,
-    data_dir: Option<&Path>,
-    tr: &Translator,
-) {
-    // surface 메타데이터는 복원 시 유지되지 않으므로 복원 명령에도 프로필을 넣는다.
-    if event == "session-start"
-        && let Some(session_id) = session
-    {
-        let meta = crate::reboot::attached_profile_summary(host, surface_id);
-        let plan = plan_session_start_profile(session_id, &meta, data_dir, tr);
-        apply_session_start_profile(calls, surface_id, session_id, &plan);
-        crate::session_options::session_start(calls, host, surface_id, data_dir, session_id, tr);
-
-        calls.extend(crate::stop_pairing::settings_file_for_resumed_session(
-            surface_id,
-            params.get("source").and_then(Value::as_str),
-            plan.profile_file.as_deref(),
-        ));
-        calls.push(HostCall::MetaSet {
-            surface_id,
-            key: crate::stop_pairing::SETTINGS_SESSION_META_KEY,
-            value: session_id.to_string(),
-        });
-        // reboot 중 session-end가 남긴 종료 표시를 새 session-start 기록으로 갱신한다.
-        if let Some(record) = &plan.restamp {
-            profile_attach::store(data_dir, session_id, record);
-        }
-        // 종료 훅이 오지 않은 세션의 오래된 기록도 정리한다.
-        profile_attach::sweep(data_dir);
-    }
-    if event == "session-end" {
-        let reason = params.get("reason").and_then(Value::as_str);
-        if !matches!(reason, Some("clear" | "resume"))
-            && session.is_some()
-            && crate::stop_pairing::settings_owner_session(host, surface_id).as_deref() == session
-        {
-            // Keep the session file for closed-tab restore, but do not attach these options to
-            // an unrelated process later started manually in the same terminal.
-            calls.push(HostCall::MetaUnset {
-                surface_id,
-                key: crate::session_options::META_KEY,
-            });
-        }
-        calls.extend(crate::stop_pairing::settings_file_after_session_end(
-            surface_id,
-            params.get("reason").and_then(Value::as_str),
-            session,
-            crate::stop_pairing::settings_owner_session(host, surface_id).as_deref(),
-        ));
-    }
-}
-
 /// 계획한 호스트 호출을 모두 시도하고 실패한 수를 반환한다.
 /// 실패를 전파해 뒤의 로컬 파일 정리를 건너뛰지 않도록 한다.
 /// 종료 훅은 surface가 이미 사라진 뒤에도 도착할 수 있지만 세션 파일 정리는 여전히 필요하다.
@@ -1210,7 +1154,10 @@ fn resolve_surface_id(params: &Value, tr: &Translator) -> Result<u32, IpcMethodE
 mod tests {
     use super::*;
     use crate::profile_attach::AttachRecord;
-    use crate::session_start::{LAUNCH_PROMPT_META_KEY, SessionStartProfile};
+    use crate::session_start::{
+        LAUNCH_PROMPT_META_KEY, SessionStartProfile, apply_session_start_profile,
+        plan_session_start_profile,
+    };
 
     /// 실제 카탈로그로 오류 안내를 확인한다.
     fn test_translator() -> Translator {
@@ -1309,9 +1256,10 @@ mod tests {
                 {
                     match &self.settings_session {
                         Some(id) => json!({ "value": id }),
-                        None => json!({}),
+                        None => json!({"value": null}),
                     }
                 }
+                _ if method == "surface.meta.get" => json!({"value": null}),
                 _ => json!({}),
             };
             self.seen.borrow_mut().push((method.to_string(), params));
@@ -3876,6 +3824,148 @@ mod tests {
         assert!(
             scanner.lock().unwrap().has_dedupe_state(99),
             "추적 대상이 아니면 dedupe 상태를 건드리지 않아야 함"
+        );
+    }
+    #[derive(Default)]
+    struct R1ModelHost {
+        meta: std::cell::RefCell<std::collections::HashMap<String, String>>,
+    }
+    impl HostCallSink for R1ModelHost {
+        fn call(&self, method: &str, p: Value) -> Result<Value, tasty_plugin_sdk::PluginError> {
+            let k = p["key"].as_str().unwrap_or("").to_owned();
+            match method {
+                "surface.meta.get" => Ok(json!({"value": self.meta.borrow().get(&k)})),
+                "surface.meta.set" => {
+                    self.meta
+                        .borrow_mut()
+                        .insert(k, p["value"].as_str().unwrap().into());
+                    Ok(json!({}))
+                }
+                "surface.meta.unset" => {
+                    self.meta.borrow_mut().remove(&k);
+                    Ok(json!({}))
+                }
+                _ => Ok(json!({})),
+            }
+        }
+    }
+    fn r1_event(h: &R1ModelHost, dir: &Path, event: &str, sess: &str, detail: &str) {
+        let tr = test_translator();
+        let mut calls = apply_hook(event, 42, Some(sess), None, None, &tr).unwrap();
+        let p = if event == "session-end" {
+            json!({"reason": detail})
+        } else {
+            json!({"source": detail})
+        };
+        session_lifecycle_calls(&mut calls, h, event, 42, Some(sess), &p, Some(dir), &tr);
+        assert_eq!(deliver_all(h, &calls), 0);
+    }
+    fn r1_options(model: &str) -> crate::session_options::SessionOptions {
+        crate::session_options::SessionOptions::parse(
+            &json!({"model": model, "effort": "high"}),
+            &test_translator(),
+        )
+        .unwrap()
+    }
+    #[test]
+    fn r1_resume_must_not_overwrite_other_session_selection() {
+        let dir = tempfile::tempdir().unwrap();
+        let h = R1ModelHost::default();
+        let a = r1_options("opus");
+        let b = r1_options("sonnet");
+        crate::session_options::store(Some(dir.path()), "session-b", &b);
+        a.record(&h, 42, "session-a").unwrap();
+        r1_event(&h, dir.path(), "session-start", "session-a", "startup");
+        r1_event(&h, dir.path(), "session-end", "session-a", "resume");
+        r1_event(&h, dir.path(), "session-start", "session-b", "resume");
+        let saved =
+            std::fs::read_to_string(dir.path().join("session-options/session-b.json")).unwrap();
+        assert_eq!(
+            saved,
+            b.json().to_string(),
+            "restore={:?}",
+            h.meta.borrow().get(RESTORE_COMMAND_META_KEY)
+        );
+    }
+    #[test]
+    fn r1_delayed_start_after_fresh_respawn_must_not_inherit_new_options() {
+        let dir = tempfile::tempdir().unwrap();
+        let h = R1ModelHost::default();
+        let a = r1_options("opus");
+        a.record(&h, 42, "session-a").unwrap();
+        // A has durable options from a prior run; its resume SessionStart is still in flight.
+        crate::session_options::store(Some(dir.path()), "session-a", &a);
+        // start_claude_with_options for an omitted-option respawn records {} and resets owner.
+        crate::session_options::SessionOptions::default()
+            .record(&h, 42, "session-new")
+            .unwrap();
+        crate::stop_pairing::record_settings_file(&h, 42, None);
+        // Background resume SessionStart of the terminated process arrives after the fresh launch.
+        r1_event(&h, dir.path(), "session-start", "session-a", "resume");
+        let saved =
+            std::fs::read_to_string(dir.path().join("session-options/session-a.json")).unwrap();
+        assert_eq!(saved, a.json().to_string());
+        let pending: Value =
+            serde_json::from_str(&h.meta.borrow()[crate::session_options::META_KEY]).unwrap();
+        assert_eq!(pending["session"], "session-new");
+        assert_eq!(pending["pending"], true);
+        assert!(!h.meta.borrow().contains_key(RESTORE_COMMAND_META_KEY));
+        r1_event(&h, dir.path(), "session-start", "session-new", "startup");
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("session-options/session-new.json")).unwrap(),
+            "{}"
+        );
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("session-options/session-a.json")).unwrap(),
+            a.json().to_string()
+        );
+    }
+    #[test]
+    fn r1_restore_without_meta_and_corrupt_record() {
+        let dir = tempfile::tempdir().unwrap();
+        let h = R1ModelHost::default();
+        let a = r1_options("opus");
+        crate::session_options::store(Some(dir.path()), "session-a", &a);
+        r1_event(&h, dir.path(), "session-start", "session-a", "resume");
+        assert_eq!(
+            h.meta.borrow()[RESTORE_COMMAND_META_KEY],
+            "claude -r session-a --model opus --effort high"
+        );
+        let empty = R1ModelHost::default();
+        std::fs::write(
+            dir.path().join("session-options/session-a.json"),
+            "bad JSON",
+        )
+        .unwrap();
+        r1_event(&empty, dir.path(), "session-start", "session-a", "resume");
+        assert!(!empty.meta.borrow().contains_key(RESTORE_COMMAND_META_KEY));
+        assert!(
+            crate::session_options::load(
+                &empty,
+                42,
+                Some(dir.path()),
+                "session-a",
+                &test_translator()
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn r1_unrelated_startup_after_missing_end_must_not_inherit_old_selection() {
+        let dir = tempfile::tempdir().unwrap();
+        let h = R1ModelHost::default();
+        r1_options("opus").record(&h, 42, "session-a").unwrap();
+        r1_event(&h, dir.path(), "session-start", "session-a", "startup");
+        // SIGKILL/crash cannot send SessionEnd. A manual `claude` starts B with default argv.
+        r1_event(&h, dir.path(), "session-start", "session-b", "startup");
+        let saved =
+            std::fs::read_to_string(dir.path().join("session-options/session-b.json")).unwrap();
+        assert_eq!(
+            saved,
+            "{}",
+            "restore={:?}",
+            h.meta.borrow().get(RESTORE_COMMAND_META_KEY)
         );
     }
 }

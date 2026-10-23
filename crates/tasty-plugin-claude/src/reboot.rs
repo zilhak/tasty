@@ -90,6 +90,13 @@ pub(crate) fn reboot_surface(
         )));
     }
 
+    if crate::session_options::stale_start(host, surface_id, &session_id, tr)? {
+        return Err(IpcMethodError::invalid_params(&tr.t_fmt(
+            "claude.params.invalid_session_option",
+            crate::session_options::META_KEY,
+        )));
+    }
+
     // 승계할 프로필도 검증에 실패하면 종료 절차를 시작하지 않는다.
     let profile_file = resolve_and_apply_profile(
         host,
