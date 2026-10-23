@@ -1,4 +1,4 @@
-<!-- source-hash: 81b11eed334d -->
+<!-- source-hash: 200a1b0e9f50 -->
 # Themes
 
 Choose the light Latte theme or the dark Mocha theme. Adjust a few colours, or make your own theme in a TOML file. Theme files live in `~/.tasty/themes/`.
@@ -11,6 +11,8 @@ Choose the light Latte theme or the dark Mocha theme. Adjust a few colours, or m
 | **Catppuccin Latte** | `~/.tasty/themes/latte.toml` | Light | Created when the theme folder is empty. If other themes remain, a deleted Latte file is not recreated |
 
 Both files are managed by Tasty, so **do not edit them directly** — Mocha and any existing Latte file are restored to their bundled contents on launch. To change colours, use "Changing just a few colours" or "Making your own" below.
+
+If permissions or file encoding prevent Tasty from reading the original, it keeps that file. If the selected theme cannot be loaded, it uses the embedded Mocha colors. Applying a theme while Tasty runs, including in an additional window, does not repair the file. After fixing the file, reopen the theme list in Settings or restart Tasty.
 
 ## Switching themes
 

@@ -21,10 +21,15 @@ fn warn_on_theme_err<T, E: std::fmt::Display>(step: &str, result: Result<T, E>) 
 
 /// 적용 과정에서 테마 ID가 바뀌면 사용자 안내를 위해 원래 요청한 ID를 반환한다.
 pub(super) fn boot_apply_theme(settings: &mut tasty_settings::Settings) -> Option<String> {
-    let appearance = &mut settings.appearance;
     warn_on_theme_err("themes first_run_init", tasty_themes::first_run_init());
     warn_on_theme_err("sync_builtin_themes", tasty_themes::sync_builtin_themes());
     warn_on_theme_err("themes rescan", tasty_themes::rescan());
+    apply_cached_theme(settings)
+}
+
+/// Runtime/new-window apply uses only the catalog and embedded fallback, without file repair.
+fn apply_cached_theme(settings: &mut tasty_settings::Settings) -> Option<String> {
+    let appearance = &mut settings.appearance;
     let requested = appearance.theme.clone();
     tasty_themes::apply_theme(appearance, &requested);
     tasty_themes::install_global_with_runtime(&settings.appearance, settings.theme_runtime());
@@ -680,7 +685,7 @@ fn normalize_window_settings(
     mut settings: crate::settings::Settings,
 ) -> (crate::settings::Settings, Option<String>, bool) {
     let normalize_report = settings.normalize();
-    let invalid_theme_name = boot_apply_theme(&mut settings);
+    let invalid_theme_name = apply_cached_theme(&mut settings);
     let changed = invalid_theme_name.is_some() || normalize_report.changed;
     (settings, invalid_theme_name, changed)
 }

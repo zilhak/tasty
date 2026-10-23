@@ -284,7 +284,8 @@ writer를 거치는 IPC 요청은 결과가 나온 뒤 응답한다. 핸들러�
 | `plugins.toml` | 플러그인 등록 상태 저장 | 메인 루프, GUI boot worker(내장 플러그인 설치) | 아니요 | 없음 |
 | `hook-handlers.toml` | hook registry가 사용자 snapshot 접수, file writer가 교체 | file writer | 예(공용 교체, fsync 없음) | 참여자 잠금·원본 fingerprint/링크 대상 비교 |
 | `file-handlers.toml` | `FileRules::submit`이 합친 snapshot 접수, file writer가 교체 | file writer | 예(공용 교체, fsync 없음) | 참여자 잠금·원본 fingerprint/링크 대상 비교 |
-| `known-plugins.toml`, hook 사용자 설정, 테마 파일 | 각 crate의 저장 함수 | 메인 루프 | 테마만 아니요, 나머지는 예 | 없음 |
+| `themes/mocha.toml`·`themes/latte.toml` | `ThemeFiles` 초기 seed·sync·명시 복구 | 첫 로딩 프레임 전 bootstrap barrier | 예(공용 안전 교체, fsync 없음) | 참여 잠금·관측한 원본/링크 비교. 읽기·UTF-8 실패 원본 보호. runtime fallback은 내장 색상만 적용 |
+| `known-plugins.toml`, hook 사용자 설정 | 각 crate의 저장 함수 | 메인 루프 | 예 | 없음 |
 | `debug.log`·crash/hang 보고·`launch.log`·observer file sink | 로그 기록 | 각 기록 스레드 | append | `launch.log`는 두 번째 프로세스가 파일 잠금 안에서 쓴다 |
 
 `webhooks.toml` backend는 소유된 webhook 섹션 요청만 받고 전체 TOML snapshot은 접수하지 않는다.
@@ -321,7 +322,7 @@ backend 결과가 돌아오면 파일 잠금은 이미 풀려 있다. 현재 reg
 
 부팅 barrier는 파일 잠금이 아니라 최종 snapshot의 receipt를 확인한다. 파일 잠금만으로는 먼저 접수한 snapshot과 나중 동기 저장의 의미 순서를 정할 수 없다. 내부 부팅 저장도 출처가 없어도 receipt 결과를 한 번 돌려주며, 실패한 최신 revision은 종료 재시도 대상이다.
 - 사용되지 않던 `PresetStorage`의 호스트 주입은 없다. 프리셋 저장·삭제·이름 변경은 아직 구체 `PresetStore` 핸들로 동기 실행한다.
-- 테마 초기화는 `ThemeStorage` port 대신 `tasty_themes`의 자유 함수를 직접 부른다.
+- 테마 seed/sync는 `ThemeFiles` backend를 호출하는 bootstrap 자유 함수로 첫 로딩 프레임 전에 완료한다. 첫 렌더에 사용할 테마를 확정하는 barrier이며 runtime 저장 예외가 아니다. 추가 창은 같은 초기화를 반복하지 않고 캐시/내장 fallback을 적용한다. runtime rescan은 읽기만 하며 누락·잘못된 테마를 자동으로 쓰지 않는다.
 - memory.db의 부팅 정비는 port로 감싸기 전 구체 `MemoryStore`를 쓴다.
 - state.db에는 port가 없다. 최근 파일과 튜토리얼은 state writer의 요청 타입을 직접 쓴다.
 

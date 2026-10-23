@@ -91,20 +91,24 @@ pub fn apply_plugin_defaults_to(theme: &mut Theme) {
     }
 }
 
+/// Shared only by tests that replace the active theme's process-wide kind set.
+#[cfg(test)]
+pub(crate) fn test_guard() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    LOCK.lock().unwrap_or_else(|p| p.into_inner())
+}
+
 #[cfg(test)]
 #[allow(clippy::disallowed_methods)] // reason: 테스트 fixture 의 합성 색상.
 mod tests {
     use super::*;
-    use std::sync::{Mutex, MutexGuard};
+    use std::sync::MutexGuard;
     use tasty_type_appearance::color::HexColor;
     use tasty_type_appearance::theme::SurfaceTheme;
 
-    /// 전역 상태를 초기화하는 검사들이 서로 간섭하지 않도록 직렬화한다.
-    static TEST_LOCK: Mutex<()> = Mutex::new(());
-
     /// 초기화 후 반환한 가드를 이름 있는 변수로 받아 검사 끝까지 유지해야 한다.
     fn reset() -> MutexGuard<'static, ()> {
-        let guard = TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let guard = test_guard();
         PLUGIN_DEFAULTS
             .write()
             .unwrap_or_else(|p| p.into_inner())

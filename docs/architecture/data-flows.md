@@ -177,3 +177,7 @@ config snapshot이 같은 묶음에서 대체되면 대체한 저장의 결과�
 
 - [action-dispatch](../design/flows/action-dispatch.md) — Intent 큐 디스패치 모델
 - [아키텍처 개요](index.md) — App/process · EngineSession/domain/runtime · View 소유와 모듈 배치
+
+## 테마 파일의 첫 렌더 경계
+
+`init_boot_db_and_theme`는 첫 로딩 프레임에 쓸 사용자 테마를 정하기 전에 내장 파일 seed/sync와 읽기 완료를 확인한다. 읽기에 실패한 원본은 보호하며, 요청한 테마를 적용할 수 없으면 내장 Mocha로 계속한다. 추가 창과 runtime 테마 적용은 이 파일 준비를 다시 호출하지 않는다. 캐시/내장 색상만 적용하고, 설정 snapshot 저장은 기존 file writer의 완료 계약을 따른다. 디스크 목록 rescan은 파일 쓰기 없는 읽기다.

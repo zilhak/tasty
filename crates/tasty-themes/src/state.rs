@@ -4,8 +4,8 @@ use crate::apply_context::ThemeApplyContext;
 use crate::fallback::mocha_fallback_colors;
 use crate::file::ThemeFile;
 use crate::global::set_theme;
-use crate::scan::scan_themes;
-use crate::store::{BUILTIN_MOCHA_ID, rewrite_mocha_fallback};
+use crate::scan::{ThemeEntry, scan_themes};
+use crate::store::BUILTIN_MOCHA_ID;
 use tasty_type_appearance::theme::Theme;
 
 /// 테마 색 파일과 별도로 설정에서 전달해야 하는 UI 배율·모션 설정.
@@ -56,21 +56,21 @@ pub fn install_global_with_runtime<C: ThemeApplyContext + ?Sized>(ctx: &C, rt: T
 }
 
 /// 캐시에서 테마를 찾아 기본 색에 병합하고 사용자 변경분을 비운다.
-/// 없는 ID는 Mocha로 대체하며 Mocha도 없으면 파일 복구를 시도하고 내장 값을 사용한다.
+/// 없는 ID는 Mocha로 대체하며 Mocha도 없으면 파일을 고치지 않고 내장 값을 사용한다.
 /// ID와 파일에 명시된 밝기 모드도 갱신한다. 전역 테마 설치는 별도로 호출해야 한다.
 pub fn apply_theme<C: ThemeApplyContext + ?Sized>(ctx: &mut C, id: &str) {
-    let resolved_id = apply_inner(ctx, id, /* allow_mocha_recursion */ true);
+    let entries = scan_themes();
+    let resolved_id = apply_inner(ctx, id, /* allow_mocha_recursion */ true, &entries);
     ctx.set_theme_id(&resolved_id);
     ctx.theme_overrides_mut().clear();
 }
 
-#[allow(clippy::cognitive_complexity)] // complexity-exempt: 테마 적용 3갈래(발견/mocha 특수 폴백/재귀 폴백) — mocha 분기가 디스크 복구+상수 적용 절차를 통째로 안고 있어 쪼개면 ctx 전달 인자만 늘어남. 재귀 호출은 allow_recursion 가드로 1회 종료 보장.
 fn apply_inner<C: ThemeApplyContext + ?Sized>(
     ctx: &mut C,
     id: &str,
     allow_recursion: bool,
+    entries: &[ThemeEntry],
 ) -> String {
-    let entries = scan_themes();
     if let Some(entry) = entries.iter().find(|e| e.id == id) {
         let (partial, is_light) = entry.file.to_partial();
         let user_kinds: std::collections::HashSet<String> =
@@ -84,13 +84,7 @@ fn apply_inner<C: ThemeApplyContext + ?Sized>(
     }
 
     if id == BUILTIN_MOCHA_ID {
-        // 파일 복구가 실패해도 내장 색상으로 계속 진행한다.
-        if let Err(e) = rewrite_mocha_fallback() {
-            tracing::warn!("failed to rewrite mocha fallback: {e}");
-        }
-        if let Err(e) = crate::scan::rescan() {
-            tracing::debug!("rescan after mocha rewrite failed: {e}");
-        }
+        // Runtime fallback is pure: preserve the file and use embedded colors immediately.
         let const_file = ThemeFile::parse(crate::MOCHA_TOML_TEXT)
             .expect("embedded mocha.toml must be valid TOML");
         let user_kinds: std::collections::HashSet<String> =
@@ -110,7 +104,7 @@ fn apply_inner<C: ThemeApplyContext + ?Sized>(
 
     tracing::warn!("theme '{id}' not found; falling back to mocha");
     if allow_recursion {
-        return apply_inner(ctx, BUILTIN_MOCHA_ID, false);
+        return apply_inner(ctx, BUILTIN_MOCHA_ID, false, entries);
     }
     BUILTIN_MOCHA_ID.to_string()
 }
@@ -167,6 +161,19 @@ mod tests {
         fn set_theme_is_light(&mut self, v: bool) {
             self.is_light = v;
         }
+    }
+
+    #[test]
+    fn an_empty_catalog_uses_embedded_mocha_without_a_file_repair() {
+        let _guard = crate::plugin_defaults::test_guard();
+        let mut ctx = TestCtx::mocha();
+        ctx.is_light = true;
+        assert_eq!(
+            apply_inner(&mut ctx, "missing", true, &[]),
+            BUILTIN_MOCHA_ID
+        );
+        assert_eq!(ctx.base, mocha_fallback_colors());
+        assert!(!ctx.is_light);
     }
 
     /// 설정에서 전달한 모션 감소 값이 Theme에 반영되는지 확인한다.

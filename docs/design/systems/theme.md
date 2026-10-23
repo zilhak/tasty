@@ -50,11 +50,11 @@ UI의 색·글꼴 크기·간격은 `Theme`에서 읽는다. 이 문서는 테�
 
 빌트인 테마 파일은 **앱 소유**다. 부팅 시 `sync_builtin_themes()` 가 디스크 복사본을 임베드 정본과 맞춘다 — 빌트인 색/스키마가 바뀌면 이미 풀려있던 옛 파일도 자동 갱신된다. 사용자 색 변경은 파일이 아니라 `theme_overrides` 에 있으므로 동기화가 사용자 커스터마이징을 덮어쓰지 않는다.
 
-- **mocha**: 항상 정본 보장. 임베드 `MOCHA_TOML_TEXT` + `mocha_fallback_colors()`. 부팅 시 sync 가 누락/파싱 실패/**내용 불일치** 면 임베드로 덮어쓴다. 로드 실패해도 그 함수가 fallback. unit test 가 `parse(MOCHA_TOML_TEXT) == mocha_fallback_colors()` 강제.
-- **latte**: first-run(themes 폴더가 완전히 빈 경우)에 자동 풀림. 이후엔 **파일이 있으면 임베드와 동기화**, 사용자가 지우면 존중하고 다시 풀지 않음(fallback 없음).
+- **mocha**: 메모리에서 항상 내장 fallback 보장. 임베드 `MOCHA_TOML_TEXT` + `mocha_fallback_colors()`. 부팅 시 sync 가 누락/파싱 실패/**내용 불일치** 면 임베드로 덮어쓴다. 읽기·UTF-8 실패 원본은 보호하고 메모리에서는 내장 색상을 쓴다. runtime 적용은 파일 복구를 호출하지 않는다. unit test 가 `parse(MOCHA_TOML_TEXT) == mocha_fallback_colors()` 강제.
+- **latte**: first-run(themes 폴더에 TOML이 없는 경우)에 자동 풀림. 이후엔 **파일이 있으면 임베드와 동기화**, 사용자가 지우면 존중하고 다시 풀지 않음(fallback 없음).
   - `subtext0` 은 upstream catppuccin latte(`#6c6f85`)가 아니라 `#63667c` 다 — upstream 값은 `base`(`#eff1f5`) 위에서 4.37:1 이라 아래 "텍스트 대비" 4.5:1 규칙을 못 넘긴다. subtext0→subtext1 램프 위에서 내려 `base` 4.99:1 / `mantle` 4.64:1 을 확보한 값이다. mocha 는 같은 토큰이 이미 7.37:1 이라 손대지 않았다. 남은 미달 조합은 아래 "latte 중성 램프 대비 — 알려진 예외" 참고.
 - **사용자 테마**: 자동 동기화/복구 없음. 로드 실패 시 mocha fallback.
-- **"사용자 의도 존중" 의 범위 = 파일 삭제(부재)뿐.** 빌트인 파일의 *내용* 은 존중 대상이 아니다 — 사용자가 손으로 고쳐도 다음 부팅에 정본으로 되돌아간다(편집 경로가 아님, 커스터마이징은 `theme_overrides`).
+- **"사용자 의도 존중" 의 범위 = 파일 삭제(부재)뿐.** 읽을 수 있는 빌트인 파일의 *내용* 은 존중 대상이 아니다 — 사용자가 손으로 고쳐도 다음 부팅에 정본으로 되돌아간다(편집 경로가 아님, 커스터마이징은 `theme_overrides`).
 
 ## ThemeFile TOML
 
@@ -80,7 +80,9 @@ is_light = false      # 선택. 없으면 이전 is_light 보존
 
 ## 부팅 흐름 (`window_lifecycle.rs::boot_apply_theme`)
 
-`first_run_init()`(빈 폴더면 mocha+latte 시드) → `sync_builtin_themes()`(빌트인을 임베드 정본과 동기화) → `rescan()` → `apply_theme(요청 id)`(실패 시 mocha) → `install_global_with_runtime(&settings.appearance, settings.theme_runtime())`. 요청 id ≠ 적용 id 면 InfoModal 로 알림.
+`first_run_init()`(TOML이 없는 폴더면 mocha+latte 시드) → `sync_builtin_themes()`(빌트인을 임베드 정본과 동기화) → `rescan()` → `apply_theme(요청 id)`(실패 시 mocha) → `install_global_with_runtime(&settings.appearance, settings.theme_runtime())`. 요청 id ≠ 적용 id 면 InfoModal 로 알림.
+
+이 초기 준비는 첫 로딩 프레임 전 완료 barrier이며 같은 디렉터리 안전 교체와 관측한 원본/링크 비교를 사용한다. 읽을 수 없는 파일을 덮어쓰지 않는다. 실행 중 fallback은 캐시 또는 내장 Mocha만 사용하고 파일을 쓰거나 다시 스캔하지 않는다. 추가 창도 초기 seed/sync를 반복하지 않는다. 설정의 명시 rescan은 읽기 전용이다.
 
 ## UI 코드의 색상 접근
 

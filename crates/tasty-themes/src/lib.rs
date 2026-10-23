@@ -31,8 +31,8 @@ pub use state::{
     resolve_with_runtime,
 };
 pub use store::{
-    BUILTIN_LATTE_ID, BUILTIN_MOCHA_ID, ThemeStoreError, ensure_mocha_exists, first_run_init,
-    rewrite_mocha_fallback, sync_builtin_themes, themes_dir,
+    BUILTIN_LATTE_ID, BUILTIN_MOCHA_ID, ThemeFiles, ThemeStoreError, ensure_mocha_exists,
+    first_run_init, rewrite_mocha_fallback, sync_builtin_themes, themes_dir,
 };
 pub use store_instance::ThemeStore;
 

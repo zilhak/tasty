@@ -21,6 +21,12 @@ tasty 의 영속 데이터는 텍스트 파일과 SQLite에 나눠 저장된다.
 
 - **plugin 데이터는 여기 없다.** 각 plugin 은 자기 `TASTY_PLUGIN_DATA_DIR` 아래에 보관한다. host `state.db` 에 plugin 데이터를 넣지 않는다.
 
+## 테마 파일 준비와 runtime fallback
+
+첫 로딩 프레임 전에 `ThemeFiles`가 내장 테마를 준비한다. 같은 디렉터리 임시 파일·참여 잠금·읽은 원본과 링크 대상 비교를 사용하며 기존 mode/ACL을 보존한다. 읽기 실패나 잘못된 UTF-8 원본은 덮어쓰지 않는다. 읽을 수 있는 내장 파일의 drift·구문 오류는 기존 내장 동기화 정책대로 복구한다. TOML이 없는 초기 폴더는 두 내장 테마를 seed하고, 다른 테마가 남은 폴더에서 삭제한 Latte는 다시 만들지 않는다. 별도 사용자 테마 파일은 바꾸지 않는다.
+
+실행 중 적용과 추가 창은 캐시된 색상 또는 내장 Mocha만 사용하며 디스크 복구를 실행하지 않는다. 명시 rescan은 읽기 전용이다. bootstrap 준비는 완료 barrier라 동기 호출이고, 파일 저장을 접수만 한 채 첫 렌더로 진행하는 비동기 저장으로 해석하지 않는다. 여러 테마 파일 사이 transaction이나 외부 비참여자의 최종 확인–교체 race 방지는 보장하지 않는다.
+
 ## 구조 journal과 복원 원본
 
 로컬 engine/workspace/pane/tab/surface 구조는 데이터 홈의 단일 journal이 원본이다. 각 engine은 별도 stream을 사용한다. `JournalModel`과 domain snapshot은 확정 이벤트에서 도출하며, CoreState는 실행 객체를 소유하지 않는 읽기 projection이다. terminal·plugin 콘텐츠 payload와 View 선택 checkpoint는 별도 원본이다. mirror 트리는 로컬 구조 journal에 편입하지 않는다.
