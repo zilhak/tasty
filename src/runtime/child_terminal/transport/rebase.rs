@@ -46,6 +46,7 @@ pub(super) fn complete(
         committed.idle_intents = client.confirmed.idle_intents.clone();
         committed.needs_input_intents = client.confirmed.needs_input_intents.clone();
         intent.states.apply(&mut committed);
+        retain_present_states(&mut committed);
         client.confirmed = committed;
         outcome.index
     });
@@ -55,6 +56,7 @@ pub(super) fn complete(
         later.states.apply(&mut accepted);
         project(&mut accepted, &later.operation);
     }
+    retain_present_states(&mut accepted);
     accepted.owned.extend(old_visible.owned.iter().copied());
     accepted.slot = old_visible.slot;
     accepted.intent_serial = old_visible.intent_serial;
@@ -63,11 +65,23 @@ pub(super) fn complete(
         client.visible = accepted;
         unsent.apply(&mut client.visible);
         unsent_states.apply(&mut client.visible);
+        retain_present_states(&mut client.visible);
     }
     client.visible.owned.extend(old_visible.owned);
     client.visible.slot = old_visible.slot;
     client.visible.intent_serial = old_visible.intent_serial;
     result
+}
+
+fn retain_present_states(value: &mut RegistryData) {
+    // Disk and local deletion deltas remove fields, not just their values. Retire only
+    // those fields' bookkeeping after replaying this layer's explicit assignments.
+    value
+        .idle_intents
+        .retain(|child, _| value.idle.contains_key(child));
+    value
+        .needs_input_intents
+        .retain(|child, _| value.needs_input.contains_key(child));
 }
 
 pub(super) fn project(value: &mut RegistryData, operation: &Operation) {

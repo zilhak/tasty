@@ -1,3 +1,5 @@
+mod state_intents;
+
 use super::*;
 use crate::app::file_writer::{self, FileWriterParts};
 use std::{
