@@ -123,6 +123,21 @@ tasty claude parent --surface 57                            # 이 자식의 부�
 
 자식이 너무 많아지면 spawn 응답에 경고가 붙습니다. 임계치는 **설정** <!-- en: Settings --> › **플러그인** <!-- en: Plugins --> › **Claude Code** / **Codex** 의 **Spawn child 경고 임계치** <!-- en: Spawn child warning threshold --> 에서 바꿉니다 (Claude Code·Codex 모두 기본 6).
 
+### Claude 자식의 모델과 effort
+
+이번 자식 세션에만 모델과 effort를 지정할 수 있습니다.
+
+```sh
+tasty claude spawn --workspace workers --cwd ~/proj --model opus --effort high \
+  --prompt "테스트 실패 원인을 조사해"
+```
+
+`--model`은 alias, 전체 모델 ID, provider ARN 같은 식별자를 받습니다. `--effort`는 `low`, `medium`, `high`, `xhigh`, `max`, `ultracode`를 받으며 지원 여부는 Claude CLI와 모델에 따라 다릅니다. `ultracode`는 xhigh와 Ultracode를 요청하며 Claude Code 2.1.203 이상이 필요합니다.
+
+생략한 옵션은 기존 Claude 설정을 따릅니다. 부모·다른 자식·전역 설정은 바꾸지 않습니다. `--profile-file`이나 `--profile`과 함께 쓰면 명시한 모델·effort가 우선하고 프로필 파일은 그대로 둡니다. 훅이 정상 실행되면 같은 세션을 복원하거나 reboot할 때도 유지합니다. 새 respawn은 이 값을 승계하지 않습니다.
+
+명령이 반환됐다는 것은 모델이 응답했다는 뜻이 아닙니다. 모델을 provider가 거절하면 Tasty가 다른 모델로 바꾸어 재시도하지 않습니다. 실제 모델과 effort는 Claude 화면에서 확인하세요.
+
 ## 4. 완료 알림 받기
 
 완료는 부모 종류와 관계없이 같은 로그 파일에 한 줄씩 쌓입니다. 자식이 Claude인지 Codex인지도 관계없습니다.

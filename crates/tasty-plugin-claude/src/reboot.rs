@@ -106,6 +106,14 @@ pub(crate) fn reboot_surface(
     let permission_mode =
         crate::handlers::resolve_permission_mode(host, params, profile_file.as_deref(), tr)?;
 
+    let options = crate::session_options::load(host, surface_id, data_dir, &session_id, tr)?;
+    let command = resume_with_options(
+        &session_id,
+        profile_file.as_deref(),
+        permission_mode.as_deref(),
+        &options,
+    );
+
     let Some(baseline) = query_foreground(host, surface_id) else {
         return Err(IpcMethodError::new(tr.t_fmt(
             "claude.reboot.no_foreground_process",
@@ -130,7 +138,6 @@ pub(crate) fn reboot_surface(
 
     let thread_host = host.clone();
     let thread_inflight = inflight.clone();
-    let thread_session = session_id.clone();
     let spawned = thread::Builder::new()
         .name(format!("claude-reboot-s{surface_id}"))
         .spawn(move || {
@@ -139,10 +146,9 @@ pub(crate) fn reboot_surface(
                 surface_id,
                 delay_secs,
                 &baseline,
-                &thread_session,
+                &command,
                 extra_prompt.as_deref(),
                 profile_file.as_deref(),
-                permission_mode.as_deref(),
                 &notice_base,
             );
             tasty_utils::poison::recover_mutex(
@@ -453,11 +459,28 @@ pub(crate) fn resume_command(
     format!("{}{mode}\r", resume_command_line(session_id, profile_file))
 }
 
+/// Reboot captures these validated options before SessionEnd can clear the live metadata.
+pub(crate) fn resume_with_options(
+    session_id: &str,
+    profile_file: Option<&str>,
+    permission_mode: Option<&str>,
+    options: &crate::session_options::SessionOptions,
+) -> String {
+    format!(
+        "{}{}\r",
+        resume_command(session_id, profile_file, permission_mode).trim_end_matches('\r'),
+        options.flags(),
+    )
+}
+
 /// 복원에도 사용하는 resume 명령 본문. 제출 문자는 포함하지 않는다.
 /// 승인 정책은 이번 호출에만 적용하므로 이 문자열에는 저장하지 않는다.
 pub(crate) fn resume_command_line(session_id: &str, profile_file: Option<&str>) -> String {
     match profile_file {
-        Some(path) => format!("claude -r {session_id} --settings \"{path}\""),
+        Some(path) => format!(
+            "claude -r {session_id} --settings {}",
+            crate::session_options::quote_path(path)
+        ),
         None => format!("claude -r {session_id}"),
     }
 }
@@ -486,10 +509,9 @@ fn run_reboot_sequence(
     surface_id: u32,
     delay_secs: u64,
     baseline: &str,
-    session_id: &str,
+    command: &str,
     extra_prompt: Option<&str>,
     profile_file: Option<&str>,
-    permission_mode: Option<&str>,
     notice_base: &str,
 ) {
     thread::sleep(Duration::from_secs(delay_secs));
@@ -505,14 +527,7 @@ fn run_reboot_sequence(
         return;
     }
 
-    if !resume_and_wait(
-        host,
-        surface_id,
-        baseline,
-        session_id,
-        profile_file,
-        permission_mode,
-    ) {
+    if !resume_and_wait(host, surface_id, baseline, command, profile_file) {
         return;
     }
     thread::sleep(TUI_READY_GRACE);
@@ -568,16 +583,15 @@ fn resume_and_wait(
     host: &HostHandle,
     surface_id: u32,
     baseline: &str,
-    session_id: &str,
+    command: &str,
     profile_file: Option<&str>,
-    permission_mode: Option<&str>,
 ) -> bool {
     crate::stop_pairing::record_settings_file(host, surface_id, profile_file);
     if let Err(e) = host.call(
         "surface.send",
         json!({
             "surface_id": surface_id,
-            "text": resume_command(session_id, profile_file, permission_mode),
+            "text": command,
         }),
     ) {
         tracing::warn!("claude reboot s{surface_id}: resume send failed: {e}");

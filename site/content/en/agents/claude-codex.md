@@ -1,4 +1,4 @@
-<!-- source-hash: 8bab07e82deb -->
+<!-- source-hash: cfc65ed250b8 -->
 # Working with Claude and Codex
 
 Connect Claude Code and Codex CLI to share work across several agents. One agent can launch others and receive their results, so implementation, testing, and review can run alongside each other.
@@ -123,6 +123,21 @@ A Claude child started without a prompt is `idle` once its input screen appears.
 `tasty codex …` has the same subcommands (`tell` / `children` / `state` / `broadcast` / `kill` / `respawn` / `parent`). Run from a Codex conversation, results come back differently ([Automatic delivery to a Codex parent](#automatic-delivery-to-a-codex-parent)).
 
 When there are too many children, a warning is attached to the spawn response. Change the threshold at **Settings** › **Plugins** › **Claude Code** / **Codex** › **Spawn child warning threshold** (default 6 for both Claude Code and Codex).
+
+### Model and effort for a Claude child
+
+Set a model and effort for this child session only.
+
+```sh
+tasty claude spawn --workspace workers --cwd ~/proj --model opus --effort high \
+  --prompt "Investigate the failing tests"
+```
+
+`--model` accepts aliases, full model IDs and provider identifiers such as ARNs. `--effort` accepts `low`, `medium`, `high`, `xhigh`, `max` and `ultracode`; availability depends on the Claude CLI and model. `ultracode` requests xhigh with Ultracode and requires Claude Code 2.1.203 or later.
+
+Omitted options follow existing Claude settings. Parent, other child and global settings stay unchanged. With `--profile-file` or `--profile`, explicit model and effort options take precedence without editing the profile. When the hooks run successfully, they are kept when restoring or rebooting the same session. A fresh respawn does not inherit them.
+
+A returned command does not mean the model has answered. If the provider rejects a model, Tasty does not retry with another model. Check Claude's screen for the actual model and effort.
 
 ## 4. Receiving completion notifications
 

@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.claude"
 name = "Claude Code"
-version = "0.1.234"
+version = "0.1.235"
 description = "Claude Code CLI integration for Tasty"
 api_version = "1"
 permissions = [
@@ -169,6 +169,8 @@ flags = [
     { name = "profile_file", type = "string", flag = "--profile-file", required = false, path_kind = "file", reject_repeat = true, help = "Claude session profile (settings JSON) injected via --settings when launching the child. Mutually exclusive with --profile", help_i18n_key = "claude.cli.arg.spawn_args.profile_file.help" },
     { name = "profile", type = "string", flag = "--profile", required = false, help = "Registered Claude session profile or Stop-hook gate name(s) to attach, comma-separated for multiple (merged into one file — see 'claude profile-register' and 'claude gate-register'). Mutually exclusive with --profile-file", help_i18n_key = "claude.cli.arg.spawn_args.profile.help" },
     { name = "permission_mode", type = "string", flag = "--permission-mode", required = false, help = "Child permission mode: acceptEdits|auto|bypassPermissions|manual|dontAsk|plan. Passed as --permission-mode and overrides default_permission_mode for this call. If omitted, use that plugin setting; inherit or no setting adds no flag, leaving Claude Code settings in control. An explicit mode cannot be combined with --profile/--profile-file that sets permissions.defaultMode.", help_i18n_key = "claude.cli.arg.spawn_args.permission_mode.help" },
+    { name = "model", type = "string", flag = "--model", required = false, help = "Model for this child session only (alias, full ID or provider identifier). Overrides profile model without editing it; retained on same-session restore. Omit to use Claude defaults.", help_i18n_key = "claude.cli.arg.spawn_args.model.help" },
+    { name = "effort", type = "string", flag = "--effort", required = false, help = "Effort for this child session only: low|medium|high|xhigh|max|ultracode. Overrides profile effort without editing it; retained on same-session restore. Availability depends on Claude CLI and model.", help_i18n_key = "claude.cli.arg.spawn_args.effort.help" },
 ]
 
 [contributes.cli.arg_groups.children_args]

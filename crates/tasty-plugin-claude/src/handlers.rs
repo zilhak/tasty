@@ -613,7 +613,10 @@ pub(crate) fn build_launch_command(
         cmd.push_str(&format!(" --task {escaped}"));
     }
     if let Some(path) = profile_file {
-        cmd.push_str(&format!(" --settings \"{path}\""));
+        cmd.push_str(&format!(
+            " --settings {}",
+            crate::session_options::quote_path(path)
+        ));
     }
     cmd.push_str(&permission_mode_flag(permission_mode));
     cmd
@@ -707,6 +710,27 @@ pub(crate) fn start_claude_in_surface(
     profile_file: Option<&str>,
     permission_mode: Option<&str>,
 ) {
+    if let Err(e) = start_claude_with_options(
+        host,
+        surface_id,
+        prompt,
+        profile_file,
+        permission_mode,
+        &crate::session_options::SessionOptions::default(),
+    ) {
+        tracing::warn!("claude start failed: {}", e.message);
+    }
+}
+
+fn start_claude_with_options<H: HostCall>(
+    host: &H,
+    surface_id: u32,
+    prompt: Option<&str>,
+    profile_file: Option<&str>,
+    permission_mode: Option<&str>,
+    options: &crate::session_options::SessionOptions,
+) -> Result<(), IpcMethodError> {
+    options.record(host, surface_id)?;
     // Stop 이 부착 게이트 수를 셀 수 있도록 붙인 settings 경로를 남긴다.
     crate::stop_pairing::record_settings_file(host, surface_id, profile_file);
     record_launch_prompt(host, surface_id, prompt.is_some());
@@ -718,7 +742,7 @@ pub(crate) fn start_claude_in_surface(
         ),
         None => format!("TASTY_SURFACE_ID={surface_id} TASTY_AGENT_ID={agent_id} "),
     };
-    let text = match prompt {
+    let mut text = match prompt {
         Some(p) => claude_launch_command_with_prompt(
             surface_id,
             &agent_prefix,
@@ -728,7 +752,7 @@ pub(crate) fn start_claude_in_surface(
         ),
         None => {
             let settings_flag = match profile_file {
-                Some(path) => format!(" --settings \"{path}\""),
+                Some(path) => format!(" --settings {}", crate::session_options::quote_path(path)),
                 None => String::new(),
             };
             format!(
@@ -738,16 +762,22 @@ pub(crate) fn start_claude_in_surface(
         }
     };
 
-    if let Err(e) = host.call(
+    // Add invocation flags before the positional prompt (which may itself start with '-').
+    let flags = options.flags();
+    if !flags.is_empty() {
+        let at = agent_prefix.len() + "claude".len();
+        text.insert_str(at, &flags);
+    }
+    host.call(
         "surface.send",
         json!({ "surface_id": surface_id, "text": text }),
-    ) {
-        tracing::warn!("surface.send (claude) failed: {e}");
-    }
+    )
+    .map_err(IpcMethodError::from)?;
+    Ok(())
 }
 
 /// 프롬프트를 실어 실행하는지 기록한다. SessionStart 가 이 표시로 시작 상태를 정한다.
-fn record_launch_prompt(host: &HostHandle, surface_id: u32, with_prompt: bool) {
+fn record_launch_prompt<H: HostCall>(host: &H, surface_id: u32, with_prompt: bool) {
     let key = crate::session_start::LAUNCH_PROMPT_META_KEY;
     let result = if with_prompt {
         host.call(
@@ -785,7 +815,7 @@ fn claude_launch_command_with_prompt(
         tracing::warn!("Failed to write prompt file: {e}");
     }
     let settings_flag = match profile_file {
-        Some(path) => format!("--settings \"{path}\" "),
+        Some(path) => format!("--settings {} ", crate::session_options::quote_path(path)),
         None => String::new(),
     };
     let mode_flag = match permission_mode {
@@ -801,7 +831,7 @@ fn claude_launch_command_with_prompt(
 /// 자식의 세션 토큰을 발급한다. 실패하면 토큰 없이 실행하도록 None을 반환한다.
 /// 일반 권한은 플러그인의 허용 범위에서 발급한다. 자기 namespace인 claude는 별도 보유 없이,
 /// codex 호출 권한은 매니페스트로 받은 것을 전달한다.
-pub(crate) fn issue_session_token(host: &HostHandle, agent_id: &str) -> Option<String> {
+pub(crate) fn issue_session_token<H: HostCall>(host: &H, agent_id: &str) -> Option<String> {
     let resp = match host.call(
         "session.issue",
         json!({
@@ -834,14 +864,15 @@ pub(crate) fn issue_session_token(host: &HostHandle, agent_id: &str) -> Option<S
 
 /// terminal.spawn으로 자식 surface를 만든 뒤 Claude 명령을 보내고 오류 감시에 등록한다.
 /// 인덱스·탭·페인·점유 상태는 호스트가 관리한다.
-pub(crate) fn handle_spawn(
+pub(crate) fn handle_spawn<H: HostCall>(
     scanner: &Arc<Mutex<ErrorScanner>>,
     returns: &Returns,
-    host: &HostHandle,
+    host: &H,
     params: &Value,
     data_dir: Option<&Path>,
     tr: &Translator,
 ) -> Result<Value, IpcMethodError> {
+    let options = crate::session_options::SessionOptions::parse(params, tr)?;
     let target = require_parent(host, returns, params, tr)?;
     let prompt = params
         .get("prompt")
@@ -862,13 +893,14 @@ pub(crate) fn handle_spawn(
         tr,
     )?;
 
-    start_claude_in_surface(
+    start_claude_with_options(
         host,
         child_surface_id,
         prompt.as_deref(),
         profile_file.as_deref(),
         permission_mode.as_deref(),
-    );
+        &options,
+    )?;
 
     // 자식 관계로 추적해 surface가 남는 release도 정리할 수 있게 한다.
     crate::retrack::enable_and_record(host, scanner, child_surface_id, ScanTarget::Child);
@@ -877,6 +909,7 @@ pub(crate) fn handle_spawn(
     let mut out = resp;
     if let Some(obj) = out.as_object_mut() {
         describe_parent(&target, obj);
+        obj.insert("requested_session_options".into(), options.json());
     }
 
     // 자식 수 경고는 생성 성공을 바꾸지 않는다. 자식 수 집계는 물리 부모 surface 로만 조회한다.
@@ -896,8 +929,8 @@ pub(crate) fn handle_spawn(
 }
 
 /// 공용 자식 상태 집계로 생성 후 경고를 만든다. 조회 실패는 경고 생략으로 처리한다.
-fn compute_spawn_warning(
-    host: &HostHandle,
+fn compute_spawn_warning<H: HostCall>(
+    host: &H,
     parent_surface_id: u32,
     tr: &Translator,
 ) -> Option<String> {

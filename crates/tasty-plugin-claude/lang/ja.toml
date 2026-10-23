@@ -33,6 +33,8 @@ no_data_dir = "plugin data directory が利用できません(ホストが TASTY
 io_error = "checklist marker ファイルの入出力に失敗しました: {}"
 
 [claude.params]
+invalid_session_option = "無効なセッションオプション: {}。空でなく、ハイフンで始まらず、空白・制御文字を含まない文字列を指定してください。"
+invalid_effort = "無効なeffortです。指定可能な値: {}。"
 missing_surface_id = "必須パラメータ 'surface'(または 'surface_id')がありません"
 missing_surface_no_env = "必須パラメータ 'surface'(または 'surface_id')がありません(環境変数 TASTY_SURFACE_ID も未設定です)"
 target_surface_not_a_number = "対象 surface の値 {} は無効です。符号なし32ビット整数を指定してください。別の対象に変わらないよう、大きすぎる値は切り捨てずに拒否します。"
@@ -527,3 +529,9 @@ help = "ゲートの回数上限（1以上）。省略時はpluginの 'continue-
 
 [claude.cli.arg.gate_name_args.name]
 help = "登録済みゲート名"
+
+[claude.cli.arg.spawn_args.model]
+help = "この子セッションのモデル（エイリアス、完全なID、プロバイダー識別子）。プロファイルを変更せずモデル設定より優先し、同じセッションの復元でも保持します。省略するとClaudeの既定値を使います。"
+
+[claude.cli.arg.spawn_args.effort]
+help = "この子セッションのeffort: low|medium|high|xhigh|max|ultracode。プロファイルを変更せずeffort設定より優先し、同じセッションの復元でも保持します。対応状況はClaude CLIとモデルによって異なります。"

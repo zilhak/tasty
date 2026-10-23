@@ -9,6 +9,16 @@
 
 > CLI·IPC, 부모·자식 관계, 훅 설치를 함께 제공하는 예제다. 구현 구조는 [플러그인 개발](../../dev-guide/plugin-development.md#cli--ipc-namespace)을 참고한다.
 
+## 자식 세션 모델과 effort
+
+`tasty claude spawn --workspace workers --model opus --effort high --prompt "작업 지시"`는 이번 자식의 Claude CLI에 `--model`과 `--effort`를 전달한다. IPC `claude.spawn`의 선택 필드는 `model`과 `effort`다. 생략하면 플래그를 추가하지 않아 기존 Claude 설정을 따른다. 부모·형제·전역 설정은 변경하지 않는다.
+
+- `model`은 alias, full model ID, provider ARN·deployment 식별자 등을 받으며 모델 목록을 하드코딩하지 않는다. 비어 있는 값, 문자열 외 타입(null 포함), 하이픈으로 시작하는 값, 공백·제어 문자는 `terminal.spawn` 전에 거절한다. 셸 특수 문자는 인자로 인용한다.
+- `effort`는 `low`·`medium`·`high`·`xhigh`·`max`·`ultracode`를 받는다. `ultracode`는 일반 effort 단계가 아니라 xhigh와 Ultracode를 요청하는 CLI 값이다. 설치된 Claude Code 2.1.307 도움말은 앞의 다섯 값만 표시하지만, [공식 CLI 문서](https://code.claude.com/docs/en/cli-reference)는 2.1.203부터 `ultracode`를 지원한다고 명시한다. 실제 지원·조정은 Claude CLI·모델·조직 정책에 따른다.
+- `--profile-file` 또는 `--profile`과 함께 써도 원본 프로필은 바꾸지 않는다. 명시한 CLI 모델·effort가 프로필의 model·effortLevel보다 우선한다. 기존 permission-mode 충돌 검사와 훅·프로필 병합은 유지한다.
+- SessionStart 훅은 명시값을 `claude-session-options` 메타데이터와 plugin 데이터의 `session-options/<session-id>.json`에 기록하고, 프로필을 반영한 `restore.command`에 다시 붙인다. 같은 세션의 닫은 탭 복원·앱 복원·reboot에서도 유지한다. 종료 시 live 메타데이터는 지우고 세션 기록은 복원을 위해 보존한다. 새 respawn은 명시값을 승계하지 않는다. 기록이 잘못됐으면 경고하고 옵션 없는 복원 명령으로 대체하지 않는다.
+- spawn 응답의 `requested_session_options`는 요청값이다. 터미널 생성·명령 전달은 provider의 모델 수락·응답 성공을 뜻하지 않는다. Tasty는 provider 거절을 성공으로 바꾸거나 다른 모델로 재시도하지 않는다. Claude 자체의 effort 조정·fallback 정책과 실제 사용 모델은 Claude 화면·응답에서 확인한다.
+
 ## Tasty 자식에서 지우는 세션 변수
 
 매니페스트 `[contributes.strip_inherited_env]`로 Claude Code가 자기 세션의 자식에 넣는 표지·비밀·세션 값을 선언한다. 이 플러그인이 설치·활성이면 Tasty는 터미널 셸·훅·작업 자식에서 이 값을 지운다([선언 형식과 적용 조건](../../dev-guide/plugin-development.md#상속-환경변수-제거-contributesstrip_inherited_env)). 바깥 Claude Code 세션 안에서 Tasty를 띄워도 그 터미널에서 실행한 Claude가 자식 세션 표지(`CLAUDE_CODE_CHILD_SESSION`)를 물려받아 transcript 저장을 끄지 않고, 세션 비밀(`CLAUDE_CODE_MESSAGING_TOKEN`)이 무관한 셸로 새지 않는다. 정본은 `crates/tasty-plugin-claude/tasty-plugin.toml`이며 목록은 Claude Code 2.1.291 기준이다.

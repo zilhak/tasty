@@ -1086,6 +1086,8 @@ fn session_lifecycle_calls<H: HostCallSink>(
         let meta = crate::reboot::attached_profile_summary(host, surface_id);
         let plan = plan_session_start_profile(session_id, &meta, data_dir, tr);
         apply_session_start_profile(calls, surface_id, session_id, &plan);
+        crate::session_options::session_start(calls, host, surface_id, data_dir, session_id, tr);
+
         calls.extend(crate::stop_pairing::settings_file_for_resumed_session(
             surface_id,
             params.get("source").and_then(Value::as_str),
@@ -1104,6 +1106,18 @@ fn session_lifecycle_calls<H: HostCallSink>(
         profile_attach::sweep(data_dir);
     }
     if event == "session-end" {
+        let reason = params.get("reason").and_then(Value::as_str);
+        if !matches!(reason, Some("clear" | "resume"))
+            && session.is_some()
+            && crate::stop_pairing::settings_owner_session(host, surface_id).as_deref() == session
+        {
+            // Keep the session file for closed-tab restore, but do not attach these options to
+            // an unrelated process later started manually in the same terminal.
+            calls.push(HostCall::MetaUnset {
+                surface_id,
+                key: crate::session_options::META_KEY,
+            });
+        }
         calls.extend(crate::stop_pairing::settings_file_after_session_end(
             surface_id,
             params.get("reason").and_then(Value::as_str),
@@ -3268,6 +3282,74 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[test]
+    fn session_options_follow_the_hook_lifecycle_without_leaking_to_an_unrelated_process() {
+        struct ModelHost;
+        impl HostCallSink for ModelHost {
+            fn call(
+                &self,
+                method: &str,
+                params: Value,
+            ) -> Result<Value, tasty_plugin_sdk::PluginError> {
+                assert_eq!(method, "surface.meta.get");
+                Ok(match params["key"].as_str().unwrap() {
+                    crate::session_options::META_KEY => {
+                        json!({"value": "{\"model\":\"opus\",\"effort\":\"high\"}"})
+                    }
+                    crate::stop_pairing::SETTINGS_SESSION_META_KEY => {
+                        json!({"value": "sess-model"})
+                    }
+                    _ => json!({"value": null}),
+                })
+            }
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let tr = test_translator();
+        let mut calls =
+            apply_hook("session-start", 42, Some("sess-model"), None, None, &tr).unwrap();
+        session_lifecycle_calls(
+            &mut calls,
+            &ModelHost,
+            "session-start",
+            42,
+            Some("sess-model"),
+            &json!({"source": "startup"}),
+            Some(dir.path()),
+            &tr,
+        );
+        assert_eq!(
+            restore_command(&calls).unwrap(),
+            "claude -r sess-model --model opus --effort high"
+        );
+        for (ended_session, reason, should_clear) in [
+            ("sess-model", "prompt_input_exit", true),
+            ("old-session", "prompt_input_exit", false),
+            ("sess-model", "clear", false),
+            ("sess-model", "resume", false),
+        ] {
+            let mut calls = Vec::new();
+            session_lifecycle_calls(
+                &mut calls,
+                &ModelHost,
+                "session-end",
+                42,
+                Some(ended_session),
+                &json!({"reason": reason}),
+                Some(dir.path()),
+                &tr,
+            );
+            assert_eq!(
+                calls
+                    .iter()
+                    .any(|call| matches!(call, HostCall::MetaUnset { key, .. }
+                if *key == crate::session_options::META_KEY)),
+                should_clear
+            );
+        }
+        // The session file survives live metadata cleanup for a later closed-tab restore.
+        assert!(dir.path().join("session-options/sess-model.json").is_file());
     }
 
     fn register_profile(dir: &std::path::Path, name: &str, body: &str) {
