@@ -45,6 +45,15 @@ impl Failure {
             }
         }
     }
+    #[cfg(feature = "gui")]
+    pub(crate) fn gui_message(&self) -> String {
+        match self {
+            Self::Mutation(error) if error.reason == MutationReason::AlreadyExists => {
+                crate::i18n::t("remote_tool.err_name_dup").to_owned()
+            }
+            _ => self.message(),
+        }
+    }
     pub(crate) fn response(&self, id: Value) -> JsonRpcResponse {
         let code = match self {
             Self::Invalid(_) => -32602,

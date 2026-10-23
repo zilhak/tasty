@@ -42,6 +42,10 @@ fn new_gui_key_uses_worker_receipts_and_duplicate_failure_never_replaces_its_sec
         Err(error) => error,
         Ok(_) => panic!("duplicate GUI name must fail"),
     };
+    assert_eq!(
+        error.gui_message(),
+        crate::i18n::t("remote_tool.err_name_dup")
+    );
     assert!(!error.partial());
     assert!(!error.unknown());
     assert_eq!(

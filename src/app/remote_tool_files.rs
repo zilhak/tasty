@@ -135,7 +135,7 @@ impl super::App {
                     _retained: retained,
                 }),
                 Err(error) => {
-                    remote_tool::accept_file_result(&ctx, &request, Err(error.message()));
+                    remote_tool::accept_file_result(&ctx, &request, Err(error.gui_message()));
                 }
             }
         }
@@ -157,7 +157,7 @@ impl super::App {
                         }),
                     }
                 })
-                .map_err(|error| error.message());
+                .map_err(|error| error.gui_message());
             let error = result.as_ref().err().cloned();
             let delivered = self
                 .view
