@@ -43,8 +43,21 @@ impl FindQuery {
         &self.text
     }
 
+    fn text_matches(&self, name: &str) -> bool {
+        if self.text.is_empty() {
+            return true;
+        }
+        if name.is_ascii() && self.text.is_ascii() {
+            return name
+                .as_bytes()
+                .windows(self.text.len())
+                .any(|part| part.eq_ignore_ascii_case(self.text.as_bytes()));
+        }
+        tasty_ui_widgets::match_range(name, &self.text).is_some()
+    }
+
     pub(crate) fn matches(&self, entry: &DirEntryInfo) -> bool {
-        (self.text.is_empty() || tasty_ui_widgets::match_range(&entry.name, &self.text).is_some())
+        self.text_matches(&entry.name)
             && (self.extensions.is_empty()
                 || (!entry.is_dir
                     && self
@@ -111,5 +124,38 @@ mod tests {
             !FindQuery::parse("notes here ext:rs")
                 .matches(&entry("notes elsewhere here.rs", false))
         );
+    }
+    #[test]
+    fn borrowed_ascii_comparison_preserves_unicode_and_literal_substring_matching() {
+        for name in [
+            "item000099.TXT",
+            "two  words",
+            "Kelvin",
+            "İmage",
+            "Straße",
+            "a/b.rs",
+            "",
+        ] {
+            for query in [
+                "",
+                "ITEM000099",
+                "txt",
+                " ",
+                "two  ",
+                "k",
+                "i",
+                "i\u{307}",
+                "ß",
+                "ss",
+                "/b",
+                "no match",
+            ] {
+                assert_eq!(
+                    FindQuery::parse(query).matches(&entry(name, false)),
+                    tasty_ui_widgets::match_range(name, query).is_some() || query.is_empty(),
+                    "{name:?} / {query:?}"
+                );
+            }
+        }
     }
 }

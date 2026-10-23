@@ -690,3 +690,32 @@ fn search_batch_index_cpu_samples() {
         serde_json::json!({"batches":samples})
     );
 }
+
+#[test]
+fn recursive_identical_file_names_keep_full_path_hashes() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_panel, mut view, mut owner) = loaded(dir.path());
+    view.search_subfolders("same");
+    let (receipt, sender, _) = SearchQuery::test_channel();
+    view.find.as_mut().unwrap().search.as_mut().unwrap().receipt = Some(receipt);
+    let entries: Vec<_> = (0..5000)
+        .map(|i| DirEntryInfo {
+            path: dir.path().join(format!("dir{i:06}/same.rs")),
+            name: "same.rs".into(),
+            ..Default::default()
+        })
+        .collect();
+    for batch in entries.chunks(256) {
+        sender.send(SearchEvent::Hits(batch.to_vec())).unwrap();
+        owner.drive(|requests| view.poll_find(requests));
+    }
+    assert_eq!(view.shown_count(), 5000);
+    for (i, entry) in entries.iter().enumerate() {
+        assert_eq!(view.shown_position(&entry.path), Some(i));
+    }
+    assert_eq!(
+        view.shown_position(&dir.path().join("missing/same.rs")),
+        None
+    );
+    finish(&mut owner);
+}

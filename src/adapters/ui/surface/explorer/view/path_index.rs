@@ -9,7 +9,7 @@ use super::ExplorerView;
 
 #[derive(Default)]
 pub(crate) struct PathIndex {
-    key: Option<(u64, usize, usize, String)>,
+    key: Option<(u64, usize, usize, String, bool)>,
     /// 빈 슬롯은 usize::MAX. 충돌은 다음 슬롯으로 넘기며 실제 경로를 비교해 조회한다.
     slots: Vec<usize>,
     hash: RandomState,
@@ -36,12 +36,17 @@ impl ExplorerView {
             .map_or(self.entries.as_ptr(), |s| s.as_ptr()) as usize;
         let count = self.shown_count();
         let query = self.find_query_key();
+        let leaf = self.search_hits().is_empty();
         let mut index = self.path_index.borrow_mut();
         if !index
             .key
             .as_ref()
-            .is_some_and(|(generation, address, len, q)| {
-                *generation == self.entries_gen && *address == source && *len == count && q == query
+            .is_some_and(|(generation, address, len, q, leaf_key)| {
+                *generation == self.entries_gen
+                    && *address == source
+                    && *len == count
+                    && q == query
+                    && *leaf_key == leaf
             })
         {
             #[cfg(test)]
@@ -53,16 +58,16 @@ impl ExplorerView {
             index.slots = vec![usize::MAX; capacity];
             let mask = capacity - 1;
             for (i, entry) in self.shown().enumerate() {
-                let mut at = index.hash.hash_one(&entry.path) as usize & mask;
+                let mut at = path_hash(&index.hash, &entry.path, leaf) as usize & mask;
                 while index.slots[at] != usize::MAX {
                     at = (at + 1) & mask;
                 }
                 index.slots[at] = i;
             }
-            index.key = Some((self.entries_gen, source, count, query.to_owned()));
+            index.key = Some((self.entries_gen, source, count, query.to_owned(), leaf));
         }
         let mask = index.slots.len() - 1;
-        let mut at = index.hash.hash_one(path) as usize & mask;
+        let mut at = path_hash(&index.hash, path, leaf) as usize & mask;
         loop {
             let i = index.slots[at];
             if i == usize::MAX {
@@ -73,6 +78,15 @@ impl ExplorerView {
             }
             at = (at + 1) & mask;
         }
+    }
+}
+
+// A directory has unique file names. Recursive hits retain full path hashes so common
+// names in different folders do not form long probe chains. Equality always uses Path.
+fn path_hash(hash: &RandomState, path: &Path, leaf: bool) -> u64 {
+    match path.file_name().filter(|_| leaf) {
+        Some(name) => hash.hash_one(name),
+        None => hash.hash_one(path),
     }
 }
 
@@ -140,7 +154,7 @@ mod tests {
         let mut view = ExplorerView::new();
         let colliding: Vec<_> = (0..1000)
             .map(entry)
-            .filter(|e| view.path_index.borrow().hash.hash_one(&e.path) & 7 == 0)
+            .filter(|e| path_hash(&view.path_index.borrow().hash, &e.path, true) & 7 == 0)
             .take(5)
             .collect();
         assert_eq!(colliding.len(), 5);
@@ -149,6 +163,21 @@ mod tests {
             assert_eq!(view.shown_position(&entry.path), Some(i));
         }
         assert_eq!(view.shown_position(&colliding[4].path), None);
+    }
+
+    #[test]
+    fn leaf_hashes_keep_path_equality_and_do_not_accept_other_folders() {
+        let mut view = ExplorerView::new();
+        view.set_entries(vec![DirEntryInfo {
+            path: "/index/sub/./name.txt".into(),
+            name: "name.txt".into(),
+            ..Default::default()
+        }]);
+        assert_eq!(
+            view.shown_position(Path::new("/index//sub/name.txt")),
+            Some(0)
+        );
+        assert_eq!(view.shown_position(Path::new("/other/name.txt")), None);
     }
 
     #[test]
