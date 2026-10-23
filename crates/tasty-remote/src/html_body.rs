@@ -1,4 +1,8 @@
 //! Immutable native response data and entry scan publication; no filesystem or network access.
+mod resources;
+mod response_wait;
+pub use resources::{Fetch as NativeResourceFetch, NativeResources};
+pub use response_wait::{ResourceFailure, ResponseWait};
 use std::{fmt, io, sync::Arc};
 use tasty_ipc::html_transfer::{HtmlSource, TransferId};
 use tasty_model::html_script::{
@@ -170,6 +174,8 @@ impl ReceivedEntry {
 pub struct EntryBodyStore {
     expected: Option<TransferId>,
     entry: Option<Arc<ReceivedEntry>>,
+    resources: Option<NativeResources>,
+    resources_enabled: bool,
 }
 impl EntryBodyStore {
     pub fn begin(&mut self, id: TransferId) -> bool {
@@ -178,6 +184,7 @@ impl EntryBodyStore {
         }
         self.expected = Some(id);
         self.entry = None;
+        self.resources = None;
         true
     }
     pub fn expects(&self, id: TransferId) -> bool {
@@ -187,6 +194,10 @@ impl EntryBodyStore {
         if self.expected != Some(entry.response.generation()) || self.entry.is_some() {
             return false;
         }
+        self.resources = Some(NativeResources::new(
+            Arc::clone(&entry),
+            self.resources_enabled,
+        ));
         self.entry = Some(entry);
         true
     }
@@ -202,6 +213,28 @@ impl EntryBodyStore {
     pub fn response_for_uri(&self, uri: &str) -> Option<Arc<NativeBodyResponse>> {
         self.entry_for_uri(uri)
             .map(|entry| Arc::clone(entry.response()))
+            .or_else(|| self.resources.as_ref()?.cached(uri))
+    }
+    /// Capability is chosen by the owning session before native context creation, not by a page.
+    pub fn enable_resources(&mut self, enabled: bool) {
+        self.resources_enabled = enabled;
+        if let Some(resources) = &mut self.resources {
+            resources.set_enabled(enabled);
+        }
+    }
+    pub fn resources_enabled(&self) -> bool {
+        self.resources_enabled
+    }
+    pub fn resources_mut(&mut self) -> Option<&mut NativeResources> {
+        self.resources.as_mut()
+    }
+    pub fn request_resource(&mut self, uri: &str) -> ResponseWait {
+        if let Some(resources) = &mut self.resources {
+            return resources.request(uri);
+        }
+        let (wait, target) = ResponseWait::pair();
+        target.finish(Err(ResourceFailure::Denied));
+        wait
     }
     pub fn cancel(&mut self, id: TransferId) -> bool {
         if !self.expects(id) {
@@ -213,9 +246,13 @@ impl EntryBodyStore {
     /// A completed disconnected page remains available for a local script-allow reload. A pending
     /// scan loses publication rights; a reconnect must call begin with its new connection epoch.
     pub fn disconnect(&mut self) {
+        if let Some(resources) = &mut self.resources {
+            resources.disconnect();
+        }
         self.expected = self.entry.as_ref().map(|entry| entry.response.generation());
     }
     pub fn clear(&mut self) {
+        self.resources = None;
         self.expected = None;
         self.entry = None;
     }

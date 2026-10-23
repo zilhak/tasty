@@ -58,3 +58,9 @@ completed body만 `Resource::body`로 제공한다. 완료 시 수신 buffer의 
 주소 띠는 원격 경로를 축약 없이 읽기 전용으로 보이고 Reload만 제공한다. 크기 배너, 스크립트 배너, 페이지 순서로 하나의 inset을 적용한다. 큰 entry는 수신 전에 Allow·Decline을 기다리며 Decline 뒤에는 receiving을 종료하고 skipped tag를 표시한다. 완료한 body는 disconnect 중에도 보존하고 Reload를 비활성화한다. reconnect는 새 connection epoch로 다시 받는다.
 
 스크립트 설정은 client 설정만 읽고 원격 설정이나 허용 메시지를 교환하지 않는다. 기존 스캐너가 받은 전체 body의 지문을 만들고 native 응답도 같은 body를 사용한다. 파일 source의 부모 cwd는 `SurfaceCwd::Remote`이며 client filesystem·PTY 상속·최근 파일로 사용하지 않는다. 지원 연결의 Explorer와 새 HTML 피커는 원래 pane에 원격 NewTab을 보낸다. 피커 결과는 원래 request ID·pane·session projection과 일치할 때만 적용하며 취소·pane 종료·연결 교체 뒤 늦은 결과를 버린다.
+
+## Native 하위 응답 대기와 재사용 API
+
+공유 body store는 기본적으로 하위 리소스를 비활성화한다. 현재 viewer는 여전히 entry만 표시하며 이 API만으로 native 리소스 capability를 광고하지 않는다. 연결한 경우 native 요청은 원 entry의 scheme·origin·여섯 부분 identity 경로 안에서만 대기할 수 있다. 경로는 한 번 decode하고 traversal·encoded separator·NUL을 거절한다. 파일이나 네트워크를 client에서 열지 않는다.
+
+문서당 URI slot256개와 URI당 대기자32개로 요청 메타데이터를 제한한다. 같은 URI의 fragment 변화와 재요청은 한 immutable 응답 할당을 공유하며 새 transfer나 누적량을 만들지 않는다. 원 request identity는 실패 뒤에도 tombstone으로 남아 다른 URI에 재할당할 수 없다. 대기자 또는 producer 소멸은 취소로 끝나며 문서 교체가 원 응답 게시 권한을 회수한다. disconnect는 미완 대기자를 끝내고 새 요청을 거절하되 완료한 cache를 보존한다. MIME·provenance를 보존하고 source generation·전체 transfer ID가 맞는 완료 body만 게시한다. 실제 native callback·credit·크기 질문 연결은 이 수명 API와 구분한다.
