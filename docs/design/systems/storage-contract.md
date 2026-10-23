@@ -276,7 +276,7 @@ writer를 거치는 IPC 요청은 결과가 나온 뒤 응답한다. 핸들러�
 | `presets/**.toml` | `PresetStore`의 `atomic_write` | 메인 루프 | 예(fsync 없음) | 없음 |
 | `port-favorites.toml`·`explorer-favorites.toml` | `SharedList::update`가 잠금 안에서 snapshot 접수, file writer가 교체 | file writer | 예(공용 교체, fsync 없음) | 참여자 잠금·원본 fingerprint/링크 대상 비교 |
 | `child-terminals.json` | `child_terminal::save`(읽기-병합-쓰기) | 메인 루프 | 아니요 | 같은 홈의 다른 프로세스와 잠금 없음 |
-| `tasty.port` | `write_port_file_to` | IPC 시작 | 아니요 | 없음. 서버 Drop이 지운다 |
+| `tasty.port` | `publish_port_file_to` 완료 결과를 listener가 소유 | IPC 시작 완료 barrier | 예(공용 안전 교체, fsync 없음) | notify 정리 → 관측 원본/링크 비교·참여 잠금 → 완료 공개. 서버 Drop은 공개한 내용이 남은 경우만 최선으로 정리 |
 | 단일 실행 instance 파일 | `instance_file` | 메인 루프 | 예(sync 포함) | GUI만 쓴다 |
 | `webhooks.toml` | 호스트 `webhook::persist::WriteRequest`, CLI `webhook_port_file` | 현재 host 호출 스레드·CLI에서 동기 실행 | 예(공용 교체, fsync 없음) | host 배열 교체·CLI port 변경·옛 포트 마이그레이션이 같은 참여자 잠금 안에서 최신 TOML을 읽고 해당 절만 변경 |
 | `remote-profiles.toml` | CLI는 `RemoteFileStore::profile`, 기존 host 소비자는 `RemoteProfiles::save` | CLI는 호출 스레드, 기존 IPC·탐지는 메인 루프 | CLI는 예(공용 교체·sync), 기존 save는 아니요 | 명령 API는 최신 TOML을 참여 잠금 안에서 patch한다. 기존 save 호출자는 참여하지 않는다 |

@@ -27,6 +27,12 @@ tasty 의 영속 데이터는 텍스트 파일과 SQLite에 나눠 저장된다.
 
 실행 중 적용과 추가 창은 캐시된 색상 또는 내장 Mocha만 사용하며 디스크 복구를 실행하지 않는다. 명시 rescan은 읽기 전용이다. bootstrap 준비는 완료 barrier라 동기 호출이고, 파일 저장을 접수만 한 채 첫 렌더로 진행하는 비동기 저장으로 해석하지 않는다. 여러 테마 파일 사이 transaction이나 외부 비참여자의 최종 확인–교체 race 방지는 보장하지 않는다.
 
+## IPC 포트 발견의 완료 경계
+
+IPC는 listener 준비와 notify 정리 뒤 `tasty.port`를 공용 안전 교체로 완전히 공개하고 시작 성공을 반환한다. 접수만 한 저장을 발견 성공으로 취급하지 않는다. 새 Unix 파일은 0600이며 기존 mode/ACL과 살아 있는 symlink는 공용 교체 정책을 따른다. 읽을 수 없거나 관측 뒤 바뀐 원본은 덮어쓰지 않고 시작 실패로 돌려준다. accept worker 시작 실패는 방금 공개한 포트를 정리한다.
+
+listener는 완료된 공개 결과를 소유한다. Drop은 참여 잠금을 기다리지 않고 대상/내용이 자신의 공개와 같은 경우만 최선으로 삭제한다. 마지막 확인과 unlink 사이 비참여 외부 변경을 막는 원자적 조건부 삭제는 아니다. instance lock과 launch.log 프로토콜은 별개이며 그대로 유지한다.
+
 ## 구조 journal과 복원 원본
 
 로컬 engine/workspace/pane/tab/surface 구조는 데이터 홈의 단일 journal이 원본이다. 각 engine은 별도 stream을 사용한다. `JournalModel`과 domain snapshot은 확정 이벤트에서 도출하며, CoreState는 실행 객체를 소유하지 않는 읽기 projection이다. terminal·plugin 콘텐츠 payload와 View 선택 checkpoint는 별도 원본이다. mirror 트리는 로컬 구조 journal에 편입하지 않는다.

@@ -52,20 +52,94 @@ pub fn read_port_file_from(port_file: Option<&str>) -> Result<u16, PortFileError
         .map_err(|_| PortFileError::Invalid)
 }
 
-/// 포트를 파일에 쓴다. `custom_path` 지정 시 그 경로, 아니면 기본
-/// (`port_file_path()`). 디렉터리는 부재 시 생성.
-pub fn write_port_file_to(port: u16, custom_path: Option<&Path>) -> Result<()> {
-    let path = match custom_path {
-        Some(p) => p.to_path_buf(),
-        None => match port_file_path() {
-            Some(p) => p,
-            None => return Ok(()),
-        },
-    };
-    if let Some(parent) = path.parent() {
+/// Completed lifecycle publication. This is not a queued save receipt.
+#[derive(Debug)]
+pub struct PortFilePublication {
+    path: PathBuf,
+    target: PathBuf,
+    fingerprint: tasty_utils::file_replace::Fingerprint,
+}
+
+impl PortFilePublication {
+    /// Best-effort teardown of this publication only. Never waits for a participant lock.
+    /// External writers must serialize startup; a nonparticipant can race the final check/unlink.
+    pub fn cleanup_if_owned(&self) -> std::io::Result<bool> {
+        use tasty_utils::file_replace::{self, Fingerprint};
+        if file_replace::resolve_link(&self.path)? != self.target {
+            return Ok(false);
+        }
+        match std::fs::metadata(&self.path) {
+            Ok(meta) if !meta.is_file() => return Ok(false),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+            Err(e) => return Err(e),
+            Ok(_) => {}
+        }
+        if Fingerprint::read(&self.path)? != self.fingerprint {
+            return Ok(false);
+        }
+        match std::fs::remove_file(&self.path) {
+            Ok(()) => Ok(true),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
+            Err(e) => Err(e),
+        }
+    }
+}
+
+/// Publish only after a complete atomic replacement; unreadable originals are preserved.
+/// New Unix files are 0600. Existing metadata and live symlinks use the common replacement policy.
+pub fn publish_port_file_to(port: u16, custom_path: Option<&Path>) -> Result<PortFilePublication> {
+    use tasty_utils::file_replace::{self, Fingerprint};
+    let path = custom_path
+        .map(Path::to_path_buf)
+        .or_else(port_file_path)
+        .ok_or(PortFileError::HomeUnresolved)?;
+    if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
         std::fs::create_dir_all(parent)?;
     }
-    std::fs::write(&path, port.to_string())?;
-    tracing::info!("Wrote port file: {}", path.display());
-    Ok(())
+    let target = file_replace::resolve_link(&path)?;
+    match std::fs::metadata(&target) {
+        Ok(meta) if !meta.is_file() => anyhow::bail!("port file is not a regular file"),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(e.into()),
+        Ok(_) => {}
+    }
+    let observed = Fingerprint::read(&target)?;
+    publish_observed(port, path, target, observed)
 }
+
+fn publish_observed(
+    port: u16,
+    path: PathBuf,
+    target: PathBuf,
+    observed: tasty_utils::file_replace::Fingerprint,
+) -> Result<PortFilePublication> {
+    use tasty_utils::file_replace::{self, Fingerprint, Options};
+    let _lock = file_replace::lock(&path)?;
+    if file_replace::resolve_link(&path)? != target || Fingerprint::read(&target)? != observed {
+        anyhow::bail!("port file changed while preparing publication");
+    }
+    let bytes = port.to_string();
+    file_replace::replace_with(
+        &path,
+        bytes.as_bytes(),
+        Options {
+            new_mode: Some(0o600),
+            sync: false,
+        },
+    )?;
+    tracing::info!(path = %path.display(), "published port file");
+    Ok(PortFilePublication {
+        path,
+        target,
+        fingerprint: Fingerprint::of_bytes(bytes.as_bytes()),
+    })
+}
+
+/// Blocking startup barrier. Returning Ok means the complete port is observable by discovery.
+pub fn write_port_file_to(port: u16, custom_path: Option<&Path>) -> Result<()> {
+    publish_port_file_to(port, custom_path).map(|_| ())
+}
+
+#[cfg(test)]
+#[path = "port_file/tests.rs"]
+mod tests;

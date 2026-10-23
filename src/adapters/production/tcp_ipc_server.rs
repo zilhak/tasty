@@ -154,8 +154,8 @@ pub struct TcpIpcServer {
     port: u16,
     /// Shutdown flag to signal the accept thread to stop.
     shutdown: Arc<AtomicBool>,
-    /// Custom port file path (overrides default if set).
-    custom_port_file: Option<std::path::PathBuf>,
+    /// Completed publication owned by this listener, used for guarded teardown.
+    publication: Option<port_file::PortFilePublication>,
     /// 명령 큐의 입장 장부. 소켓 경로와 호스트 주입기(`HostIpcInjector`)가 같은 것을 든다.
     admission: Arc<CommandAdmission>,
 }
@@ -175,7 +175,8 @@ impl TcpIpcServer {
 
         let custom_port_file = port_file_override.map(std::path::PathBuf::from);
 
-        Self::clear_notify_then_publish_port(
+        listener.set_nonblocking(true)?;
+        let publication = Self::clear_notify_then_publish_port(
             Self::notify_dir_to_clear(tasty_utils::path::tasty_home(), custom_port_file.as_deref()),
             port,
             custom_port_file.as_deref(),
@@ -192,57 +193,65 @@ impl TcpIpcServer {
         let first_line_idle = first_line::first_line_idle_timeout();
         // 연결 스레드에서도 슬롯을 반납하므로 계수는 공유한다. 포화 플래그는 로그에만 쓴다.
         let saturated = Arc::new(AtomicBool::new(false));
-        listener.set_nonblocking(true)?;
-        thread::spawn(move || {
-            // accept 전 대기는 요청 큐에서 보이지 않으므로 연결 계수에 대기 상한을 기록한다.
-            let mut clock = accept_clock::AcceptClock::new(std::time::Instant::now());
-            loop {
-                if shutdown_clone.load(Ordering::Relaxed) {
-                    break;
-                }
-                match listener.accept() {
-                    Ok((stream, _)) => {
-                        connections.record_accept_wait(clock.bound(std::time::Instant::now()));
-                        let Some(slot) = ConnectionSlot::try_acquire(&connections, &saturated)
-                        else {
-                            Self::refuse_saturated_connection(stream);
-                            continue;
-                        };
-                        let queue = CommandQueue {
-                            tx: accept_tx.clone(),
-                            admission: accept_admission.clone(),
-                        };
-                        let waker = waker.clone();
-                        let stream_ctx = stream_ctx.clone();
-                        thread::spawn(move || {
-                            Self::handle_connection(
-                                stream,
-                                queue,
-                                waker,
-                                stream_ctx,
-                                slot,
-                                first_line_idle,
-                            );
-                        });
-                    }
-                    Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                        clock.saw_empty(std::time::Instant::now());
-                        thread::sleep(Duration::from_millis(100));
-                    }
-                    Err(e) => {
-                        tracing::warn!("IPC accept error: {}", e);
+        let accept = thread::Builder::new()
+            .name("ipc-accept".into())
+            .spawn(move || {
+                // accept 전 대기는 요청 큐에서 보이지 않으므로 연결 계수에 대기 상한을 기록한다.
+                let mut clock = accept_clock::AcceptClock::new(std::time::Instant::now());
+                loop {
+                    if shutdown_clone.load(Ordering::Relaxed) {
                         break;
                     }
+                    match listener.accept() {
+                        Ok((stream, _)) => {
+                            connections.record_accept_wait(clock.bound(std::time::Instant::now()));
+                            let Some(slot) = ConnectionSlot::try_acquire(&connections, &saturated)
+                            else {
+                                Self::refuse_saturated_connection(stream);
+                                continue;
+                            };
+                            let queue = CommandQueue {
+                                tx: accept_tx.clone(),
+                                admission: accept_admission.clone(),
+                            };
+                            let waker = waker.clone();
+                            let stream_ctx = stream_ctx.clone();
+                            thread::spawn(move || {
+                                Self::handle_connection(
+                                    stream,
+                                    queue,
+                                    waker,
+                                    stream_ctx,
+                                    slot,
+                                    first_line_idle,
+                                );
+                            });
+                        }
+                        Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                            clock.saw_empty(std::time::Instant::now());
+                            thread::sleep(Duration::from_millis(100));
+                        }
+                        Err(e) => {
+                            tracing::warn!("IPC accept error: {}", e);
+                            break;
+                        }
+                    }
                 }
+            });
+
+        if let Err(error) = accept {
+            if let Err(cleanup) = publication.cleanup_if_owned() {
+                tracing::warn!(%cleanup, "failed to clean up port after accept spawn failure");
             }
-        });
+            return Err(error.into());
+        }
 
         Ok(Self {
             command_rx: cmd_rx,
             command_tx: cmd_tx,
             port,
             shutdown,
-            custom_port_file,
+            publication: Some(publication),
             admission,
         })
     }
@@ -258,9 +267,9 @@ impl TcpIpcServer {
         notify_dir: Option<std::path::PathBuf>,
         port: u16,
         custom_port_file: Option<&std::path::Path>,
-    ) -> Result<()> {
+    ) -> Result<port_file::PortFilePublication> {
         Self::clear_notify_then_publish(notify_dir, || {
-            port_file::write_port_file_to(port, custom_port_file)
+            port_file::publish_port_file_to(port, custom_port_file)
         })
     }
 
@@ -300,12 +309,12 @@ impl TcpIpcServer {
     }
 
     /// 정리 후 발행한다. 시험은 발행 시점에 정리가 끝났는지 확인한다.
-    fn clear_notify_then_publish<F>(
+    fn clear_notify_then_publish<T, F>(
         notify_dir: Option<std::path::PathBuf>,
         publish: F,
-    ) -> Result<()>
+    ) -> Result<T>
     where
-        F: FnOnce() -> Result<()>,
+        F: FnOnce() -> Result<T>,
     {
         if let Some(dir) = notify_dir {
             Self::clear_notify_dir(&dir);
@@ -1011,12 +1020,6 @@ impl TcpIpcServer {
         }
         true
     }
-
-    fn effective_port_file_path(&self) -> Option<std::path::PathBuf> {
-        self.custom_port_file
-            .clone()
-            .or_else(port_file::port_file_path)
-    }
 }
 
 impl IpcServerPort for TcpIpcServer {
@@ -1261,12 +1264,8 @@ mod admission_tests {
             command_tx: tx.clone(),
             port: 0,
             shutdown: Arc::new(AtomicBool::new(false)),
-            // 이유: None이면 Drop이 사용자 포트 파일을 지운다. 이 시험 전용 경로는
-            // 생성하지 않아 삭제가 NotFound로 끝나므로 프로세스당 하나여도 된다.
-            custom_port_file: Some(std::env::temp_dir().join(format!(
-                "tasty-dequeue-release-test-{}.port",
-                std::process::id()
-            ))),
+            // This fabricated server owns no port publication.
+            publication: None,
             admission: admission.clone(),
         };
         let (resp_tx, _resp_rx) = mpsc::sync_channel(1);
@@ -1784,6 +1783,22 @@ mod notify_cleanup_tests {
     }
 
     #[test]
+    fn failed_publication_keeps_the_original_and_does_not_report_startup_success() {
+        let tmp = tempfile::tempdir().unwrap();
+        let notify = tmp.path().join("notify");
+        std::fs::create_dir(&notify).unwrap();
+        std::fs::write(notify.join("1.log"), b"stale").unwrap();
+        let path = tmp.path().join("tasty.port");
+        std::fs::create_dir(&path).unwrap();
+        assert!(
+            TcpIpcServer::clear_notify_then_publish_port(Some(notify.clone()), 4242, Some(&path))
+                .is_err()
+        );
+        assert!(!notify.exists());
+        assert!(path.is_dir());
+    }
+
+    #[test]
     fn an_unresolved_home_skips_the_cleanup_and_still_publishes_the_port() {
         let tmp = tempfile::tempdir().unwrap();
         let port_file = tmp.path().join("tasty.port");
@@ -1800,13 +1815,10 @@ impl Drop for TcpIpcServer {
         // 포트 파일이 남는 시간을 확인하기 위해 Drop 종료 시간을 기록한다.
         let t_drop = std::time::Instant::now();
         self.shutdown.store(true, Ordering::Relaxed);
-        // Clean up port file. 파일이 이미 사라졌거나 권한이 없는 케이스도 정상 종료
-        // 흐름에서 발생 가능 — trace 레벨로만 기록한다.
-        if let Some(path) = self.effective_port_file_path()
-            && let Err(e) = std::fs::remove_file(&path)
-            && e.kind() != std::io::ErrorKind::NotFound
+        if let Some(publication) = &self.publication
+            && let Err(error) = publication.cleanup_if_owned()
         {
-            tracing::trace!("port file {} remove failed: {e}", path.display());
+            tracing::trace!(%error, "port publication cleanup failed");
         }
         tracing::info!(
             target: "tasty::shutdown",

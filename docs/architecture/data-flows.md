@@ -181,3 +181,7 @@ config snapshot이 같은 묶음에서 대체되면 대체한 저장의 결과�
 ## 테마 파일의 첫 렌더 경계
 
 `init_boot_db_and_theme`는 첫 로딩 프레임에 쓸 사용자 테마를 정하기 전에 내장 파일 seed/sync와 읽기 완료를 확인한다. 읽기에 실패한 원본은 보호하며, 요청한 테마를 적용할 수 없으면 내장 Mocha로 계속한다. 추가 창과 runtime 테마 적용은 이 파일 준비를 다시 호출하지 않는다. 캐시/내장 색상만 적용하고, 설정 snapshot 저장은 기존 file writer의 완료 계약을 따른다. 디스크 목록 rescan은 파일 쓰기 없는 읽기다.
+
+## IPC 발견 파일의 공개 순서
+
+`TcpIpcServer::start_with_port_file`은 bind/nonblocking 준비 → 해당 데이터 루트 notify 정리 → `publish_port_file_to`의 안전 교체 완료 → accept worker 시작 → 성공 반환 순서다. 외부 데이터 루트의 port override는 다른 루트 notify를 지우지 않는다. 실패는 시작 호출에 전파하고, 공개 뒤 worker를 시작하지 못하면 자신의 port 결과를 정리한다. 정상 Drop도 같은 소유 내용 확인을 쓰며 다른 내용으로 바뀐 파일을 지우지 않는다.
