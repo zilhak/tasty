@@ -1,7 +1,7 @@
 //! remote-profile은 로컬 프로필 파일을 직접 읽고 쓴다. --name으로 대상을 지정한다.
 //! --identity 경로는 `<name>-key` passkey로 저장하고 프로필에는 그 이름만 기록한다.
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use tasty_i18n::{t, t_args, t_fmt, t_fmt2};
 use tasty_remote_profiles::{
     ConfigAvailability, ImportError, PasskeyCommand, Passkeys, ProfileCommand, ProfileOutcome,
@@ -111,7 +111,8 @@ pub fn run(command: &RemoteProfileCommands) -> Result<()> {
                 p.passkey_ref = Some(link_identity_passkey(name, idf).0);
             }
             let saved = save_profile(p, identity.as_ref(), ProfileCommand::Put)?;
-            let detect = detect_saved(saved.profile, false)?;
+            let detect = detect_saved(saved.profile, false)
+                .context("profile save committed; detection status update failed")?;
             let replaced = saved.replaced;
             let key = if replaced {
                 "cli.remote_profile.ssh_updated"
@@ -357,7 +358,8 @@ pub fn run(command: &RemoteProfileCommands) -> Result<()> {
             )?;
             let detect =
                 if shell.is_some() && saved.profile.as_ref().is_some_and(|p| p.kind == "ssh") {
-                    detect_saved(saved.profile, false)?
+                    detect_saved(saved.profile, false)
+                        .context("profile save committed; detection status update failed")?
                 } else {
                     None
                 };

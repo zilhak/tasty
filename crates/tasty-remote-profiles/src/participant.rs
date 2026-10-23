@@ -11,6 +11,7 @@ use toml_edit::{Item, value};
 
 #[derive(Clone, Default, Debug)]
 pub struct ProfilePatch {
+    pub kind: Option<String>,
     pub fields: BTreeMap<String, Option<FieldValue>>,
     pub label: Option<Option<String>>,
     pub passkey_ref: Option<Option<String>>,
@@ -28,6 +29,11 @@ pub enum ProfileCommand {
     },
     Remove {
         name: String,
+    },
+    Rename {
+        original: String,
+        name: String,
+        patch: ProfilePatch,
     },
 }
 // Deliberately no Debug: Inline carries a secret.
@@ -76,8 +82,8 @@ pub enum MutationReason {
 impl std::fmt::Display for MutationReason {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
-            Self::AlreadyExists => "profile already exists",
-            Self::NotFound => "profile not found",
+            Self::AlreadyExists => "registry entry already exists",
+            Self::NotFound => "registry entry not found",
             Self::Changed => "profile changed during detection",
             Self::Storage => "registry storage failed",
         })
@@ -211,6 +217,23 @@ impl RemoteFileStore {
             .map_err(|e| MutationFailure::new(MutationStage::PasskeyRead, e))?;
         self.apply_passkey(&mut keys, command)
     }
+    /// Rename in one list replacement. The new inline file precedes list commit;
+    /// old managed-file cleanup follows it. Profile references remain name-based.
+    pub fn rename_passkey(
+        &self,
+        original: String,
+        replacement: PasskeyCommand,
+    ) -> std::result::Result<PasskeyOutcome, MutationFailure> {
+        let mut keys = Registry::open(self.root.join("passkeys.toml"))
+            .map_err(|e| MutationFailure::new(MutationStage::PasskeyRead, e))?;
+        let result = prepare_key_rename(&mut keys, &original, &replacement)
+            .map_err(|e| MutationFailure::new(MutationStage::PasskeyRead, e))?;
+        let mut outcome = self.apply_passkey(&mut keys, replacement)?;
+        if let Some(old) = result {
+            outcome.cleanup = self.cleanup(&old, &keys);
+        }
+        Ok(outcome)
+    }
     fn apply_passkey(
         &self,
         keys: &mut Registry,
@@ -309,12 +332,15 @@ impl RemoteFileStore {
             return Err(failure);
         }
         if let Some(old) = cleanup {
-            outcome.cleanup = self.cleanup(&old);
+            outcome.cleanup = self.cleanup(&old, keys);
         }
         Ok(outcome)
     }
-    fn cleanup(&self, old: &Passkey) -> ManagedCleanup {
+    fn cleanup(&self, old: &Passkey, registry: &Registry) -> ManagedCleanup {
         let path = Path::new(&old.path);
+        if let Err(e) = registry.reject_alias(path) {
+            return ManagedCleanup::Failed(e.to_string());
+        }
         match fs::symlink_metadata(path) {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return ManagedCleanup::Missing,
             Err(e) => return ManagedCleanup::Failed(e.to_string()),
@@ -345,6 +371,7 @@ fn apply_profile(registry: &mut Registry, command: ProfileCommand) -> Result<Pro
     let name = match &command {
         ProfileCommand::Put(p) | ProfileCommand::Insert(p) => &p.name,
         ProfileCommand::Patch { name, .. } | ProfileCommand::Remove { name } => name,
+        ProfileCommand::Rename { original, .. } => original,
     };
     let idx = registry.find("profile", name)?;
     let mut outcome = ProfileOutcome {
@@ -366,13 +393,24 @@ fn apply_profile(registry: &mut Registry, command: ProfileCommand) -> Result<Pro
                 .entries("profile")?
                 .get_mut(i)
                 .expect("located entry");
-            if let Some(expected) = patch.expected {
-                let current = projection(table).context("invalid target profile")?;
-                if current != expected {
-                    return Err(MutationReason::Changed.into());
-                }
+            patch_entry(table, patch)?;
+            outcome.profile = projection(table);
+        }
+        ProfileCommand::Rename {
+            original,
+            name,
+            patch,
+        } => {
+            if original != name && registry.find("profile", &name)?.is_some() {
+                return Err(MutationReason::AlreadyExists.into());
             }
-            apply_patch(table, patch.fields, patch.label, patch.passkey_ref)?;
+            let i = idx.ok_or(MutationReason::NotFound)?;
+            let table = registry
+                .entries("profile")?
+                .get_mut(i)
+                .expect("located entry");
+            patch_entry(table, patch)?;
+            table["name"] = value(name);
             outcome.profile = projection(table);
         }
         command => {
@@ -408,6 +446,50 @@ fn apply_profile(registry: &mut Registry, command: ProfileCommand) -> Result<Pro
     }
     Ok(outcome)
 }
+fn patch_entry(table: &mut toml_edit::Table, patch: ProfilePatch) -> Result<()> {
+    if let Some(expected) = patch.expected {
+        let current = projection(table).context("invalid target profile")?;
+        if current != expected {
+            return Err(MutationReason::Changed.into());
+        }
+    }
+    if let Some(kind) = patch.kind {
+        table["kind"] = value(kind);
+    }
+    apply_patch(table, patch.fields, patch.label, patch.passkey_ref)
+}
+fn prepare_key_rename(
+    keys: &mut Registry,
+    original: &str,
+    replacement: &PasskeyCommand,
+) -> Result<Option<Passkey>> {
+    let (name, next_path) = match replacement {
+        PasskeyCommand::Path { name, path } => (name, Some(path.as_str())),
+        PasskeyCommand::Inline { name, .. } => (name, None),
+        PasskeyCommand::Remove { .. } => anyhow::bail!("rename requires a replacement credential"),
+    };
+    let idx = keys
+        .find("passkey", original)?
+        .ok_or(MutationReason::NotFound)?;
+    if original != name && keys.find("passkey", name)?.is_some() {
+        return Err(MutationReason::AlreadyExists.into());
+    }
+    let table = keys
+        .entries("passkey")?
+        .get_mut(idx)
+        .expect("located entry");
+    let old: Passkey = typed(table)?;
+    table["name"] = value(name);
+    // Same-name inline replaces the same managed file; a path reference can take ownership
+    // of that file without deleting it. A different replacement leaves the old file to clean.
+    let clean_old = old.is_managed()
+        && match next_path {
+            Some(path) => path != old.path,
+            None => original != name,
+        };
+    Ok(clean_old.then_some(old))
+}
+
 fn apply_patch(
     table: &mut toml_edit::Table,
     fields: BTreeMap<String, Option<FieldValue>>,

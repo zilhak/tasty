@@ -470,3 +470,173 @@ fn registry_aliasing_inline_file_never_takes_the_same_lock_twice() {
         assert_eq!(fs::read_to_string(key).unwrap(), "version=1\n");
     }
 }
+
+#[test]
+fn profile_rename_preserves_raw_fields_and_rejects_name_conflicts_atomically() {
+    use tasty_remote_profiles::MutationReason;
+    let dir = tempfile::tempdir().unwrap();
+    let store = RemoteFileStore::at(dir.path());
+    let path = dir.path().join("remote-profiles.toml");
+    fs::write(&path,"# keep\n[[profile]]\nname='old'\nkind='future'\nextra=42\n[profile.fields]\ninvalid=false\nuser='before'\n").unwrap();
+    let mut delta = ProfilePatch {
+        kind: Some("ssh".into()),
+        ..Default::default()
+    };
+    delta.fields.insert("user".into(), None);
+    delta.fields.insert("host".into(), Some("fixture".into()));
+    let outcome = store
+        .profile(
+            ProfileCommand::Rename {
+                original: "old".into(),
+                name: "new".into(),
+                patch: delta,
+            },
+            None,
+        )
+        .unwrap();
+    assert_eq!(outcome.profile.unwrap().name, "new");
+    let text = fs::read_to_string(&path).unwrap();
+    assert!(text.contains("# keep"));
+    let raw: toml::Value = toml::from_str(&text).unwrap();
+    assert_eq!(raw["profile"][0]["extra"].as_integer(), Some(42));
+    assert_eq!(
+        raw["profile"][0]["fields"]["invalid"].as_bool(),
+        Some(false)
+    );
+    assert!(raw["profile"][0]["fields"].get("user").is_none());
+    store.profile(put("taken"), None).unwrap();
+    let before = fs::read(&path).unwrap();
+    let error = store
+        .profile(
+            ProfileCommand::Rename {
+                original: "new".into(),
+                name: "taken".into(),
+                patch: Default::default(),
+            },
+            None,
+        )
+        .unwrap_err();
+    assert_eq!(error.reason, MutationReason::AlreadyExists);
+    assert_eq!(fs::read(&path).unwrap(), before);
+}
+#[test]
+fn passkey_rename_commits_list_then_cleans_managed_original_and_keeps_user_paths() {
+    use tasty_remote_profiles::MutationReason;
+    let dir = tempfile::tempdir().unwrap();
+    let store = RemoteFileStore::at(dir.path());
+    store
+        .passkey(PasskeyCommand::Inline {
+            name: "old".into(),
+            secret: "fixture".into(),
+        })
+        .unwrap();
+    let result = store
+        .rename_passkey(
+            "old".into(),
+            PasskeyCommand::Inline {
+                name: "new".into(),
+                secret: "replacement fixture".into(),
+            },
+        )
+        .unwrap();
+    assert_eq!(result.cleanup, ManagedCleanup::Removed);
+    assert!(!dir.path().join("passkeys/old").exists());
+    assert!(dir.path().join("passkeys/new").exists());
+    let user = dir.path().join("user-file");
+    fs::write(&user, "fixture").unwrap();
+    store
+        .passkey(PasskeyCommand::Path {
+            name: "user".into(),
+            path: user.to_string_lossy().into(),
+        })
+        .unwrap();
+    store
+        .rename_passkey(
+            "user".into(),
+            PasskeyCommand::Path {
+                name: "renamed-user".into(),
+                path: user.to_string_lossy().into(),
+            },
+        )
+        .unwrap();
+    assert!(user.exists());
+    let before = fs::read(dir.path().join("passkeys.toml")).unwrap();
+    let error = store
+        .rename_passkey(
+            "new".into(),
+            PasskeyCommand::Inline {
+                name: "renamed-user".into(),
+                secret: "fixture".into(),
+            },
+        )
+        .unwrap_err();
+    assert_eq!(error.reason, MutationReason::AlreadyExists);
+    assert_eq!(fs::read(dir.path().join("passkeys.toml")).unwrap(), before);
+    assert!(!dir.path().join("passkeys/renamed-user").exists());
+}
+#[cfg(unix)]
+#[test]
+fn rename_list_failure_keeps_original_and_reports_orphan_instead_of_cleanup() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let store = RemoteFileStore::at(dir.path());
+    store
+        .passkey(PasskeyCommand::Inline {
+            name: "old".into(),
+            secret: "fixture".into(),
+        })
+        .unwrap();
+    let list = dir.path().join("passkeys.toml");
+    let before = fs::read(&list).unwrap();
+    fs::set_permissions(&list, fs::Permissions::from_mode(0o400)).unwrap();
+    let error = store
+        .rename_passkey(
+            "old".into(),
+            PasskeyCommand::Inline {
+                name: "new".into(),
+                secret: "fixture".into(),
+            },
+        )
+        .unwrap_err();
+    assert_eq!(error.stage, MutationStage::PasskeySave);
+    assert!(error.secret_written.is_some());
+    assert_eq!(fs::read(&list).unwrap(), before);
+    assert!(dir.path().join("passkeys/old").exists());
+    assert!(dir.path().join("passkeys/new").exists());
+    fs::set_permissions(list, fs::Permissions::from_mode(0o600)).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn managed_cleanup_aliasing_the_registry_returns_partial_result_without_relocking() {
+    use std::os::unix::fs::symlink;
+    for rename in [false, true] {
+        let dir = tempfile::tempdir().unwrap();
+        let store = RemoteFileStore::at(dir.path());
+        fs::create_dir(dir.path().join("passkeys")).unwrap();
+        let key = dir.path().join("passkeys/key");
+        fs::write(
+            &key,
+            format!(
+                "version=1\n[[passkey]]\nname='key'\nkind='inline'\npath={}\n",
+                toml::Value::String(key.to_string_lossy().into())
+            ),
+        )
+        .unwrap();
+        symlink(&key, dir.path().join("passkeys.toml")).unwrap();
+        let result = if rename {
+            store.rename_passkey(
+                "key".into(),
+                PasskeyCommand::Inline {
+                    name: "new".into(),
+                    secret: "fixture".into(),
+                },
+            )
+        } else {
+            store.passkey(PasskeyCommand::Remove { name: "key".into() })
+        };
+        assert!(matches!(result.unwrap().cleanup, ManagedCleanup::Failed(_)));
+        assert!(key.exists());
+        assert!(toml::from_str::<toml::Value>(&fs::read_to_string(key).unwrap()).is_ok());
+    }
+}
