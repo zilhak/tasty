@@ -57,7 +57,7 @@
 
 ## 파일 참여자 API와 standalone CLI 저장
 
-`RemoteFileStore`는 파일 worker와 standalone CLI가 공유하는 동기 명령 경계다. host의 비동기 receipt 연결은 각 소비자가 별도로 수행한다. 기존 `load`/`save` 호환 API의 모든 호출자가 이 경계로 이행됐다는 뜻은 아니다.
+`RemoteFileStore`는 파일 worker와 standalone CLI가 공유하는 동기 명령 경계다. 실행 중 IPC·GUI 저장과 탐지 상태 patch는 같은 file writer에 소유 명령을 제출한다. standalone CLI는 호출 스레드에서 같은 참여자 API를 사용한다. 호환 `save` API가 남아 있어도 host의 동기 저장 fallback으로 사용하지 않는다.
 
 - `insert_passkey`는 새 이름을 같은 목록 잠금 안에서 검사한 뒤 생성한다. 중복 이름은 inline 파일을 쓰기 전에 `AlreadyExists`로 거절한다. 기존 `passkey` upsert와 CLI의 덮어쓰기 동작은 유지한다.
 - 호환 읽기 API는 파일 없음·읽기 실패·파싱 실패 시 빈 목록으로 폴백한다. 오류 로그에는 고정 파일명과 I/O 종류 또는 invalid TOML 원인만 남기며 입력 본문을 싣지 않는다. 읽기 실패나 손상이 확인된 원본은 읽기 과정에서 바꾸지 않는다.
@@ -68,3 +68,13 @@
 - inline 파일 → passkeys 목록 → profile 참조 순서로 확정한다. 파일 사이 transaction이나 rollback은 없다. `MutationFailure`는 실패 단계와 `secret_written`·`passkeys_saved`를 구분한다. 기존 참조는 실패 전 상태로 남을 수 있고 새 비밀 파일은 orphan으로 남을 수 있다.
 - inline 임시 파일은 내용 쓰기 전에 Unix 0600 또는 Windows 현재 사용자만 허용하는 보호 ACL을 적용·검증한다. 넓은 기존 mode/ACL을 물려받지 않는다. 관리 inline symlink는 원본을 보존하며 거절한다. Windows ACL 설정 도구를 실행하거나 검증할 수 없으면 payload를 쓰지 않는다.
 - 삭제는 목록 확정 뒤 관리 파일 정리를 시도한다. 목록 저장 실패면 기존 관리 파일을 지우지 않는다. path-kind 파일은 수정·삭제하지 않는다. 관리 경로 소유 확인/삭제 실패는 `ManagedCleanup::Failed`로 목록 반영과 구분한다. 이 경우 CLI는 목록이 반영됐지만 정리가 실패했다고 오류를 반환한다.
+
+## 실행 중 저장과 탐지 완료
+
+- IPC 저장·삭제는 원 caller를 보유하고 typed receipt 뒤 실제 결과를 한 번 돌려준다. GUI는 실패한 폼·삭제 확인과 입력값을 유지하고, 같은 popup의 같은 초안에만 완료를 적용한다. popup·View가 닫혀도 접수된 저장은 끝내며 replacement observer에 reveal·완료 효과를 전달하지 않는다.
+- GUI 저장 대기 중에는 저장·삭제 버튼을 비활성화하고 편집·취소는 계속 허용한다. worker input/result와 별도로 보유하는 GUI 요청 복사본은 기존 queue 기본 count/byte 한도 안에서 접수하며, 마지막 소유자가 결과를 처리하면 예산을 돌려준다. 이는 보유값의 추정 바이트 예산이며 RSS 상한은 아니다.
+- form 편집은 보이는 변경 필드만 patch하며 표시하지 않는 list 값·foreign 필드와 최신의 미변경 필드를 유지한다. 새 Passkey는 잠금 안에서 중복을 거절한다. backend의 `ManagedCleanup::Failed`는 transport 성공과 달리 실제 부분 실패로 분류한다.
+- 명시 shell은 기존 실패 표시를 지운다. GUI는 첫 변경 patch에서 지우며, IPC upsert는 저장 결과에 표시가 남아 있을 때 CLI와 같은 expected 조건부 patch를 같은 worker 명령 안에서 실행한다. 후속 상태 단계 실패는 이미 확정된 profile·연결 자격증명을 부분 성공으로 알리고 외부 변경을 덮지 않는다.
+- 저장 성공 뒤 자동 탐지를 접수한다. 탐지 입력은 같은 file queue의 ordered fresh read로 준비하고 이전 같은 이름 probe를 취소한다. 준비 비교는 `detect_failed` 차이만 제외하며, 실제 상태 저장은 새로 읽은 profile 전체 typed projection을 expected 조건으로 검사한다. 바뀌거나 삭제된 profile을 오래된 결과로 복원하지 않는다.
+- SSH worker의 종료만으로 완료를 발표하지 않는다. 상태 patch receipt를 보유하고 저장 결과 뒤 탐지 완료를 알린다. 실패·Unknown을 성공으로 바꾸거나 재실행하지 않는다. 종료 시 새 준비·probe·patch 제출을 멈추고 이미 접수한 receipt를 기존 drain 기한 안에서 수거한다. 파일 receipt·GUI 결과 수거가 generic deferred reply보다 먼저다.
+- inline/list/reference는 파일 사이 transaction이 아니다. 실패 응답은 `saved`와 `partial`, `secret_written`, `passkeys_saved`, `stage`를 구분한다. Unknown의 `saved`/`partial`은 null이며 성공·rollback을 추정하지 않는다. 알려진 목록 삭제 뒤 정리 실패는 `removed`/`cleanup_failed`와 목록 반영을 별도로 알린다.

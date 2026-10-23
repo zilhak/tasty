@@ -70,6 +70,8 @@ pub(crate) mod preset;
 mod pressure;
 pub(crate) mod pty;
 mod recent;
+#[cfg(test)]
+mod remote_file_tests;
 mod remote_profile;
 mod settings;
 pub(crate) mod surface;
@@ -1015,15 +1017,15 @@ fn route_engine_handler(
         "remote.profile.get" => remote_profile::handle_get(id, &request.params),
         "remote.profile.add" => remote_profile::handle_add(core, id, &request.params),
         "remote.profile.detect" => remote_profile::handle_detect(core, id, &request.params),
-        "remote.profile.remove" => remote_profile::handle_remove(id, &request.params),
+        "remote.profile.remove" => remote_profile::handle_remove(core, id, &request.params),
         // SSH를 실행하지 않고 로컬 설정 파일을 읽는다.
         "remote.profile.list_local" => remote_profile::handle_list_local(id),
-        "remote.profile.import" => remote_profile::handle_import(id, &request.params),
+        "remote.profile.import" => remote_profile::handle_import(core, id, &request.params),
         // 자격증명 조회는 비밀 값과 파일 경로를 반환하지 않는다.
         "remote.passkey.list" => passkey::handle_list(id),
         "remote.passkey.get" => passkey::handle_get(id, &request.params),
-        "remote.passkey.add" => passkey::handle_add(id, &request.params),
-        "remote.passkey.remove" => passkey::handle_remove(id, &request.params),
+        "remote.passkey.add" => passkey::handle_add(core, id, &request.params),
+        "remote.passkey.remove" => passkey::handle_remove(core, id, &request.params),
         _ => return None,
     })
 }

@@ -149,6 +149,8 @@ pub(crate) struct App {
     pub(crate) journal: journal::JournalApplication,
     pub(crate) preset_io: preset_capture::PendingPresetFiles,
     #[cfg(feature = "gui")]
+    pub(crate) remote_io: remote_tool_files::Pending,
+    #[cfg(feature = "gui")]
     pub(crate) settings_edit_owner: Option<settings_edit::SettingsEditOwner>,
     #[cfg(feature = "gui")]
     pub(crate) port_scans: port_scans::PortScans,
@@ -331,6 +333,7 @@ impl App {
             journal,
             pending_server_attaches: Vec::new(),
             preset_io: Default::default(),
+            remote_io: Default::default(),
             pending_recovery_notices: Vec::new(),
             #[cfg(feature = "gui")]
             next_restore_notice_id: 0,
@@ -628,6 +631,7 @@ pub(crate) mod html_runtime;
 #[cfg(feature = "gui")]
 pub(crate) mod webview_sync;
 
+pub(crate) mod remote_file_commands;
 #[cfg(feature = "gui")]
 pub(crate) mod remote_tool_files;
 #[cfg(feature = "gui")]

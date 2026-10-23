@@ -618,6 +618,7 @@ impl App {
         self.poll_child_registry_effects();
         self.finish_preset_files();
         self.finish_plugin_files();
+        self.finish_remote_files();
         self.finish_settings_exports();
         self.settle_settings_saves();
         self.services

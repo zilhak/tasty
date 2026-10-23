@@ -56,7 +56,7 @@
 - **프로필 목록**: 각 행 = 이름 + 요약(user@host:port) + 편집/삭제. **tasty-attach kind 는 이 목록에 나오지 않는다**(Attach 탭 전담).
 - **추가/편집 폼 (ssh)**: name · host · user · port · label 텍스트 입력 + **shell**(콤보박스, 선택 가능 셸 목록 + `auto`) + **passkey**(저장된 passkey 선택 드롭다운, `passkey_ref`) + 저장/취소 — **순수 연결정보만**(remote_tasty 는 Attach 탭으로 이관, docs/features/remote-profiles/index.md). (라벨 키 `field_name`/`field_host`/`field_user`/`field_port`/`field_label`/`field_shell`/`field_passkey`.)
   - **인증 = passkey**: GUI 폼에 `identity_file` 입력은 없다 — passkey 를 고르면 실제 ssh `-i` 경로는 내부에서 `passkey_ref → Passkey.path` 로 resolve 한다(`crates/tasty-ssh/src/lib.rs`).
-  - **`port_mode` 는 ssh 폼 입력이 아니다**: shell 선택에서 자동 도출되는 내부 필드(`shell_to_port_mode`). `auto` 면 저장 후 워커가 감지해 채운다. (attach 가 명시 override 하려면 Attach 폼의 Port mode.)
+  - **`port_mode` 는 ssh 폼 입력이 아니다**: shell 선택에서 자동 도출되는 내부 필드(`shell_to_port_mode`). `auto`면 저장 후 worker가 도달성을 확인하고 `detect_failed`만 갱신한다. 감지한 port mode는 파일에 쓰지 않는다. (attach 가 명시 override 하려면 Attach 폼의 Port mode.)
   - (`use_agent` / `extra_options` / `remote_command` 은 폼에 없음 — 파일 직접 편집.)
 - **검증 에러**: 이름 빈 값/중복, host 빈 값, port 형식, 저장 실패 메시지.
 - **로컬 SSH config 섹션** (원격 접속 프로필 탭 전용, 프로필 목록 **아래 같은 스크롤**, 하위 영역): `border-frame` 구분선 + 섹션 헤더(대문자 `SSH 설정에 등록된 호스트` 라벨(en `From ssh config`) + config 경로 mono + 우측 호스트 수) + 행들. 섹션 본문은 프로필 행보다 `space-xs` 만큼 들여쓰고, 구분선은 들여쓰지 않는다 — 프로필 목록과 구분되는 하위 영역임을 나타낸다.
@@ -104,7 +104,8 @@ add-bar 는 `Passkey 추가` 버튼이다. 행 우측 액션은 Reveal·편집·
 ## 상태별 시각
 
 - **목록 / 추가 / 편집**: 폼은 추가·편집 시 표시(편집이면 기존 값 채움).
-- **검증 에러**: 입력 오류 시 해당 메시지.
+- **저장 대기**: 저장·삭제 버튼만 비활성화한다. 폼 편집과 취소·닫기는 가능하며, 접수된 저장은 popup을 닫아도 완료한다. 늦은 완료는 새 popup이나 이후 수정한 초안을 덮지 않는다.
+- **검증·저장 에러**: 실패한 폼·삭제 확인과 입력을 유지하고 해당 메시지를 표시한다. 목록 성공과 관리파일 정리 실패는 부분 실패로 알린다.
 - **Attach 상태 배지**: 비활성(accent-warning) / 프로필 없음(accent-warning) — 목록 전용, 저장·로드에는 영향 없음.
 
 ## 시각 소스

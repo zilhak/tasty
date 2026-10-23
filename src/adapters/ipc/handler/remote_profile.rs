@@ -2,13 +2,14 @@
 //! 이전 tool.ssh/ssh.profile 메서드는 alias 정규화를 거쳐 들어온다.
 
 use super::params::{self, p_try};
+use crate::app::remote_file_commands as files;
 use serde_json::{Value, json};
 
 use tasty_ipc::protocol::JsonRpcResponse;
 use tasty_remote_profiles::{
-    ImportError, Passkeys, RemoteProfile, RemoteProfiles, config_availability, enumerate_hosts,
-    imported_as, is_valid_shell, prepare_import, sanitize_passkey_name, shell_to_port_mode,
-    user_config_path,
+    ImportError, PasskeyCommand, ProfileCommand, RemoteProfile, RemoteProfiles,
+    config_availability, enumerate_hosts, imported_as, is_valid_shell, prepare_import,
+    sanitize_passkey_name, shell_to_port_mode, user_config_path,
 };
 
 /// 존재하지 않는 프로필 이름 또는 SSH alias.
@@ -151,49 +152,45 @@ pub(crate) fn handle_add(
 
     apply_profile_fields(&mut p, params);
 
-    let mut passkeys = Passkeys::load();
     let will_detect = if kind == "ssh" {
         p_try!(apply_ssh_profile(&mut p, params, &id))
     } else {
         false
     };
 
-    // 자격증명: passkey_ref 직접 지정 우선, 아니면 identity_file → path passkey.
-    if let Some(pr) = params.get("passkey_ref").and_then(|v| v.as_str()) {
-        p.passkey_ref = Some(pr.to_string());
-    } else if let Some(idf) = params.get("identity_file").and_then(|v| v.as_str()) {
-        let pk_name = format!("{}-key", sanitize_passkey_name(name));
-        if let Err(e) = passkeys.upsert_path(&pk_name, idf.to_string()) {
-            return JsonRpcResponse::invalid_params(id, format!("invalid identity passkey: {e}"));
-        }
-        p.passkey_ref = Some(pk_name);
-    }
-
-    let mut profiles = RemoteProfiles::load();
-    let replaced = profiles.get(name).is_some();
-    profiles.upsert(p);
-    if let Err(e) = passkeys.save() {
-        return JsonRpcResponse::internal_error(id, format!("failed to save passkey: {e}"));
-    }
-    match profiles.save() {
-        Ok(()) => {
-            let detecting = will_detect
-                && match core.profile_detections.enqueue(name.to_string()) {
-                    Ok(_) => true,
-                    Err(error) => {
-                        tracing::warn!(%error,profile=name,"profile saved but detection admission failed");
-                        false
-                    }
-                };
+    let linked = if let Some(reference) = params.get("passkey_ref").and_then(Value::as_str) {
+        p.passkey_ref = Some(reference.to_owned());
+        None
+    } else if let Some(path) = params.get("identity_file").and_then(Value::as_str) {
+        let name = format!("{}-key", sanitize_passkey_name(name));
+        p.passkey_ref = Some(name.clone());
+        Some(PasskeyCommand::Path {
+            name,
+            path: path.to_owned(),
+        })
+    } else {
+        None
+    };
+    let name = name.to_owned();
+    files::reply(
+        core,
+        id,
+        files::Request::Profile {
+            command: Box::new(ProfileCommand::Put(p)),
+            linked,
+            detect: will_detect,
+        },
+        move |core, id, output| {
+            let detecting = output.begin_detection(core).is_some();
+            let files::Value::Profile(saved) = output.value else {
+                return JsonRpcResponse::internal_error(id, "unexpected remote profile result");
+            };
             JsonRpcResponse::success(
                 id,
-                json!({ "saved": true, "name": name, "replaced": replaced, "detecting": detecting }),
+                json!({"saved":true,"name":name,"replaced":saved.replaced,"detecting":detecting}),
             )
-        }
-        Err(e) => {
-            JsonRpcResponse::internal_error(id, format!("failed to save remote profile: {e}"))
-        }
-    }
+        },
+    )
 }
 
 /// `remote.profile.detect` { name } → 재감지(프로브 체인)를 워커 스레드에서 실행.
@@ -253,7 +250,11 @@ pub(crate) fn handle_list_local(id: Value) -> JsonRpcResponse {
 
 /// alias만 host에 저장한다. 실제 접속 설정은 접속 시 SSH가 해석한다.
 /// 가져오기는 SSH 연결을 시작하지 않는다. 셸 감지는 detect로 별도 요청한다.
-pub(crate) fn handle_import(id: Value, params: &Value) -> JsonRpcResponse {
+pub(crate) fn handle_import(
+    core: &crate::app::services::AppServices,
+    id: Value,
+    params: &Value,
+) -> JsonRpcResponse {
     let Some(from) = params.get("from").and_then(|v| v.as_str()) else {
         return JsonRpcResponse::invalid_params(id, "Missing required 'from' parameter");
     };
@@ -264,41 +265,49 @@ pub(crate) fn handle_import(id: Value, params: &Value) -> JsonRpcResponse {
         .get("label")
         .and_then(|v| v.as_str())
         .map(str::to_string);
-    let mut profiles = RemoteProfiles::load();
+    let profiles = RemoteProfiles::load();
     let profile = match prepare_import(&profiles, &enumerate_hosts(), from, name, label) {
         Ok(p) => p,
         Err(e) => return import_error_response(id, e),
     };
-    profiles.upsert(profile);
-    match profiles.save() {
-        Ok(()) => JsonRpcResponse::success(
-            id,
-            json!({ "saved": true, "name": name, "from": from, "detecting": false }),
-        ),
-        Err(e) => {
-            JsonRpcResponse::internal_error(id, format!("failed to save remote profile: {e}"))
-        }
-    }
+    let name = name.to_owned();
+    let from = from.to_owned();
+    files::reply(
+        core,
+        id,
+        files::Request::Profile {
+            command: Box::new(ProfileCommand::Insert(profile)),
+            linked: None,
+            detect: false,
+        },
+        move |_, id, _| {
+            JsonRpcResponse::success(
+                id,
+                json!({"saved":true,"name":name,"from":from,"detecting":false}),
+            )
+        },
+    )
 }
 
-pub(crate) fn handle_remove(id: Value, params: &Value) -> JsonRpcResponse {
-    let Some(name) = params.get("name").and_then(|v| v.as_str()) else {
+pub(crate) fn handle_remove(
+    core: &crate::app::services::AppServices,
+    id: Value,
+    params: &Value,
+) -> JsonRpcResponse {
+    let Some(name) = params.get("name").and_then(Value::as_str) else {
         return JsonRpcResponse::invalid_params(id, "Missing required 'name' parameter");
     };
-    let mut profiles = RemoteProfiles::load();
-    if !profiles.remove(name) {
-        return JsonRpcResponse::error(
-            id,
-            ERR_NOT_FOUND,
-            format!("remote profile '{name}' not found"),
-        );
-    }
-    match profiles.save() {
-        Ok(()) => JsonRpcResponse::success(id, json!({ "removed": true, "name": name })),
-        Err(e) => {
-            JsonRpcResponse::internal_error(id, format!("failed to save remote profile: {e}"))
-        }
-    }
+    let name = name.to_owned();
+    files::reply(
+        core,
+        id,
+        files::Request::Profile {
+            command: Box::new(ProfileCommand::Remove { name: name.clone() }),
+            linked: None,
+            detect: false,
+        },
+        move |_, id, _| JsonRpcResponse::success(id, json!({"removed":true,"name":name})),
+    )
 }
 
 #[cfg(test)]

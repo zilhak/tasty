@@ -31,6 +31,8 @@ impl App {
         self.finish_preset_files();
         self.finish_plugin_files();
         #[cfg(feature = "gui")]
+        self.finish_remote_files();
+        #[cfg(feature = "gui")]
         self.finish_settings_exports();
         #[cfg(feature = "gui")]
         self.settle_settings_saves();

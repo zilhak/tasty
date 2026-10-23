@@ -3,8 +3,9 @@
 
 use serde_json::{Value, json};
 
+use crate::app::remote_file_commands as files;
 use tasty_ipc::protocol::JsonRpcResponse;
-use tasty_remote_profiles::Passkeys;
+use tasty_remote_profiles::{PasskeyCommand, Passkeys};
 
 fn passkey_meta(p: &tasty_remote_profiles::Passkey) -> Value {
     json!({ "name": p.name, "kind": p.kind })
@@ -28,7 +29,11 @@ pub(crate) fn handle_get(id: Value, params: &Value) -> JsonRpcResponse {
 }
 
 /// path는 사용자 파일을 참조하고 inline은 관리 파일에 저장한다. 값은 응답하지 않는다.
-pub(crate) fn handle_add(id: Value, params: &Value) -> JsonRpcResponse {
+pub(crate) fn handle_add(
+    core: &crate::app::services::AppServices,
+    id: Value,
+    params: &Value,
+) -> JsonRpcResponse {
     let Some(name) = params.get("name").and_then(|v| v.as_str()) else {
         return JsonRpcResponse::invalid_params(id, "Missing required 'name' parameter");
     };
@@ -42,11 +47,15 @@ pub(crate) fn handle_add(id: Value, params: &Value) -> JsonRpcResponse {
         return JsonRpcResponse::invalid_params(id, "Missing required 'value' parameter");
     };
 
-    let mut passkeys = Passkeys::load();
-    let replaced = passkeys.get(name).is_some();
-    let res = match kind {
-        "path" => passkeys.upsert_path(name, value.to_string()),
-        "inline" => passkeys.upsert_inline(name, value),
+    let command = match kind {
+        "path" => PasskeyCommand::Path {
+            name: name.to_owned(),
+            path: value.to_owned(),
+        },
+        "inline" => PasskeyCommand::Inline {
+            name: name.to_owned(),
+            secret: value.to_owned(),
+        },
         other => {
             return JsonRpcResponse::invalid_params(
                 id,
@@ -54,29 +63,38 @@ pub(crate) fn handle_add(id: Value, params: &Value) -> JsonRpcResponse {
             );
         }
     };
-    if let Err(e) = res {
-        return JsonRpcResponse::invalid_params(id, format!("invalid passkey: {e}"));
-    }
-    match passkeys.save() {
-        Ok(()) => JsonRpcResponse::success(
-            id,
-            json!({ "saved": true, "name": name, "kind": kind, "replaced": replaced }),
-        ),
-        Err(e) => JsonRpcResponse::internal_error(id, format!("failed to save passkey: {e}")),
-    }
+    let name = name.to_owned();
+    let kind = kind.to_owned();
+    files::reply(
+        core,
+        id,
+        files::Request::Passkey(command),
+        move |_, id, output| {
+            let files::Value::Passkey(saved) = output.value else {
+                return JsonRpcResponse::internal_error(id, "unexpected passkey result");
+            };
+            JsonRpcResponse::success(
+                id,
+                json!({"saved":true,"name":name,"kind":kind,"replaced":saved.replaced}),
+            )
+        },
+    )
 }
 
 /// inline 자격증명이면 관리 파일도 삭제한다.
-pub(crate) fn handle_remove(id: Value, params: &Value) -> JsonRpcResponse {
-    let Some(name) = params.get("name").and_then(|v| v.as_str()) else {
+pub(crate) fn handle_remove(
+    core: &crate::app::services::AppServices,
+    id: Value,
+    params: &Value,
+) -> JsonRpcResponse {
+    let Some(name) = params.get("name").and_then(Value::as_str) else {
         return JsonRpcResponse::invalid_params(id, "Missing required 'name' parameter");
     };
-    let mut passkeys = Passkeys::load();
-    if !passkeys.remove(name) {
-        return JsonRpcResponse::error(id, -32040, format!("passkey '{name}' not found"));
-    }
-    match passkeys.save() {
-        Ok(()) => JsonRpcResponse::success(id, json!({ "removed": true, "name": name })),
-        Err(e) => JsonRpcResponse::internal_error(id, format!("failed to save passkey: {e}")),
-    }
+    let name = name.to_owned();
+    files::reply(
+        core,
+        id,
+        files::Request::Passkey(PasskeyCommand::Remove { name: name.clone() }),
+        move |_, id, _| JsonRpcResponse::success(id, json!({"removed":true,"name":name})),
+    )
 }

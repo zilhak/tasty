@@ -203,7 +203,11 @@ impl AppServicesBuilder {
             explorer_clipboard: Default::default(),
             #[cfg(feature = "gui")]
             file_clipboard: Default::default(),
-            profile_detections: Default::default(),
+            profile_detections: tasty_remote::profile_detection::ProfileDetections::with_file_sink(
+                crate::app::remote_file_commands::detection_sink(
+                    self.file_writer.as_ref().map(|parts| parts.writer.handle()),
+                ),
+            ),
             approval_store: Arc::new(tasty_approval::ApprovalStore::new()),
             telemetry_seq: Arc::new(tasty_telemetry::TelemetrySeq::new()),
             anomaly_detector: Arc::new(tasty_telemetry::AnomalyDetector::new()),

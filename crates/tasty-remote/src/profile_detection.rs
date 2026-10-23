@@ -1,6 +1,11 @@
-//! Profile probes own SSH cancellation and worker joins independently of their GUI observers.
-use std::thread::JoinHandle;
-use tasty_remote_profiles::{Passkeys, RemoteProfile, RemoteProfiles};
+//! Profile probes retain preparation, SSH workers and saved status receipts independently of Views.
+mod jobs;
+pub mod persistence;
+use std::{
+    path::PathBuf,
+    sync::{Arc, Mutex},
+};
+use tasty_remote_profiles::RemoteProfile;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct DetectionId(pub u64);
@@ -9,146 +14,136 @@ pub struct DetectionUpdate {
     pub name: String,
     pub result: Result<String, String>,
 }
-struct Job {
-    id: DetectionId,
-    original: RemoteProfile,
-    cancel: tasty_ssh::SshCancel,
-    worker: JoinHandle<Result<String, String>>,
-}
 #[derive(Default)]
-pub struct ProfileDetections {
-    jobs: Vec<Job>,
+struct State {
+    jobs: Vec<jobs::Job>,
     next: u64,
     stopping: bool,
 }
+#[derive(Default)]
+struct Inner {
+    state: Mutex<State>,
+    sink: Option<persistence::Submit>,
+}
+#[derive(Clone, Default)]
+pub struct ProfileDetections(Arc<Inner>);
 impl ProfileDetections {
-    pub fn enqueue(&mut self, name: String) -> Result<DetectionId, String> {
-        if self.stopping {
+    pub fn with_file_sink(sink: Option<persistence::Submit>) -> Self {
+        Self(Arc::new(Inner {
+            state: Mutex::new(State::default()),
+            sink,
+        }))
+    }
+    pub fn enqueue(&self, name: String) -> Result<DetectionId, String> {
+        let root = tasty_utils::path::tasty_home().ok_or("remote profile home is unavailable")?;
+        self.prepare(root, name, None)
+    }
+    /// The saved profile is compared with the ordered fresh input before starting SSH.
+    pub fn enqueue_saved_at(
+        &self,
+        root: PathBuf,
+        profile: RemoteProfile,
+    ) -> Result<DetectionId, String> {
+        self.prepare(root, profile.name.clone(), Some(profile))
+    }
+    fn prepare(
+        &self,
+        root: PathBuf,
+        name: String,
+        expected: Option<RemoteProfile>,
+    ) -> Result<DetectionId, String> {
+        let mut state = self.0.state.lock().unwrap();
+        if state.stopping {
             return Err("remote profile detection is shutting down".into());
         }
-        if self.jobs.len() >= 8 {
+        if state.jobs.len() >= 8 {
             return Err("remote profile detection capacity exhausted".into());
         }
-        let original = RemoteProfiles::load()
-            .get(&name)
-            .cloned()
-            .ok_or("remote profile not found")?;
-        let passkeys = Passkeys::load();
+        let sink = self
+            .0
+            .sink
+            .as_ref()
+            .ok_or("profile file writer is unavailable")?;
         let id = DetectionId(
-            self.next
+            state
+                .next
                 .checked_add(1)
                 .ok_or("remote profile detection ID exhausted")?,
         );
-        self.next = id.0;
-        // A replacement probe invalidates the earlier result, but retains its worker until join.
-        for job in &self.jobs {
-            if job.original.name == name {
+        let receipt = sink(persistence::Request::Load {
+            root,
+            name: name.clone(),
+            expected,
+        })
+        .map_err(|error| error.message)?;
+        // Only accepted preparation invalidates an older probe. Earlier status writes already
+        // executing finish before this ordered read; later old submissions see cancellation.
+        for job in &state.jobs {
+            if job.name == name {
                 job.cancel.request_cancel();
             }
         }
-        let cancel = tasty_ssh::SshCancel::new();
-        let worker_cancel = cancel.clone();
-        let input = original.clone();
-        let worker = std::thread::Builder::new()
-            .name("remote-profile-detect".into())
-            .spawn(move || {
-                let _scope = worker_cancel.scope();
-                tasty_ssh::detect_for_profile(&input, &passkeys)
-                    .map(|mode| mode.as_str().to_owned())
-                    .map_err(|error| error.to_string())
-            })
-            .map_err(|error| error.to_string())?;
-        self.jobs.push(Job {
-            id,
-            original,
-            cancel,
-            worker,
-        });
+        state.next = id.0;
+        state.jobs.push(jobs::Job::preparing(id, name, receipt));
         Ok(id)
     }
-    pub fn poll(&mut self) -> Vec<DetectionUpdate> {
-        let mut updates = Vec::new();
-        let mut running = Vec::new();
-        for job in std::mem::take(&mut self.jobs) {
-            if !job.worker.is_finished() {
-                running.push(job);
-                continue;
-            }
-            let result = job
-                .worker
-                .join()
-                .unwrap_or_else(|_| Err("remote profile detection worker panicked".into()));
-            let result = if job.cancel.is_cancelled() || self.stopping {
-                Err("remote profile detection cancelled".into())
-            } else {
-                commit_detection_result(&job.original, result)
-            };
-            match &result {
-                Ok(mode) => {
-                    tracing::info!(profile=%job.original.name,%mode,"remote profile detection completed")
-                }
-                Err(error) => {
-                    tracing::warn!(profile=%job.original.name,%error,"remote profile detection did not complete")
-                }
-            }
-            updates.push(DetectionUpdate {
-                id: job.id,
-                name: job.original.name,
-                result,
-            });
-        }
-        self.jobs = running;
-        updates
+    pub fn poll(&self) -> Vec<DetectionUpdate> {
+        self.0.poll()
     }
     pub fn has_pending(&self) -> bool {
-        !self.jobs.is_empty()
+        !self.0.state.lock().unwrap().jobs.is_empty()
     }
-    pub fn begin_shutdown(&mut self) {
-        self.stopping = true;
-        for job in &self.jobs {
+    pub fn begin_shutdown(&self) {
+        self.0.begin_shutdown();
+    }
+    /// Counts unfinished preparation, SSH workers and already accepted status saves.
+    pub fn poll_shutdown(&self) -> usize {
+        self.0.begin_shutdown();
+        self.0.poll();
+        self.0.state.lock().unwrap().jobs.len()
+    }
+}
+impl Inner {
+    fn begin_shutdown(&self) {
+        let mut state = self.state.lock().unwrap();
+        state.stopping = true;
+        for job in &state.jobs {
             job.cancel.request_cancel();
         }
     }
-    /// The returned number counts actual unjoined workers, never UI timeouts.
-    pub fn poll_shutdown(&mut self) -> usize {
-        self.begin_shutdown();
-        self.poll();
-        self.jobs.len()
+    fn poll(&self) -> Vec<DetectionUpdate> {
+        let mut state = self.state.lock().unwrap();
+        let mut updates = Vec::new();
+        let stopping = state.stopping;
+        for job in std::mem::take(&mut state.jobs) {
+            match job.advance(stopping, self.sink.as_ref()) {
+                jobs::Progress::Pending(job) => state.jobs.push(job),
+                jobs::Progress::Done(update) => {
+                    match &update.result {
+                        Ok(mode) => {
+                            tracing::info!(profile=%update.name,%mode,"remote profile detection completed")
+                        }
+                        Err(error) => {
+                            tracing::warn!(profile=%update.name,%error,"remote profile detection did not complete")
+                        }
+                    }
+                    updates.push(update);
+                }
+            }
+        }
+        updates
     }
 }
-impl Drop for ProfileDetections {
+impl Drop for Inner {
     fn drop(&mut self) {
-        let remaining = self.poll_shutdown();
+        self.begin_shutdown();
+        self.poll();
+        let remaining = self.state.lock().unwrap().jobs.len();
         if remaining != 0 {
             tracing::warn!(
                 remaining,
-                "remote profile workers still unjoined at owner drop"
+                "remote profile owners still unfinished at owner drop"
             );
-        }
-    }
-}
-
-// Re-read at commit so an old worker cannot replace a changed or deleted profile.
-fn commit_detection_result(
-    original: &RemoteProfile,
-    result: Result<String, String>,
-) -> Result<String, String> {
-    // Re-read the file only at commit: an old probe must not replace an edited profile
-    // or restore a deleted one, nor overwrite unrelated entries from its start snapshot.
-    let mut profiles = RemoteProfiles::load();
-    if profiles.get(&original.name) != Some(original) {
-        Err("remote profile changed during detection".into())
-    } else {
-        let mut profile = original.clone();
-        if result.is_ok() {
-            profile.remove_field("detect_failed");
-        } else {
-            profile.set_field("detect_failed", "true");
-        }
-        profiles.upsert(profile);
-        match profiles.save() {
-            Ok(()) => result,
-            Err(error) => Err(format!("save: {error}")),
         }
     }
 }

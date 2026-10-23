@@ -313,8 +313,8 @@ writer를 거치는 IPC 요청은 결과가 나온 뒤 응답한다. 핸들러�
 | `tasty.port` | `publish_port_file_to` 완료 결과를 listener가 소유 | IPC 시작 완료 barrier | 예(공용 안전 교체, fsync 없음) | notify 정리 → 관측 원본/링크 비교·참여 잠금 → 완료 공개. 서버 Drop은 같은 잠금을 비차단 획득한 동안 열린 파일 identity·내용이 같은 공개 세대만 정리. 경합/identity 불명은 보존 |
 | 단일 실행 instance 파일 | `instance_file` | 메인 루프 | 예(sync 포함) | GUI만 쓴다 |
 | `webhooks.toml` | 호스트 `webhook::persist::WriteRequest`, CLI `webhook_port_file` | runtime port·registry는 기존 file writer, CLI·초기 prepare는 동기 실행 | 예(공용 교체, fsync 없음) | host 배열 교체·CLI port 변경·옛 포트 마이그레이션이 같은 참여자 잠금 안에서 최신 TOML을 읽고 해당 절만 변경 |
-| `remote-profiles.toml` | CLI는 `RemoteFileStore::profile`, 기존 host 소비자는 `RemoteProfiles::save` | CLI는 호출 스레드, 기존 IPC·탐지는 메인 루프 | CLI는 예(공용 교체·sync), 기존 save는 아니요 | 명령 API는 최신 TOML을 참여 잠금 안에서 patch한다. 기존 save 호출자는 참여하지 않는다 |
-| `passkeys.toml`과 `passkeys/<이름>` | CLI는 `RemoteFileStore::passkey`, 기존 host 목록은 `Passkeys::save`; inline 파일은 `materialize_inline_in` | CLI는 호출 스레드, 기존 IPC는 메인 루프 | CLI 목록은 공용 교체·sync, 기존 save는 직접 쓰기. inline은 Unix 0600·Windows 보호 ACL을 payload 전에 적용한 임시 파일을 sync 후 rename | CLI 명령은 목록 참여 잠금 사용. inline 파일 자체도 참여 잠금 사용. 파일 사이 transaction은 없고 부분 성공·관리파일 정리는 owned 결과로 구분한다 |
+| `remote-profiles.toml` | `RemoteFileStore::profile`의 소유 Put/Insert/Patch/Remove/Rename | 실행 중 IPC·GUI·탐지 상태는 file worker, standalone CLI는 호출 스레드 | 예(공용 교체·sync) | 최신 TOML 참여 잠금·조건부 expected patch. 원 receipt 뒤 응답·SSH 효과, 서로 다른 파일의 transaction은 없음 |
+| `passkeys.toml`과 `passkeys/<이름>` | `RemoteFileStore` passkey/insert_passkey/rename_passkey | 실행 중 IPC·GUI는 file worker, standalone CLI는 호출 스레드 | 목록은 공용 교체·sync. inline은 private temp·권한/ACL 검증 뒤 write·sync·rename | 목록 → inline 고정 잠금. 새 이름 중복은 payload 전에 거절하며, 목록 저장 뒤 실제 관리파일 정리 결과와 부분 성공을 owned receipt로 구분함 |
 | `plugins.toml` | `ConfigUpdate::execute`가 비활성·제거 표시, 권한·단축키 변경을 병합 | 런타임은 공용 file worker; 동기 bootstrap·library 경계는 아래 설명 | 예(공용 안전 교체·sync) | 참여 잠금 안에서 최신 문서에 변경 의도를 반영하고 원본 fingerprint·링크 대상을 확인. receipt 뒤 cache·런타임 효과 적용 |
 | `hook-handlers.toml` | hook registry가 사용자 snapshot 접수, file writer가 교체 | file writer | 예(공용 교체, fsync 없음) | 참여자 잠금·원본 fingerprint/링크 대상 비교 |
 | `file-handlers.toml` | `FileRules::submit`이 합친 snapshot 접수, file writer가 교체 | file writer | 예(공용 교체, fsync 없음) | 참여자 잠금·원본 fingerprint/링크 대상 비교 |
@@ -333,7 +333,7 @@ host의 hook 사용자 설정은 위 `hook-handlers.toml` snapshot 경계에 속
 관리 사용자 파일 unlink는 Delete지만 private temp cleanup은 제외한다. CLI·부팅·관측 scope 밖
 호환 호출은 이 writer 계측에 더하지 않는다. 여러 파일의 물리적 성공·실패 수는
 `MutationFailure`·`ManagedCleanup`의 부분 성공 결과나 host receipt 적용을 대신하지 않는다.
-기존 host profile/passkey 호출의 비동기 연결은 위 명부의 thread 구분을 따른다.
+host profile/passkey 명령과 탐지 상태 patch는 같은 worker scope에서 실제 물리 작업과 typed 결과를 별도로 센다. 탐지 준비 읽기는 물리 교체가 아니며, strict read·조건부 patch가 helper 전에 거절하면 시도 수는 0이다. CLI 호출은 worker 통계에 포함하지 않는다.
 
 child registry의 engine별 view는 메모리 원본이며 디스크 작업은 기존 file writer의 소유 명령으로만
 실행한다. 메인 루프는 파일·참여자 잠금을 기다리지 않고 receipt를 거둔다. 접수된 revision만
