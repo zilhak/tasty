@@ -32,26 +32,30 @@ impl StoredPath {
 pub(super) enum Incoming<'a> {
     Owned(PathBuf),
     Borrowed(&'a Path),
+    Stored(StoredPath),
 }
 
 impl Incoming<'_> {
-    pub(super) fn as_path(&self) -> &Path {
+    pub(super) fn as_path<'a>(&'a self, packed: &'a str) -> &'a Path {
         match self {
             Self::Owned(path) => path,
             Self::Borrowed(path) => path,
+            Self::Stored(path) => path.as_path(packed),
         }
     }
 
-    pub(super) fn into_owned(self) -> PathBuf {
+    pub(super) fn into_owned(self, packed: &str) -> PathBuf {
         match self {
             Self::Owned(path) => path,
             Self::Borrowed(path) => path.to_path_buf(),
+            Self::Stored(path) => path.into_owned(packed),
         }
     }
 
     pub(super) fn store(self, packed: &mut String) -> StoredPath {
         match self {
             Self::Owned(path) => StoredPath::Owned(path),
+            Self::Stored(path) => path,
             Self::Borrowed(path) => match path.to_str() {
                 Some(text) => {
                     let start = packed.len();

@@ -20,6 +20,7 @@ pub struct SelectedPaths {
     buckets: HashMap<u64, Bucket, egui::ahash::RandomState>,
     len: usize,
     packed: String,
+    staged: Vec<StoredPath>,
 }
 
 impl SelectedPaths {
@@ -28,6 +29,7 @@ impl SelectedPaths {
             buckets: HashMap::with_capacity_and_hasher(capacity, Default::default()),
             len: 0,
             packed: String::new(),
+            staged: Vec::new(),
         }
     }
 
@@ -50,6 +52,7 @@ impl SelectedPaths {
 
     pub fn clear(&mut self) {
         self.buckets.clear();
+        self.staged.clear();
         self.packed.clear();
         self.len = 0;
     }
@@ -67,32 +70,48 @@ impl SelectedPaths {
     }
 
     fn insert_value(&mut self, path: Incoming<'_>) -> bool {
-        let inserted = match self.buckets.entry(self.key(path.as_path())) {
+        let inserted = match self.buckets.entry(self.key(path.as_path(&self.packed))) {
             Entry::Vacant(entry) => {
                 entry.insert(Bucket::One(path.store(&mut self.packed)));
                 true
             }
             Entry::Occupied(mut entry) => match entry.get_mut() {
-                Bucket::One(value) if value.as_path(&self.packed) == path.as_path() => false,
+                Bucket::One(value) if value.as_path(&self.packed) == path.as_path(&self.packed) => {
+                    false
+                }
                 bucket @ Bucket::One(_) => {
                     let Bucket::One(previous) =
                         std::mem::replace(bucket, Bucket::One(StoredPath::empty()))
                     else {
                         unreachable!()
                     };
-                    let values =
-                        HashSet::from([previous.into_owned(&self.packed), path.into_owned()]);
+                    let values = HashSet::from([
+                        previous.into_owned(&self.packed),
+                        path.into_owned(&self.packed),
+                    ]);
                     *bucket = Bucket::Many(std::sync::Arc::new(values));
                     true
                 }
-                Bucket::Many(values) => std::sync::Arc::make_mut(values).insert(path.into_owned()),
+                Bucket::Many(values) => {
+                    std::sync::Arc::make_mut(values).insert(path.into_owned(&self.packed))
+                }
             },
         };
         self.len += usize::from(inserted);
         inserted
     }
 
+    #[cfg(test)]
     pub(super) fn refill<'a>(&mut self, count: usize, paths: impl Iterator<Item = &'a Path>) {
+        self.refill_observed(count, paths, |_| {});
+    }
+
+    pub(super) fn refill_observed<'a>(
+        &mut self,
+        count: usize,
+        paths: impl Iterator<Item = &'a Path>,
+        after_pack: impl FnOnce(usize),
+    ) {
         self.clear();
         self.buckets.reserve(count);
         let mut paths = paths.peekable();
@@ -101,9 +120,17 @@ impl SelectedPaths {
             .and_then(|path| path.to_str())
             .map_or(0, str::len);
         self.packed.reserve(bytes.saturating_mul(count));
+        let mut staged = std::mem::take(&mut self.staged);
+        staged.reserve(count);
+        // Copy sequential bytes before random table writes; keep both allocations for reuse.
         for path in paths {
-            self.insert_value(Incoming::Borrowed(path));
+            staged.push(Incoming::Borrowed(path).store(&mut self.packed));
         }
+        after_pack(self.packed.len());
+        for path in staged.drain(..) {
+            self.insert_value(Incoming::Stored(path));
+        }
+        self.staged = staged;
     }
 
     pub(super) fn packed_bytes(&self) -> usize {

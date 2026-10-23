@@ -119,11 +119,17 @@ fn bulk_paths_share_storage_reuse_capacity_and_keep_owned_payloads() {
     assert!(iter.next().is_some());
     assert_eq!(iter.len(), 99_999);
     drop(iter);
+    assert!(actual.staged.is_empty());
+    let scratch_pointer = actual.staged.as_ptr();
+    let scratch_capacity = actual.staged.capacity();
     let pointer = actual.packed.as_ptr();
     let capacity = actual.packed.capacity();
     let original = actual.clone();
     actual.refill(10, paths[..10].iter().map(PathBuf::as_path));
     assert_eq!(actual.packed.as_ptr(), pointer);
+    assert!(actual.staged.is_empty());
+    assert_eq!(actual.staged.as_ptr(), scratch_pointer);
+    assert_eq!(actual.staged.capacity(), scratch_capacity);
     assert_eq!(actual.packed.capacity(), capacity);
     assert_eq!(actual.len(), 10);
     assert_eq!(original.len(), 100_000);

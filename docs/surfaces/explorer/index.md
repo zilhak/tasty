@@ -481,7 +481,7 @@ Linux aarch64의 기존 fixture, release, 캐시를 비우지 않은 100,000항�
 
 ## 성능 관측
 
-`TASTY_LOG=tasty::gfx::perf=trace,tasty::explorer::perf=trace`로 프레임별 CPU 렌더 시간(`frame_sample`)과 디렉터리 조회의 항목 수·경과 시간(`directory_read`)을 기록할 수 있다. 기본 로그에서는 출력하지 않으며 디렉터리 경로나 파일 내용은 기록하지 않는다. 프레임 시간은 GPU 완료 시간이나 OS 화면 표시 시간이 아니다. 같은 필터로 표시 항목·선택·썸네일 칸 수(`explorer_state`), 읽기 worker·접수 수(`read_queue`), 파일 작업 대기·실행 수(`file_queue`), 검색 시작·Stop·종료와 폴링 묶음 수(`search_*`)도 기록한다. 검색 큐 포화 로그의 `queued`는 포화 순간의 큐 길이이며 폴링의 `drained`는 그 회차에 꺼낸 수다. 키 누름·휠의 처리 진입(`key_received`·`wheel_received`)과 다음 `frame_sample`의 시각 차이는 입력 처리 진입부터 CPU present 호출 완료까지의 지연이다. OS 입력 생성 전 대기나 GPU 완료 시간을 포함하지 않는다. 전체 선택은 `selection_started`·`selection_built`·`selection_applied`로 집합 구성과 기존 선택 교체 구간을 따로 기록한다. 경과 시간은 입력 대기·렌더 시간을 포함하지 않으므로 앞뒤 입력·프레임 시각과 함께 읽는다. 입력 주입 시각과 프레임 로그를 함께 대조할 때도 측정 환경과 포함한 구간을 구분한다.
+`TASTY_LOG=tasty::gfx::perf=trace,tasty::explorer::perf=trace`로 프레임별 CPU 렌더 시간(`frame_sample`)과 디렉터리 조회의 항목 수·경과 시간(`directory_read`)을 기록할 수 있다. 기본 로그에서는 출력하지 않으며 디렉터리 경로나 파일 내용은 기록하지 않는다. 프레임 시간은 GPU 완료 시간이나 OS 화면 표시 시간이 아니다. 같은 필터로 표시 항목·선택·썸네일 칸 수(`explorer_state`), 읽기 worker·접수 수(`read_queue`), 파일 작업 대기·실행 수(`file_queue`), 검색 시작·Stop·종료와 폴링 묶음 수(`search_*`)도 기록한다. 검색 큐 포화 로그의 `queued`는 포화 순간의 큐 길이이며 폴링의 `drained`는 그 회차에 꺼낸 수다. 키 누름·휠의 처리 진입(`key_received`·`wheel_received`)과 다음 `frame_sample`의 시각 차이는 입력 처리 진입부터 CPU present 호출 완료까지의 지연이다. OS 입력 생성 전 대기나 GPU 완료 시간을 포함하지 않는다. 전체 선택은 `selection_started`·`selection_packed`·`selection_built`·`selection_applied`로 경로 바이트 구성·해시 삽입·기존 선택 교체 구간을 따로 기록한다. 경과 시간은 입력 대기·렌더 시간을 포함하지 않으므로 앞뒤 입력·프레임 시각과 함께 읽는다. 입력 주입 시각과 프레임 로그를 함께 대조할 때도 측정 환경과 포함한 구간을 구분한다.
 
 ## 검증 기준
 

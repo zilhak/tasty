@@ -13,12 +13,13 @@ impl ExplorerView {
         let timer = SelectionTimer::start(self.shown_count());
         let mut selected = std::mem::take(&mut self.selected);
         let mut last = None;
-        selected.refill(
+        selected.refill_observed(
             self.shown_count(),
             self.shown().map(|entry| {
                 last = Some(&entry.path);
                 entry.path.as_path()
             }),
+            |bytes| timer.packed(bytes),
         );
         let anchor = last.cloned();
         timer.built(selected.packed_bytes());
@@ -35,6 +36,12 @@ impl SelectionTimer {
             .then(Instant::now);
         tracing::trace!(target: "tasty::explorer::perf", shown, "selection_started");
         Self(started)
+    }
+
+    fn packed(&self, packed_bytes: usize) {
+        if let Some(started) = self.0 {
+            tracing::trace!(target: "tasty::explorer::perf", packed_bytes, elapsed_ms = started.elapsed().as_secs_f64() * 1000.0, "selection_packed");
+        }
     }
 
     fn built(&self, packed_bytes: usize) {
