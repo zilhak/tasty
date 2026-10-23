@@ -1,5 +1,7 @@
 //! Engine-owned bounded HTML workers. Main loops deliver owned commands, never file I/O.
+mod control;
 mod resources;
+use control::refuse_http;
 
 use crate::{
     model::Surface,
@@ -137,6 +139,19 @@ impl HtmlTransfers {
     }
 }
 impl EngineMut<'_> {
+    pub(crate) fn handle_html_control(
+        &mut self,
+        hub: &StreamHub,
+        client: u32,
+        msg: tasty_ipc::stream_hub::HtmlControl,
+    ) {
+        match msg {
+            tasty_ipc::stream_hub::HtmlControl::File(msg) => {
+                self.handle_html_request(hub, client, msg)
+            }
+            tasty_ipc::stream_hub::HtmlControl::Http(msg) => refuse_http(hub, client, msg),
+        }
+    }
     pub(crate) fn poll_html_transfers(&mut self) {
         let Some(hub) = self.remote.notifier() else {
             return;
@@ -363,7 +378,14 @@ fn send(hub: &StreamHub, client: u32, binding: &Weak<()>, reply: HtmlReply) -> b
     }
 }
 #[cfg(feature = "gui")]
-pub(crate) fn refuse(hub: &StreamHub, client: u32, msg: HtmlRequest) {
+pub(crate) fn refuse(hub: &StreamHub, client: u32, msg: tasty_ipc::stream_hub::HtmlControl) {
+    let msg = match msg {
+        tasty_ipc::stream_hub::HtmlControl::File(msg) => msg,
+        tasty_ipc::stream_hub::HtmlControl::Http(msg) => {
+            refuse_http(hub, client, msg);
+            return;
+        }
+    };
     if hub.html_transfer_enabled(client)
         && let Some(id) = msg.id()
         && let Some(binding) = hub.client_binding(client)

@@ -11,7 +11,7 @@ impl crate::app::App {
                 self.engines_mut(),
                 client,
             ) {
-                engine.handle_html_request(hub, client, msg);
+                engine.handle_html_control(hub, client, msg);
             } else {
                 crate::remote::html_transfer::refuse(hub, client, msg);
             }

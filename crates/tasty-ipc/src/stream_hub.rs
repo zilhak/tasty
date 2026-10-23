@@ -2,6 +2,9 @@
 //! 소켓 I/O는 호스트 adapter가 맡고 이 허브는 채널·수신 메시지 분류만 담당한다.
 //! 별도 인증 토큰은 없으며 SSH와 loopback 연결을 신뢰 경계로 사용한다.
 
+mod html;
+pub use html::HtmlControl;
+
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender, SyncSender, TrySendError};
@@ -77,8 +80,8 @@ pub struct PumpOutcome {
     pub git_query_requests: Vec<(StreamClientId, GitQueryRequestMsg)>,
     /// 원격 markdown 원문 조회. 별도의 event 태그를 가진 Control JSON이다.
     pub markdown_content_requests: Vec<(StreamClientId, MarkdownContentRequestMsg)>,
-    /// Opt-in HTML requests, preserving credit/cancel wire order.
-    pub html_requests: Vec<(StreamClientId, crate::html_transfer::HtmlRequest)>,
+    /// File and HTTP commands in one wire order, including credit and cancellation.
+    pub html_requests: Vec<(StreamClientId, HtmlControl)>,
     /// 원격 explorer 파일 작업의 요청·답·취소. 별도의 event 태그를 가진 Control JSON이다.
     pub explorer_ops: Vec<(StreamClientId, crate::explorer_op::ExplorerOpMsg)>,
     /// bulk begin·chunk·commit을 도착 순서대로 보관한다. 태그별로 나누면 같은 배치의
@@ -210,6 +213,7 @@ impl GitQueryKind {
 struct StreamSink {
     html_transfer: bool,
     html_viewer: bool,
+    html_http: bool,
     binding: Arc<()>,
     registration: u128,
     tx: SyncSender<StreamFrame>,
@@ -377,6 +381,7 @@ impl StreamHub {
             StreamSink {
                 html_transfer: false,
                 html_viewer: false,
+                html_http: false,
                 binding: Arc::new(()),
                 registration: rand::random(),
                 tx,
@@ -429,6 +434,9 @@ impl StreamHub {
             sink.html_transfer = capabilities
                 .iter()
                 .any(|c| c == crate::html_transfer::CAPABILITY);
+            sink.html_http = capabilities
+                .iter()
+                .any(|c| c == crate::html_http::CAPABILITY);
             sink.html_viewer = capabilities
                 .iter()
                 .any(|c| c == crate::html_transfer::VIEWER_CAPABILITY);
@@ -635,28 +643,6 @@ impl StreamHub {
     /// Number of currently connected stream clients.
     pub fn client_count(&self) -> usize {
         tasty_utils::poison::recover_mutex(self.sinks.lock(), SINKS_WHAT, &SINKS_POISONED).len()
-    }
-
-    fn collect_html_request(
-        &self,
-        client: StreamClientId,
-        payload: &[u8],
-        out: &mut PumpOutcome,
-    ) -> bool {
-        use crate::html_transfer::HtmlRequest;
-        let Ok(msg) = serde_json::from_slice::<HtmlRequest>(payload) else {
-            return false;
-        };
-        match msg {
-            HtmlRequest::HtmlCapabilities { capabilities } => {
-                self.set_html_capabilities(client, &capabilities);
-                out.html_requests
-                    .push((client, HtmlRequest::HtmlCapabilities { capabilities }));
-            }
-            msg if self.html_transfer_enabled(client) => out.html_requests.push((client, msg)),
-            _ => {}
-        }
-        true
     }
 
     /// 수신 메시지를 종류별로 분류한다. 엔진 접근과 점유·입력 처리 자체는 메인 루프가 맡는다.
@@ -876,19 +862,19 @@ mod tests {
         assert_eq!(out.html_requests.len(), 4);
         assert!(matches!(
             out.html_requests[0].1,
-            HtmlRequest::HtmlCapabilities { .. }
+            HtmlControl::File(HtmlRequest::HtmlCapabilities { .. })
         ));
         assert!(matches!(
             out.html_requests[1].1,
-            HtmlRequest::HtmlEntryRequest { .. }
+            HtmlControl::File(HtmlRequest::HtmlEntryRequest { .. })
         ));
         assert!(matches!(
             out.html_requests[2].1,
-            HtmlRequest::HtmlRead { .. }
+            HtmlControl::File(HtmlRequest::HtmlRead { .. })
         ));
         assert!(matches!(
             out.html_requests[3].1,
-            HtmlRequest::HtmlCancel { .. }
+            HtmlControl::File(HtmlRequest::HtmlCancel { .. })
         ));
         let _replacement = hub.register(5);
         assert!(!hub.html_transfer_enabled(5));
