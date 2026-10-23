@@ -63,6 +63,7 @@ pub(crate) struct AppServices {
 
     /// 이 인스턴스가 bind한 IPC·웹훅 포트. 포트가 필요한 곳은 여기서 읽는다.
     pub(crate) ports: Arc<crate::runtime_ports::RuntimePorts>,
+    pub(crate) webhooks: Arc<crate::webhook::registry::Registry>,
 
     /// 러너·완료 대기·훅-작업 연결을 가진 작업 실행 서비스.
     pub(crate) tasks: tasty_task_runtime::TaskService,
@@ -214,6 +215,19 @@ impl AppServices {
         self.settings_saves.reap()
     }
 
+    pub(crate) fn start_webhooks(
+        &self,
+        reservation: Option<crate::webhook::Reservation>,
+        injector: tasty_ipc::host_call::HostIpcInjector,
+    ) -> crate::webhook::WebhookInitReport {
+        crate::webhook::start(
+            reservation,
+            injector,
+            self.ports.clone(),
+            self.webhooks.clone(),
+        )
+    }
+
     /// 메인 루프 회차마다 결과를 거두기 전에 부른다.
     pub(crate) fn poll_file_writer(&mut self) {
         if let Some(parts) = self.file_writer.as_mut() {
@@ -221,6 +235,7 @@ impl AppServices {
         }
         crate::app::file_consumers::poll(&self.registries);
         self.preset_files.poll();
+        self.webhooks.poll();
     }
 
     /// 확정하지 못한 최신 설정을 한 번 더 넣은 뒤 접수를 멈추고 마지막 flush 뒤 worker를 끝내게 한다.
@@ -230,10 +245,14 @@ impl AppServices {
         self.preset_files.poll();
         self.settings_saves.collect_completed();
         self.settings_saves.retry_latest_before_shutdown();
-        let remaining = self
-            .file_writer
-            .as_mut()
-            .map_or(0, |parts| parts.writer.poll_shutdown());
+        let webhook_waiting = self.webhooks.poll_shutdown();
+        let remaining = if webhook_waiting != 0 {
+            webhook_waiting
+        } else {
+            self.file_writer
+                .as_mut()
+                .map_or(0, |parts| parts.writer.poll_shutdown())
+        };
         self.settings_saves.collect_completed();
         self.preset_files.poll();
         if remaining == 0 {

@@ -147,6 +147,7 @@ pub(super) fn handle_system_pressure(
         }
     }
     body["file_commands"] = json!({"presets": core.preset_files.status()});
+    body["webhook_registry"] = json!(core.webhooks.status());
     let files = core.file_writer_stats();
     body["file_writer"] = writer_stats_json(files.as_ref().map(|(writer, _)| *writer));
     body["file_operations"] = file_operations::snapshot(files.as_ref().map(|(_, writes)| *writes));

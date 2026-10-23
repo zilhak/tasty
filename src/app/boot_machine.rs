@@ -837,8 +837,7 @@ impl App {
             crate::completion_strategy::install_default_sources();
             let reservation = self.hub.webhook.take();
             // 경고는 토스트가 아니라 알림으로 남긴다. 첫 창이 등록된 뒤 그 활성 workspace에 저장된다.
-            let _report =
-                crate::webhook::start(reservation, injector.clone(), self.services.ports.clone());
+            let _report = self.services.start_webhooks(reservation, injector.clone());
             self.services.set_host_ipc_injector(injector);
         }
     }

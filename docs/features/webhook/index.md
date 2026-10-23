@@ -31,9 +31,9 @@ GitHub Action 처럼 **외부 이벤트가 HTTP 로 들어오면 tasty 를 구�
 
 1. remote IP가 cooldown 중이면 429로 끝낸다. 선검사를 통과한 `Screened`만 application body를 읽는다.
 2. 경로·query·헤더를 정리하고 body 크기를 검사한다. 기본 1MiB를 넘으면 413이며, 상한 이내의 잘못된 UTF-8·JSON은 null로 취급한다.
-3. 등록 경로·lifetime·method·인증을 같은 registry 잠금 안에서 확인한다. 인증은 CountLimit 차감보다 먼저 한다.
-4. 매칭·인증에 성공하면 등록의 남은 횟수를 차감한다. 이 횟수는 접수된 시퀀스 수이며 내부 step 성공 횟수가 아니다.
-5. 401·404·405·413을 출처 실패에 집계한다. 200·410·429는 세지 않는다.
+3. 프로세스 registry에서 등록 identity와 인증을 확인하고 순서가 있는 변경을 접수한다. 처리 차례에 identity·lifetime·method를 다시 확인하며 인증 거절은 CountLimit를 차감하지 않는다.
+4. 매칭·인증에 성공하면 남은 횟수 변경을 기존 file writer에 제출하고 receipt를 기다린다. 대기는 HTTP 요청 스레드에서 하며 registry 잠금과 메인 루프를 점유하지 않는다. 이 횟수는 접수된 시퀀스 수이며 내부 step 성공 횟수가 아니다.
+5. 401·404·405·413을 출처 실패에 집계한다. 200·410·429·503은 세지 않는다.
 6. 고정 ACK를 보내고 별도 실행을 진행한다. 413과 선차단 429는 `respond_and_close`로 연결을 닫는다.
 
 외부 값은 params의 문자열 leaf에 `${body.x}`·`${header.x}`·`${query.x}`로 치환한다.
@@ -55,6 +55,7 @@ HTTP 응답은 **고정 상태코드 + 고정 문자열 바디**뿐이다. `buil
 | `Gone` | 410 `gone` | lifetime 만료(lazy 삭제) |
 | `PayloadTooLarge` | 413 `payload too large` | body 가 요청당 상한 초과 |
 | `TooManyRequests` | 429 `too many requests` | 남용차단 쿨다운 출처 |
+| `Unavailable` | 503 `unavailable` | registry 접수 거절·결과 불명. 차감·시퀀스 실행 없음 |
 
 
 ### 실행 실패 알림
@@ -81,7 +82,11 @@ ACK를 보낸 뒤 실행한 IpcSequence가 성공하지 못하면 `src/hook_runt
 
 ### 영속화 (`~/.tasty/webhooks.toml`)
 
-`Persistent` 웹훅만 저장한다(`Temporary` 는 저장 안 함). 저장 항목: `id`, `methods`, `handler`(또는 인라인 `sequence`), `limit`(kind + `deadline_unix`/`remaining`), `auth`. `TimeLimit` deadline 은 절대 Unix 시각이라 재시작 후에도 정확히 만료한다. 재시작 복원(`restore_into_registry`)은 이미 만료된 엔트리를 등록하지 않고 파일에서 정리한다. 최상위 `port`(명시 지정 포트)·`format`(파일 형식 표시)과 `[[webhook]]` 배열이 같은 파일을 공유하며, 각각의 writer 가 상대 섹션을 보존한다. host의 배열 교체와 standalone CLI의 포트 변경은 같은 참여자 파일 잠금 안에서 최신 TOML을 읽어 해당 섹션만 바꾼다. 읽기·파싱 실패면 어느 writer도 쓰지 않는다. 외부 편집이 읽기 뒤 바뀌었으면 교체 전에 fingerprint·링크 대상을 대조해 거절한다(마지막 확인과 rename 사이 경합은 남는다). TOML 주석·공백의 바이트 보존은 보장하지 않는다. Persistent 등록·해제는 메모리 변경을 되돌리고 `-32603`(등록: "failed to save the persistent webhook; nothing was registered", 해제: "... is still registered")으로 답한다. 응답할 호출자가 없는 저장(만료 정리, 호출 때 남은 횟수 차감, 복원 뒤 정리)은 쓰지 않고 경고 로그와 경고 알림(제목 `hook_notice.webhook_save_title`, source `webhook`)을 남긴다. 이번 실행의 등록은 그대로 동작하며, 다시 시작하면 저장된 목록에 그 변경이 빠져 있을 수 있다. 저장 포트 읽기는 경고 후 없는 것으로 다루고, 포트 저장·삭제는 오류로 끝난다.
+`Persistent` 웹훅만 저장한다(`Temporary` 는 저장 안 함). 저장 항목: `id`, `methods`, `handler`(또는 인라인 `sequence`), `limit`(kind + `deadline_unix`/`remaining`), `auth`. `TimeLimit` deadline 은 절대 Unix 시각이라 재시작 후에도 정확히 만료한다. 재시작 복원(`restore_into_registry`)은 이미 만료된 엔트리를 등록하지 않고 파일에서 정리한다. 최상위 `port`(명시 지정 포트)·`format`(파일 형식 표시)과 `[[webhook]]` 배열이 같은 파일을 공유하며, 각각의 writer 가 상대 섹션을 보존한다. host의 배열 교체와 standalone CLI의 포트 변경은 같은 참여자 파일 잠금 안에서 최신 TOML을 읽어 해당 섹션만 바꾼다. 읽기·파싱 실패면 어느 writer도 쓰지 않는다. 외부 편집이 읽기 뒤 바뀌었으면 교체 전에 fingerprint·링크 대상을 대조해 거절한다(마지막 확인과 rename 사이 경합은 남는다). TOML 주석·공백의 바이트 보존은 보장하지 않는다. Persistent 등록·해제는 저장 성공 receipt 뒤에만 메모리에 공개하고 원 IPC 호출자에게 한 번 응답한다. 저장 실패·접수 거절은 이전 등록을 유지한 채 `-32603`, `applied:false/saved:false`로 답한다. 앞선 결과를 정산한 상태에서 다음 webhook 절을 구성하므로 실패한 등록이 뒤의 저장에 다시 섞이지 않는다. 만료·횟수 차감·복원 정리의 알려진 backend 저장 실패에는 기존처럼 경고 로그와 경고 알림(제목 `hook_notice.webhook_save_title`, source `webhook`)을 남기고 이번 실행의 차감·제거를 적용한다. HTTP는 이 알려진 실패를 확인한 뒤 기존 ACK·시퀀스 정책을 따른다. 따라서 재시작에는 해당 차감·제거가 반영되지 않을 수 있다. 명시적 sweep은 실제 제거 ID와 저장이 실패했으면 `saved:false`를 반환한다. 접수 거절과 결과 불명은 이 계속 실행 정책에 포함하지 않는다. HTTP는 고정 `503 unavailable`로 끝내고 차감·실행하지 않는다. 결과 불명은 IPC의 `saved:null/outcome_unknown:true`로 알리며 재실행하지 않고, 그 registry의 후속 변경도 새 프로세스 복원 전까지 거절한다. 저장 포트 읽기는 경고 후 없는 것으로 다루고, 포트 저장·삭제는 오류로 끝난다.
+
+`system.pressure.webhook_registry`는 coordinator 접수·거절·정산 건수, pending, 결과·HTTP 문맥의 보관 개수·추정 바이트, closing, dirty, outcome_unknown만 표시한다. 접수 건수는 HTTP 200이나 파일 교체 성공 횟수가 아니다. dirty는 알려진 저장 실패 뒤 메모리에 남은 영속 변경이며 다음 성공한 전체 절 저장에서 해제한다. Unknown은 재시작 복원 전까지 유지한다. 경로·ID·요청 원문·인증 값은 지표에 싣지 않는다.
+
+종료는 registry와 listener의 새 접수를 먼저 닫는다. 이미 접수된 파일 명령·IPC 응답·HTTP 실행 문맥과 accept 스레드를 폴링한 뒤 공용 file writer를 닫는다. 다른 파일 소비자의 collector도 계속 진행하며 메인 루프에서 join을 기다리지 않는다. 아직 접수하지 않은 네트워크 body reader 전체의 join을 보장하는 계약은 아니다. 보관 작업이 모두 회수돼도 dirty·Unknown이 남으면 저장 성공으로 설명하지 않고 별도 종료 경고를 남긴다. 미회수는 기존 종료 기한의 경고로 구분한다.
 
 ### 선택적 인증 (가벼운 발신자 확인)
 
@@ -183,7 +188,7 @@ IPv6·proxy 출처 처리나 실제 메모리 제한을 추가할 때는 차단 
 포트 저장 오류는 `saved:false`, 결과를 잃은 경우는 `saved:null/outcome_unknown:true`로 구분하고
 명령을 재실행하지 않는다. 실행 중 리스너 주소는 바꾸지 않는다. 조회 성공은 저장 성공 표시가
 아니며, 읽기·마이그레이션 실패 시 backend의 기존 경고와 메모리 해석 규칙을 따른다.
-등록·해제·Count/Time 영속화는 별도의 registry 경로다.
+등록·해제·Count/Time·sweep은 같은 file writer에 연결된 프로세스 소유 registry coordinator를 쓴다. 등록 목록은 engine마다 복사하지 않는다. pending 명령은 합치거나 재실행하지 않고, 앞선 receipt를 정산한 뒤 다음 절을 구성한다. 별도 보관의 개수와 추정 직렬화 바이트는 공용 writer 기본 queue 한도(4096건·16MiB)로 제한하며, 실행 중 절과 결과를 포함한다. HTTP 문맥의 보관 예산은 ACK·시퀀스 종료까지 유지한다. 이는 등록의 인증·수명 정책이나 전체 HTTP 연결·프로세스 메모리 상한이 아니다.
 
 ### 포트 기록 (`RuntimePorts`)
 
@@ -195,7 +200,7 @@ IPv6·proxy 출처 처리나 실제 메모리 제한을 추가할 때는 차단 
 
 ### 부팅 초기화
 
-GUI(`boot::run_gui`)와 headless(`boot::run_headless`)는 설정을 읽은 직후 `webhook::prepare(--webhook-port, &settings.webhook)`로 소켓을 선점하고 `Hub::webhook`에 둔다. IPC와 injector가 준비되면 `webhook::start`가 그 소켓으로 accept 스레드를 시작하고, 시작에 성공했을 때만 포트를 기록한 뒤 `Persistent` 웹훅을 복원한다(GUI `src/app/boot_machine.rs`, headless `boot::start_ipc_and_seed`).
+GUI(`boot::run_gui`)와 headless(`boot::run_headless`)는 설정을 읽은 직후 `webhook::prepare(--webhook-port, &settings.webhook)`로 소켓을 선점하고 `Hub::webhook`에 둔다. IPC와 injector가 준비되면 `webhook::start`가 초기 파일을 읽어 `Persistent` 웹훅을 복원한다. 만료 항목 정리의 file receipt까지 정산한 뒤 그 소켓으로 accept를 시작하며, 성공했을 때만 포트를 기록한다. 복원과 file receipt 사이에는 요청을 접수하지 않는다(GUI `src/app/boot_machine.rs`, headless `boot::start_ipc_and_seed`).
 
 ## 인터페이스
 

@@ -1,4 +1,4 @@
-<!-- source-hash: dc33bf282ae4 -->
+<!-- source-hash: 48b7fda935b4 -->
 # Hooks, notifications and webhooks
 
 Get a notification when a build finishes, or run a command when a message appears in the logs. **Hooks** run commands in response to events, and **notifications** let you know when to check back. Use **webhooks** to send requests to Tasty from an external service.
@@ -236,6 +236,8 @@ Registering prints a URL of the form `http://127.0.0.1:<port>/<16-character id>`
 
 When you query or change the port in a running instance, the result arrives after file processing completes. If saving fails, the original stays intact and the command returns an error. The running listener address stays the same.
 
+Persistent webhook registration and removal return after the file save finishes. If saving fails, the previous registration stays. Other Tasty work can continue while the save is pending.
+
 Port settings and persistent registrations share one file and preserve each other's contents. If the file cannot be read or parsed, saving is refused and the original stays intact. Comments and whitespace from manual edits may change on the next save.
 
 Omit both `--ttl-secs` and `--count` for unlimited calls. `--persistent` can be combined with either limit; restarting restores registrations whose time or call allowance has not expired.
@@ -257,10 +259,13 @@ The calling service receives a status code and a fixed response message. The res
 | 410 | Time or count limit expired |
 | 413 | The body exceeded the per-request size cap (1 MiB by default) |
 | 429 | The same source failed (`401`, `404`, `405` or `413`) 20 or more times in 10 seconds and is blocked for 60 seconds |
+| 503 `unavailable` | The request could not be accepted or its save result could not be confirmed. No action runs |
 
 The body size cap is checked before authentication. The same cap applies to chunked bodies containing invalid UTF-8 bytes. An oversized request receives `413 payload too large` even without a token, and no action runs. This cap limits the body accepted for processing. A 413 response carries `Connection: close`, and the server closes the connection without receiving the rest of the body. A blocked request (`429`) is answered the same way. The connection cannot carry another request, so open a new one. If the client was still sending the body, the connection may end with a reset. The cap does not bound total memory use or simultaneous connections.
 
 The block lives in memory only — restart Tasty and the remaining block time is gone, so that source starts over.
+
+When a failed save of a count or expiration change is confirmed, Tasty leaves a warning and continues acceptance and execution as before. The unsaved change may be missing after a restart. If admission is refused or the save outcome is unknown, Tasty returns `503` and runs no action. After an unknown outcome, further changes are refused until Tasty restarts and restores the saved registrations.
 
 ```sh
 tasty webhook list

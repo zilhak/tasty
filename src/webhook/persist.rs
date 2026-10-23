@@ -14,11 +14,6 @@ use super::lifetime::{Lifetime, Limit, Persistence, now_unix};
 use super::registry::WebhookEntry;
 use crate::hook_handler::{HookHandlerId, IpcCall};
 
-/// 포트 설정과 같은 파일이어야 하므로 경로 규칙은 `webhook_port_file::path` 하나를 쓴다.
-pub(super) fn config_path() -> PathBuf {
-    tasty_settings::webhook_port_file::path()
-}
-
 /// 영속화된 웹훅 한 건 (`[[webhook]]`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(super) struct PersistedWebhook {
@@ -51,7 +46,7 @@ pub(super) enum PersistedLimit {
 }
 
 impl PersistedLimit {
-    fn from_limit(limit: Limit) -> Self {
+    pub(super) fn from_limit(limit: Limit) -> Self {
         match limit {
             Limit::Unlimited => Self::Unlimited,
             Limit::TimeLimit { deadline_unix } => Self::Time { deadline_unix },
@@ -86,9 +81,8 @@ struct WebhooksFile {
 }
 
 /// 파일을 읽지 못하면 빈 목록이다. 파싱 실패는 경고도 남긴다.
-fn load_persisted() -> Vec<PersistedWebhook> {
-    let path = config_path();
-    let Ok(text) = std::fs::read_to_string(&path) else {
+fn load_persisted(path: &Path) -> Vec<PersistedWebhook> {
+    let Ok(text) = std::fs::read_to_string(path) else {
         return Vec::new();
     };
     match toml::from_str::<WebhooksFile>(&text) {
@@ -98,11 +92,6 @@ fn load_persisted() -> Vec<PersistedWebhook> {
             Vec::new()
         }
     }
-}
-
-/// 읽어 온 설정에서 webhook 배열을 교체한다. 읽기·파싱·저장 실패는 쓰지 않고 오류다.
-pub(super) fn write(persistent: &[PersistedWebhook]) -> Result<(), String> {
-    write_to(&config_path(), persistent)
 }
 
 /// Owned section request for a file worker. Payload/auth must not be Debug-logged.
@@ -130,17 +119,18 @@ impl WriteRequest {
     }
 }
 
+#[cfg(test)]
 fn write_to(path: &Path, persistent: &[PersistedWebhook]) -> Result<(), String> {
     WriteRequest::new(path.into(), persistent.to_vec()).execute()
 }
 
 /// 시간·횟수가 만료된 항목을 제외하고 복원한 수를 돌려준다. 제외한 항목이 있으면 파일 정리도 시도한다.
-pub(super) fn restore_into_registry() -> usize {
+pub(super) fn restore_into_registry(registry: &super::registry::Registry) -> usize {
     let now = now_unix();
     let mut restored = 0usize;
     let mut filtered = 0usize;
 
-    for pw in load_persisted() {
+    for pw in load_persisted(registry.path()) {
         let lifetime = Lifetime {
             persistence: Persistence::Persistent,
             limit: pw.limit.to_limit(),
@@ -149,7 +139,7 @@ pub(super) fn restore_into_registry() -> usize {
             filtered += 1;
             continue;
         }
-        super::registry::restore_entry(WebhookEntry {
+        registry.restore_entry(WebhookEntry {
             id: pw.id,
             methods: pw.methods,
             handler_id: pw.handler.map(HookHandlerId::new),
@@ -166,7 +156,7 @@ pub(super) fn restore_into_registry() -> usize {
         );
     }
     if filtered > 0 {
-        super::registry::persist_now();
+        registry.persist_now();
     }
     restored
 }
@@ -231,7 +221,7 @@ mod tests {
         }];
         assert!(write_to(&path, &items).is_err());
         assert!(write_to(&path, &[]).is_err());
-        assert_eq!(std::fs::read_to_string(&path).unwrap(), broken);
+        assert_eq!(std::fs::read_to_string(path).unwrap(), broken);
     }
 
     #[test]
@@ -253,7 +243,7 @@ mod tests {
         write_to(&path, &items).unwrap();
 
         let reparsed: toml::Table =
-            toml::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+            toml::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
         assert!(reparsed.contains_key("listener"), "listener 보존 실패");
         assert!(reparsed.contains_key("webhook"));
         assert_eq!(reparsed["listener"]["port"].as_integer(), Some(28429));

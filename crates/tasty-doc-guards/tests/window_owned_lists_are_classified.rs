@@ -125,7 +125,7 @@ const ROSTER: &[(&str, Class, &str)] = &[
     (
         "webhook.list",
         SharedAcrossEngines,
-        "`webhook::list()` — 프로세스 전역",
+        "`core.webhooks.list()` — AppServices의 프로세스 공유 registry",
     ),
     (
         "session.list",

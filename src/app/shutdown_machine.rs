@@ -121,6 +121,7 @@ impl App {
             // Begin stop now; the retained session receipt is observed by the shutdown phase.
             let _ = session.poll_runner_stop(&self.services.tasks);
         }
+        self.services.webhooks.begin_shutdown();
         self.port_scans.begin_shutdown();
         self.services.profile_detections.begin_shutdown();
         self.screenshot_workers.begin_shutdown();
@@ -545,7 +546,12 @@ impl App {
     /// 마지막 flush와 join을 기다린다. 기한을 넘기면 미회수로 기록하고 진행한다.
     /// 마지막 묶음의 결과를 기다리던 IPC 요청에도 응답한다.
     fn wait_for_memory_writer_shutdown(&mut self) -> bool {
-        let remaining = self.services.poll_memory_writer_shutdown();
+        let webhook_waiting = self.services.webhooks.poll_shutdown();
+        let remaining = if webhook_waiting != 0 {
+            webhook_waiting
+        } else {
+            self.services.poll_memory_writer_shutdown()
+        };
         self.services.poll_file_writer();
         self.services
             .poll_memory_replies(self.plugin_manager.as_mut());

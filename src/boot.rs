@@ -557,8 +557,7 @@ fn start_ipc_and_seed(
         crate::completion_strategy::install_default_sources();
         // 시작 경고는 함수 안에서 알림 채널로 남긴다.
         let reservation = app.hub.webhook.take();
-        let _report =
-            crate::webhook::start(reservation, injector.clone(), app.services.ports.clone());
+        let _report = app.services.start_webhooks(reservation, injector.clone());
         app.services.set_host_ipc_injector(injector);
     }
 }
@@ -1072,6 +1071,7 @@ fn finish_headless_shutdown(
     session: &mut crate::runtime::engine_session::EngineSession,
 ) {
     // 게이트 결과를 기다리던 요청은 실행하지 않고 종료 오류로 답한다.
+    app.services.webhooks.begin_shutdown();
     app.gate_queue.reject_all(app.plugin_manager.as_mut());
     drain_headless_publication(app, session);
     app.journal.begin_process_shutdown();

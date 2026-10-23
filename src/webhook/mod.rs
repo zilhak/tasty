@@ -18,7 +18,7 @@ pub mod registry;
 pub use auth::{AuthLocation, WebhookAuth, auth_summary};
 pub use bind::{ExplicitBindError, Reservation};
 pub use lifetime::{Lifetime, Limit, Persistence};
-pub use registry::{WebhookEntry, info, list, register, sweep, unregister};
+pub use registry::WebhookEntry;
 
 use tasty_ipc::host_call::HostIpcInjector;
 
@@ -27,6 +27,8 @@ use tasty_ipc::host_call::HostIpcInjector;
 pub enum WebhookInitReport {
     /// 기본 포트나 명시 지정 포트에 bind했다.
     Bound,
+    /// The restored registry rewrite must settle before the listener accepts.
+    Starting,
     /// 기본 포트가 막혀 다른 포트에 bind했고 복원한 Persistent 웹훅이 있다. URL의 포트가 바뀌었다.
     MovedWithPersistent { port: u16 },
     /// 탐색 범위가 모두 막혀 리스너 없이 실행한다.
@@ -59,7 +61,7 @@ impl WebhookInitReport {
     pub fn notice(&self) -> Option<crate::system_notice::SystemNotice> {
         let last = config::DEFAULT_PORT + bind::PROBE_COUNT - 1;
         let body = match self {
-            Self::Bound => return None,
+            Self::Bound | Self::Starting => return None,
             Self::MovedWithPersistent { port } => crate::i18n::t_fmt2(
                 "webhook.warn.moved",
                 &config::DEFAULT_PORT.to_string(),
@@ -114,43 +116,61 @@ pub fn prepare(argument: Option<u16>, settings: &tasty_settings::WebhookSettings
 /// IPC와 injector가 준비된 뒤 GUI·headless가 부른다. 선점한 소켓으로 리스너를 시작하고
 /// Persistent 웹훅을 복원한다. 리스너를 열지 못했으면 등록은 남지만 URL이 응답하지 않는다.
 /// 경고는 알림 채널로 남기며 첫 workspace가 생긴 뒤 저장된다.
-pub fn start(
+pub(crate) fn start(
     reservation: Option<Reservation>,
     injector: HostIpcInjector,
     ports: std::sync::Arc<crate::runtime_ports::RuntimePorts>,
+    registry: std::sync::Arc<registry::Registry>,
 ) -> WebhookInitReport {
-    // 복원 항목의 URL을 만들기 전에 포트 기록을 연결한다.
-    registry::set_runtime(injector, ports.clone());
+    if registry.is_bound() {
+        return WebhookInitReport::Bound;
+    }
+    registry.set_runtime(injector, ports.clone());
+    registry.begin_restore();
+    let restored = persist::restore_into_registry(&registry);
+    let next = registry.clone();
+    registry.after_restore(move || {
+        let report = start_restored(reservation, ports, next, restored);
+        if let Some(notice) = report.notice() {
+            tracing::warn!("{}", notice.body);
+            crate::system_notice::post(notice);
+        }
+    });
+    WebhookInitReport::Starting
+}
+fn start_restored(
+    reservation: Option<Reservation>,
+    ports: std::sync::Arc<crate::runtime_ports::RuntimePorts>,
+    registry: std::sync::Arc<registry::Registry>,
+    restored: usize,
+) -> WebhookInitReport {
     let explicit = reservation
         .as_ref()
         .and_then(Reservation::explicit_failure)
         .cloned();
     let mut bound = reservation.as_ref().and_then(Reservation::bound);
     let mut thread_failure = None;
-    if let Some((server, at)) = reservation.and_then(|r| r.listener)
-        && let Err(error) = listener::start(server, at, &ports)
-    {
-        bound = None;
-        thread_failure = Some(ExplicitBindError {
-            addr: at.addr,
-            source: at.source,
-            error,
-        });
+    if let Some((server, at)) = reservation.and_then(|r| r.listener) {
+        match listener::start(server, at, &ports, &registry) {
+            Ok(listener) => registry.install_listener(listener),
+            Err(error) => {
+                bound = None;
+                thread_failure = Some(ExplicitBindError {
+                    addr: at.addr,
+                    source: at.source,
+                    error,
+                });
+            }
+        }
     }
     if let Some(failure) = explicit.as_ref().or(thread_failure.as_ref()) {
         ports.record_webhook_failure(failure.clone());
     }
-    let restored = persist::restore_into_registry();
-    let report = match (explicit, thread_failure) {
+    match (explicit, thread_failure) {
         (Some(failure), _) => WebhookInitReport::ExplicitUnavailable(failure),
         (None, Some(failure)) => WebhookInitReport::ListenerFailed(failure),
         (None, None) => WebhookInitReport::from_bound(bound, restored > 0),
-    };
-    if let Some(notice) = report.notice() {
-        tracing::warn!("{}", notice.body);
-        crate::system_notice::post(notice);
     }
-    report
 }
 
 #[cfg(test)]

@@ -21,6 +21,8 @@ pub enum AckStatus {
     /// 429 — 남용 차단 쿨다운 중인 출처(실패 반복 — `abuse::counts_as_failure`).
     /// 매칭 전 즉시 거부.
     TooManyRequests,
+    /// 503 — registry work was not admitted or its outcome is unknown; never executes.
+    Unavailable,
 }
 
 impl AckStatus {
@@ -33,6 +35,7 @@ impl AckStatus {
             AckStatus::Gone => (410, "gone"),
             AckStatus::PayloadTooLarge => (413, "payload too large"),
             AckStatus::TooManyRequests => (429, "too many requests"),
+            AckStatus::Unavailable => (503, "unavailable"),
         }
     }
 }

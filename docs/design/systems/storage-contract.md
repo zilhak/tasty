@@ -305,7 +305,7 @@ writer를 거치는 IPC 요청은 결과가 나온 뒤 응답한다. 핸들러�
 | `child-terminals.json` | `child_terminal::save`(읽기-병합-쓰기) | 메인 루프 | 아니요 | 같은 홈의 다른 프로세스와 잠금 없음 |
 | `tasty.port` | `publish_port_file_to` 완료 결과를 listener가 소유 | IPC 시작 완료 barrier | 예(공용 안전 교체, fsync 없음) | notify 정리 → 관측 원본/링크 비교·참여 잠금 → 완료 공개. 서버 Drop은 같은 잠금을 비차단 획득한 동안 열린 파일 identity·내용이 같은 공개 세대만 정리. 경합/identity 불명은 보존 |
 | 단일 실행 instance 파일 | `instance_file` | 메인 루프 | 예(sync 포함) | GUI만 쓴다 |
-| `webhooks.toml` | 호스트 `webhook::persist::WriteRequest`, CLI `webhook_port_file` | runtime port는 file writer, registry는 호출 스레드, CLI·초기 prepare는 동기 실행 | 예(공용 교체, fsync 없음) | host 배열 교체·CLI port 변경·옛 포트 마이그레이션이 같은 참여자 잠금 안에서 최신 TOML을 읽고 해당 절만 변경 |
+| `webhooks.toml` | 호스트 `webhook::persist::WriteRequest`, CLI `webhook_port_file` | runtime port·registry는 기존 file writer, CLI·초기 prepare는 동기 실행 | 예(공용 교체, fsync 없음) | host 배열 교체·CLI port 변경·옛 포트 마이그레이션이 같은 참여자 잠금 안에서 최신 TOML을 읽고 해당 절만 변경 |
 | `remote-profiles.toml` | CLI는 `RemoteFileStore::profile`, 기존 host 소비자는 `RemoteProfiles::save` | CLI는 호출 스레드, 기존 IPC·탐지는 메인 루프 | CLI는 예(공용 교체·sync), 기존 save는 아니요 | 명령 API는 최신 TOML을 참여 잠금 안에서 patch한다. 기존 save 호출자는 참여하지 않는다 |
 | `passkeys.toml`과 `passkeys/<이름>` | CLI는 `RemoteFileStore::passkey`, 기존 host 목록은 `Passkeys::save`; inline 파일은 `materialize_inline_in` | CLI는 호출 스레드, 기존 IPC는 메인 루프 | CLI 목록은 공용 교체·sync, 기존 save는 직접 쓰기. inline은 Unix 0600·Windows 보호 ACL을 payload 전에 적용한 임시 파일을 sync 후 rename | CLI 명령은 목록 참여 잠금 사용. inline 파일 자체도 참여 잠금 사용. 파일 사이 transaction은 없고 부분 성공·관리파일 정리는 owned 결과로 구분한다 |
 | `plugins.toml` | 플러그인 등록 상태 저장 | 메인 루프, GUI boot worker(내장 플러그인 설치) | 아니요 | 없음 |
@@ -334,9 +334,7 @@ writer를 거치는 IPC 요청은 결과가 나온 뒤 응답한다. 핸들러�
 실행 중 port 조회·변경은 기존 ordered file command로 접수하고 receipt 뒤 원 응답을 확정한다.
 조회의 옛 형식 migration도 worker에서 처리한다. 부팅 prepare는 소켓 선점 입력이므로
 리스너 시작 전에 포트 읽기·migration을 마치는 동기 barrier다.
-backend 결과가 돌아오면 파일 잠금은 이미 풀려 있다. 현재 registry의 저장 호출은 여전히
-호출 스레드에서 동기 실행하며, 소유 요청이 있다는 사실이 메인 루프 비차단이나 registry
-잠금 밖 I/O·비동기 rollback 완료를 뜻하지 않는다. standalone CLI는 이 결과까지 동기로
+backend 결과가 돌아오면 파일 잠금은 이미 풀려 있다. 프로세스 소유 webhook registry는 앞선 receipt 뒤에 다음 변경 절을 만들고, 등록·해제는 저장 성공 뒤에만 공개한다. registry 잠금은 준비·정산에만 쓰고 I/O와 HTTP 요청 스레드의 receipt 대기에는 유지하지 않는다. 원 IPC 호출자는 기존 file continuation으로 한 번 응답받는다. Count/Time·만료 정리의 알려진 backend 저장 실패는 경고 후 메모리 차감·제거와 HTTP ACK/실행을 계속하는 기존 정책을 유지한다. 접수 거절·Unknown에는 적용하지 않으며 HTTP503/실행0, IPC saved:false 또는 saved:null/outcome_unknown:true로 구분한다. Unknown 뒤에는 후속 변경을 재실행하지 않고 새 프로세스 복원 전까지 거절한다. 별도 pending·실행 절·응답과 HTTP 실행 문맥은 개수·추정 직렬화 바이트를 제한하며 결과 소비/실행 종료까지 예산을 유지한다. `system.pressure.webhook_registry`는 해당 접수·정산과 보관 수·바이트, dirty·outcome_unknown을 원문 없이 보여준다. 메모리 차감 뒤 알려진 저장 실패는 dirty로 남고 다음 성공한 절 저장에서 해제한다. 작업 회수와 저장 성공은 별개이며, 종료 시 dirty·Unknown이 남으면 별도 경고한다. 부팅 복원·만료 정리 receipt 뒤에 accept를 시작하고, 종료에는 새 접수를 닫고 해당 producer/receipt를 회수한 뒤 공용 writer를 닫는다. standalone CLI는 이 결과까지 동기로
 기다린 뒤 기존 명령 출력을 만든다. port 변경과 형식 마이그레이션은 한 번에 교체해
 마이그레이션만 먼저 저장되는 부분 성공을 만들지 않는다. 포트 저장·삭제는 기존처럼 format=2를
 기록하며, host 배열 교체는 원래 format 값을 바꾸지 않는다. 부팅의 옛 포트 읽기에서 마이그레이션

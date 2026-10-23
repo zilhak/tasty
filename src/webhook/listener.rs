@@ -4,7 +4,10 @@
 
 use std::collections::BTreeMap;
 use std::io::Read;
-use std::sync::OnceLock;
+use std::sync::{
+    Arc, OnceLock, Weak,
+    atomic::{AtomicBool, Ordering},
+};
 use std::thread;
 
 use serde_json::Value;
@@ -17,37 +20,74 @@ use tasty_ipc::host_call::HostIpcInjector;
 
 /// 선점한 소켓으로 accept를 시작하고 포트 기록에 남긴다.
 /// accept 스레드를 띄운 뒤에만 bound로 표시하고 포트를 기록한다. 띄우지 못하면 소켓을 닫고 원인을 돌려준다.
+pub(super) struct Listener {
+    server: Arc<tiny_http::Server>,
+    stopping: Arc<AtomicBool>,
+    thread: Option<thread::JoinHandle<()>>,
+}
+impl Listener {
+    pub(super) fn stop(&self) {
+        self.stopping.store(true, Ordering::Release);
+        self.server.unblock();
+    }
+    pub(super) fn poll_stopped(&mut self) -> bool {
+        if !self.thread.as_ref().is_none_or(|t| t.is_finished()) {
+            return false;
+        }
+        if let Some(thread) = self.thread.take()
+            && thread.join().is_err()
+        {
+            tracing::warn!("webhook accept thread panicked");
+        }
+        true
+    }
+}
+impl Drop for Listener {
+    fn drop(&mut self) {
+        self.stop();
+    }
+}
+
 pub(super) fn start(
     server: tiny_http::Server,
     bound: crate::runtime_ports::BoundPort,
     ports: &crate::runtime_ports::RuntimePorts,
-) -> Result<(), String> {
-    if registry::is_bound() {
-        tracing::debug!("webhook listener already started; skip");
-        return Ok(());
-    }
-    thread::Builder::new()
+    registry: &Arc<registry::Registry>,
+) -> Result<Listener, String> {
+    let server = Arc::new(server);
+    let stopping = Arc::new(AtomicBool::new(false));
+    let accept_server = server.clone();
+    let accept_stop = stopping.clone();
+    let registry = Arc::downgrade(registry);
+    let thread = thread::Builder::new()
         .name("webhook-accept".into())
-        .spawn(move || accept_loop(server))
-        .map_err(|e| {
-            tracing::error!(
-                "webhook accept thread spawn failed: {e}; running without the listener"
-            );
-            e.to_string()
-        })?;
-    registry::mark_bound();
+        .spawn(move || accept_loop(accept_server, accept_stop, registry))
+        .map_err(|e| e.to_string())?;
     ports.record_webhook(bound);
     tracing::info!("webhook listener bound on {}", bound.addr);
-    Ok(())
+    Ok(Listener {
+        server,
+        stopping,
+        thread: Some(thread),
+    })
 }
-
-fn accept_loop(server: tiny_http::Server) {
+fn accept_loop(
+    server: Arc<tiny_http::Server>,
+    stopping: Arc<AtomicBool>,
+    registry: Weak<registry::Registry>,
+) {
     for request in server.incoming_requests() {
-        thread::spawn(move || handle_request(request));
+        if stopping.load(Ordering::Acquire) {
+            break;
+        }
+        let Some(registry) = registry.upgrade() else {
+            break;
+        };
+        thread::spawn(move || handle_request(request, registry));
     }
 }
 
-fn handle_request(request: tiny_http::Request) {
+fn handle_request(request: tiny_http::Request, registry: Arc<registry::Registry>) {
     // 포트를 키에 넣으면 요청마다 다른 포트로 실패 집계를 피할 수 있다.
     // IP 기준이므로 NAT 뒤의 발신자들은 카운터를 공유한다.
     let source = request.remote_addr().map(|a| a.ip().to_string());
@@ -68,12 +108,14 @@ fn handle_request(request: tiny_http::Request) {
 
     let headers = request.headers();
 
-    let (ack, exec, body) = match request.read_json_body(max_body_bytes()) {
+    let (ack, exec, body, _lease) = match request.read_json_body(max_body_bytes()) {
         Ok(body) => {
-            let (ack, exec) = resolve_ack(&path, &method, &headers, &query, &body);
-            (ack, exec, body)
+            let bytes = crate::app::file_writer::command::value_bytes(&(&headers, &query, &body));
+            let (ack, exec, lease) =
+                resolve_ack(&registry, &path, &method, &headers, &query, &body, bytes);
+            (ack, exec, body, lease)
         }
-        Err(BodyTooLarge) => (AckStatus::PayloadTooLarge, None, Value::Null),
+        Err(BodyTooLarge) => (AckStatus::PayloadTooLarge, None, Value::Null, None),
     };
 
     // 정책에서 정한 실패만 IP별 카운터에 반영한다.
@@ -222,20 +264,27 @@ type PendingExec = (Vec<crate::hook_handler::IpcCall>, Option<HostIpcInjector>);
 /// path/method 매칭 + (설정돼 있으면) 인증 검증까지 수행해 응답할 ACK 상태와,
 /// 실행할 게 있으면 그 `(calls, injector)` 를 반환한다.
 fn resolve_ack(
+    registry: &registry::Registry,
     path: &str,
     method: &str,
     headers: &BTreeMap<String, String>,
     query: &BTreeMap<String, String>,
     body: &Value,
-) -> (AckStatus, Option<PendingExec>) {
-    // 인증과 횟수 차감을 같은 락 안에서 처리해 거부된 요청은 횟수를 쓰지 않게 한다.
-    match registry::match_request(path, method, |a| a.verify(headers, query, body)) {
+    context_bytes: usize,
+) -> (AckStatus, Option<PendingExec>, Option<registry::Lease>) {
+    // 인증한 등록 identity를 순서대로 재검사하며 거부된 요청은 횟수를 쓰지 않는다.
+    let (result, lease) = registry.match_request(path, method, context_bytes, |a| {
+        a.verify(headers, query, body)
+    });
+    let (ack, exec) = match result {
         MatchResult::NotFound => (AckStatus::NotFound, None),
         MatchResult::MethodNotAllowed => (AckStatus::MethodNotAllowed, None),
         MatchResult::Expired => (AckStatus::Gone, None),
         MatchResult::Unauthorized => (AckStatus::Unauthorized, None),
+        MatchResult::Unavailable => (AckStatus::Unavailable, None),
         MatchResult::Matched { calls, injector } => (AckStatus::Received, Some((calls, injector))),
-    }
+    };
+    (ack, exec, lease)
 }
 
 /// key=value 쿼리 파싱. percent-decode는 하지 않는다.
@@ -266,7 +315,9 @@ mod tests {
         use crate::webhook::lifetime::{Lifetime, Limit, Persistence};
         use crate::webhook::registry;
 
-        let id = registry::register(
+        let registry =
+            registry::Registry::new(None, std::path::PathBuf::from("unused-webhook-test"));
+        let mut receipt = registry.register(
             vec!["POST".to_string()],
             None,
             vec![],
@@ -278,18 +329,30 @@ mod tests {
                 location: AuthLocation::QueryKey { key: "t".into() },
                 token: "right".into(),
             }),
-        )
-        .expect("test register must not fail")
-        .id;
+        );
+        let crate::webhook::registry::Value::Registered(outcome) =
+            receipt.poll().unwrap().unwrap().value
+        else {
+            panic!("register result");
+        };
+        let id = outcome.id;
 
         let mut wrong = BTreeMap::new();
         wrong.insert("t".to_string(), "nope".to_string());
-        let (ack, exec) = resolve_ack(&id, "POST", &BTreeMap::new(), &wrong, &Value::Null);
+        let (ack, exec, _lease) = resolve_ack(
+            &registry,
+            &id,
+            "POST",
+            &BTreeMap::new(),
+            &wrong,
+            &Value::Null,
+            0,
+        );
 
         assert_eq!(ack, AckStatus::Unauthorized);
         assert!(exec.is_none(), "401 은 시퀀스를 넘기지 않는다");
 
-        let (entry, _) = registry::info(&id).expect("401 로 등록이 사라지면 안 된다");
+        let (entry, _) = registry.info(&id).expect("401 로 등록이 사라지면 안 된다");
         assert_eq!(
             entry.lifetime.limit,
             Limit::CountLimit { remaining: 2 },
@@ -306,3 +369,43 @@ mod tests {
 #[cfg(test)]
 #[path = "listener_body_tests.rs"]
 mod body_tests;
+#[cfg(test)]
+mod receipt_tests {
+    use super::*;
+    #[test]
+    fn a_refused_registry_mutation_returns_fixed_503_without_consumption_or_execution() {
+        use crate::webhook::{Lifetime, Limit, Persistence, WebhookEntry};
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("webhooks.toml");
+        let registry = registry::Registry::new(None, path.clone());
+        registry.restore_entry(WebhookEntry {
+            id: "1122334455667788".into(),
+            methods: vec!["POST".into()],
+            handler_id: None,
+            calls: vec![],
+            lifetime: Lifetime {
+                persistence: Persistence::Persistent,
+                limit: Limit::CountLimit { remaining: 1 },
+            },
+            auth: None,
+        });
+        let (ack, exec, _lease) = resolve_ack(
+            &registry,
+            "1122334455667788",
+            "POST",
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &Value::Null,
+            0,
+        );
+        assert_eq!(ack, AckStatus::Unavailable);
+        assert_eq!(build_ack(ack).status_code().0, 503);
+        assert!(exec.is_none());
+        assert!(!abuse::counts_as_failure(ack));
+        assert!(matches!(
+            registry.info("1122334455667788").unwrap().0.lifetime.limit,
+            Limit::CountLimit { remaining: 1 }
+        ));
+        assert!(!path.exists());
+    }
+}

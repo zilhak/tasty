@@ -189,6 +189,10 @@ impl AppServicesBuilder {
             preset_store.clone(),
             self.file_writer.as_ref().map(|parts| parts.writer.handle()),
         );
+        let webhooks = Arc::new(crate::webhook::registry::Registry::new(
+            self.file_writer.as_ref().map(|parts| parts.writer.handle()),
+            crate::webhook::config::config_path(),
+        ));
         Ok(AppServices {
             registries,
             #[cfg(feature = "gui")]
@@ -225,6 +229,7 @@ impl AppServicesBuilder {
             host_ipc_injector,
             journal_metrics: None,
             ports: Default::default(),
+            webhooks,
             tasks,
             pressure: tasty_telemetry::PressureStats::default(),
             gate: tasty_telemetry::GateStats::default(),

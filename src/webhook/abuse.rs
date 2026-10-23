@@ -221,7 +221,10 @@ pub fn counts_as_failure(status: AckStatus) -> bool {
         | AckStatus::MethodNotAllowed
         | AckStatus::Unauthorized
         | AckStatus::PayloadTooLarge => true,
-        AckStatus::Received | AckStatus::Gone | AckStatus::TooManyRequests => false,
+        AckStatus::Received
+        | AckStatus::Gone
+        | AckStatus::TooManyRequests
+        | AckStatus::Unavailable => false,
     }
 }
 

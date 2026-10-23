@@ -1,12 +1,15 @@
 //! 인바운드 웹훅 등록·조회·해제. 대상은 ID로 지정하고 목록은 전체를 반환한다.
-//! 웹훅 항목별 소유자 격리는 없다. 상태는 webhook/hook_handler의 전역 저장소에 있다.
+//! 웹훅 항목별 소유자 격리는 없다. 웹훅은 AppServices의 공유 registry, hook_handler는 전역 저장소다.
 //!
 //! 등록한 핸들러는 Webhook source로 바인딩 가능한지 검사하며 셸/hook 전용은 거절한다.
 //! HTTP payload는 등록 경로에 들어오지 않고 실행할 메서드를 바꾸지 못한다.
 //! 플러그인은 Network 권한으로 자기 핸들러만 등록할 수 있다. Local 권한으로 실행되는
 //! 인라인 시퀀스를 임의 등록하면 권한을 우회할 수 있으므로 플러그인에는 허용하지 않는다.
 
+mod pending;
 mod port;
+use crate::app::services::AppServices;
+use crate::webhook::registry::Value as RegistryValue;
 
 use super::params::{self, p_try};
 use serde_json::json;
@@ -41,6 +44,7 @@ const DEFAULT_METHODS: &[&str] = &["POST"];
 /// - `count`: u64 — 횟수제한(잔여 호출 수). `ttl_secs` 와 상호배타.
 /// - 둘 다 없으면 무제한.
 pub fn handle_register(
+    core: &AppServices,
     caller: &CallerContext,
     id: serde_json::Value,
     params: &serde_json::Value,
@@ -122,10 +126,6 @@ pub fn handle_register(
                 Ok(calls) if !calls.is_empty() => {
                     let anon = anonymous_handler(&calls);
                     let anon_id = anon.id.clone();
-                    // 웹훅은 calls 사본을 보관하므로 핸들러 등록 실패와 별개로 사용할 수 있다.
-                    if let Err(e) = hook_handler::global().upsert_full_handler(anon) {
-                        tracing::warn!("anonymous hook handler upsert failed: {e}");
-                    }
                     (Some(anon_id), calls)
                 }
                 Ok(_) => {
@@ -145,33 +145,40 @@ pub fn handle_register(
     };
 
     let auth_json = auth.as_ref().map(auth_summary);
-    let outcome =
-        match webhook::register(methods.clone(), handler_id.clone(), calls, lifetime, auth) {
-            Ok(outcome) => outcome,
-            Err(e) => {
-                return JsonRpcResponse::internal_error(
-                    id,
-                    format!("failed to save the persistent webhook; nothing was registered: {e}"),
-                );
-            }
+    let anonymous = sequence_field.is_some();
+    let receipt =
+        core.webhooks
+            .register(methods.clone(), handler_id.clone(), calls, lifetime, auth);
+    pending::answer(core, id, receipt, move |core, id, completed| {
+        let RegistryValue::Registered(outcome) = completed.value else {
+            return JsonRpcResponse::internal_error(id, "unexpected webhook registration result");
         };
-    JsonRpcResponse::success(
-        id,
-        json!({
-            "id": outcome.id,
-            "url": outcome.url,
-            "methods": methods,
-            "handler": handler_id.map(|h| h.0),
-            "lifetime": lifetime_json(&lifetime),
-            "auth": auth_json,
-        }),
-    )
+        if anonymous
+            && let Some((entry, _)) = core.webhooks.info(&outcome.id)
+            && let Err(error) =
+                hook_handler::global().upsert_full_handler(anonymous_handler(&entry.calls))
+        {
+            tracing::warn!(%error,"anonymous hook handler upsert failed");
+        }
+        JsonRpcResponse::success(
+            id,
+            json!({"id":outcome.id,"url":outcome.url,"methods":methods,"handler":handler_id.map(|h|h.0),"lifetime":lifetime_json(&lifetime),"auth":auth_json}),
+        )
+    })
 }
 
-/// `webhook.sweep` — 만료된(시간 초과 / 횟수 소진) 웹훅 일괄 정리. 제거된 id 목록 반환.
-pub fn handle_sweep(id: serde_json::Value) -> JsonRpcResponse {
-    let swept = webhook::sweep();
-    JsonRpcResponse::success(id, json!({ "swept": swept, "count": swept.len() }))
+/// Expiration keeps the established in-memory policy; saved:false exposes a known failed rewrite.
+pub fn handle_sweep(core: &AppServices, id: serde_json::Value) -> JsonRpcResponse {
+    pending::answer(core, id, core.webhooks.sweep(), |_, id, completed| {
+        let RegistryValue::Swept(swept) = completed.value else {
+            return JsonRpcResponse::internal_error(id, "unexpected webhook sweep result");
+        };
+        let mut value = json!({"count":swept.len(),"swept":swept});
+        if let Some(saved) = completed.saved {
+            value["saved"] = json!(saved);
+        }
+        JsonRpcResponse::success(id, value)
+    })
 }
 
 /// lifetime params 를 파싱한다. `ttl_secs`/`count` 는 상호배타.
@@ -240,36 +247,51 @@ fn lifetime_json(lifetime: &Lifetime) -> serde_json::Value {
     }
 }
 
-pub fn handle_list(id: serde_json::Value) -> JsonRpcResponse {
-    let items: Vec<_> = webhook::list()
+pub fn handle_list(core: &AppServices, id: serde_json::Value) -> JsonRpcResponse {
+    let items: Vec<_> = core
+        .webhooks
+        .list()
         .into_iter()
         .map(|(e, url)| entry_json(&e, &url))
         .collect();
     JsonRpcResponse::success(id, json!({ "webhooks": items }))
 }
 
-pub fn handle_info(id: serde_json::Value, params: &serde_json::Value) -> JsonRpcResponse {
+pub fn handle_info(
+    core: &AppServices,
+    id: serde_json::Value,
+    params: &serde_json::Value,
+) -> JsonRpcResponse {
     let Some(wid) = params.get("id").and_then(|v| v.as_str()) else {
         return JsonRpcResponse::invalid_params(id, "Missing required 'id' parameter");
     };
-    match webhook::info(wid) {
+    match core.webhooks.info(wid) {
         Some((e, url)) => JsonRpcResponse::success(id, entry_json(&e, &url)),
         None => JsonRpcResponse::invalid_params(id, format!("webhook '{wid}' not found")),
     }
 }
 
 /// `webhook.unregister` — 웹훅 해제. path 회수 → 이후 그 URL 은 404.
-pub fn handle_unregister(id: serde_json::Value, params: &serde_json::Value) -> JsonRpcResponse {
+pub fn handle_unregister(
+    core: &AppServices,
+    id: serde_json::Value,
+    params: &serde_json::Value,
+) -> JsonRpcResponse {
     let Some(wid) = params.get("id").and_then(|v| v.as_str()) else {
         return JsonRpcResponse::invalid_params(id, "Missing required 'id' parameter");
     };
-    match webhook::unregister(wid) {
-        Ok(removed) => JsonRpcResponse::success(id, json!({ "unregistered": removed, "id": wid })),
-        Err(e) => JsonRpcResponse::internal_error(
-            id,
-            format!("failed to update the saved webhooks; '{wid}' is still registered: {e}"),
-        ),
-    }
+    let wid = wid.to_owned();
+    pending::answer(
+        core,
+        id,
+        core.webhooks.unregister(&wid),
+        move |_, id, completed| {
+            let RegistryValue::Removed(removed) = completed.value else {
+                return JsonRpcResponse::internal_error(id, "unexpected webhook removal result");
+            };
+            JsonRpcResponse::success(id, json!({"unregistered":removed,"id":wid}))
+        },
+    )
 }
 
 /// 인자가 없으면 실행 중인 리스너를 조회한다(실제로 bind한 주소와 정한 방법, 다음 실행에 쓸 값).
@@ -486,7 +508,14 @@ mod tests {
         let params = json!({
             "sequence": [{ "method": "notification.create", "params": { "body": "x" } }]
         });
-        let resp = handle_register(&caller, json!(1), &params);
+        let resp = handle_register(
+            &crate::adapters::ipc::handler::cli_entry_tests::test_core_builder()
+                .build()
+                .unwrap(),
+            &caller,
+            json!(1),
+            &params,
+        );
         assert!(
             resp.error.is_some(),
             "plugin inline sequence must be rejected"
@@ -502,7 +531,14 @@ mod tests {
     fn plugin_cannot_bind_foreign_handler() {
         let caller = plugin_caller("com.example.p");
         let params = json!({ "handler": "host/notify" });
-        let resp = handle_register(&caller, json!(1), &params);
+        let resp = handle_register(
+            &crate::adapters::ipc::handler::cli_entry_tests::test_core_builder()
+                .build()
+                .unwrap(),
+            &caller,
+            json!(1),
+            &params,
+        );
         assert!(
             resp.error.is_some(),
             "foreign handler bind must be rejected"
@@ -520,7 +556,14 @@ mod tests {
         let params = json!({
             "sequence": [{ "method": "notification.create", "params": { "body": "x" } }]
         });
-        let resp = handle_register(&CallerContext::local(), json!(1), &params);
+        let resp = handle_register(
+            &crate::adapters::ipc::handler::cli_entry_tests::test_core_builder()
+                .build()
+                .unwrap(),
+            &CallerContext::local(),
+            json!(1),
+            &params,
+        );
         let msg = err_message(&resp);
         assert!(
             !msg.contains("inline 'sequence'") && !msg.contains("may only bind its own"),

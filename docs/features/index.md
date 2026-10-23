@@ -51,7 +51,7 @@ Surface 종류(kind)마다의 명세는 제공 주체와 관계없이 [`surfaces
 | [terminal-output](terminal-output/index.md) — 출력 구조화 (parse/commands/observe) | AI Agent | 없음 |
 | [capability-elevation](capability-elevation/index.md) — 권한 상승 & 감사 | AI Agent · 로컬 사용자 | elevation popup |
 | [hooks](hooks/index.md) — 훅 (surface/global, 자동 실행, 사용자 핸들러 비동기 저장) | 로컬 사용자 · AI Agent | [설정 탭](settings/screens/settings.md) Hook Handlers |
-| [webhook](webhook/index.md) — 인바운드 웹훅 리스너 (인증 · UTF-8 변환 전 JSON 입력 상한 · HTTP 연결 정리 비용 · 재시작 복원 · port 파일 receipt) | 로컬 사용자 · AI Agent | [설정 탭](settings/screens/settings.md) Hook Handlers (리스너는 headless) |
+| [webhook](webhook/index.md) — 인바운드 웹훅 리스너 (인증 · UTF-8 변환 전 JSON 입력 상한 · HTTP 연결 정리 비용 · 재시작 복원 · port/registry 파일 receipt · HTTP 접수 실패 구분) | 로컬 사용자 · AI Agent | [설정 탭](settings/screens/settings.md) Hook Handlers (리스너는 headless) |
 | [closed-tab-restore](closed-tab-restore/index.md) — 닫힌 항목 복원 (`Ctrl+Shift+T`) | 로컬 사용자 | 없음 |
 | [convert-surface](convert-surface/index.md) — Surface 타입 전환 (`Alt+'`) | 로컬 사용자 · AI Agent | convert popup |
 | [surface-move](surface-move/index.md) — Surface·Tab·Pane 위치 이동 (이동/이곳으로 이동) | 로컬 사용자 | OS 컨텍스트 메뉴 |
