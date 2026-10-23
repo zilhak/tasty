@@ -89,6 +89,22 @@ impl<'a> TaskStore<'a> {
         } else {
             (task_key(&task.id)?, serde_json::to_value(task)?)
         };
+        if task.state.is_terminal()
+            && self
+                .get(task.workspace_id, &task.id)?
+                .is_none_or(|old| !old.state.is_terminal())
+        {
+            let revision = self.revision(task.workspace_id, &task.id)?.unwrap_or(0) + 1;
+            return super::terminal::put_terminal(
+                self.mem,
+                &self.owner,
+                &scope,
+                key,
+                value,
+                task,
+                revision,
+            );
+        }
         self.mem.put(
             &self.owner,
             &scope,
@@ -101,12 +117,21 @@ impl<'a> TaskStore<'a> {
 
     /// 단건 조회. v1·v2 namespace 를 모두 본다.
     pub fn get(&self, workspace_id: WorkspaceId, id: &TaskId) -> Result<Option<Task>> {
+        Self::read_record(self.mem, workspace_id, id).map(|row| row.map(|(task, _)| task))
+    }
+
+    /// Read a validated task and its revision without requiring mutable storage access.
+    pub fn read_record(
+        mem: &dyn MemoryStorage,
+        workspace_id: WorkspaceId,
+        id: &TaskId,
+    ) -> Result<Option<(Task, u64)>> {
         let scope = Scope::Workspace(workspace_id);
-        if let Some(e) = self.mem.get(&scope, &task_key(id)?)? {
-            return decode_v1_record(e.value, id).map(Some);
+        if let Some(e) = mem.get(&scope, &task_key(id)?)? {
+            return decode_v1_record(e.value, id).map(|task| Some((task, e.version)));
         }
-        match self.mem.get(&scope, &typed_task_key(id)?)? {
-            Some(e) => decode_typed_record(e.value, id).map(Some),
+        match mem.get(&scope, &typed_task_key(id)?)? {
+            Some(e) => decode_typed_record(e.value, id).map(|task| Some((task, e.version))),
             None => Ok(None),
         }
     }

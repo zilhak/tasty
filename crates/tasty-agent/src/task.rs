@@ -440,6 +440,7 @@ pub mod record_limit;
 pub mod report;
 pub mod route;
 mod store;
+pub mod terminal;
 pub mod types;
 
 pub use agent::{AgentLink, AgentSession};
