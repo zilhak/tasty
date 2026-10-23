@@ -304,7 +304,7 @@ writer를 거치는 IPC 요청은 결과가 나온 뒤 응답한다. 핸들러�
 | `config.toml` | `SettingsStorage::save` → `Settings::save` | file writer(부팅 정규화·셸 확인·테마 조정 포함) | 예(공용 교체, fsync 없음). 해석하지 못한 원본은 저장 직전 백업 | 같은 대상 잠금과 원본 변경 관측 |
 | `presets/**.toml` | `PresetStore`의 관측값 검사·공용 교체 | 실행 중 명령은 file worker, 초기 읽기·ID 보정은 load 호출 스레드 | 예(fsync 없음) | 저장 이름 선택의 참여자 잠금 + 대상 잠금·관측 충돌 검사 |
 | `port-favorites.toml`·`explorer-favorites.toml` | `SharedList::update`가 잠금 안에서 snapshot 접수, file writer가 교체 | file writer | 예(공용 교체, fsync 없음) | 참여자 잠금·원본 fingerprint/링크 대상 비교 |
-| `child-terminals.json` | `child_terminal::save`(읽기-병합-쓰기) | 메인 루프 | 아니요 | 같은 홈의 다른 프로세스와 잠금 없음 |
+| `child-terminals.json` | `child_terminal::save`·번호 예약·슬롯 정리(소유한 명령) | 메인 루프(동기 완료 경계) | 예 | 공용 참여자 잠금 안에서 최신 읽기·engine 소유 병합·교체 |
 | `tasty.port` | `publish_port_file_to` 완료 결과를 listener가 소유 | IPC 시작 완료 barrier | 예(공용 안전 교체, fsync 없음) | notify 정리 → 관측 원본/링크 비교·참여 잠금 → 완료 공개. 서버 Drop은 같은 잠금을 비차단 획득한 동안 열린 파일 identity·내용이 같은 공개 세대만 정리. 경합/identity 불명은 보존 |
 | 단일 실행 instance 파일 | `instance_file` | 메인 루프 | 예(sync 포함) | GUI만 쓴다 |
 | `webhooks.toml` | 호스트 `webhook::persist::WriteRequest`, CLI `webhook_port_file` | runtime port·registry는 기존 file writer, CLI·초기 prepare는 동기 실행 | 예(공용 교체, fsync 없음) | host 배열 교체·CLI port 변경·옛 포트 마이그레이션이 같은 참여자 잠금 안에서 최신 TOML을 읽고 해당 절만 변경 |
@@ -347,6 +347,12 @@ port 변경과 형식 마이그레이션은 한 번에 교체해
 저장하지 않는다. 최신 읽기에서 삭제·손상·읽기 불가를 확인하면 최초 읽기의 포트를 재사용하지 않는다.
 
 `notify/<surface>.log`는 호스트가 쓰지 않는다. 플러그인 프로세스가 쓰고 호스트는 IPC 시작 때 디렉터리를 정리한다.
+
+### Child terminal 관계의 파일 병합
+
+Child registry는 엔진이 소유한 surface 관계·상태·슬롯만 최신 파일에 반영하고 다른 엔진의 기록을 유지한다. External 부모는 자식 surface 소유권으로 병합하며 다음 번호는 다른 엔진의 미등록 예약까지 보존한다. 전체 파일 snapshot의 마지막 값으로 대체하지 않는다. 번호 예약도 같은 참여자 잠금 안에서 최신 파일을 읽고 증가·교체까지 끝낸 뒤 번호를 반환한다. 실패한 예약은 번호를 반환하거나 호출자의 캐시를 전진시키지 않는다.
+
+저장은 같은 디렉터리의 임시 파일과 공용 원자 교체 함수를 사용한다. 초기 읽기·파싱 실패는 관찰용 빈 상태로 시작하되 해당 load의 쓰기를 금지한다. 저장 직전의 최신 파일 읽기·파싱 실패도 원본을 보호한다. 초기 읽기 실패를 외부에서 파일을 교체하는 것만으로 해제하지 않는다. 파일이 실제로 없을 때만 빈 registry에서 시작한다. symlink 대상과 내용 fingerprint를 참여자 잠금 획득 뒤 및 교체 직전에 검사한다. 참여하지 않는 편집기의 마지막 확인과 rename 사이 경합은 공용 교체 함수와 같은 한계다. 이 경계의 호출자는 현재 동기로 완료를 기다린다.
 
 ### port를 우회하는 직접 호출
 

@@ -15,6 +15,8 @@
 //! 부모는 어느 engine 의 surface 도 아니므로 자식 surface 의 소유로 항목을 귀속하고, 다음 번호는
 //! engine 사이에서 큰 값을 따른다. 마지막 자식이 빠지면 Surface 부모처럼 목록과 다음 번호를 지운다.
 
+mod persistence;
+
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
@@ -43,7 +45,7 @@ impl ReconcileSummary {
     }
 }
 
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct ChildTerminalRegistry {
     children: HashMap<u32, Vec<ChildEntry>>,
     parent_of: HashMap<u32, u32>,
@@ -57,6 +59,9 @@ pub struct ChildTerminalRegistry {
     /// load로 정하며 default는 저장 경로가 없다.
     #[serde(skip)]
     path: Option<PathBuf>,
+    /// A failed initial read must never authorize replacing the original.
+    #[serde(skip)]
+    load_error: Option<String>,
     /// 항목 surface 가 속한 레이아웃 슬롯. 슬롯 engine 의 소유 판정과 시작 시 정리에 쓴다.
     #[serde(default)]
     slot_of: HashMap<u32, u32>,
@@ -83,7 +88,7 @@ pub struct ChildTerminalRegistry {
 }
 
 impl ChildTerminalRegistry {
-    /// TASTY_HOME 아래에서 읽는다. 파일 읽기·파싱 실패는 빈 상태로 처리한다.
+    /// Load from TASTY_HOME. Failed reads expose an empty view with writes disabled.
     pub fn load() -> Self {
         let path = tasty_utils::path::tasty_home().map(|d| d.join("child-terminals.json"));
         let mut s = path.as_deref().map(read_file).unwrap_or_default();
@@ -91,14 +96,43 @@ impl ChildTerminalRegistry {
         s
     }
 
-    /// 파일을 다시 읽어 다른 engine 의 항목을 받아 합친 뒤 쓴다. 메모리도 합친 결과로 바꾼다.
+    /// Merge only this engine's owned records under the participant lock, then atomically replace.
     pub fn save(&mut self) {
+        if let Err(error) = self.persist(persistence::Operation::Merge) {
+            tracing::warn!(%error, "child-terminal registry was not saved");
+        }
+    }
+
+    fn persist(&mut self, operation: persistence::Operation) -> Result<Option<u32>, String> {
         let Some(path) = self.path.clone() else {
-            return;
+            return self.apply_operation(operation);
         };
-        self.merge_from(read_file(&path));
-        ensure_parent_dir(&path);
-        self.write_json_to(&path);
+        let outcome = persistence::Command::new(path, self.clone(), operation).execute()?;
+        *self = outcome.registry;
+        Ok(outcome.index)
+    }
+
+    fn apply_operation(
+        &mut self,
+        operation: persistence::Operation,
+    ) -> Result<Option<u32>, String> {
+        match operation {
+            persistence::Operation::Merge => Ok(None),
+            persistence::Operation::Reserve(parent) => self.allocate_index(&parent).map(Some),
+            #[cfg(feature = "gui")]
+            persistence::Operation::Prune(keep) => {
+                self.prune_slots(&keep);
+                Ok(None)
+            }
+            #[cfg(feature = "gui")]
+            persistence::Operation::Clear => {
+                *self = Self {
+                    path: self.path.take(),
+                    ..Self::default()
+                };
+                Ok(None)
+            }
+        }
     }
 
     /// 이 engine 의 슬롯을 정하고 그 슬롯의 항목을 소유한다. 슬롯이 없는 engine(headless)은 한
@@ -264,10 +298,13 @@ impl ChildTerminalRegistry {
     /// 지우고 쓴다.
     #[cfg(feature = "gui")]
     pub(crate) fn forget_slots_except(&mut self, keep: &HashSet<u32>) {
-        let Some(path) = self.path.clone() else {
-            return;
-        };
-        self.merge_from(read_file(&path));
+        if let Err(error) = self.persist(persistence::Operation::Prune(keep.clone())) {
+            tracing::warn!(%error, "child-terminal registry slots were not pruned");
+        }
+    }
+
+    #[cfg(feature = "gui")]
+    fn prune_slots(&mut self, keep: &HashSet<u32>) {
         if let Some(slot) = self.slot {
             for surface in self.surfaces() {
                 if let std::collections::hash_map::Entry::Vacant(tag) = self.slot_of.entry(surface)
@@ -284,8 +321,6 @@ impl ChildTerminalRegistry {
             .map(|(surface, _)| *surface)
             .collect();
         self.drop_surfaces(&gone);
-        ensure_parent_dir(&path);
-        self.write_json_to(&path);
     }
 
     /// engine 이 사라질 때 그 engine 이 소유한 항목(빈 부모 목록·다음 번호 포함)을 지우고 저장한다.
@@ -328,35 +363,24 @@ impl ChildTerminalRegistry {
         self.owned.insert(surface);
     }
 
-    fn write_json_to(&self, path: &std::path::Path) {
-        match serde_json::to_string_pretty(self) {
-            Ok(text) => {
-                if let Err(e) = std::fs::write(path, text) {
-                    tracing::warn!("child-terminal registry save failed: {e}");
-                }
-            }
-            Err(e) => tracing::warn!("child-terminal registry encode failed: {e}"),
-        }
+    pub(crate) fn reserve_index(&mut self, parent: &ParentKey) -> Result<u32, String> {
+        self.persist(persistence::Operation::Reserve(parent.clone()))?
+            .ok_or_else(|| "child index reservation returned no index".into())
     }
 
-    pub(crate) fn reserve_index(&mut self, parent: &ParentKey) -> Result<u32, String> {
+    fn allocate_index(&mut self, parent: &ParentKey) -> Result<u32, String> {
         let entry = match parent {
             ParentKey::Surface(parent) => {
                 self.own(*parent);
                 self.next_index.entry(*parent).or_insert(0)
             }
             ParentKey::External(parent) => {
-                // 다른 engine 이 같은 부모에 준 번호를 먼저 받아 중복 번호를 막는다.
-                if let Some(path) = self.path.clone() {
-                    self.merge_from(read_file(&path));
-                }
                 self.removed_external_top.remove(parent);
                 self.external_next_index.entry(parent.clone()).or_insert(0)
             }
         };
         let index = *entry;
         *entry = entry.checked_add(1).ok_or("child index space exhausted")?;
-        self.save();
         Ok(index)
     }
 
@@ -618,24 +642,23 @@ pub(crate) fn clear_on_boot(settings: &crate::settings::Settings) {
     if settings.general.restore_layout || !path.exists() {
         return;
     }
-    ChildTerminalRegistry::default().write_json_to(&path);
+    let registry = read_file(&path);
+    if let Err(error) =
+        persistence::Command::new(path, registry, persistence::Operation::Clear).execute()
+    {
+        tracing::warn!(%error, "child-terminal registry was not cleared on boot");
+    }
 }
 
-/// 파일 읽기·파싱 실패는 빈 상태로 처리한다.
+/// Keep the load usable for observation while refusing all writes after an invalid initial read.
 fn read_file(path: &std::path::Path) -> ChildTerminalRegistry {
-    if !path.exists() {
-        return ChildTerminalRegistry::default();
-    }
-    match std::fs::read_to_string(path) {
-        Ok(text) => serde_json::from_str(&text).unwrap_or_else(|e| {
-            tracing::warn!("child-terminal registry parse failed: {e}");
-            ChildTerminalRegistry::default()
-        }),
-        Err(e) => {
-            tracing::warn!("child-terminal registry read failed: {e}");
-            ChildTerminalRegistry::default()
+    persistence::read(path).unwrap_or_else(|error| {
+        tracing::warn!(%error, "child-terminal registry load failed; protecting original");
+        ChildTerminalRegistry {
+            load_error: Some(error),
+            ..Default::default()
         }
-    }
+    })
 }
 
 /// 뺀 External 자식의 index 로 그 부모의 상한(index + 1 최댓값)을 올린다.
@@ -683,17 +706,6 @@ fn merge_owned<V>(disk: &mut HashMap<u32, V>, mine: &mut HashMap<u32, V>, owned:
         if owned.contains(&key) {
             disk.insert(key, value);
         }
-    }
-}
-
-fn ensure_parent_dir(path: &std::path::Path) {
-    if let Some(parent) = path.parent()
-        && let Err(e) = std::fs::create_dir_all(parent)
-    {
-        tracing::warn!(
-            "child-terminal registry mkdir {} failed: {e}",
-            parent.display()
-        );
     }
 }
 
