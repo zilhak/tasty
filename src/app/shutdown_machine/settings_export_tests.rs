@@ -25,6 +25,40 @@ fn state(file_drain: crate::app::writer_drain::WriterDrain) -> ShutdownState {
 }
 #[test]
 fn accepted_export_is_collected_at_final_zero_and_timeout_even_after_view_loss() {
+    const CHILD_ENV: &str = "TASTY_SETTINGS_EXPORT_GUI_TEST_CHILD";
+    const COMPLETE: &str = "final-zero-and-timeout-complete";
+    if let Some(marker) = std::env::var_os(CHILD_ENV) {
+        run_in_fresh_event_loop();
+        std::fs::write(marker, COMPLETE).unwrap();
+        return;
+    }
+
+    // winit permits only one EventLoop per process, even with one test thread.
+    // Keep this App fixture independent of other GUI tests and reap its child.
+    let test = format!(
+        "{}::accepted_export_is_collected_at_final_zero_and_timeout_even_after_view_loss",
+        module_path!().split_once("::").unwrap().1
+    );
+    let directory = tempfile::tempdir().unwrap();
+    let marker = directory.path().join("completed");
+    let output = std::process::Command::new(std::env::current_exe().unwrap())
+        .args([test.as_str(), "--exact", "--test-threads=1"])
+        .env(CHILD_ENV, &marker)
+        .output()
+        .expect("run Export App cases in a fresh test process");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "Export App child failed\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert_eq!(
+        std::fs::read_to_string(marker).unwrap_or_default(),
+        COMPLETE,
+        "Export App child did not finish both cases\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+}
+fn run_in_fresh_event_loop() {
     let event_loop = winit::event_loop::EventLoop::<crate::AppEvent>::with_user_event()
         .with_x11()
         .with_any_thread(true)

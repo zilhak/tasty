@@ -125,6 +125,20 @@ TASTY_AGENT_ID를 보호하는 ENV_LOCK이나 cwd를 보호하는 CWD_LOCK은 �
 실패 경로에서는 자식의 `test result: FAILED` 줄이 부모의 실패 메시지 안에 그대로 나온다. 이때 부모 실행도
 실패이므로 판정은 바뀌지 않는다.
 
+### winit EventLoop는 시험 스레드 직렬화로 재생성할 수 없다
+
+Linux의 winit EventLoop는 프로세스에서 한 번만 만들 수 있다. 다른 실제 App 시험이
+이미 EventLoop를 만들었다면 `--test-threads=1`도 RecreationAttempt를 막지 못한다.
+Export 종료 수집 시험은 같은 시험 바이너리를 `current_exe`와 정확한 `--exact` 이름으로
+다시 실행하고, 자식 분기에서만 EventLoop와 실제 App을 만든다. 따라서 부모 시험은
+다른 GUI App 시험과 함께 실행되어도 EventLoop를 소비하지 않는다.
+
+자식 표지는 `Command::env`로 그 자식에만 전달한다. 자식 분기는 다시 자식을 만들지 않으며,
+final-zero와 timeout 두 실제 App 시나리오의 단언이 모두 끝난 뒤 완료 파일을 쓴다.
+부모는 종료 상태와 완료 파일을 함께 확인하므로 잘못된 필터로 시험 0개가 실행돼도 실패한다.
+`output()`이 출력을 캡처하고 자식을 기다려 회수한다. DISPLAY와 격리된 홈 환경은
+검증 실행기가 제공하며, 자식의 시험 결과 줄은 부모의 통과 건수에 중복 합산하지 않는다.
+
 ### 락은 **키 단위**로 하나 — 모듈마다 따로 두지 않는다
 
 같은 crate 안에서 같은 키(또는 서로를 덮는 키 쌍)를 건드리는 테스트가 **서로 다른 락**을
