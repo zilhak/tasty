@@ -349,6 +349,10 @@ accepted 기준을 전진시키고, 늦게 받은 확정 결과에는 이후 접
 continuation을 적용한 다음 원 호출자 응답을 보낸다. engine이 은퇴했거나 대상이 바뀌면 파일 저장과
 live 적용을 구분한 오류로 끝낸다. spawn의 구조 준비는 예약 receipt 뒤, 설치된 child의 command 입력은
 관계 receipt 뒤다. 원 호출자의 연결 종료는 이미 접수한 파일 명령을 취소하거나 재실행하지 않는다.
+예약을 기다리는 spawn plan은 private pending 요청에만 보관하며 구조 준비나 공개에 사용하지 않는다.
+예약 receipt가 확정한 index로 `child{index}` 탭 제목과 명시 이름을 한 번 정한 뒤 구조 ID 예약·준비를
+진행한다. 대기 중 요청과 해소된 plan의 실제 직렬화 크기는 기존 pending 바이트 재계산·상한 검사를
+각각 통과하며, 아직 알 수 없는 index를 가짜 이름으로 미리 조립하지 않는다.
 
 아직 index가 공개되지 않은 adopt 뒤에 surface가 닫혀도 삭제 의도를 보관한다. file writer가 가득
 찼으면 이 의도의 접수만 다시 시도하며 실행 결과가 불명인 명령은 재실행하지 않는다. 종료는 이

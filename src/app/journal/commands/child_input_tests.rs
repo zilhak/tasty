@@ -107,14 +107,36 @@ fn reply(
 #[test]
 fn a_child_is_published_before_its_command_runs_and_the_reply_waits_for_the_submit() {
     let (mut session, mut journal) = boot_with_shell();
+    let parent = session.core_state.local_workspaces()[0].all_surface_ids()[0];
+    // Consume an actual reservation so the child's real name cannot be mistaken for index zero.
+    assert_eq!(
+        session
+            .runtime
+            .child_terminals
+            .reserve_index(&parent.into()),
+        Ok(0)
+    );
     let rx = spawn(&mut journal, &session, 900);
     let child = published_before_submit(&mut journal, &mut session);
+    let pane = session.core_state.find_pane_for_surface(child).unwrap();
+    let tab = session.core_state.find_tab_for_surface(child).unwrap();
+    let tab = session
+        .core_state
+        .find_pane_by_id(pane)
+        .unwrap()
+        .tabs
+        .iter()
+        .find(|candidate| candidate.id == tab)
+        .unwrap();
+    assert_eq!(tab.name, "child1");
+    assert_eq!(tab.explicit_name.as_deref(), Some("child1"));
     assert!(
         matches!(rx.try_recv(), Err(std::sync::mpsc::TryRecvError::Empty)),
         "the reply waits for the submit"
     );
     let response = reply(&mut journal, &mut session, &rx);
     assert!(response.error.is_none(), "{response:?}");
+    assert_eq!(response.result.as_ref().unwrap()["child_index"], 1);
     assert!(!waiting_input(&journal));
     let terminal = session
         .runtime

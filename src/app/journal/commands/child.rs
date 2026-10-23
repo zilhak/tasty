@@ -142,8 +142,7 @@ pub(super) fn resolve_spawn(
         tab: 0,
         index: tab_index,
     };
-    result.plan.tab_name = format!("child{index}");
-    result.plan.explicit_name = Some(result.plan.tab_name.clone());
+    // This private plan receives its child name only after the reservation receipt.
     result.shape = create::Shape::Child { index, workspace };
     result.activate = false;
     result.one_shot_input = command.map(|body| crate::app::terminal_input::tell_payload(&body));
