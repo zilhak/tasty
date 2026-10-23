@@ -785,3 +785,5 @@ fn every_batch_wakes_the_owner_and_sizes_land_in_their_buckets() {
 }
 
 mod shutdown_observation;
+
+mod measurements;

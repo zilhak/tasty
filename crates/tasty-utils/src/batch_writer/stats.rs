@@ -1,5 +1,9 @@
 //! writer 누계 계측. 원자값을 Relaxed로 읽으므로 스냅샷 전체가 원자적이지는 않다.
 
+use super::{measurement::DurationStats, pending::PendingStats};
+use std::sync::Arc;
+use std::time::Instant;
+
 use std::sync::atomic::{AtomicU64, Ordering};
 
 /// 묶음 크기 분포의 구간 상한(포함). 마지막 구간은 그 위 전부다.
@@ -8,6 +12,13 @@ pub const BATCH_SIZE_BUCKETS: [u64; 5] = [1, 4, 16, 64, 256];
 #[derive(Debug, Default)]
 pub(crate) struct WriterStats {
     admitted: AtomicU64,
+    admitted_bytes: AtomicU64,
+    batch_bytes: AtomicU64,
+    batch_bytes_max: AtomicU64,
+    pub(super) batch_wait: DurationStats,
+    pub(super) batch_execution: DurationStats,
+    pub(super) executor_execution: DurationStats,
+    pub(super) pending: Arc<PendingStats>,
     rejected_saturated: AtomicU64,
     rejected_closed: AtomicU64,
     batches: AtomicU64,
@@ -26,8 +37,10 @@ fn as_u64(n: usize) -> u64 {
 }
 
 impl WriterStats {
-    pub(crate) fn record_admitted(&self, held_items: usize, held_bytes: usize) {
+    pub(crate) fn record_admitted(&self, held_items: usize, held_bytes: usize, bytes: usize) {
         self.admitted.fetch_add(1, Ordering::Relaxed);
+        self.admitted_bytes
+            .fetch_add(as_u64(bytes), Ordering::Relaxed);
         self.peak_items
             .fetch_max(as_u64(held_items), Ordering::Relaxed);
         self.peak_bytes
@@ -43,9 +56,12 @@ impl WriterStats {
     }
 
     /// 실행한 묶음 하나. 재시도는 같은 묶음이라 다시 세지 않는다.
-    pub(crate) fn record_batch(&self, requests: usize, superseded: usize) {
+    pub(crate) fn record_batch(&self, requests: usize, superseded: usize, bytes: usize) {
         let n = as_u64(requests);
         self.batches.fetch_add(1, Ordering::Relaxed);
+        self.batch_bytes.fetch_add(as_u64(bytes), Ordering::Relaxed);
+        self.batch_bytes_max
+            .fetch_max(as_u64(bytes), Ordering::Relaxed);
         self.batch_requests.fetch_add(n, Ordering::Relaxed);
         self.batch_size_max.fetch_max(n, Ordering::Relaxed);
         let bucket = BATCH_SIZE_BUCKETS
@@ -65,9 +81,30 @@ impl WriterStats {
         self.flushes.fetch_add(1, Ordering::Relaxed);
     }
 
-    pub(crate) fn snapshot(&self, held_items: usize, held_bytes: usize) -> WriterStatsSnapshot {
+    pub(crate) fn snapshot(
+        &self,
+        held_items: usize,
+        held_bytes: usize,
+        now: Instant,
+    ) -> WriterStatsSnapshot {
         let load = |a: &AtomicU64| a.load(Ordering::Relaxed);
+        let (pending_items, pending_bytes, oldest_pending_age_us, outcomes) =
+            self.pending.snapshot(now);
         WriterStatsSnapshot {
+            admitted_bytes: load(&self.admitted_bytes),
+            batch_bytes: load(&self.batch_bytes),
+            batch_bytes_max: load(&self.batch_bytes_max),
+            batch_wait: self.batch_wait.snapshot(),
+            batch_execution: self.batch_execution.snapshot(),
+            executor_execution: self.executor_execution.snapshot(),
+            completed_ok: outcomes[0],
+            completed_rejected: outcomes[1],
+            completed_failed: outcomes[2],
+            completed_unknown: outcomes[3],
+            completed_lost: outcomes[4],
+            pending_items,
+            pending_bytes,
+            oldest_pending_age_us,
             admitted: load(&self.admitted),
             rejected_saturated: load(&self.rejected_saturated),
             rejected_closed: load(&self.rejected_closed),
@@ -89,6 +126,25 @@ impl WriterStats {
 /// writer 계측의 한 시점 읽기.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct WriterStatsSnapshot {
+    pub admitted_bytes: u64,
+    /// Original input bytes before coalescing, not physical bytes written.
+    pub batch_bytes: u64,
+    pub batch_bytes_max: u64,
+    pub batch_wait: super::DurationStatsSnapshot,
+    /// Logical batch service, including busy retry backoff and settlement, not receipt consumption.
+    pub batch_execution: super::DurationStatsSnapshot,
+    /// Individual executor attempts, including caught panic, excluding retry backoff.
+    pub executor_execution: super::DurationStatsSnapshot,
+    pub completed_ok: u64,
+    pub completed_rejected: u64,
+    pub completed_failed: u64,
+    pub completed_unknown: u64,
+    pub completed_lost: u64,
+    /// Unsettled accepted work; excludes ready unread results, unlike held_*.
+    pub pending_items: u64,
+    pub pending_bytes: u64,
+    /// None when no unsettled work. Generic requests include reads, so this is not domain dirty age.
+    pub oldest_pending_age_us: Option<u64>,
     /// 접수한 요청 수(flush 제외).
     pub admitted: u64,
     /// 예산이 차서 거절한 수.

@@ -23,6 +23,8 @@
 //! 계약 전체는 docs/design/systems/storage-contract.md의 "저장 실행기" 절에 있다.
 
 mod clock;
+mod measurement;
+mod pending;
 mod slot;
 mod stats;
 mod wake;
@@ -34,6 +36,7 @@ use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 pub use clock::{Clock, ManualClock, SystemClock};
+pub use measurement::{DurationStatsSnapshot, WRITER_LATENCY_BOUNDS_US};
 pub use slot::Receipt;
 pub use stats::{BATCH_SIZE_BUCKETS, WriterStatsSnapshot};
 pub use wake::{WakeCounts, WakeLatch};
@@ -358,17 +361,24 @@ impl<X: Executor> Handle<X> {
         shared.budget.bytes.fetch_add(bytes, Ordering::AcqRel);
         shared
             .stats
-            .record_admitted(held_items + 1, held_bytes + bytes);
+            .record_admitted(held_items + 1, held_bytes + bytes, bytes);
         queue.next_seq += 1;
         let seq = queue.next_seq;
+        let admitted_at = shared.clock.now();
+        let metric = shared.stats.pending.track(seq, admitted_at, bytes);
         let slot = Slot::new(Some(shared.budget.clone()), bytes);
         queue.entries.push_back(Entry {
             seq,
-            admitted_at: shared.clock.now(),
+            admitted_at,
             bytes,
             work: Work::Request {
                 request,
-                ticket: Ticket::new(slot.clone(), || Completion::Lost),
+                ticket: Ticket::measured(
+                    slot.clone(),
+                    || Completion::Lost,
+                    metric,
+                    Completion::measurement_outcome,
+                ),
             },
         });
         drop(queue);
@@ -396,6 +406,7 @@ impl<X: Executor> Handle<X> {
         self.shared.stats.snapshot(
             self.shared.budget.items.load(Ordering::Acquire),
             self.shared.budget.bytes.load(Ordering::Acquire),
+            self.shared.clock.now(),
         )
     }
 }
@@ -567,3 +578,16 @@ impl<X: Executor> Drop for Writer<X> {
 
 #[cfg(test)]
 mod tests;
+
+impl<O, E> Completion<O, E> {
+    fn measurement_outcome(&self) -> pending::Outcome {
+        match self {
+            Self::Done(Ok(_)) => pending::Outcome::Ok,
+            Self::Done(Err(_)) => pending::Outcome::Rejected,
+            Self::Failed(_) => pending::Outcome::Failed,
+            Self::Unknown(_) => pending::Outcome::Unknown,
+            Self::Lost => pending::Outcome::Lost,
+            Self::Superseded { outcome, .. } => outcome.measurement_outcome(),
+        }
+    }
+}

@@ -121,9 +121,15 @@ impl<T> Slot<T> {
 }
 
 /// worker 쪽 완료 권한. 완료하지 않고 버려지면 `lost` 결과로 끝낸다(worker 종료·panic).
+type Metric<T> = (
+    super::pending::RequestMetric,
+    fn(&T) -> super::pending::Outcome,
+);
+
 pub(crate) struct Ticket<T> {
     slot: Option<Arc<Slot<T>>>,
     lost: fn() -> T,
+    metric: Option<Metric<T>>,
 }
 
 impl<T> Ticket<T> {
@@ -131,10 +137,27 @@ impl<T> Ticket<T> {
         Self {
             slot: Some(slot),
             lost,
+            metric: None,
+        }
+    }
+
+    pub(super) fn measured(
+        slot: Arc<Slot<T>>,
+        lost: fn() -> T,
+        metric: super::pending::RequestMetric,
+        classify: fn(&T) -> super::pending::Outcome,
+    ) -> Self {
+        Self {
+            slot: Some(slot),
+            lost,
+            metric: Some((metric, classify)),
         }
     }
 
     pub(crate) fn complete(mut self, value: T, out_bytes: usize) {
+        if let Some((metric, classify)) = self.metric.take() {
+            metric.finish(classify(&value));
+        }
         if let Some(slot) = self.slot.take() {
             slot.complete(value, out_bytes);
         }
@@ -143,6 +166,9 @@ impl<T> Ticket<T> {
 
 impl<T> Drop for Ticket<T> {
     fn drop(&mut self) {
+        if let Some((metric, _)) = self.metric.take() {
+            metric.finish(super::pending::Outcome::Lost);
+        }
         if let Some(slot) = self.slot.take() {
             slot.complete((self.lost)(), 0);
         }

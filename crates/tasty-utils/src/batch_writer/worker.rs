@@ -36,6 +36,8 @@ type RequestTicket<X> = Ticket<Completion<<X as Executor>::Output, <X as Executo
 
 struct Pending<X: Executor> {
     seq: u64,
+    admitted_at: Instant,
+    bytes: usize,
     request: X::Request,
     ticket: RequestTicket<X>,
 }
@@ -194,6 +196,8 @@ fn take<X: Executor>(queue: &mut Queue<X>, count: usize) -> Vec<Pending<X>> {
         .filter_map(|entry| match entry.work {
             Work::Request { request, ticket } => Some(Pending {
                 seq: entry.seq,
+                admitted_at: entry.admitted_at,
+                bytes: entry.bytes,
                 request,
                 ticket,
             }),
@@ -321,9 +325,22 @@ fn run_batch<X: Executor>(
     tally: &mut Tally,
     batch: Vec<Pending<X>>,
 ) {
+    let _batch_timer =
+        super::measurement::Timer::new(&shared.stats.batch_execution, &*shared.clock);
+    if let Some(first) = batch.first() {
+        shared.stats.batch_wait.record(
+            shared
+                .clock
+                .now()
+                .saturating_duration_since(first.admitted_at),
+        );
+    }
+    let bytes = batch
+        .iter()
+        .fold(0usize, |sum, request| sum.saturating_add(request.bytes));
     let total = batch.len();
     let mut run = Run::<X>::new(batch);
-    shared.stats.record_batch(total, run.links.len());
+    shared.stats.record_batch(total, run.links.len(), bytes);
     let mut retry = Retry {
         started: shared.clock.now(),
         backoff: shared.limits.retry_backoff,
@@ -332,7 +349,10 @@ fn run_batch<X: Executor>(
         if run.requests.is_empty() {
             return finish_rest::<X>(tally, run.links);
         }
+        let attempt =
+            super::measurement::Timer::new(&shared.stats.executor_execution, &*shared.clock);
         let outcome = catch_unwind(AssertUnwindSafe(|| executor.execute(&mut run.requests)));
+        drop(attempt);
         match outcome {
             Ok(Execution::Committed(results)) => return run.commit(tally, results),
             Ok(Execution::Finished(results)) => return run.settle(tally, results),

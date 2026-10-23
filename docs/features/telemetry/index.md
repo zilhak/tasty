@@ -144,7 +144,7 @@ DB 설정과 느린 요청 기록은 아래 표처럼 별도 항목이다.
 | `queue_dispatch` | 큐에서 꺼내는 회차와 실행 직전 (`tasty_ipc::dispatch::DispatchStats`) | 큐에서 **꺼낸** 명령과 그 회차 — 실행을 시작한 뒤 명령 또는 응답 대기자가 lifecycle을 보유한 요청 |
 | `keyed_requests` | 멱등 보존소의 판정 (`idempotency::Store::decide`) | **멱등 키를 실은** 요청만 — 한 요청은 자기를 맡은 층의 판정으로 한 번 |
 | `slow_requests` | 명령을 꺼낸 직후·다 다룬 직후 (`app::ipc_round::CommandObservation`, gui · headless 같은 자리) + plugin 대기 표의 응답·만료·취소 (`PluginManager::record_origin_hop`) | 호스트 IPC 큐를 지난 요청 중 **합이 문턱(100 ms) 이상인 것만** — `system.pressure` 자신은 안 넣는다 |
-| `memory_writer` | memory.db 전담 writer의 접수와 묶음 실행 (`tasty_utils::batch_writer`) | writer에 **접수된** 요청과 거절, 실행한 묶음 크기 분포(`batch_sizes`), busy 재실행, flush, 지금·최대 잡힌 항목 수와 바이트. writer가 없는 시험 구성이면 `null` |
+| `memory_writer` | memory.db 전담 writer의 접수와 묶음 실행 (`tasty_utils::batch_writer`) | writer에 **접수된** 요청과 거절, 실행한 묶음 크기 분포(`batch_sizes`), 입력 바이트, 묶음 대기·실행·executor 호출 분포, 종결 결과, 미완료 요청 나이·수·바이트, busy 재실행, flush, 지금·최대 잡힌 항목 수와 바이트([관측 계약](../../design/systems/storage-contract.md#저장-실행기-관측)). writer가 없는 시험 구성이면 `null` |
 | `state_writer` | GUI state.db writer의 접수와 묶음 실행 (`crate::db::writer`, `tasty_utils::batch_writer`) | 최근 파일·튜토리얼 저장 요청. 필드는 `memory_writer`와 같다. 헤드리스·state.db 미개방이면 `null` |
 | `state_db` | state.db writer의 commit 성공 직후 (`StateExecutor`) | **성공한** writer 묶음 commit의 수·시간과 commit당 실행한 요청 수. 부팅 읽기·혼자 실행한 튜토리얼 읽기는 세지 않는다. 헤드리스·state.db 미개방이면 `null` |
 | `gate_refusals` | 공통 진입 게이트 (`handler/gate.rs` 의 판정 단계) | 게이트에 **든** 요청 전부(`judged`) — Local 도, 큐를 안 지나는 plugin host-call 도 센다. 거절은 게이트마다 한 칸 |

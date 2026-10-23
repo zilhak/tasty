@@ -1,4 +1,4 @@
-<!-- source-hash: 18e3c2795103 -->
+<!-- source-hash: 5f4dee742b8e -->
 # CLI response delays and connection diagnostics
 
 Read this page when a `tasty` command replies slowly, cannot connect, or ends with an error such as `Error (-32061)`. It covers the difference between the reply wait bound and the task wait time, what to do for each error code, checking what this Tasty supports, and the connection counts, request queues and database state shown by `tasty list pressure`. If you are new to the CLI, start with [Driving terminals with the tasty CLI](../agents/cli.md).
@@ -74,6 +74,8 @@ queue that groups save requests. `state_writer` and `state_db` show the same cou
 times for the queue that saves recent files and tutorial progress. Both are `null` in headless runs
 and when `state.db` could not be opened. Permission, usage-cap, and rate-limit
 refusals are counted separately in `gate_refusals` below.
+
+The save queues expose `batch_wait` for time before a batch starts, `batch_execution` for the batch including retry waits, and `executor_execution` for individual processing calls. These distributions use microseconds; `samples: 0` means no observation yet. `pending_bytes` is the input size of unfinished requests, and `oldest_pending_age_us` is the age of the oldest one, or `null` when none remain. Finished requests whose results have not been read can still occupy `held_bytes`. Pending age is not the age of unsaved file changes, and completed requests or batches are not counts of physical disk commits.
 
 ### Connection counts and limits (`connections`)
 

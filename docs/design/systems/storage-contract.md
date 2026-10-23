@@ -353,3 +353,16 @@ registry는 미확인 의무에, 공유 토큰은 진행 중인 읽기 결과에
 재시작 때 남은 의무를 읽으므로 전달 직후 확인 쓰기 전에 프로세스가 끝난 경우에는 같은
 `terminal_id`가 다시 발행될 수 있다. 소비자는 이 ID로 재전달을 구분한다. 피드는 기존의
 휘발성 bounded 큐이며 외부 소비자의 수신 확인까지 영속 보장하지 않는다.
+
+## 저장 실행기 관측
+
+memory·state·file writer는 같은 `WriterStatsSnapshot`을 쓰고 `system.pressure`의 각 `*_writer`에 노출한다. 미구성 writer는 `null`이다. 계측은 저장·접수·재시도·ACK·종료 판단에 쓰지 않는다. 스냅샷 필드 전체는 원자적으로 읽히지 않는다.
+
+- `admitted_bytes`는 접수한 요청의 입력 크기 추정 합, `batch_bytes`·`batch_bytes_max`는 snapshot 대체 전 묶음 입력 바이트 합·최댓값이다. 디스크에 쓴 바이트가 아니다. 기존 `batch_requests`와 `batch_sizes`도 대체 전 요청을 센다.
+- `batch_wait`는 묶음의 가장 오래된 접수부터 worker의 묶음 처리 시작까지, `batch_execution`은 그 시작부터 결과 전달까지다. 후자는 busy 재시도 대기와 결과 전달을 포함하고 receipt 소비는 포함하지 않는다. `executor_execution`은 실제 executor 호출별 시간이며 재시도 대기를 제외하고 잡힌 panic 호출은 포함한다. 모두 같은 `Clock`을 쓴다.
+- 세 시간 분포는 `samples`·`sum_us`·`max_us`와 고정 구간(`le_us`·`counts`)이다. 마이크로초 미만은 0으로 버리되 표본 수에는 포함한다. 경계는 포함 상한이고 마지막 칸은 초과 구간이다. 표본 0의 합·최댓값·칸 수는 0이며 평균이나 percentile을 관측했다고 해석하지 않는다. 원시 표본을 보관하지 않으므로 정확한 percentile은 계산할 수 없다.
+- `completed_ok`·`completed_rejected`·`completed_failed`·`completed_unknown`·`completed_lost`는 접수한 요청의 종결 결과다. 대체된 요청도 대체한 요청의 결과로 분류한다. worker가 버린 queued ticket도 lost이며 receipt를 먼저 버려도 접수 작업은 계속된다. flush는 요청·묶음·종결 수에서 제외한다.
+- `pending_items`·`pending_bytes`는 아직 종결되지 않은 요청의 수와 원래 입력 바이트다. `oldest_pending_age_us`는 그중 가장 오래된 접수의 나이이며 없으면 `null`이다. 대기·실행·재시도·대체·receipt 포기를 거쳐 종결될 때까지 유지한다. 읽지 않은 완료 결과는 여기서 빠지지만 기존 `held_*` 예산에는 남는다.
+- 고정 크기 원자 카운터·분포와 최대 `queue_items`개의 seq·시각·바이트만 보관한다. 경로·키·내용·오류 본문을 저장하지 않는다. 카운터 누계는 기존 u64 규칙을 따르고 시간 변환은 u64 최댓값으로 제한한다. metrics 잠금 안에서 저장소·디스크 I/O나 결과 대기를 하지 않는다.
+
+generic 요청에는 강한 읽기도 있으므로 pending 나이는 소비자의 dirty revision 나이가 아니다. 실패나 결과 불명 요청은 종결되어 pending에서 빠져도 소비자의 미확정 변경은 남을 수 있다. 물리 commit 수·시간·쓰기 수는 `db`·`state_db`, 파일 교체 결과는 `file_writes`에서 따로 읽는다. `batches`나 `completed_ok`를 물리 commit 수로 해석하지 않는다. 소비자 dirty 상태와 journal 고유 계측은 각각의 소유자가 제공한다.
