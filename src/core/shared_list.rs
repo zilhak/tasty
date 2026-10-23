@@ -2,7 +2,14 @@
 //! 원본은 [`SharedList`] 하나이고 engine은 그리기용 [`Replica`]만 가진다. 변경은 원본에만 하고
 //! 저장도 원본 전체로 한다. 사본은 원본 리비전이 바뀌면 다시 복사한다.
 
+#[cfg(test)]
+mod dirty_age_tests;
+#[cfg(test)]
+mod tests;
+
 use std::sync::{Arc, Mutex, MutexGuard};
+use std::time::Instant;
+use tasty_utils::batch_writer::{Clock, SystemClock};
 
 use super::file_snapshot::{Document, PendingSave, Snapshot, Submit};
 
@@ -15,9 +22,14 @@ pub(crate) trait PersistedList:
     fn config_path() -> Option<std::path::PathBuf>;
 }
 
-#[derive(Default)]
 pub(crate) struct SharedList<T> {
     inner: Mutex<SharedState<T>>,
+    clock: Arc<dyn Clock>,
+}
+impl<T: Default> Default for SharedList<T> {
+    fn default() -> Self {
+        Self::from(T::default())
+    }
 }
 
 #[derive(Default)]
@@ -31,6 +43,7 @@ struct SharedState<T> {
     errors: Vec<String>,
     retried: bool,
     shutdown_reported: bool,
+    dirty_since: Option<Instant>,
 }
 
 impl<T: PersistedList> SharedList<T> {
@@ -42,8 +55,12 @@ impl<T: PersistedList> SharedList<T> {
     }
 
     pub(crate) fn load_at(path: std::path::PathBuf) -> Self {
+        Self::load_at_with_clock(path, Arc::new(SystemClock))
+    }
+    pub(crate) fn load_at_with_clock(path: std::path::PathBuf, clock: Arc<dyn Clock>) -> Self {
         let (list, document) = Document::load::<T>(path);
-        let source = Self::from(list);
+        let mut source = Self::from(list);
+        source.clock = clock;
         source.lock().document = Some(document);
         source
     }
@@ -61,6 +78,7 @@ impl<T: PersistedList> SharedList<T> {
         let mut state = self.lock();
         change(&mut state.list);
         state.revision += 1;
+        state.dirty_since.get_or_insert_with(|| self.clock.now());
         Self::enqueue(&mut state);
     }
 
@@ -107,6 +125,9 @@ impl<T: PersistedList> SharedList<T> {
                 Err(error) => state.errors.push(error),
             }
         }
+        if state.committed >= state.revision {
+            state.dirty_since = None;
+        }
         std::mem::take(&mut state.errors)
     }
 
@@ -134,6 +155,17 @@ impl<T: PersistedList> SharedList<T> {
         let state = self.lock();
         (state.revision, state.committed, state.pending.len())
     }
+    pub(crate) fn dirty_age_us(&self) -> Option<u64> {
+        self.lock().dirty_since.map(|since| {
+            u64::try_from(
+                self.clock
+                    .now()
+                    .saturating_duration_since(since)
+                    .as_micros(),
+            )
+            .unwrap_or(u64::MAX)
+        })
+    }
 
     pub(crate) fn revision(&self) -> u64 {
         self.lock().revision
@@ -155,6 +187,7 @@ impl<T: PersistedList> SharedList<T> {
 impl<T: Default> From<T> for SharedList<T> {
     fn from(list: T) -> Self {
         Self {
+            clock: Arc::new(SystemClock),
             inner: Mutex::new(SharedState {
                 list,
                 ..Default::default()
@@ -203,6 +236,3 @@ impl<T> std::ops::Deref for Replica<T> {
         &self.list
     }
 }
-
-#[cfg(test)]
-mod tests;

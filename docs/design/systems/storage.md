@@ -375,6 +375,8 @@ memory·state·file writer의 공통 관측은 [저장 실행기 관측](storage
 
 - `system.pressure.file_writer`는 config·즐겨찾기·파일/hook registry snapshot과 프리셋 ordered command를 실행하는 같은 writer의 접수·묶음·대체·예산 통계다. `file_writes`의 replaced/failed/unknown은 설정·snapshot backend의 성공한 파일 교체·저장 실패·결과 불명 횟수이며 묶음 수와 다르다. 복합 명령의 여러 교체·삭제를 이 수에 한 번으로 넣지 않는다. `file_commands.presets`의 accepted/rejected/completed/unknown/pending은 명령·결과 수이고 completed에는 알려진 저장소 오류도 들어가므로 물리 교체·성공 수로 해석하지 않는다. GUI 부팅의 최종 설정 snapshot도 같은 writer에 제출하므로 이 통계에 포함한다. 아직 writer로 옮기지 않은 파일 소비자의 쓰기는 포함하지 않는다. writer가 없는 시험 구성은 null이다. 이 항목은 새 성능 기준선이나 실제 메인 루프 지연 측정을 뜻하지 않는다.
 
+- `system.pressure.file_snapshots`의 각 소비자는 visible/committed/pending과 함께 dirty/dirty_age_us를 제공한다. dirty age는 미확정 변경이 이어진 시간이며 실패로 pending이 0이 되어도 유지한다. 최신 revision의 성공을 수거해야 null이 된다. 조회는 결과를 소비하지 않으며 이 값으로 저장 완료나 전원 장애 내구성을 추정하지 않는다.
+
 - `system.pressure.db`는 memory.db, `system.pressure.state_db`는 state.db writer의 commit을 같은 `DbLatencyStats` 형식(commit 수·시간 합·최댓값·평균·`writes_per_commit`)으로 센다. journal.db의 commit은 이 값에 없다.
 - journal.db는 `EventStore::commit_statistics`와 `TASTY_LOG=tasty::journal_metrics=debug`의 별도 로그로 실제 성공 SQL COMMIT을 센다. physical은 초기화·epoch·pin·claim 등 보조 쓰기도 포함하고 structural은 구조 transaction, logical은 그 안의 확정 요청을 센다. 그룹 구간의 증분과 전체 누계, queue→durable-ready·publication 후 완료·SQL COMMIT 시간을 구분한다. 겹치는 요청별 구간을 합산하거나 이 값을 App 전체 루프 지연으로 해석하지 않는다([이벤트 저장소](../../architecture/event-store.md#쓰기-계측)).
 - state.db의 commit 계측은 writer 묶음의 commit만 센다. 부팅의 한 번 읽기·스키마 생성과 transaction 없이 혼자 실행하는 튜토리얼 읽기는 세지 않는다. `writes_per_commit`은 대체된 목록을 뺀, 그 commit에서 실행한 요청 수다. 접수·묶음·대체·재시도·거절 수는 `system.pressure.state_writer`가 memory writer와 같은 형식으로 싣는다.

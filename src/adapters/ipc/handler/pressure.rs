@@ -125,17 +125,21 @@ pub(super) fn handle_system_pressure(
     body["state_writer"] = writer_stats_json(core.state_writer_stats());
     body["state_db"] = state_db_json(core.state_db_latency().as_ref());
     {
-        let status = |(visible, committed, pending)| json!({"visible": visible, "committed": committed, "pending": pending});
+        let status = |(visible, committed, pending), age| json!({"visible": visible, "committed": committed, "pending": pending, "dirty": visible > committed, "dirty_age_us": age});
         body["file_snapshots"] = json!({
-            "hook_handlers": crate::hook_handler::global().file_status().map(status),
-            "file_handlers": core.registries.file_rules.as_ref().map(|rules| status(rules.status())),
+            "hook_handlers": crate::hook_handler::global().file_status().map(|value| status(value, crate::hook_handler::global().file_dirty_age_us())),
+            "file_handlers": core.registries.file_rules.as_ref().map(|rules| status(rules.status(), rules.dirty_age_us())),
         });
         #[cfg(feature = "gui")]
         {
-            body["file_snapshots"]["explorer_favorites"] =
-                status(core.registries.explorer_favorites.save_status());
-            body["file_snapshots"]["port_favorites"] =
-                status(core.registries.port_favorites.save_status());
+            body["file_snapshots"]["explorer_favorites"] = status(
+                core.registries.explorer_favorites.save_status(),
+                core.registries.explorer_favorites.dirty_age_us(),
+            );
+            body["file_snapshots"]["port_favorites"] = status(
+                core.registries.port_favorites.save_status(),
+                core.registries.port_favorites.dirty_age_us(),
+            );
         }
     }
     body["file_commands"] = json!({"presets": core.preset_files.status()});

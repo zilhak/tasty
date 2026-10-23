@@ -77,6 +77,13 @@ impl HookHandlerRegistry {
             .as_ref()
             .map(|f| f.tracker.status())
     }
+    pub(crate) fn file_dirty_age_us(&self) -> Option<u64> {
+        self.file
+            .lock()
+            .unwrap()
+            .as_ref()
+            .and_then(|file| file.tracker.dirty_age_us())
+    }
     pub(crate) fn before_file_shutdown(&self) {
         if let Some(file) = self.file.lock().unwrap().as_ref() {
             file.tracker.retry_latest_before_shutdown();

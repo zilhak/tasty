@@ -182,6 +182,8 @@ Explorer·포트 즐겨찾기는 프로세스 공용 `SharedList` 원본을 바�
 
 종료는 producer 중단 후 남은 receipt를 거두고, 최신 dirty에 실행 중인 요청이 없으면 한 번 더 제출한 뒤 기존 file writer를 close·flush·join한다. 미확정 목록은 종료 로그에도 남긴다. `system.pressure.file_snapshots`의 목록별 visible/committed/pending으로 화면 revision과 저장 완료·대기를 구분한다. 두 즐겨찾기는 GUI 기능이며 headless는 이 목록을 생성하거나 저장하지 않는다.
 
+파일 snapshot의 `dirty`는 visible > committed이며 `dirty_age_us`는 처음 미확정 변경부터 이어진 시간이다. 두 값은 즐겨찾기·파일 연결·hook registry의 같은 상태를 읽는다. 이후 변경, 접수 거절, 직렬화 실패, 저장 실패·결과 불명, 재시도와 오래된 revision의 성공은 이 시간을 초기화하지 않는다. 최신 표시 revision의 성공 receipt를 거두었을 때만 `null`로 바뀐다. pending이 0이어도 dirty일 수 있다. 초기 load나 성공한 명시적 reload는 미확정 변경이 없는 상태로 시작한다. 조회는 receipt를 소비하거나 파일을 읽지 않으며, 누적 시간은 Clock의 monotonic 시각으로 마이크로초를 버림해 센다. 공용 writer의 accepted-work 대기 시간과 의미가 다르다.
+
 ### 파일 registry snapshot
 
 `RuntimeRegistries.file_rules`는 `file-handlers.toml`의 읽은 원본·문서·디스크 revision을 소유한다. 부팅은 한 번 읽은 같은 내용으로 detector와 handler를 설치한다. 설정 창 Save는 두 registry의 사용자 contribution과 확장자 우선순위를 하나로 직렬화해 기존 file writer에 제출하며, host/plugin contribution은 저장하지 않는다. 다른 최상위 절은 유지한다. 메모리 적용과 저장 완료는 별개이고 `system.pressure.file_snapshots.file_handlers`가 visible/committed/pending을 표시한다. registry 내부의 effective 값 재계산용 dirty와 디스크 dirty는 다른 상태다.

@@ -79,6 +79,9 @@ impl FileRules {
     pub(crate) fn status(&self) -> (u64, u64, usize) {
         self.lock().tracker.status()
     }
+    pub(crate) fn dirty_age_us(&self) -> Option<u64> {
+        self.lock().tracker.dirty_age_us()
+    }
     pub(crate) fn reload(
         &self,
         format: &FileFormatRegistry,
