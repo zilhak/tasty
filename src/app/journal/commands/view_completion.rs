@@ -22,13 +22,22 @@ impl crate::app::App {
         self.reconcile_journal_views();
     }
 
+    fn bind_journal_ipc_engine(&mut self, ticket: u64, id: EngineId) -> bool {
+        match self.engines.get(id) {
+            Some(engine) => self
+                .journal
+                .bind_ipc_command_engine(ticket, id, engine.core),
+            None => self.journal.bind_command_engine(ticket, id),
+        }
+    }
+
     fn resolve_engine_journal_request(
         &mut self,
         ticket: u64,
         id: EngineId,
         request: &JsonRpcRequest,
     ) {
-        if !self.journal.bind_command_engine(ticket, id) {
+        if !self.bind_journal_ipc_engine(ticket, id) {
             return;
         }
         if self.try_resolve_mirror_request(ticket, id, request) {
@@ -106,7 +115,7 @@ impl crate::app::App {
                 })
         });
         if let Some(engine) = id
-            && !self.journal.bind_command_engine(ticket, engine)
+            && !self.bind_journal_ipc_engine(ticket, engine)
         {
             return;
         }

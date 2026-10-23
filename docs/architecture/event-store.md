@@ -50,7 +50,8 @@ holder만 정리하고 durable event/effect pin은 유지한다. 아직 공개�
 생성이나 외부 입력을 자동 재실행하지 않는다.
 
 App은 명시 ID로 고정된 로컬 `workspace.update`의 name/subtitle/description patch만 앞의 같은
-종류 입력과 함께 제출할 수 있다. 이 patch들은 존재 여부·순서·암묵 대상을 바꾸지 않으므로,
+종류 입력과 함께 제출할 수 있다. GUI/headless dispatch의 최초 엔진 바인딩에서 이 범위를
+확정하며 내부 해소 단계의 뒤 검사까지 기다리지 않는다. 이 patch들은 존재 여부·순서·암묵 대상을 바꾸지 않으므로,
 앞 ACK 전에도 대상을 고정하고 worker가 FIFO로 판단한다. 응답은 각 private predecessor를
 반영해 저장하고 기존 공개·ACK 경계에서 돌려준다. index 대상, mirror 표시 변경, mapping과
 category 변경, 생성·닫기·forward 및 아직 scope가 정해지지 않은 요청은 이 예외를 통과하지 않는다.

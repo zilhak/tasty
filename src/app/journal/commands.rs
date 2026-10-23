@@ -702,13 +702,7 @@ impl JournalApplication {
     }
 
     pub(crate) fn resolve_ipc_for_engine(&mut self, ticket: u64, session: &EngineSession) {
-        let metadata = self.commands.pending.get(&ticket).is_some_and(|pending| {
-            scheduling::fixed_metadata(&pending.request, &session.core_state)
-        });
-        if let Some(pending) = self.commands.pending.get_mut(&ticket) {
-            pending.ordered_metadata = metadata;
-        }
-        if !self.bind_command_engine(ticket, session.id) {
+        if !self.bind_ipc_command_engine(ticket, session.id, &session.core_state) {
             return;
         }
         if self.commands.pending.get(&ticket).is_some_and(|pending| {

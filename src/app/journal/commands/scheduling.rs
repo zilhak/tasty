@@ -48,6 +48,24 @@ impl Commands {
     }
 }
 impl JournalApplication {
+    /// Classify an explicit local patch before the first scheduling check, including GUI/headless dispatch.
+    pub(super) fn bind_ipc_command_engine(
+        &mut self,
+        ticket: u64,
+        engine: EngineId,
+        core: &crate::core::CoreState,
+    ) -> bool {
+        let metadata = self
+            .commands
+            .pending
+            .get(&ticket)
+            .is_some_and(|pending| fixed_metadata(&pending.request, core));
+        if let Some(pending) = self.commands.pending.get_mut(&ticket) {
+            pending.ordered_metadata = metadata;
+        }
+        self.bind_command_engine(ticket, engine)
+    }
+
     /// Fix the engine before resolving targets or starting any preparation. Repeated proposals
     /// use this original scope even if GUI selection changes during the wait.
     pub(crate) fn bind_command_engine(&mut self, ticket: u64, engine: EngineId) -> bool {

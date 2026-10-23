@@ -52,7 +52,7 @@ impl JournalApplication {
             if self.reject_headless_owner(ticket, &request, session) {
                 continue;
             }
-            if !self.bind_command_engine(ticket, session.id) {
+            if !self.bind_ipc_command_engine(ticket, session.id, &session.core_state) {
                 continue;
             }
             if request.method == "remote.structural" {

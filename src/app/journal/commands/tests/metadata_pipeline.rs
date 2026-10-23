@@ -41,6 +41,7 @@ fn explicit_metadata_fixes_inputs_before_predecessor_ack_and_keeps_each_first_re
     }
     admitted(&mut journal, &mut session, &tickets);
     for ticket in &tickets {
+        assert!(journal.bind_ipc_command_engine(*ticket, session.id, &session.core_state));
         journal.resolve_ipc_for_engine(*ticket, &session);
     }
     assert!(tickets.iter().all(|ticket| {
