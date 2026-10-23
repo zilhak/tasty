@@ -38,4 +38,4 @@
 
 | 문서 | 내용 |
 |------|------|
-| [action-dispatch](flows/action-dispatch.md) | 원 origin·대상 binding을 가진 Intent와 journal admission/publication, View 후처리 |
+| [action-dispatch](flows/action-dispatch.md) | 원 origin·대상 binding을 가진 Intent와 journal admission/publication, View 후처리·직접 호출 시험의 개별 사유 |

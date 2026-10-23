@@ -12,9 +12,11 @@ fn queued_field_merge_preserves_independent_worker_change_and_rejects_same_field
     let mut store = PresetStore::load_from(root.path().into());
     let mut before = workspace("before");
     before.name = "dev".into();
+    // intent-exempt: seed the owned backend fixture before testing field-merge conflict handling.
     store.save_workspace(before.clone()).unwrap();
     let mut live = before.clone();
     live.description = "independent description".into();
+    // intent-exempt: model an independent persisted field edit for the stale field-merge test.
     store.save_workspace_overwrite(live).unwrap();
     let mut after = before.clone();
     after.subtitle = "changed subtitle".into();

@@ -95,9 +95,11 @@ fn ordered_commands_publish_cache_before_receipt_and_do_not_coalesce() {
     let held = tasty_utils::file_replace::lock(&f.root.path().join("workspace/a.toml")).unwrap();
     let first = f.save(Some("a"), false, "one");
     let second = f.save(Some("a"), true, "two");
+    // intent-exempt: exercise queued rename ordering itself and verify its receipt, cache and disk.
     let renamed = f
         .commands
         .rename(PresetKind::Workspace, "a".into(), "b".into());
+    // intent-exempt: exercise queued delete ordering itself and verify its receipt, cache and disk.
     let removed = f.commands.delete(PresetKind::Workspace, "b".into());
     let third = f.save(None, false, "three");
     let fourth = f.save(None, false, "four");
@@ -267,6 +269,7 @@ fn committed_rename_with_missing_cache_source_reports_saved_cache_failure() {
     let mut f = Fixture::new(Limits::default());
     f.collect(&f.save(Some("a"), false, "source")).unwrap();
     let held = tasty_utils::file_replace::lock(&f.root.path().join("workspace/a.toml")).unwrap();
+    // intent-exempt: exercise committed rename with a missing cache source and inspect saved failure.
     let ticket = f
         .commands
         .rename(PresetKind::Workspace, "a".into(), "b".into());
