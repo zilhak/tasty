@@ -322,3 +322,81 @@ fn physical_commit_failure_discards_private_state_and_requires_reopen_without_re
     assert_eq!(after.failed_commits, stats.failed_commits + 1);
     assert!(inner.store.read_batches_after(None, 10).unwrap().is_empty());
 }
+
+#[test]
+fn grouped_history_matches_single_execution_with_only_recorded_time_normalized() {
+    let one = tempfile::tempdir().unwrap();
+    let many = tempfile::tempdir().unwrap();
+    let single = open(&db_path(&one), &Fake::default());
+    let grouped = open(&db_path(&many), &Fake::default());
+    let first = request(Some("first"), create_cmd("first"));
+    let requests = [
+        first.clone(),
+        request(
+            Some("rename"),
+            Cmd::RenameWorkspace {
+                id: 1,
+                name: "renamed".into(),
+            },
+        ),
+        request(
+            Some("rejected"),
+            Cmd::RenameWorkspace {
+                id: 99,
+                name: "missing".into(),
+            },
+        ),
+        first,
+        request(
+            Some("effect"),
+            Cmd::CreateWithEffect {
+                name: "second".into(),
+                effect_id: "same-effect".into(),
+            },
+        ),
+    ];
+    let singles: Vec<_> = requests
+        .iter()
+        .map(|request| single.execute(request))
+        .collect();
+    let batch = group(&grouped, &requests);
+    assert!(batch.halted.is_none());
+    for (single, grouped) in singles.iter().zip(&batch.results) {
+        match (single, grouped) {
+            (Ok(single), Ok(grouped)) => assert_eq!(single, grouped),
+            (Err(single), Err(grouped)) => assert_eq!(single.to_string(), grouped.to_string()),
+            other => panic!("single/group outcome differs: {other:?}"),
+        }
+    }
+    assert_eq!(state(&single), state(&grouped));
+    let single = single.inner.lock().unwrap();
+    let grouped = grouped.inner.lock().unwrap();
+    // Epochs, IDs and input order are controlled; wall-clock event timestamps are the only mapping.
+    let normalize = |store: &EventStore| {
+        let mut batches = store.read_batches_after(None, 100).unwrap();
+        for batch in &mut batches {
+            for event in &mut batch.events {
+                event.recorded_at_ms = 0;
+            }
+        }
+        batches
+    };
+    assert_eq!(normalize(&single.store), normalize(&grouped.store));
+    for (name, index) in [("first", 0), ("rename", 1), ("rejected", 2), ("effect", 4)] {
+        let digest = Fake::default().request_digest(&requests[index].command);
+        assert_eq!(
+            single.store.lookup_command(&key(name), &digest).unwrap(),
+            grouped.store.lookup_command(&key(name), &digest).unwrap()
+        );
+    }
+    assert_eq!(
+        single.store.effect("same-effect").unwrap(),
+        grouped.store.effect("same-effect").unwrap()
+    );
+    assert_eq!(single.store.commit_statistics().structural_commits, 3);
+    assert_eq!(grouped.store.commit_statistics().structural_commits, 1);
+    assert_eq!(
+        single.store.commit_statistics().logical_requests,
+        grouped.store.commit_statistics().logical_requests
+    );
+}
