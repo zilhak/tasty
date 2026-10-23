@@ -15,6 +15,8 @@ tasty-ssh = { path = "../tasty-ssh" }
 tasty-model = { path = "../tasty-model" }
 tasty-utils = { path = "../tasty-utils" }
 tracing = "0.1"
+base64 = "0.22"
+url = "2"
 
 # Serialization
 serde = { version = "1", features = ["derive"] }

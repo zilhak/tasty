@@ -81,7 +81,6 @@ pub(crate) mod theme;
 #[cfg(all(debug_assertions, feature = "gui"))]
 mod tool;
 mod webhook;
-#[cfg(feature = "gui")]
 pub(crate) mod webview;
 pub(crate) mod workspace;
 pub(crate) mod workspace_category;
@@ -653,7 +652,6 @@ fn route_engine_handler(
         "webhook.unregister" => webhook::handle_unregister(id, &request.params),
         "webhook.sweep" => webhook::handle_sweep(id),
         "webhook.config" => webhook::handle_config(core, out, &engine.read(), id, &request.params),
-        #[cfg(feature = "gui")]
         "webview.set_url" => webview::handle_set_url(&engine.as_ref(), caller, id, &request.params),
         #[cfg(feature = "gui")]
         "surface.html_script" => surface::handle_html_script(&engine.as_ref(), id, &request.params),

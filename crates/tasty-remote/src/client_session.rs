@@ -103,6 +103,7 @@ pub enum MirrorEvent {
     /// 원격 explorer 파일 작업의 진행·결과(`explorer_op_progress`·`explorer_op_result`).
     /// 작업 엔진을 가진 호스트가 해석하므로 JSON 그대로 전달한다.
     ExplorerOp(Value),
+    Html(tasty_ipc::html_transfer::HtmlReply),
     /// 서버 전송 손실. 데이터가 연속이라는 가정을 버리고 재동기화를 요청한다.
     Desynced {
         frames: u64,
@@ -310,6 +311,7 @@ pub struct ClientTransport {
     pub explorer_write: bool,
     /// 받은 원격 explorer 작업 통지. 작업 상태를 가진 App 이 도착 순서대로 꺼낸다.
     pub explorer_inbox: Vec<Value>,
+    pub html: crate::html_document::HtmlSession,
 }
 pub struct ClientSessionState {
     pub structure_ids: MirrorStructureIds,
@@ -441,6 +443,7 @@ impl MirrorEvent {
                 .saturating_add(text(reason))
                 .saturating_add(text(image_reason)),
             Self::ExplorerOp(value) => json(value),
+            Self::Html(reply) => reply.retained_bytes(),
             Self::ListDirResult {
                 dir,
                 entries,

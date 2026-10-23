@@ -128,6 +128,7 @@ const HEADLESS_OK_SUITES: &[&str] = &[
     "attach_list_dir_loopback",
     "attach_local_creation_tap",
     "attach_markdown_content_loopback",
+    "attach_html_transfer_loopback",
     "attach_silent_disconnect",
     "hook_env_integration",
     "hooks_detection_e2e",
@@ -1239,6 +1240,7 @@ TU: error: ../src/freedreno/vulkan/tu_knl.cc:387: failed to open device /dev/dri
 /// 미등록 스위트는 빈 번들 루트를 사용해 불필요한 복사를 피한다.
 pub const SUITES_THAT_CALL_BUNDLED_PLUGINS: &[&str] = &[
     "attach_markdown_content_loopback",
+    "attach_html_transfer_loopback",
     "e2e_tests",
     "plugin_disable_withdraws_surface_kinds",
     "soak_memory",

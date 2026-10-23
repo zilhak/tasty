@@ -12,6 +12,7 @@ surface의 현재 폴더(cwd)는 종류 전환, 새 탭·분할의 폴더 상속
 | **Markdown** / **Image** | 열린 파일의 부모 디렉터리 | *불변* | `source_cwd()` = `file.parent()` |
 | **Empty** | 생성할 때 전달받은 cwd | 불변 | `source_cwd()` = `self.cwd` |
 | **Explorer**(host 내장) | 생성 시 프로젝트 루트 | *불변* — 안에서 폴더를 옮겨도 안 바뀐다 | `source_cwd()` = 고정 cwd (`crates/tasty-model/src/explorer_panel.rs`) |
+| **HTML** | 요청한 파일 source의 부모. HTTP(S)·inline은 상속 cwd 보관 | 생성·복원·`html.open` source 갱신 | `RemoteSurface::source_cwd()` ([전송 source 계약](../../dev-guide/html-transfer.md)) |
 | **기타 RemoteSurface** | 각 plugin의 정의 | 각 plugin | `surface.set_cwd` 권장, 미구현 시 None(기존 호환 유지) |
 
 - **불변 surface**(Markdown/Image/Empty): 사용자가 내부에서 폴더를 바꾸지 않으므로 `source_cwd()`가 고정값을 반환한다.
@@ -64,7 +65,7 @@ Surface의 `cwd`는 생성·변환 경로 전체에서 전달해야 한다. 빠�
 | `EmptySurface` | 전달받은 `self.cwd` (없으면 None) |
 | `ExplorerPanel` | 활성 탭의 **고정 cwd**(프로젝트 루트) — 현재 폴더(current)를 하위로 오가도 스폰 cwd 는 cwd 불변. cwd↔current 분리는 [explorer surface](../../surfaces/explorer/index.md) |
 | `AttachMeshSurface` / `DagGraphSurface` | `None` |
-| `RemoteSurface`(plugin surface) | 생성 시 전달한 값 또는 `surface.set_cwd`로 갱신한 값을 저장해 반환. 값이 없으면 `None` |
+| `RemoteSurface`(plugin surface) | HTML 파일 source는 파일 부모가 우선한다. 그 외는 생성 시 전달한 값 또는 `surface.set_cwd`로 갱신한 값을 저장해 반환. 값이 없으면 `None` |
 
 #### 2. carry 경로 강제 — `SurfaceKindDef::create` 시그니처
 

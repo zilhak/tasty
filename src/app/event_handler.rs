@@ -1535,6 +1535,7 @@ impl App {
     }
 
     fn apply_content_batch(&mut self, outcome: &mut PumpOutcome, hub: &StreamHub) {
+        self.apply_html_batch(outcome, hub);
         for (client_id, msg) in outcome.capture_uploads.drain(..) {
             self.apply_capture_upload_msg(client_id, msg, hub);
         }
@@ -1986,7 +1987,7 @@ fn reply_without_workspace_attach(
 
 /// 창 → parked 순서로 workspace 점유자를 찾는다.
 /// 다른 App 필드와 나눠 빌려야 하는 호출부는 [`engines_mut!`]로 핸들을 넘긴다.
-fn find_workspace_holder_engine_mut(
+pub(super) fn find_workspace_holder_engine_mut(
     engines: crate::app::window_access::EngineScanMut<'_>,
     client_id: u32,
 ) -> Option<EngineMut<'_>> {

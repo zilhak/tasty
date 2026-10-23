@@ -13,6 +13,10 @@
 
 > **예제로서**: `rendering = "webview"` surface 의 예제 → [plugin-development](../../dev-guide/plugin-development.md#surface-kind--rendering-3-종).
 
+## 원격 전송 기반
+
+서버는 생성·복원 URL과 `html.open`의 최신 요청 URL을 GUI/headless 공통 source 세대로 관리한다. 파일 source의 부모가 전송 root·cwd이며 HTTP(S)는 전달받은 cwd를 보관한다. snapshot 영속화와 native commit 관측은 별개다. [HTML 전송 계약](../../dev-guide/html-transfer.md)의 metadata·chunk·취소 모델은 제공하지만 HTML mirror 렌더링은 아직 활성화하지 않는다. 원격 html leaf는 placeholder다.
+
 ## 목적
 
 HTML / 웹 콘텐츠를 보는 **`html` surface 종류**를 제공한다. `rendering = "webview"` — tasty 의 **네이티브 WebView 오버레이**로 그린다(host 가 surface 별 URL 을 동기화).

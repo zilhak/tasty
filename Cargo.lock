@@ -6308,6 +6308,7 @@ name = "tasty-remote"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "base64 0.22.1",
  "serde",
  "serde_json",
  "tasty-i18n",
@@ -6317,6 +6318,7 @@ dependencies = [
  "tasty-ssh",
  "tasty-utils",
  "tracing",
+ "url",
 ]
 
 [[package]]

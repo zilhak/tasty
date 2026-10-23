@@ -434,6 +434,7 @@ impl App {
     pub(super) fn enter_reconnecting(&mut self, idx: usize) {
         let (anchor, local_workspace, markdown_locals, abandoned_captures) = {
             let sess = &mut self.remote.sessions[idx];
+            sess.transport.html.documents.clear();
             sess.state.phase = SessionState::Reconnecting;
             sess.transport.frame_tx.retire();
             // 옛 소켓을 재연결 성공까지 열어 두면 서버는 그 연결을 살아 있는 점유자로 보고 새 attach 를

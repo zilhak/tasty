@@ -96,6 +96,7 @@ impl EngineMut<'_> {
         );
     }
     pub(crate) fn poll_attach_subscriptions(&mut self) {
+        self.poll_html_transfers();
         let grants: std::collections::HashMap<_, _> =
             self.live.occupancy.locks_snapshot().into_iter().collect();
         let mut budget = 128usize;

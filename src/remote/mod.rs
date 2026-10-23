@@ -20,3 +20,6 @@ pub(crate) mod bulk_transfer;
 pub(crate) mod subscription;
 
 pub(crate) mod transfer_spool;
+
+pub(crate) mod html_files;
+pub(crate) mod html_transfer;

@@ -1,0 +1,243 @@
+//! Actual GUI/headless servers, with a raw loopback peer rather than a native HTML viewer.
+mod attach_common;
+mod common;
+use attach_common::{
+    AttachStream, try_open_workspace_attach_stream, wait_for_control_event, write_control_frame,
+};
+use base64::Engine;
+use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
+use tasty_ipc::html_transfer::{CAPABILITY, HtmlReply, HtmlRequest, TransferId, VIEWER_CAPABILITY};
+fn server() -> &'static common::TastyInstance {
+    let instance = common::shared();
+    static NOTE: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+    NOTE.get_or_init(|| {
+        tracing::info!(
+            "HTML_SERVER pid={} home={} gui={}",
+            instance.pid(),
+            instance.tasty_home().display(),
+            cfg!(feature = "gui")
+        )
+    });
+    instance
+}
+fn open(server: &common::TastyInstance, ws: u64, url: &str) -> u64 {
+    server.call(
+        "tab.create",
+        json!({"pane_id":server.first_pane_id_in_workspace(ws),"type":"html","url":url}),
+    )["surface_id"]
+        .as_u64()
+        .unwrap()
+}
+fn attach(server: &common::TastyInstance, ws: u64, surface: u64) -> (AttachStream, TransferId) {
+    let (mut stream, desc) =
+        try_open_workspace_attach_stream(server.port(), ws).expect("workspace attaches");
+    assert!(
+        desc["stream_capabilities"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|c| c == CAPABILITY)
+    );
+    assert!(
+        !desc["stream_capabilities"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|c| c == VIEWER_CAPABILITY)
+    );
+    assert_eq!(
+        desc["surfaces"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["remote_id"].as_u64() == Some(surface))
+            .unwrap()["role"],
+        "placeholder"
+    );
+    write_control_frame(
+        &mut stream,
+        &serde_json::to_value(HtmlRequest::HtmlCapabilities {
+            capabilities: vec![CAPABILITY.into()],
+        })
+        .unwrap(),
+    );
+    let id = TransferId {
+        epoch: 1,
+        surface_id: surface as u32,
+        binding: 1,
+        document: 1,
+        request: 1,
+        transfer: 1,
+    };
+    (stream, id)
+}
+fn request(stream: &mut AttachStream, msg: HtmlRequest) {
+    write_control_frame(stream, &serde_json::to_value(msg).unwrap());
+}
+fn event(stream: &mut AttachStream, name: &str) -> Value {
+    wait_for_control_event(stream, name)
+}
+#[test]
+fn html_small_and_large_exact_bytes_metadata_and_placeholder_backwards_compatibility() {
+    let server = server();
+    let dir = tempfile::tempdir().unwrap();
+    for size in [0usize, 100_000, 100_001, 1_500_000] {
+        let body: Vec<_> = (0..size).map(|i| (i % 251) as u8).collect();
+        let file = dir.path().join(format!("entry-{size}.html"));
+        std::fs::write(&file, &body).unwrap();
+        let ws = server.create_workspace("html-transport-size");
+        let sid = open(server, ws.id, file.to_str().unwrap());
+        let (mut stream, id) = attach(server, ws.id, sid);
+        request(&mut stream, HtmlRequest::HtmlEntryRequest { id });
+        let metadata = event(&mut stream, "html_metadata");
+        assert_eq!(metadata["metadata"]["size"], size);
+        assert_eq!(
+            metadata["metadata"]["root"],
+            dir.path().canonicalize().unwrap().to_str().unwrap()
+        );
+        let mut received = Vec::new();
+        loop {
+            request(
+                &mut stream,
+                HtmlRequest::HtmlRead {
+                    id,
+                    offset: received.len() as u64,
+                    allow: size > 100_000,
+                },
+            );
+            if size == 0 {
+                break;
+            }
+            let payload = event(&mut stream, "html_chunk");
+            assert!(
+                serde_json::to_vec(&payload).unwrap().len()
+                    <= tasty_ipc::stream::MAX_FRAME_LEN as usize
+            );
+            let HtmlReply::HtmlChunk {
+                offset, data_b64, ..
+            } = serde_json::from_value(payload).unwrap()
+            else {
+                unreachable!()
+            };
+            assert_eq!(offset, received.len() as u64);
+            received.extend(
+                base64::engine::general_purpose::STANDARD
+                    .decode(data_b64)
+                    .unwrap(),
+            );
+            if received.len() == size {
+                break;
+            }
+        }
+        assert_eq!(event(&mut stream, "html_complete")["size"], size);
+        assert_eq!(Sha256::digest(received), Sha256::digest(body));
+    }
+}
+#[test]
+fn html_open_updates_headless_and_gui_requested_source_without_native_commit() {
+    let server = server();
+    let dir = tempfile::tempdir().unwrap();
+    let a = dir.path().join("a.html");
+    let b = dir.path().join("b.html");
+    std::fs::write(&a, b"old").unwrap();
+    std::fs::write(&b, b"new source").unwrap();
+    let ws = server.create_workspace("html-source-update");
+    let sid = open(server, ws.id, a.to_str().unwrap());
+    let changed = server.call(
+        "html.open",
+        json!({"surface":sid,"url":b.to_str().unwrap()}),
+    );
+    assert_eq!(changed["ok"], true);
+    let (mut stream, id) = attach(server, ws.id, sid);
+    request(&mut stream, HtmlRequest::HtmlEntryRequest { id });
+    let meta = event(&mut stream, "html_metadata");
+    assert_eq!(meta["metadata"]["source"]["path"], b.to_str().unwrap());
+    assert_eq!(meta["metadata"]["size"], 10);
+    request(&mut stream, HtmlRequest::HtmlCancel { id });
+    assert_eq!(event(&mut stream, "html_cancelled")["id"]["transfer"], 1);
+}
+#[test]
+fn html_http_source_is_metadata_then_proxy_failure_without_client_fallback() {
+    let server = server();
+    let ws = server.create_workspace("html-http-metadata");
+    let sid = open(server, ws.id, "http://127.0.0.1:9/no-file");
+    let (mut stream, id) = attach(server, ws.id, sid);
+    request(&mut stream, HtmlRequest::HtmlEntryRequest { id });
+    let meta = event(&mut stream, "html_metadata");
+    assert_eq!(meta["metadata"]["source"]["kind"], "http");
+    assert_eq!(meta["metadata"]["regular"], false);
+    assert!(
+        event(&mut stream, "html_failure")["reason"]
+            .as_str()
+            .unwrap()
+            .contains("proxy")
+    );
+}
+
+#[test]
+fn html_unattached_opt_in_peer_is_refused_and_cannot_select_a_path() {
+    let server = server();
+    let mut stream = attach_common::open_stream_without_attach(server.port());
+    request(
+        &mut stream,
+        HtmlRequest::HtmlCapabilities {
+            capabilities: vec![CAPABILITY.into()],
+        },
+    );
+    let id = TransferId {
+        epoch: 1,
+        surface_id: 1,
+        binding: 1,
+        document: 1,
+        request: 1,
+        transfer: 1,
+    };
+    request(&mut stream, HtmlRequest::HtmlEntryRequest { id });
+    assert!(
+        event(&mut stream, "html_failure")["reason"]
+            .as_str()
+            .unwrap()
+            .contains("workspace attach")
+    );
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("safe.html");
+    std::fs::write(&source, b"safe body").unwrap();
+    let ws = server.create_workspace("html-no-client-path");
+    let sid = open(server, ws.id, source.to_str().unwrap());
+    let (mut stream, id) = attach(server, ws.id, sid);
+    for (n, path) in ["/etc/passwd", "../secret", "%2e%2e/secret", "%2fetc/passwd"]
+        .iter()
+        .enumerate()
+    {
+        let id = TransferId {
+            request: n as u64 + 1,
+            transfer: n as u64 + 1,
+            ..id
+        };
+        let mut msg = serde_json::to_value(HtmlRequest::HtmlEntryRequest { id }).unwrap();
+        msg["path"] = json!(path);
+        write_control_frame(&mut stream, &msg);
+        let metadata = event(&mut stream, "html_metadata");
+        assert_eq!(
+            metadata["metadata"]["source"]["path"],
+            source.to_str().unwrap()
+        );
+        request(
+            &mut stream,
+            HtmlRequest::HtmlRead {
+                id,
+                offset: 0,
+                allow: false,
+            },
+        );
+        let chunk = event(&mut stream, "html_chunk");
+        assert_eq!(
+            base64::engine::general_purpose::STANDARD
+                .decode(chunk["data_b64"].as_str().unwrap())
+                .unwrap(),
+            b"safe body"
+        );
+        event(&mut stream, "html_complete");
+    }
+}

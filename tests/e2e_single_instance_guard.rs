@@ -41,6 +41,7 @@ const EXPECTED_INSTANCE_TESTS: &[&str] = &[
     "tests/attach_local_creation_tap.rs",
     // 실제 Markdown 플러그인의 서피스를 검사하므로 이 스위트는 번들 준비가 필요하다.
     "tests/attach_markdown_content_loopback.rs",
+    "tests/attach_html_transfer_loopback.rs",
     "tests/attach_silent_disconnect.rs",
     // 서버와 클라이언트 사이의 실제 attach 스트림으로 구조 변경과 anchor 부재 응답을 검사한다.
     "tests/attach_structure_sync_loopback.rs",

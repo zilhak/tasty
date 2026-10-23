@@ -49,6 +49,8 @@ pub struct RemoteSurface {
     pub cwd: Arc<Mutex<Option<PathBuf>>>,
     /// 생성 인자의 file. 플러그인 snapshot이 오기 전에도 attach 원문 대상 경로를 알린다.
     pub initial_file: Option<PathBuf>,
+    /// Requested HTML source, shared across GUI/headless and never written by native commit callbacks.
+    pub html_source: Arc<Mutex<tasty_remote::html_source::HtmlSourceState>>,
 }
 
 // 필드별로 poison을 처음 한 번 기록한다. 값 하나를 교체하는 락이므로 기존 값을 복구한다.
@@ -58,6 +60,7 @@ static DISPLAY_NAME_POISON_REPORTED: AtomicBool = AtomicBool::new(false);
 static WEBVIEW_URL_POISON_REPORTED: AtomicBool = AtomicBool::new(false);
 #[cfg(any(feature = "gui", test))]
 static NAV_STATE_POISON_REPORTED: AtomicBool = AtomicBool::new(false);
+static HTML_SOURCE_POISONED: AtomicBool = AtomicBool::new(false);
 static CWD_POISON_REPORTED: AtomicBool = AtomicBool::new(false);
 
 pub(crate) const SNAPSHOT_WHAT: &str = "remote surface snapshot cache";
@@ -107,18 +110,31 @@ impl RemoteSurface {
             html_script: Arc::default(),
             cwd: Arc::new(Mutex::new(None)),
             initial_file: None,
+            html_source: Arc::default(),
         }
     }
 
     /// URL·chrome 라벨과 작성자를 갱신한다. by_owner는 호출자가 이 surface의 소유 플러그인인지 나타낸다.
     /// label이 None이면 이전 라벨을 지운다. 라벨은 URL과 함께 바뀌어야 다른 문서의 이름이 남지 않는다.
-    #[cfg(feature = "gui")]
     pub fn set_webview_url(&self, url: Option<String>, label: Option<String>, by_owner: bool) {
-        *crate::poison::recover_mutex(
-            self.webview_label.lock(),
-            WEBVIEW_LABEL_WHAT,
-            &WEBVIEW_LABEL_POISON_REPORTED,
-        ) = label;
+        if self.kind_static == "html" {
+            crate::poison::recover_mutex(
+                self.html_source.lock(),
+                "HTML source",
+                &HTML_SOURCE_POISONED,
+            )
+            .set_webview(url.as_deref());
+        }
+        #[cfg(feature = "gui")]
+        {
+            *crate::poison::recover_mutex(
+                self.webview_label.lock(),
+                WEBVIEW_LABEL_WHAT,
+                &WEBVIEW_LABEL_POISON_REPORTED,
+            ) = label;
+        }
+        #[cfg(not(feature = "gui"))]
+        let _ = (label, by_owner); // Native chrome/ownership do not exist in headless.
         let mut slot = crate::poison::recover_mutex(
             self.webview_url.lock(),
             WEBVIEW_URL_WHAT,
@@ -126,15 +142,18 @@ impl RemoteSurface {
         );
         *slot = url;
         // URL 변경과 함께 작성자를 기록하고, 작성자보다 전이 표지를 먼저 저장한다.
-        let was_owner = self
-            .webview_page_by_owner
-            .load(std::sync::atomic::Ordering::Acquire);
-        if by_owner && !was_owner {
-            self.webview_owner_took_over
-                .store(true, std::sync::atomic::Ordering::Release);
+        #[cfg(feature = "gui")]
+        {
+            let was_owner = self
+                .webview_page_by_owner
+                .load(std::sync::atomic::Ordering::Acquire);
+            if by_owner && !was_owner {
+                self.webview_owner_took_over
+                    .store(true, std::sync::atomic::Ordering::Release);
+            }
+            self.webview_page_by_owner
+                .store(by_owner, std::sync::atomic::Ordering::Release);
         }
-        self.webview_page_by_owner
-            .store(by_owner, std::sync::atomic::Ordering::Release);
     }
 
     /// 외부 작성자에서 소유 플러그인으로 바뀐 표지를 반환하고 지운다.
@@ -238,10 +257,69 @@ impl RemoteSurface {
             .and_then(|v| v.as_str())
             .filter(|f| !f.is_empty())
             .map(PathBuf::from);
+        if self.kind_static == "html" {
+            self.set_html_source(params.get("url").and_then(Value::as_str));
+        }
         self
     }
 
+    pub fn set_html_source(&self, raw: Option<&str>) {
+        if self.kind_static != "html" {
+            return;
+        }
+        let cwd = self.source_cwd();
+        crate::poison::recover_mutex(
+            self.html_source.lock(),
+            "HTML source",
+            &HTML_SOURCE_POISONED,
+        )
+        .set(raw, cwd.as_deref());
+    }
+
+    /// Snapshot fallback is only initialized before a requested URL exists.
+    pub fn html_source_info(&self) -> (tasty_ipc::html_transfer::HtmlSource, u64) {
+        let mut state = crate::poison::recover_mutex(
+            self.html_source.lock(),
+            "HTML source",
+            &HTML_SOURCE_POISONED,
+        );
+        if state.source.is_none() {
+            let snapshot = crate::poison::recover_mutex(
+                self.snapshot_cache.lock(),
+                SNAPSHOT_WHAT,
+                &SNAPSHOT_POISON_REPORTED,
+            );
+            let cwd = crate::poison::recover_mutex(self.cwd.lock(), CWD_WHAT, &CWD_POISON_REPORTED);
+            state.set(
+                snapshot
+                    .as_ref()
+                    .and_then(|v| v.get("url"))
+                    .and_then(Value::as_str),
+                cwd.as_deref(),
+            );
+        }
+        (
+            state
+                .source
+                .clone()
+                .unwrap_or(tasty_ipc::html_transfer::HtmlSource::Unsupported),
+            state.generation,
+        )
+    }
+
     pub fn cache_snapshot(&self, data: Value) {
+        if self.kind_static == "html" {
+            let mut source = crate::poison::recover_mutex(
+                self.html_source.lock(),
+                "HTML source",
+                &HTML_SOURCE_POISONED,
+            );
+            if source.source.is_none() {
+                let cwd =
+                    crate::poison::recover_mutex(self.cwd.lock(), CWD_WHAT, &CWD_POISON_REPORTED);
+                source.set(data.get("url").and_then(Value::as_str), cwd.as_deref());
+            }
+        }
         *crate::poison::recover_mutex(
             self.snapshot_cache.lock(),
             SNAPSHOT_WHAT,
@@ -274,6 +352,16 @@ impl Surface for RemoteSurface {
 
     /// 호스트에 보관된 cwd를 반환한다. 로컬 실행에 사용하기 전에는 출처를 확인해야 한다.
     fn source_cwd(&self) -> Option<std::path::PathBuf> {
+        if self.kind_static == "html" {
+            let state = crate::poison::recover_mutex(
+                self.html_source.lock(),
+                "HTML source",
+                &HTML_SOURCE_POISONED,
+            );
+            if let Some(tasty_ipc::html_transfer::HtmlSource::File { path, .. }) = &state.source {
+                return PathBuf::from(path).parent().map(PathBuf::from);
+            }
+        }
         crate::poison::recover_mutex(self.cwd.lock(), CWD_WHAT, &CWD_POISON_REPORTED).clone()
     }
 

@@ -280,6 +280,9 @@ fn apply_capture_uploads(app: &mut App, engine: &mut EngineMut<'_>, outcome: &mu
 }
 
 fn apply_file_requests(app: &mut App, engine: &mut EngineMut<'_>, outcome: &mut PumpOutcome) {
+    for (client, msg) in outcome.html_requests.drain(..) {
+        engine.handle_html_request(&app.stream_hub, client, msg);
+    }
     for (client_id, msg) in std::mem::take(&mut outcome.list_dir_requests) {
         use tasty_ipc::stream_hub::ListDirRequestMsg;
         let ListDirRequestMsg::ListDirRequest { request_id, dir } = msg;

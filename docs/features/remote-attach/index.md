@@ -111,6 +111,10 @@ native WebView는 대기 표시를 위해 숨기거나 크기를 줄이지 않�
 | explorer | `list_dir_request` / `list_dir_result`로 디렉토리 탐색. 파일 더블클릭은 원격에 새 탭으로 연다 | 원격에서 콘텐츠를 mirror하는 kind(markdown 등)만 열 수 있다. 파일 변경(새 폴더·새 파일·이름 변경·휴지통·같은 연결 안의 붙여넣기·끌기)은 server 가 원격 쓰기 capability 를 알린 연결에서만 server 가 실행한다. 시스템에서 열기·새 탭·즐겨찾기 추가는 막는다 |
 | 나머지(예: html) | placeholder | 콘텐츠 mirror 미지원 |
 
+HTML에는 별도로 협상하는 [파일 전송 기반](../../dev-guide/html-transfer.md)이 있다.
+GUI·headless 서버의 최신 요청 source를 조회하고, 크기 확인 뒤 bounded chunk로 원문을
+받을 수 있다. 이 capability는 viewer 지원을 뜻하지 않으며 HTML leaf는 아직 placeholder다.
+
 **mesh**는 GUI·headless 서버 모두에서 프레임을 전달한다. GUI 서버에서는 로컬 redraw가
 만든 프레임을 중계하며 별도의 렌더 치수를 결정하지 않는다.
 [mesh mirror 채널](../../dev-guide/attach-behavior.md#mesh-mirror-채널)을 참고한다.

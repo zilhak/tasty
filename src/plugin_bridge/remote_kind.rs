@@ -82,6 +82,9 @@ pub fn register_remote_kind(
             )
             .or_else(|| cwd.map(std::path::PathBuf::from));
             surface.set_cwd(surface_cwd);
+            if kind_static == "html" {
+                surface.set_html_source(params.get("url").and_then(serde_json::Value::as_str));
+            }
             let handles = surface.handles();
             let command = HostCmd::RemoteSurfaceCreated {
                 surface_id: sid,

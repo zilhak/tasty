@@ -6,6 +6,7 @@ mod connection;
 mod dispatch;
 mod forward;
 mod home_probe;
+mod html;
 pub(crate) mod into_gui;
 mod navigation;
 pub(crate) mod op_runs;

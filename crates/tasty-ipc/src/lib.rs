@@ -12,6 +12,7 @@ pub mod dispatch;
 pub mod explorer_op;
 pub mod host_call;
 pub mod host_port;
+pub mod html_transfer;
 pub mod instance;
 pub mod ipc_namespace;
 pub mod mesh_stream;

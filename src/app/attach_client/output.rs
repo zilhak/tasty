@@ -455,7 +455,9 @@ fn apply_one_mirror_event(
     ev: MirrorEvent,
 ) {
     match ev {
+        MirrorEvent::Html(reply) => super::html::receive(sess, reply),
         MirrorEvent::Desynced { frames } => {
+            sess.transport.html.documents.clear();
             sess.state.resize_sync.forget_pending();
             begin_resync(sess, host, frames);
         }
@@ -795,6 +797,7 @@ fn apply_mirror_structural_delta(
     )?;
     let newly_created_remote_ids = std::mem::take(&mut mapping.newly_created_remote_ids);
 
+    super::html::retain(sess, surfaces);
     sess.state.remote_to_local = std::mem::take(&mut mapping.remote_to_local);
     let state = &mut sess.state;
     keep_terminal_resize_state(&mut state.resize_sync, &state.remote_to_local, &mapping);

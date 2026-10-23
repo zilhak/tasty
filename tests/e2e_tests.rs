@@ -1958,17 +1958,10 @@ fn an_engine_query_that_reads_no_window_answers_in_both_combos() {
 
     let resp = tasty.call_raw("webview.set_url", json!({}));
     let code = resp["error"]["code"].as_i64();
-    #[cfg(feature = "gui")]
-    assert_ne!(
-        code,
-        Some(-32601),
-        "gui 는 webview.set_url 에 답한다: {resp}"
-    );
-    #[cfg(not(feature = "gui"))]
     assert_eq!(
         code,
-        Some(-32017),
-        "헤드리스의 webview.set_url은 메서드 부재와 구별되는 빌드 미지원 오류여야 한다: {resp}"
+        Some(-32602),
+        "webview.set_url records source in both builds and validates parameters: {resp}"
     );
 
     let resp = tasty.call_raw("surface.html_script", json!({}));

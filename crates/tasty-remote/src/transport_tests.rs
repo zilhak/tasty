@@ -88,3 +88,69 @@ fn reader_receipt_finishes_while_delta_is_restored_ahead_of_data() {
     peer.shutdown(std::net::Shutdown::Both).unwrap();
     reader.join().unwrap();
 }
+
+#[test]
+fn html_transport_is_declared_only_to_servers_advertising_it_and_never_as_viewer() {
+    use std::io::{BufRead, BufReader};
+    use tasty_ipc::html_transfer::{CAPABILITY, HtmlRequest, VIEWER_CAPABILITY};
+    for capabilities in [None, Some(vec![CAPABILITY]), Some(vec![VIEWER_CAPABILITY])] {
+        let enabled = capabilities
+            .as_ref()
+            .is_some_and(|v| v.contains(&CAPABILITY));
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let peer = std::thread::spawn(move || {
+            let (mut socket, _) = listener.accept().unwrap();
+            socket
+                .set_read_timeout(Some(Duration::from_secs(3)))
+                .unwrap();
+            let mut reader = BufReader::new(socket.try_clone().unwrap());
+            let mut request = String::new();
+            reader.read_line(&mut request).unwrap();
+            stream::write_frame(
+                &mut socket,
+                StreamTag::Control,
+                &serde_json::to_vec(&serde_json::json!({"ok":true,"proto":1,"client_id":7}))
+                    .unwrap(),
+            )
+            .unwrap();
+            let mut descriptor = serde_json::json!({"event":"attached_workspace","name":"remote","tree":null,"surfaces":[{"remote_id":1,"role":"placeholder","kind":"html"}]});
+            if let Some(capabilities) = capabilities {
+                descriptor[stream::DESCRIPTOR_CAPABILITIES] = serde_json::json!(capabilities);
+            }
+            stream::write_frame(
+                &mut socket,
+                StreamTag::Control,
+                &serde_json::to_vec(&descriptor).unwrap(),
+            )
+            .unwrap();
+            let loss = stream::read_frame(&mut reader).unwrap();
+            assert!(matches!(
+                serde_json::from_slice::<StreamControl>(&loss.payload).unwrap(),
+                StreamControl::ClientLossNotify {}
+            ));
+            let next = stream::read_frame(&mut reader);
+            if enabled {
+                let HtmlRequest::HtmlCapabilities { capabilities } =
+                    serde_json::from_slice(&next.unwrap().payload).unwrap()
+                else {
+                    panic!("expected HTML transport declaration")
+                };
+                assert_eq!(capabilities, vec![CAPABILITY]);
+                assert!(!capabilities.iter().any(|c| c == VIEWER_CAPABILITY));
+            } else {
+                assert!(
+                    next.is_err(),
+                    "no declaration to an old or viewer-only peer"
+                );
+            }
+        });
+        let mut remote = super::super::outbound::Remote::new();
+        let token = remote.begin_attempt(None, None).unwrap();
+        let handshake = attach_handshake(port, 1, "HTML compatibility test", &token).unwrap();
+        assert_eq!(handshake.html_transfer, enabled);
+        drop(handshake);
+        remote.cancel_attempt(&token);
+        peer.join().unwrap();
+    }
+}

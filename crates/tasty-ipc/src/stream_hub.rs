@@ -77,6 +77,8 @@ pub struct PumpOutcome {
     pub git_query_requests: Vec<(StreamClientId, GitQueryRequestMsg)>,
     /// 원격 markdown 원문 조회. 별도의 event 태그를 가진 Control JSON이다.
     pub markdown_content_requests: Vec<(StreamClientId, MarkdownContentRequestMsg)>,
+    /// Opt-in HTML requests, preserving credit/cancel wire order.
+    pub html_requests: Vec<(StreamClientId, crate::html_transfer::HtmlRequest)>,
     /// 원격 explorer 파일 작업의 요청·답·취소. 별도의 event 태그를 가진 Control JSON이다.
     pub explorer_ops: Vec<(StreamClientId, crate::explorer_op::ExplorerOpMsg)>,
     /// bulk begin·chunk·commit을 도착 순서대로 보관한다. 태그별로 나누면 같은 배치의
@@ -206,6 +208,7 @@ impl GitQueryKind {
 
 /// Per-client push sink held in the registry.
 struct StreamSink {
+    html_transfer: bool,
     binding: Arc<()>,
     registration: u128,
     tx: SyncSender<StreamFrame>,
@@ -371,6 +374,7 @@ impl StreamHub {
         tasty_utils::poison::recover_mutex(self.sinks.lock(), SINKS_WHAT, &SINKS_POISONED).insert(
             id,
             StreamSink {
+                html_transfer: false,
                 binding: Arc::new(()),
                 registration: rand::random(),
                 tx,
@@ -402,6 +406,23 @@ impl StreamHub {
     pub fn matches_client_binding(&self, id: StreamClientId, binding: &Weak<()>) -> bool {
         self.client_binding(id)
             .is_some_and(|current| current.ptr_eq(binding))
+    }
+
+    /// Both peers must explicitly support transport. This never enables an HTML role.
+    pub fn html_transfer_enabled(&self, id: StreamClientId) -> bool {
+        tasty_utils::poison::recover_mutex(self.sinks.lock(), SINKS_WHAT, &SINKS_POISONED)
+            .get(&id)
+            .is_some_and(|sink| sink.html_transfer)
+    }
+    fn set_html_capabilities(&self, id: StreamClientId, capabilities: &[String]) {
+        if let Some(sink) =
+            tasty_utils::poison::recover_mutex(self.sinks.lock(), SINKS_WHAT, &SINKS_POISONED)
+                .get_mut(&id)
+        {
+            sink.html_transfer = capabilities
+                .iter()
+                .any(|c| c == crate::html_transfer::CAPABILITY);
+        }
     }
 
     /// ClientLossNotify 선언을 기록한다. 반복 호출은 같으며 이미 끊긴 연결은 무시한다.
@@ -606,6 +627,26 @@ impl StreamHub {
         tasty_utils::poison::recover_mutex(self.sinks.lock(), SINKS_WHAT, &SINKS_POISONED).len()
     }
 
+    fn collect_html_request(
+        &self,
+        client: StreamClientId,
+        payload: &[u8],
+        out: &mut PumpOutcome,
+    ) -> bool {
+        use crate::html_transfer::HtmlRequest;
+        let Ok(msg) = serde_json::from_slice::<HtmlRequest>(payload) else {
+            return false;
+        };
+        match msg {
+            HtmlRequest::HtmlCapabilities { capabilities } => {
+                self.set_html_capabilities(client, &capabilities);
+            }
+            msg if self.html_transfer_enabled(client) => out.html_requests.push((client, msg)),
+            _ => {}
+        }
+        true
+    }
+
     /// 수신 메시지를 종류별로 분류한다. 엔진 접근과 점유·입력 처리 자체는 메인 루프가 맡는다.
     /// 일반 Data는 input_events, bulk 연결의 Data는 bulk_events로 반환한다.
     pub fn pump_inbound(&self, inbound_rx: &Receiver<StreamInbound>) -> PumpOutcome {
@@ -731,7 +772,13 @@ impl StreamHub {
                                 }
                                 Ok(_) => {}
                                 Err(_) => {
-                                    if let Ok(msg) =
+                                    if self.collect_html_request(
+                                        client_id,
+                                        &frame.payload,
+                                        &mut out,
+                                    ) {
+                                        // The HTML helper owns capability declarations and request order.
+                                    } else if let Ok(msg) =
                                         serde_json::from_slice::<CaptureUploadMsg>(&frame.payload)
                                     {
                                         out.capture_uploads.push((client_id, msg));
@@ -778,6 +825,57 @@ mod tests {
 
     fn frame(tag: StreamTag, p: &[u8]) -> StreamFrame {
         StreamFrame::new(tag, p.to_vec())
+    }
+
+    #[test]
+    fn html_capabilities_are_opt_in_per_registration_and_keep_credit_order() {
+        use crate::html_transfer::{CAPABILITY, HtmlRequest, TransferId};
+        let hub = StreamHub::new();
+        let _sink = hub.register(5);
+        let (tx, rx) = mpsc::channel();
+        let id = TransferId {
+            epoch: 1,
+            surface_id: 1,
+            binding: 1,
+            document: 1,
+            request: 1,
+            transfer: 1,
+        };
+        let send = |msg| {
+            tx.send(StreamInbound::Frame {
+                client_id: 5,
+                frame: frame(StreamTag::Control, &serde_json::to_vec(&msg).unwrap()),
+            })
+            .unwrap()
+        };
+        send(HtmlRequest::HtmlEntryRequest { id });
+        assert!(hub.pump_inbound(&rx).html_requests.is_empty());
+        send(HtmlRequest::HtmlCapabilities {
+            capabilities: vec![CAPABILITY.into()],
+        });
+        send(HtmlRequest::HtmlEntryRequest { id });
+        send(HtmlRequest::HtmlRead {
+            id,
+            offset: 0,
+            allow: false,
+        });
+        send(HtmlRequest::HtmlCancel { id });
+        let out = hub.pump_inbound(&rx);
+        assert_eq!(out.html_requests.len(), 3);
+        assert!(matches!(
+            out.html_requests[0].1,
+            HtmlRequest::HtmlEntryRequest { .. }
+        ));
+        assert!(matches!(
+            out.html_requests[1].1,
+            HtmlRequest::HtmlRead { .. }
+        ));
+        assert!(matches!(
+            out.html_requests[2].1,
+            HtmlRequest::HtmlCancel { .. }
+        ));
+        let _replacement = hub.register(5);
+        assert!(!hub.html_transfer_enabled(5));
     }
 
     #[test]

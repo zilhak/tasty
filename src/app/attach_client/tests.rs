@@ -99,6 +99,7 @@ pub(crate) fn test_session_with_frames(
             tunnel: None,
             explorer_write: true,
             explorer_inbox: Vec::new(),
+            html: Default::default(),
         },
         state: ClientSessionState {
             structure_ids: Default::default(),

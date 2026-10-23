@@ -6,6 +6,7 @@ use serde_json::Value;
 use tasty_ipc::protocol::JsonRpcResponse;
 
 /// 문서 변경을 attach 클라이언트에 알린다. 대상과 허용 종류는 attach_runtime이 검사한다.
+#[cfg(feature = "gui")]
 fn notify_content_changed(
     engine: &crate::runtime::engine_access::EngineRef<'_>,
     surface: &crate::plugin_bridge::remote_surface::RemoteSurface,
@@ -66,6 +67,7 @@ pub fn handle_set_url(
                         .downcast_ref::<crate::plugin_bridge::remote_surface::RemoteSurface>(
                     ) {
                         rs.set_webview_url(Some(url), label, is_owner(caller, rs));
+                        #[cfg(feature = "gui")]
                         notify_content_changed(engine, rs, sid);
                         return JsonRpcResponse::success(id, serde_json::json!({ "ok": true }));
                     }
@@ -95,7 +97,7 @@ fn is_owner(
     )
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "gui"))]
 mod tests {
     use super::*;
     use crate::model::SplitDirection;

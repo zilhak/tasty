@@ -1,4 +1,4 @@
-<!-- source-hash: 53ec7c019513 -->
+<!-- source-hash: 740053134401 -->
 # Opening files
 
 Read a README or check an image beside your terminal. Tasty can open an Explorer, Markdown documents, images, and HTML pages, with a Git viewer for reviewing changes.
@@ -249,6 +249,10 @@ tasty image export --surface 5 out.png
 ```
 
 ## HTML
+
+When working folder inheritance is enabled, new tabs and splits created from an HTML file tab use that file’s folder. Tabs showing web addresses keep their existing working folder.
+
+You can also use `tasty html open` to change an HTML tab’s requested address on a headless server. A headless server does not render the page, and HTML content is not yet displayed over a remote connection.
 
 Shows a local HTML file or a URL in the OS web view. Right-click an empty area of the tab strip > **New HTML...** opens the file chooser in that Pane's current folder, showing only folders and `.html` · `.htm` · `.svg` files. Pick a file to open an HTML Tab in that Pane; cancel and no Tab is created. In a remote Workspace the file chooser does not open, and a notice says the file can't be opened yet.
 
