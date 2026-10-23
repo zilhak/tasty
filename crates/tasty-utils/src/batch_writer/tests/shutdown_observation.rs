@@ -152,3 +152,31 @@ fn worker_ending_before_shutdown_is_distinct_from_requested_join() {
     );
     assert!(!rig.writer.worker_ended_unexpectedly());
 }
+
+#[test]
+fn timing_uses_first_cut_and_waits_for_the_original_worker_join() {
+    let mut rig = rig(limits(), Gate::closed());
+    assert_eq!(rig.writer.shutdown_report().timing, None);
+    let receipt = rig.handle.submit(req(1)).unwrap();
+    rig.writer.begin_shutdown();
+    rig.clock.advance(Duration::from_millis(42));
+    assert_eq!(rig.writer.poll_shutdown(), 1);
+    let report = rig.writer.shutdown_report();
+    assert_eq!(report.observation, ShutdownObservation::Draining);
+    assert_eq!(report.timing.unwrap().elapsed, Duration::from_millis(42));
+    assert_eq!(report.timing.unwrap().joined_after, None);
+    assert!(receipt.try_take().is_none());
+    rig.gate.open();
+    eventually("join for numeric timing", || {
+        rig.writer.poll_shutdown() == 0
+    });
+    let joined = rig.writer.shutdown_report();
+    assert_eq!(
+        joined.timing.unwrap().joined_after,
+        Some(Duration::from_millis(42))
+    );
+    rig.clock.advance(Duration::from_secs(2));
+    assert_eq!(rig.writer.poll_shutdown(), 0);
+    assert_eq!(rig.writer.shutdown_report(), joined);
+    assert!(matches!(receipt.try_take(), Some(Completion::Done(Ok(1)))));
+}

@@ -10,7 +10,7 @@ pub(super) fn drain(app: &mut crate::app::App) {
             .poll_memory_replies(app.plugin_manager.as_mut());
         if !drain.observe_writer(
             remaining,
-            app.services.file_writer_shutdown_observation(),
+            app.services.file_writer_shutdown_report(),
             "file",
             std::time::Instant::now(),
             "headless file writer shutdown timed out; settings it has not saved may be lost",

@@ -276,3 +276,14 @@ GUI S3는 surface 닫힘을 전달한 뒤 전체 observer sender(전체 surface 
 `writer_shutdown_observation`은 memory·state·file writer별 최종 관측이다. `Joined`는 원 JoinHandle의 실제 join 뒤에만 기록하고 `panicked`와 최종 `FlushResult`를 함께 보존한다. `NotClean`은 cut 안의 거절·실패, `Lost`는 flush 결과 미확정을 뜻한다. `Draining` 상태에서 기한이 지나면 미회수이며 성공이 아니다. writer가 구성되지 않은 경우는 `configured=false`로 구분한다. getter는 receipt를 소비하지 않는다. 종료 코드 정책은 이 관측과 별개이며 요청된 정상 종료 코드 0도 clean drain을 보장하지 않는다.
 
 일반 세션 retirement의 Router Drop은 새 제출을 차단하거나 worker를 분리하지 않고 accepted 작업 완료를 기다린다. 명시적 앱 종료의 polling·timeout 이후 Drop과 구분한다. 저장 오류나 writer의 접수 거절을 성공으로 보장하지 않는다.
+
+
+### Writer 종료 시간과 콜백 원시 표본
+
+`writer_shutdown_observation`은 generic writer의 첫 final cut부터 관측까지의 `elapsed_us`와 실제 join 반환까지의 `joined_us`를 함께 남긴다. 미구성 writer는 `configured=false`이며 시간 표본이 없다. 구성됐지만 미시작이면 timing이 없고, 첫 poll에서 실제 join되면 `immediate=true`와 측정한 시간을 남긴다. 0으로 반올림된 측정과 미구성은 다르다. `remaining`은 미회수 worker 수다. `right_censored=true`는 기존 5초 대기 기한이 끝났지만 join되지 않은 표본이다. 이를 join duration으로 합산하지 않는다. `writer_actual_join`은 Drop의 후속 poll에서 늦게 join된 경우도 따로 남기며 앞선 timeout을 성공으로 바꾸지 않는다. 시각 getter는 receipt를 소비하지 않는다.
+
+`journal_actual_join`은 최초 stop부터 실제 join까지의 `stop_to_join_us`와 Drop에서 join을 기다린 `join_wait_us`, panic 여부를 구분한다. headless는 먼저 stop하고 다른 owner를 정리하므로 두 시간이 다를 수 있다. journal worker join에 새 기한을 부여하지 않으며 publication 대기 기한과도 별개다. 시간이나 프로세스 종료 코드만으로 flush 성공을 추론하지 않는다.
+
+Debug GUI에서 `TASTY_DEBUG_LOOP_SAMPLES`를 출력 파일 경로로 지정하면 기존 winit 콜백을 숫자로 관측한다. 파일에는 기준점 이후의 `start_ns`/`end_ns`, `site`, 진입 시 `shutdown`, 선택적인 `wake_lateness_ns`를 남긴다. site0은 기존 timer deadline의 ResumeTimeReached 관측이고 1/2/3/4/5는 resumed/window/redraw/user/about_to_wait다. 콜백 비용과 기존 deadline 대비 wake 지연은 서로 다른 표본이다. 대기 중인 idle 간격이나 네트워크 왕복을 loop 처리 비용으로 기록하지 않는다.
+
+수집은 최대8192개로 제한하며 `TASTY_DEBUG_LOOP_SAMPLE_LIMIT`의1..=8192 값으로 더 작은 표본 수를 지정할 수 있다(그 밖의 값은 기본8192). `seq`/`seen`은 완료 관측 순서/전체 수이며 초과는 `dropped`에 센다. export는 event loop와 App Drop trace 이후 한 번 수행하고 콜백 안에서는 파일을 쓰지 않는다. 종료 전 강제 종료·export 실패·버퍼 초과는 불완전한 수집이다. 비활성일 때는 표본 버퍼를 만들지 않으며 timer·wake·pacing을 추가하지 않는다. release에는 모듈이 없다. 정상 렌더 비용은 기존 `tasty::gfx::perf`의 TRACE `frame_sample`을 사용하며 shutdown loading frame의 비용이나 전체 callback 지연과 동일시하지 않는다. 같은 수집 설정에서 raw 표본 수·누락·overflow와 각 모집단의 quantile 규칙을 함께 보고한다.

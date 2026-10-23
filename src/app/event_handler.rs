@@ -1,3 +1,5 @@
+mod window_helpers;
+
 use crate::runtime::engine_access::EngineMut;
 use winit::application::ApplicationHandler;
 use winit::event::WindowEvent;
@@ -24,9 +26,24 @@ impl ApplicationHandler<AppEvent> for App {
         self.observe_explorer_device_key(event_loop, event);
     }
 
+    #[cfg(debug_assertions)]
+    fn new_events(&mut self, _event_loop: &ActiveEventLoop, cause: winit::event::StartCause) {
+        if let winit::event::StartCause::ResumeTimeReached {
+            requested_resume, ..
+        } = cause
+        {
+            super::loop_measurement::wake(requested_resume, self.state.shutdown.is_some());
+        }
+    }
+
     #[allow(clippy::cognitive_complexity)] // complexity-exempt: 이벤트별 핸들러에 위임하는 평면 match이며 플랫폼 cfg를 포함한다. 분기를 한곳에서 볼 수 있도록 유지한다.
     fn user_event(&mut self, event_loop: &ActiveEventLoop, event: AppEvent) {
         let _stall_guard = stall_watchdog::Guard::enter(Site::UserEvent);
+        #[cfg(debug_assertions)]
+        let _measurement = super::loop_measurement::Guard::enter(
+            Site::UserEvent as u8,
+            self.state.shutdown.is_some(),
+        );
         #[cfg(any(target_os = "windows", target_os = "macos"))]
         if let AppEvent::OutboundDragEnded { id, .. } = &event {
             crate::file::drag::desktop::release_completed(*id);
@@ -218,6 +235,11 @@ impl ApplicationHandler<AppEvent> for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         self.view.display_owner = Some(event_loop.owned_display_handle());
         let _stall_guard = stall_watchdog::Guard::enter(Site::Resumed);
+        #[cfg(debug_assertions)]
+        let _measurement = super::loop_measurement::Guard::enter(
+            Site::Resumed as u8,
+            self.state.shutdown.is_some(),
+        );
         // resumed가 다시 호출돼도 부팅 중 아직 views가 비어 있는 창을 중복 생성하지 않는다.
         if !self.view.views.is_empty()
             || self.shell_setup_gpu.is_some()
@@ -272,6 +294,15 @@ impl ApplicationHandler<AppEvent> for App {
             } else {
                 Site::WindowEvent
             });
+        #[cfg(debug_assertions)]
+        let _measurement = super::loop_measurement::Guard::enter(
+            if matches!(event, WindowEvent::RedrawRequested) {
+                Site::Redraw
+            } else {
+                Site::WindowEvent
+            } as u8,
+            self.state.shutdown.is_some(),
+        );
         // 포커스를 얻거나 잃을 때 winit이 합성한 키는 사용자가 이 창에서 누른 입력이 아니다.
         // 모든 창·모드로 보내기 전에 제외해 단축키·PTY·egui에 전달되지 않게 한다.
         if is_synthetic_key_event(&event) {
@@ -362,6 +393,11 @@ impl ApplicationHandler<AppEvent> for App {
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
         let _stall_guard = stall_watchdog::Guard::enter(Site::AboutToWait);
+        #[cfg(debug_assertions)]
+        let _measurement = super::loop_measurement::Guard::enter(
+            Site::AboutToWait as u8,
+            self.state.shutdown.is_some(),
+        );
         self.poll_retiring_engine_owners();
         // 부팅·종료 중에는 일반 타이머를 처리하지 않고 각 상태 머신이 대기를 정한다.
         // 평상시 대기 시각은 말미에서 타이머·지연 repaint를 함께 반영한다.
@@ -590,76 +626,6 @@ impl ApplicationHandler<AppEvent> for App {
 }
 
 impl App {
-    fn apply_window_focus_observation(&mut self, id: WindowId, event: &WindowEvent) {
-        // 첫 Focused 이벤트를 창 map의 신호로 사용해 에이전트 창의 초기 포커스 힌트를 지운다.
-        if let WindowEvent::Focused(_) = event
-            && self.pending_focus_hint_clear.remove(&id)
-            && let Some(view) = self.view.views.get(&id)
-            && let Err(e) =
-                crate::platform::window_stacking::clear_initial_focus_hint(&view.base().winit)
-        {
-            tracing::warn!("agent window: clearing the initial focus hint failed: {e}");
-        }
-
-        if let WindowEvent::Focused(true) = event {
-            self.handle_window_focused(id);
-        }
-    }
-
-    /// 부팅 첫 창의 속성. hidden으로 만들고 첫 렌더를 시도한 뒤 표시한다.
-    pub(crate) fn boot_window_attributes() -> winit::window::WindowAttributes {
-        let mut attrs = winit::window::WindowAttributes::default()
-            .with_visible(false)
-            .with_title(if cfg!(debug_assertions) {
-                "Tasty (Debug)"
-            } else {
-                "Tasty"
-            })
-            .with_inner_size(winit::dpi::LogicalSize::new(1280, 720))
-            .with_min_inner_size(winit::dpi::LogicalSize::new(640, 480));
-        if let Some(icon) = crate::app_icon::winit_window_icon() {
-            attrs = attrs.with_window_icon(Some(icon));
-        }
-        crate::platform::window_chrome::apply_csd_attributes(attrs)
-    }
-
-    /// hidden 상태의 첫 창을 만든다. 로딩·shell setup 경로가 렌더를 시도한 뒤 표시한다.
-    fn boot_create_hidden_window(
-        event_loop: &ActiveEventLoop,
-        boot_t0: std::time::Instant,
-    ) -> std::sync::Arc<winit::window::Window> {
-        let mut attrs =
-            crate::app::window_lifecycle::main_view_class(Self::boot_window_attributes());
-        // 이 실행의 실행기 토큰은 첫 창이 받아 실행기의 대기 표시를 끝낸다.
-        let evidence = crate::boot::single_instance::evidence::take();
-        if evidence.is_present() {
-            attrs = crate::boot::single_instance::with_activation_token(
-                attrs,
-                &evidence,
-                crate::boot::single_instance::is_wayland(event_loop),
-            );
-        }
-        // 표시할 창이 없으면 오류를 로그로 남기고 실패 코드로 종료한다.
-        let window = match event_loop.create_window(attrs) {
-            Ok(w) => std::sync::Arc::new(w),
-            Err(e) => {
-                tracing::error!(
-                    "boot window creation failed: {e}\n{}\n{}\n{}",
-                    crate::i18n::t("boot.window_error.title"),
-                    crate::i18n::t_fmt("boot.window_error.body", &e.to_string()),
-                    crate::i18n::t("boot.window_error.hint"),
-                );
-                std::process::exit(1);
-            }
-        };
-        tracing::info!(
-            target: "tasty::boot",
-            ms = boot_t0.elapsed().as_secs_f64() * 1000.0,
-            "T1 window_create (resumed enter -> create_window return)"
-        );
-        window
-    }
-
     /// GPU 초기화 전에 설정값을 정규화한다. 저장은 테마 조정 뒤 같은 writer에 제출한다.
     fn boot_load_normalized_settings() -> crate::settings::Settings {
         let mut settings = crate::settings::Settings::load();

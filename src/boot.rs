@@ -337,6 +337,8 @@ fn drop_app_with_trace(app: App) {
             "shutdown_total_with_drop (사용자 체감 종료 시간)"
         );
     }
+    #[cfg(debug_assertions)]
+    crate::app::loop_measurement::finish();
 }
 
 #[cfg(feature = "gui")]
@@ -1124,7 +1126,7 @@ fn drain_headless_memory_writer(app: &mut crate::app::App) {
             .poll_memory_replies(app.plugin_manager.as_mut());
         if !drain.observe_writer(
             remaining,
-            app.services.memory_writer_shutdown_observation(),
+            app.services.memory_writer_shutdown_report(),
             "memory",
             std::time::Instant::now(),
             "headless memory writer shutdown timed out; requests it has not committed may be lost",

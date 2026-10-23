@@ -18,7 +18,7 @@ impl WriterDrain {
     pub(crate) fn observe_writer(
         &mut self,
         remaining: usize,
-        observation: Option<tasty_utils::batch_writer::ShutdownObservation>,
+        observation: Option<tasty_utils::batch_writer::ShutdownReport>,
         name: &str,
         now: Instant,
         timed_out: &str,
@@ -27,7 +27,13 @@ impl WriterDrain {
             return true;
         }
         if !std::mem::replace(&mut self.reported, true) {
-            record_writer_outcome(name, observation, self.gave_up);
+            record_writer_outcome(
+                name,
+                observation,
+                self.gave_up,
+                self.deadline.is_none(),
+                remaining,
+            );
         }
         false
     }
@@ -50,23 +56,35 @@ impl WriterDrain {
 
 fn record_writer_outcome(
     name: &str,
-    observation: Option<tasty_utils::batch_writer::ShutdownObservation>,
+    observation: Option<tasty_utils::batch_writer::ShutdownReport>,
     timed_out: bool,
+    immediate: bool,
+    remaining: usize,
 ) {
     let Some(observation) = observation else {
         tracing::info!(target: "tasty::shutdown", writer = name,
             configured = false, "writer_shutdown_observation");
         return;
     };
-    record_configured_writer(name, observation, timed_out);
+    record_configured_writer(name, observation, timed_out, immediate, remaining);
 }
 
 fn record_configured_writer(
     name: &str,
-    observation: tasty_utils::batch_writer::ShutdownObservation,
+    report: tasty_utils::batch_writer::ShutdownReport,
     timed_out: bool,
+    immediate: bool,
+    remaining: usize,
 ) {
     use tasty_utils::batch_writer::ShutdownObservation;
+    let observation = report.observation;
+    let elapsed_us = report.timing.map(|t| t.elapsed.as_micros());
+    let joined_us = report
+        .timing
+        .and_then(|t| t.joined_after)
+        .map(|d| d.as_micros());
+    let right_censored = timed_out && joined_us.is_none();
+    let immediate = immediate && joined_us.is_some();
     let clean = matches!(
         &observation,
         ShutdownObservation::Joined {
@@ -76,34 +94,12 @@ fn record_configured_writer(
     );
     if clean {
         tracing::info!(target: "tasty::shutdown", writer = name,
-            ?observation, clean, "writer_shutdown_observation");
+            ?observation, clean, timed_out, immediate, remaining, ?elapsed_us, ?joined_us, right_censored, "writer_shutdown_observation");
     } else {
         tracing::warn!(target: "tasty::shutdown", writer = name,
-            ?observation, clean, timed_out, "writer_shutdown_observation");
+            ?observation, clean, timed_out, immediate, remaining, ?elapsed_us, ?joined_us, right_censored, "writer_shutdown_observation");
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn waits_until_the_deadline_then_gives_up_once() {
-        let mut drain = WriterDrain::default();
-        let start = Instant::now();
-        assert!(drain.keep_waiting(1, start, "x"));
-        assert!(drain.keep_waiting(1, start + WRITER_DRAIN_TIMEOUT / 2, "x"));
-        // 기한은 첫 대기에서 정해지고 뒤의 대기가 늘리지 않는다.
-        assert!(!drain.keep_waiting(1, start + WRITER_DRAIN_TIMEOUT, "x"));
-        assert!(
-            !drain.keep_waiting(1, start, "x"),
-            "a given-up drain never waits again"
-        );
-    }
-
-    #[test]
-    fn a_joined_writer_never_waits() {
-        let mut drain = WriterDrain::default();
-        assert!(!drain.keep_waiting(0, Instant::now(), "x"));
-    }
-}
+mod tests;

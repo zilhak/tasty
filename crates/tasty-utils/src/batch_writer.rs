@@ -25,6 +25,7 @@
 mod clock;
 mod measurement;
 mod pending;
+mod shutdown;
 mod slot;
 mod stats;
 mod wake;
@@ -37,6 +38,7 @@ use std::time::{Duration, Instant};
 
 pub use clock::{Clock, ManualClock, SystemClock};
 pub use measurement::{DurationStatsSnapshot, WRITER_LATENCY_BOUNDS_US};
+pub use shutdown::{ShutdownObservation, ShutdownReport, ShutdownTimer, ShutdownTiming};
 pub use slot::Receipt;
 pub use stats::{BATCH_SIZE_BUCKETS, WriterStatsSnapshot};
 pub use wake::{WakeCounts, WakeLatch};
@@ -411,20 +413,13 @@ impl<X: Executor> Handle<X> {
     }
 }
 
-/// Final flush and actual worker join are observed independently of process exit status.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum ShutdownObservation {
-    NotStarted,
-    Draining,
-    Joined { panicked: bool, flush: FlushResult },
-}
-
 /// worker를 소유하고 수명을 관리한다. 요청은 [`Writer::handle`]로 넣는다.
 pub struct Writer<X: Executor> {
     handle: Handle<X>,
     worker: Option<JoinHandle<()>>,
     final_flush: Option<Receipt<FlushResult>>,
     shutdown_observation: ShutdownObservation,
+    shutdown_timer: ShutdownTimer,
     name: String,
 }
 
@@ -460,6 +455,7 @@ impl<X: Executor> Writer<X> {
             worker: Some(worker),
             final_flush: None,
             shutdown_observation: ShutdownObservation::NotStarted,
+            shutdown_timer: ShutdownTimer::default(),
             name: name.to_owned(),
         })
     }
@@ -471,70 +467,6 @@ impl<X: Executor> Writer<X> {
     /// 새 요청 접수를 멈춘다. 이미 접수한 요청은 계속 실행하고 flush는 받는다.
     pub fn close(&self) {
         self.handle.shared.lock().admitting = false;
-    }
-
-    /// 접수를 멈추고 마지막 flush cut을 넣은 뒤 worker가 남은 요청을 실행하고 끝나게 한다.
-    /// 여러 번 불러도 한 번만 시작한다.
-    pub fn begin_shutdown(&mut self) {
-        if self.final_flush.is_some() {
-            return;
-        }
-        if self.shutdown_observation == ShutdownObservation::NotStarted {
-            self.shutdown_observation = ShutdownObservation::Draining;
-        }
-        let shared = &self.handle.shared;
-        let mut queue = shared.lock();
-        queue.admitting = false;
-        if queue.worker_alive {
-            self.final_flush = Some(shared.push_flush(&mut queue, FlushPoint::START));
-        }
-        queue.stopping = true;
-        drop(queue);
-        shared.arrived.notify_one();
-    }
-
-    /// 종료를 진행하고 아직 끝나지 않은 worker 수(0 또는 1)를 돌려준다. join이 끝나면 마지막
-    /// flush 결과를 로그에 남긴다.
-    pub fn poll_shutdown(&mut self) -> usize {
-        self.begin_shutdown();
-        if self.worker.as_ref().is_some_and(|w| w.is_finished())
-            && let Some(worker) = self.worker.take()
-        {
-            let panicked = worker.join().is_err();
-            if panicked {
-                tracing::error!(writer = %self.name, "writer worker panicked");
-            }
-            self.log_final_flush(panicked);
-        }
-        usize::from(self.worker.is_some())
-    }
-
-    /// A read-only snapshot; never consumes a request or final flush receipt.
-    pub fn shutdown_observation(&self) -> ShutdownObservation {
-        self.shutdown_observation.clone()
-    }
-
-    fn log_final_flush(&mut self, panicked: bool) {
-        let result = self
-            .final_flush
-            .take()
-            .and_then(|receipt| receipt.try_take())
-            .unwrap_or(Err(FlushFailure::Lost));
-        self.shutdown_observation = ShutdownObservation::Joined {
-            panicked,
-            flush: result.clone(),
-        };
-        match &result {
-            Ok(point) => {
-                tracing::debug!(writer = %self.name, seq = point.seq, "writer drained");
-            }
-            Err(FlushFailure::NotClean {
-                point,
-                rejected,
-                failed,
-            }) => log_unclean_drain(&self.name, *point, *rejected, *failed),
-            Err(FlushFailure::Lost) => log_lost_drain(&self.name),
-        }
     }
 
     /// 종료를 요청하지 않았는데 worker가 끝났는지. 메인 루프의 점검용이다.

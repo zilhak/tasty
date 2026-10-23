@@ -560,7 +560,7 @@ impl App {
         };
         state.memory_drain.observe_writer(
             remaining,
-            self.services.memory_writer_shutdown_observation(),
+            self.services.memory_writer_shutdown_report(),
             "memory",
             Instant::now(),
             "memory writer shutdown timed out; requests it has not committed may be lost",
@@ -576,7 +576,7 @@ impl App {
         };
         state.state_drain.observe_writer(
             remaining,
-            self.services.state_writer_shutdown_observation(),
+            self.services.state_writer_shutdown_report(),
             "state",
             Instant::now(),
             "state writer shutdown timed out; requests it has not committed may be lost",
@@ -597,7 +597,7 @@ impl App {
         };
         state.file_drain.observe_writer(
             remaining,
-            self.services.file_writer_shutdown_observation(),
+            self.services.file_writer_shutdown_report(),
             "file",
             Instant::now(),
             "file writer shutdown timed out; settings it has not saved may be lost",

@@ -380,3 +380,8 @@ debug 메서드의 메타(`local_only()`)는 `crates/tasty-ipc/src/method_meta.r
 - [CLI / IPC API 규약 — 명명 + 안정성](api-conventions.md) — 플랫폼 게이트가 걸린 dispatch arm 은 `-32601` 이 아니라 `-32015` 와 사유로 답한다 + `src/source_guards/platform_gated_dispatch_complement.rs` 짝 가드
 - [attach-behavior.md](attach-behavior.md) — attach 메커니즘
 - [self-verification 독립 검증](self-verification.md#독립-검증--개발도-agent-가-스스로-확인할-수-있어야-한다) — debug IPC 를 쓴 자체 검증
+
+
+## 기존 콜백의 숫자 관측
+
+Debug GUI의 `TASTY_DEBUG_LOOP_SAMPLES` 환경변수는 IPC 메서드를 추가하지 않고 기존 콜백을 bounded buffer로 관측한다. 출력 경로와 실행 환경은 자신의 격리 인스턴스에만 지정한다. raw 형식·8192개 상한·overflow·종료 export 및 시간 모집단의 한계는 [종료 계측](../architecture/shutdown-sequence.md#writer-종료-시간과-콜백-원시-표본)을 따른다. 입력 주입이나 추가 heartbeat가 아니며 release에는 포함되지 않는다.

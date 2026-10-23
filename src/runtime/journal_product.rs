@@ -386,6 +386,7 @@ pub(crate) struct JournalWorker {
     acknowledgements: Option<mpsc::SyncSender<(u64, Result<(), String>)>>,
     closed: Arc<AtomicBool>,
     thread: Option<JoinHandle<()>>,
+    shutdown_timer: tasty_utils::batch_writer::ShutdownTimer,
     #[cfg(test)]
     pub(crate) fail_next_publication: Arc<AtomicBool>,
     /// 시험에서 응답하지 않는 worker를 흉내 낸다. 켜진 동안의 완료는 App에 보내지 않고 버린다.
@@ -463,6 +464,7 @@ impl JournalWorker {
             acknowledgements: Some(acknowledgements),
             closed,
             thread: Some(thread),
+            shutdown_timer: Default::default(),
             #[cfg(test)]
             fail_next_publication,
             #[cfg(all(test, feature = "gui"))]
@@ -579,6 +581,7 @@ impl JournalWorker {
         if tracing::enabled!(target: "tasty::journal_metrics", tracing::Level::DEBUG) {
             tracing::debug!(target: "tasty::journal_metrics", snapshot=?self.metrics_snapshot(), "journal cached snapshot before stop");
         }
+        self.shutdown_timer.start(std::time::Instant::now());
         self.closed.store(true, Ordering::Release);
         self.requests.take();
         self.acknowledgements.take();
@@ -595,10 +598,18 @@ impl Drop for JournalWorker {
             drop(self.thread.take());
             return;
         }
-        if let Some(thread) = self.thread.take()
-            && thread.join().is_err()
-        {
-            tracing::error!("structure journal worker panicked during shutdown");
+        if let Some(thread) = self.thread.take() {
+            let started = std::time::Instant::now();
+            let panicked = thread.join().is_err();
+            let now = std::time::Instant::now();
+            self.shutdown_timer.joined(now);
+            tracing::info!(target: "tasty::shutdown", panicked,
+                stop_to_join_us = ?self.shutdown_timer.snapshot(now).map(|t| t.elapsed.as_micros()),
+                join_wait_us = now.saturating_duration_since(started).as_micros(),
+                "journal_actual_join");
+            if panicked {
+                tracing::error!("structure journal worker panicked during shutdown");
+            }
         }
     }
 }

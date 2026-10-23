@@ -12,6 +12,7 @@ Tasty 개발자를 위한 가이드다. Tasty를 사용하는 에이전트용 �
 | [shell-scripts](shell-scripts.md) | `scripts/`·`.githooks/`·`Justfile`·워크플로 `run:` 규약 — 조기에 끝나는 소비자를 파이프 오른쪽에 두지 않는다(SIGPIPE) |
 | [ci-gates](ci-gates.md) | CI·Git 훅의 실제 검사 명령과 실행 조건 |
 | [self-verification](self-verification.md) | 격리 인스턴스에서 직접 검증하는 절차와 결과를 해석하는 기준 |
+| [종료 숫자 계측](../architecture/shutdown-sequence.md#writer-종료-시간과-콜백-원시-표본) | writer cut/join/timeout과 debug GUI 콜백 raw 표본의 범위 |
 
 ## 코드 정책
 
