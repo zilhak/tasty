@@ -522,15 +522,18 @@ impl TcpIpcServer {
         tracing::debug!("stream client {} upgraded from {:?}", client_id, peer);
 
         let handshake = Self::parse_stream_handshake(&ctx, client_id, req);
-        let write_handle = Self::spawn_stream_write_thread(writer, sink_rx);
         if !Self::validate_stream_proto(&ctx, client_id, &handshake, peer) {
-            Self::finish_stream_connection(&ctx, client_id, write_handle, peer);
+            // No async writer or attach exists yet. Flush this final ACK while its
+            // original registration is live; unregister must not authorize old queues.
+            Self::write_stream_rejection(writer, sink_rx);
+            Self::finish_stream_connection(&ctx, client_id, None, peer);
             return;
         }
+        let write_handle = Self::spawn_stream_write_thread(writer, sink_rx);
         Self::push_stream_ack(&ctx, client_id);
         Self::dispatch_stream_attach(&ctx, client_id, &handshake);
         Self::run_stream_read_loop(&ctx, client_id, &mut reader);
-        Self::finish_stream_connection(&ctx, client_id, write_handle, peer);
+        Self::finish_stream_connection(&ctx, client_id, Some(write_handle), peer);
     }
 
     /// FIN/RST 없는 단절을 읽기 timeout으로 감지한다. 유휴 연결도 주기 Ping으로 유지한다.
@@ -576,8 +579,26 @@ impl TcpIpcServer {
         false
     }
 
-    /// Handshake ack — pushed through the sink so the single write thread owns
-    /// all socket writes.
+    /// Only the rejecting connection thread writes here, before any async writer exists.
+    /// The held frame retains its byte lease and must still belong to the live registration.
+    fn write_stream_rejection(
+        mut writer: std::net::TcpStream,
+        sink_rx: tasty_ipc::stream_hub::SinkReceiver,
+    ) {
+        if let Err(error) = writer.set_write_timeout(Some(stream::HEARTBEAT_TIMEOUT)) {
+            tracing::warn!(%error, "failed to bound stream rejection write");
+            return;
+        }
+        if let Ok(frame) = sink_rx.recv_held_timeout(Duration::ZERO)
+            && frame.tag == StreamTag::Control
+            && frame.is_current()
+            && let Err(error) = stream::write_frame(&mut writer, frame.tag, &frame.payload)
+        {
+            tracing::debug!(%error, "stream rejection peer disconnected before ACK");
+        }
+    }
+
+    /// Successful handshake ack uses the single asynchronous socket writer.
     fn push_stream_ack(ctx: &StreamContext, client_id: StreamClientId) {
         let ack = StreamAck {
             ok: true,
@@ -595,11 +616,11 @@ impl TcpIpcServer {
     fn finish_stream_connection(
         ctx: &StreamContext,
         client_id: StreamClientId,
-        write_handle: thread::JoinHandle<()>,
+        write_handle: Option<thread::JoinHandle<()>>,
         peer: Option<std::net::SocketAddr>,
     ) {
         ctx.hub.unregister(client_id); // drops the sink sender → write thread exits
-        if write_handle.join().is_err() {
+        if write_handle.is_some_and(|handle| handle.join().is_err()) {
             tracing::warn!("IPC writer thread panicked during connection cleanup");
         }
         // 메인 루프가 남아 있으면 이 연결의 점유를 해제한다. 이미 종료됐으면 통지 실패를 무시한다.

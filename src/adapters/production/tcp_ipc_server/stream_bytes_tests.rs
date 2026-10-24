@@ -70,3 +70,87 @@ fn actual_socket_writer_discards_old_registration_without_publishing_to_replacem
             .is_some()
     );
 }
+
+#[test]
+fn actual_protocol_rejection_writes_ack_before_cleanup_without_attach() {
+    for proto in [None, Some(stream::STREAM_PROTO + 41)] {
+        for _ in 0..16 {
+            let (mut client, server) = sockets();
+            let (tx, rx) = mpsc::channel();
+            let hub = StreamHub::new();
+            let ctx = StreamContext {
+                hub: hub.clone(),
+                inbound_tx: tx,
+                waker: Arc::new(|| {}),
+            };
+            let mut params = serde_json::json!({"target_workspace": 7, "bulk_workspace": 7});
+            if let Some(proto) = proto {
+                params["proto"] = proto.into();
+            }
+            let req = serde_json::from_value(serde_json::json!({
+                "jsonrpc": "2.0", "method": "stream.open", "params": params, "id": 1
+            }))
+            .unwrap();
+            let reader = BufReader::new(server.try_clone().unwrap());
+            // Cleanup has fully returned before the peer reads its final reply.
+            TcpIpcServer::handle_stream_connection(reader, server, req, ctx, None);
+            let frame = stream::read_frame(&mut client).expect("negative ACK before EOF");
+            assert_eq!(frame.tag, StreamTag::Control);
+            let ack: StreamAck = serde_json::from_slice(&frame.payload).unwrap();
+            assert!(!ack.ok);
+            assert_eq!(ack.proto, stream::STREAM_PROTO);
+            assert!(
+                ack.error
+                    .unwrap()
+                    .contains(&proto.unwrap_or_default().to_string())
+            );
+            let id = ack.client_id.unwrap();
+            assert!(hub.client_binding(id).is_none());
+            assert!(hub.bulk_workspace(id).is_none());
+            assert!(
+                matches!(rx.try_recv().unwrap(), StreamInbound::Disconnected { client_id } if client_id == id)
+            );
+            assert!(rx.try_recv().is_err(), "must not dispatch attach");
+            assert!(
+                stream::read_frame(&mut client).is_err(),
+                "connection closed"
+            );
+        }
+    }
+}
+
+#[test]
+fn rejection_flush_does_not_authorize_retired_or_replaced_frames() {
+    for replace in [false, true] {
+        let (mut client, server) = sockets();
+        let hub = StreamHub::new();
+        let rx = hub.register(5);
+        let binding = hub.client_binding(5).unwrap();
+        let owner = PublicationFence::default();
+        let reservation = hub
+            .reserve_frame(5, &binding, FULL)
+            .unwrap()
+            .for_owner(&owner);
+        assert_eq!(
+            hub.push_reserved(
+                reservation,
+                StreamFrame::new(StreamTag::Control, b"old".to_vec())
+            ),
+            PushResult::Sent
+        );
+        if !replace {
+            drop(owner);
+        }
+        let replacement = replace.then(|| hub.register(5));
+        TcpIpcServer::write_stream_rejection(server, rx);
+        assert!(stream::read_frame(&mut client).is_err());
+        if let Some(replacement) = replacement {
+            assert!(replacement.try_recv().is_err());
+        }
+        let current = hub.client_binding(5).unwrap();
+        assert!(
+            hub.reserve_frame(5, &current, FULL).is_some(),
+            "flush releases its byte lease"
+        );
+    }
+}
