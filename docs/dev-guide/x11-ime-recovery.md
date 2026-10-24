@@ -1,72 +1,59 @@
 # X11 IME 서버 복구
 
-Linux X11의 winit IME는 ibus 같은 XIM 서버에 동기 요청을 보낸다. libX11에는 이 응답을
-기다리는 시간 제한이 없으므로, 이미 종료되거나 교체된 서버로 요청을 보내면 GUI와 IPC가
-함께 멈출 수 있다. [고정한 winit 포크](dep-issues.md)의 보호는 아래 범위에 적용된다.
-Wayland·macOS·Windows의 입력 경로는 이 보호를 사용하지 않는다.
+Linux X11의 원격 XIM 입력은 winit 이벤트 루프에서 프로토콜 메시지를 주고받는다.
+원격 서버에 대해 libX11의 XOpenIM·XGetIMValues 응답 대기를 시작하지 않는다.
+서버의 selection owner가 살아 있어도 응답하지 않거나 확인 직후 종료될 수 있으므로,
+생존 확인과 응답 기한을 함께 사용한다. [고정한 포크와 빌드 조건](dep-issues.md)을 따른다.
+Wayland·macOS·Windows 입력 경로는 이 구현을 사용하지 않는다.
 
-## 생존 확인과 교체
+## 연결과 응답 기한
 
-IM을 열 때 libX11이 실제로 사용한 locale modifiers를 읽고, XIM_SERVERS의 이름·별칭과
-selection owner를 기록한다. 이 연결이 owner 창에 선택한 StructureNotify도 확인한다.
-같은 XID를 새 서버가 재사용해도 owner 값만으로 기존 서버라고 판단하지 않는다.
-서버를 식별할 수 없으면 Unverified로 두고 XGetIMValues부터 생략한다.
-local/none과 확인된 Thai 로컬 입력은 서버 왕복을 요구하지 않는다. 빈 이름은 서버에도
-연결될 수 있어 무조건 local로 취급하지 않으며 명시적 local 후보로 Compose를 제공한다.
+기존 X 연결에서 세대별 전용 클라이언트 창을 만들고 selection·연결·IM·IC 협상을
+이벤트로 처리한다. owner와 해당 연결의 StructureNotify 선택을 확인해 서버 교체와 XID
+재사용을 구분한다. X 요청 오류는 해당 요청에서 확인한다. X 서버 자체의 연결 장애나
+정지는 이 기한이 보호하는 원격 IME 서버 장애와 다르다.
 
-focus/unfocus, IC 생성·파괴, spot·허용 상태 변경, IM 교체·종료와 키 XFilterEvent의
-동기 요청 전에 owner를 확인한다. 불일치하면 해당 서버 창의 대기 중인 DestroyNotify만
-꺼내 XFilterEvent에 넘긴다. 다른 이벤트의 순서는 바꾸지 않는다. 필터가 콜백을 실행할
-수 있으므로 IM·IC·context 참조를 잡기 전에 처리하고, 반환 뒤 다시 조회한다.
+응답을 요구한 작업은 2초 기한을 가진다. 시간이 지나거나 서버가 바뀌면 전용 창과
+프로토콜 상태를 폐기하고 preedit를 끝낸다. 이후 서버 광고 또는 5초 재시도 기한에서
+새 세대로 연결한다. 종료된 owner 창의 알림은 앱 창의 종료로 처리하지 않는다.
+키 대기는 최대 64개, 수신 패킷·조립 버퍼는 최대 256KiB이며 전송 속성 이름은 고정된
+20개를 순환한다. 응답 기한은 이벤트가 없는 동안에도 이벤트 루프를 깨운다.
 
-owner 불일치만으로 libX11의 IM이 해제됐다고 판단하지 않는다. DestroyNotify가 아직
-없으면 suspect로 두고 요청을 생략한다. 실제 destroy 콜백은 현재 IM인지 확인한 뒤
-파괴 상태와 재연결 요청을 기록한다. 이미 교체한 옛 IM의 destroy는 현재 IM에 적용하지 않는다.
+IBus가 ForwardEvent의 동기 플래그에 응답하지 않을 수 있어 키 전송 뒤 GetICValues로
+서버의 프로토콜 진행을 확인한다. 이 응답은 키 소비나 문자 확정의 확인이 아니다.
+이미 전송한 키의 결과를 모르면 재전송하지 않는다. timeout 전에 확정된 문자가 다시
+입력되는 것을 막기 위해서다. 아직 전송하지 않은 키만 현재 허용·포커스 상태가 맞을 때
+local Compose로 되돌려 XFilterEvent와 그 필터가 생성하는 확정 이벤트를 순서대로 처리한다.
+서버가 이미 필터링해 반환한 키는 다시 필터링하지 않는다. 미전송 fallback을 꺼낼 때도
+현재 창의 허용·포커스를 확인한다. 포커스를 잃거나 제거된 창의 대기 키는 다른 창에 전달하지 않는다.
 
-## fallback과 재연결
+## 입력과 수명
 
-named primary를 열 수 없으면 local fallback을 시도한다. instantiate 콜백은 Pending만
-기록한다. 초기 im이 아직 없는 등록 직후 콜백도 새 IM을 열지 않는다. 초기화가 끝나거나
-XFilterEvent가 반환한 안전한 경계에서 요청을 한 번 처리한다.
+원격 IM·IC에 libX11의 C 콜백 포인터를 등록하지 않는다. 작업 스레드의 대기 포기나
+임의의 C 호출 중단을 복구 수단으로 사용하지 않으며 기존 X 연결을 다른 스레드에 넘기지
+않는다. 이전 세대의 창을 없앤 뒤 도착한 응답은 현재 세대에 적용하지 않는다.
+IC 생성·파괴 응답과 키·spot 요청은 순서대로 처리한다. 이미 소유 중인 IC 식별자를
+다른 생성 응답이 재사용하면 pending 완료나 소유권 변경 전에 거절하고 연결을 폐기한다.
+창 제거만으로 식별자를 해제하지 않으며, 파괴 응답으로 이전 소유권이 끝나면 정상 재사용을 허용한다. 허용 상태를 바꾸면 기존 IC를
+폐기하고 다시 만들며, 비허용·비포커스·폐기 중의 문자·preedit는 전달하지 않는다.
 
-libX11은 instantiate 콜백을 호출하기 전에 내부 call flag를 설정하며, flag 초기화는
-등록 때와 현재 locale modifiers가 일치해야 한다. local을 연 뒤에는 등록이 남아 있어도
-다시 콜백이 오지 않을 수 있다. 따라서 포크는 root의 XIM_SERVERS/NewValue를 필터 전에
-기록하고, 이벤트가 소비돼도 바깥 처리 경계에서 재연결을 시도한다.
-
-성공한 primary는 Idle로 돌아가고 instantiate 등록을 해제한다. fallback 또는 복구 가능한
-실패는 WaitingForServer로 남아 다음 광고를 기다린다. 일반 키나 이벤트 루프 반복만으로
-재시도하지 않는다. 처음부터 local만 쓰는 세션은 서버 광고 때문에 재연결하지 않는다.
-사용할 입력기를 전혀 열 수 없는 기존 초기화·복구 오류 정책까지 바꾸는 기능은 아니다.
-
-## 자원 수명과 한계
-
-IC를 일부 만든 뒤 교체가 실패하면 새 IM과 만든 context들을 함께 정리한다. 서버가
-여전히 확인되면 XCloseIM이 C의 IC를 해제한 뒤 Rust callback data를 내려놓는다.
-서버를 확인할 수 없으면 동기 close/destroy를 보내지 않고 callback data를 유지한다.
-이때 forget한 Rust Box·텍스트 버퍼·sender는 libX11이 나중에 XIC를 해제해도 자동 회수되지
-않으며 **프로세스 수명 동안 누수**한다. 반복 실패 때 누적될 수 있다. 전체 ImeInner를
-영구 보존한다는 뜻이나 모든 callback 수명 오류가 검증됐다는 뜻은 아니다.
-
-이 보호로 다음 대기까지 막을 수는 없다.
-
-- XOpenIM의 연결 협상 중 서버가 종료되는 경우.
-- 생존 확인 직후 또는 요청을 보낸 뒤 서버가 종료되는 경우.
-- 서버가 살아 있지만 응답하지 않는 경우.
+local/none과 확인된 Thai 로컬 입력은 기존 libX11 경로를 유지한다. 원격 복구 중에도
+명시적 local Compose를 제공한다. local IM을 열 때 실제 사용한 modifiers를 확인하고,
+프로세스의 이전 modifiers를 복원해 다른 GTK 연결의 입력 설정을 바꾸지 않는다.
+이 로컬 경로의 콜백 수명 정책은 별도이며 원격 프로토콜의 기한으로 C 호출을 취소하지 않는다.
 
 ## 검증 범위
 
-Linux Xvfb/ibus의 실제 XTest 한글 입력과 IPC로 서버 종료 후 FocusOut(A), 서버 교체(B)의
-복구를 확인한다. 새 pin의 비계측 실행과 검증용 계측 실행은 별도로 기록한다.
-debug IME Commit 주입은 OS 입력기를 거치지 않으므로 재연결 근거로 쓰지 않는다.
+격리한 Linux Xvfb/ibus에서 실제 XTest 한글 입력, 살아 있지만 응답하지 않는 서버,
+협상 정지, 확인 직후 서버 종료, 종료 뒤 FocusOut 및 서버 교체의 복구를 검증한다.
+확인 직후 종료 대조는 소스 사본에 검증용 rendezvous를 넣어 실제 서버를 죽인다.
+그 계측은 배포 포크에 포함하지 않는다. 비계측 실행과 계측 실행을 구분해 기록한다.
 
-포크 검증의 startup/재연결 실패 대조는 XOpenIM 뒤 named primary를 Unverified로 강제한
-계측 실행이다. 실제 owner 경쟁이나 C private call flag를 직접 측정한 것은 아니다.
-Reconnect 상태 시험 3건과 기존 서버 식별 시험 5건은 통과했지만 FFI·메모리 안전성 전체를
-보장하지 않는다. 과거 popup·후보 위치·partial IC 실패 자료는 해당 불변 경로에 한정한다.
-키 비용 자료 320쌍은 XTest→PTY 도착이며 키→화면 렌더 지연이 아니다.
+프로토콜 패킷 길이·padding·Commit 동기 플래그 시험과 기존 재연결·서버 식별 시험은
+FFI·메모리 안전성 전체나 모든 XIM 서버의 호환성을 보장하지 않는다. 작은 winit 창의
+이벤트 루프 응답·redraw 알림은 Tasty의 GPU 프레임·IPC·PTY 통합 검증을 대신하지 않는다.
+debug IME Commit 주입도 OS 입력기 복구의 근거가 아니다. 원래 RDP 정지의 원인이
+IME였다는 인과는 이 검증만으로 확정하지 않는다.
 
-포크의 cap-lints allow/warn 결과는 strict clippy 통과가 아니다. warn 실행에는 기존
-iter_kv_map 경고가 남는다. Thai runtime, ASan/Miri, 다른 OS의 신규 실측은 이 근거에
-포함하지 않는다. 격리·PID 소유 확인과 명령의 실제 종료 코드 판독은
-[자체 검증](self-verification.md), IME 주입의 범위는 [IME 검증](../ai-verification/ime-testing.md)을 따른다.
+격리·PID 소유 확인과 실제 종료 코드 판독은 [자체 검증](self-verification.md),
+입력 주입의 범위는 [IME 검증](../ai-verification/ime-testing.md)을 따른다.

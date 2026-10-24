@@ -27,19 +27,20 @@ cargo tree -i block@0.1.6     # 빈 출력이면 본 항목 삭제
 
 ## `winit` — 개인 포크 핀 (IME · X11 서버 재연결 · 외부 토큰 활성화)
 
-`Cargo.toml` 의 `[patch.crates-io]` 가 winit 을 개인 포크 `zilhak/winit-ime-fix` 의 `tasty/xim-server-recovery` 브랜치에 공개된 커밋에 핀:
+`Cargo.toml` 의 `[patch.crates-io]` 가 winit 을 개인 포크 `zilhak/winit-ime-fix` 의 `tasty/xim-bounded-20261024` 브랜치에 공개된 커밋에 핀:
 
 ```toml
-winit = { git = "https://github.com/zilhak/winit-ime-fix.git", rev = "dc7c4b393d1adf484ea5b4a0ad5b4fc06cd63f8b" }
+winit = { git = "https://github.com/zilhak/winit-ime-fix.git", rev = "83d620da3b15518fd9b6371138957a6da85964ab" }
 ```
 
 - **포크가 담은 패치**: 업스트림 winit 0.30.13 위에 아래 변경을 얹었다.
   - 한글·CJK IME 입력 수정(macOS 한글 IME 트리거 키, 입력 소스 전환 뒤 첫 글자, Cmd 키를 누른 동안 IME 처리 건너뛰기). 업스트림 PR [#4478](https://github.com/rust-windowing/winit/pull/4478) 로 제출돼 있다.
   - macOS `NSApplicationDelegate` 를 외부에서 바꿔도 panic 하지 않게 하는 수정.
-  - Linux X11에서 XIM 서버의 종료·교체를 확인한 뒤 동기 요청을 생략하고, 새 서버 광고 뒤 입력기를 재연결한다. local fallback과 콜백 수명, 남는 대기 한계는 [X11 IME 서버 복구](x11-ime-recovery.md)에 있다.
+  - Linux X11 원격 XIM을 이벤트 기반 프로토콜로 처리하고 응답 기한이 지나면 연결 세대를 폐기한다. 서버 광고 또는 재시도 기한 뒤 다시 연결한다. local Compose와 키의 불확실한 결과, 자원 수명 및 검증 한계는 [X11 IME 서버 복구](x11-ime-recovery.md)에 있다.
   - Wayland 외부 xdg-activation 토큰으로 이미 있는 창을 활성화하는 `WindowExtWayland::activate_with_token`. 업스트림에는 대응 API 가 없다. Tasty 는 이 API 를 직접 호출한다(`crates/tasty-platform/src/window_activation.rs`). 그래서 `[patch.crates-io]` 를 걷으면 컴파일이 실패한다.
+- **빌드 결합**: X11 프로토콜 처리는 선택 의존성 `xim-parser = 0.2.2`, `xim-ctext = 0.4.1`을 사용한다. 포크의 최소 Rust 버전은 1.82이며 본체의 고정 도구 체인 1.96.0이 이를 충족한다. Wayland·macOS·Windows 입력 구현은 이 프로토콜을 사용하지 않는다.
 - **왜 `rev` 핀인가**: `branch =` 핀은 브랜치가 움직이면(force-push 포함) 빌드 입력이 조용히 바뀌어 재현성이 깨진다. 고정 commit(`rev`)에 핀해 빌드 입력을 동결한다. 포크 갱신이 필요하면 `rev` 를 의도적으로 갱신한다.
-- **리스크**: 포크 레포가 사라지거나 commit 이 GC 되면 빌드 재현 불가. 핀한 커밋을 가리키는 `tasty/xim-server-recovery` 브랜치를 보존한다. 이 커밋에 도달하는 참조를 모두 지우거나 force-push 하면 GC 대상이 된다. 포크 rev 를 바꿀 때는 새 커밋이 원격 브랜치에 push 된 뒤 바꾼다(그 전에는 새 clone 의 `--locked` 빌드가 fetch 에 실패한다). winit 0.30 업스트림 업그레이드는 포크가 따라가야 가능(wgpu/egui-winit 업글과 충돌 여지).
+- **리스크**: 포크 레포가 사라지거나 commit 이 GC 되면 빌드 재현 불가. 핀한 커밋을 가리키는 `tasty/xim-bounded-20261024` 브랜치를 보존한다. 이 커밋에 도달하는 참조를 모두 지우거나 force-push 하면 GC 대상이 된다. 포크 rev 를 바꿀 때는 새 커밋이 원격 브랜치에 push 된 뒤 바꾼다(그 전에는 새 clone 의 `--locked` 빌드가 fetch 에 실패한다). winit 0.30 업스트림 업그레이드는 포크가 따라가야 가능(wgpu/egui-winit 업글과 충돌 여지).
 
 ### 점검 / 전환 트리거
 
