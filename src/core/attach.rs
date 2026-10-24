@@ -2,6 +2,8 @@
 //! 상태는 저장하지 않으며 재시작하면 비어 있다. 인증은 이 레지스트리 밖에서 처리한다.
 //! 값 변경은 전송을 수행하지 않는다. App/Remote 실행 경계가 반환된 holder에게 통지한다.
 
+mod publication;
+
 use std::collections::HashMap;
 
 use crate::core::child_parent::ParentKey;
@@ -69,6 +71,8 @@ pub struct OccupancyRegistry {
     /// 비터미널까지 포함한 멤버의 역매핑. holder 조회와 workspace 단위 정리에 사용한다.
     surface_to_workspace: HashMap<SurfaceId, WorkspaceId>,
     next_seq: u64,
+    workspace_publications: HashMap<WorkspaceId, std::sync::Arc<()>>,
+    member_publications: HashMap<SurfaceId, std::sync::Arc<()>>,
     /// 이번 배치에서 끊김을 확인한 client. 점유 정리는 뒤에서 하되 새 acquire가 이를 구별할 수 있게 한다.
     dead_clients: std::collections::HashSet<AttachClientId>,
     soft: HashMap<SurfaceId, SoftEntry>,
@@ -213,6 +217,7 @@ impl OccupancyRegistry {
     /// 경쟁 acquire가 없으면 점유를 유지하고 release_all_for_client에서 표시까지 지운다.
     pub fn mark_clients_disconnected(&mut self, clients: &[AttachClientId]) {
         self.dead_clients.extend(clients.iter().copied());
+        self.retire_dead_publications(clients);
     }
 
     fn is_dead(&self, client_id: AttachClientId) -> bool {
@@ -239,6 +244,7 @@ impl OccupancyRegistry {
             .collect();
         for ws in &ws_held {
             self.workspace_locks.remove(ws);
+            self.workspace_publications.remove(ws);
             let members: Vec<SurfaceId> = self
                 .surface_to_workspace
                 .iter()
@@ -248,6 +254,7 @@ impl OccupancyRegistry {
             for s in &members {
                 self.surface_locks.remove(s);
                 self.surface_to_workspace.remove(s);
+                self.member_publications.remove(s);
                 released.push(*s);
             }
         }
@@ -271,6 +278,7 @@ impl OccupancyRegistry {
     pub fn forget_closed_surface(&mut self, surface_id: SurfaceId) -> bool {
         let had_lock = self.surface_locks.remove(&surface_id).is_some();
         let member_of = self.surface_to_workspace.remove(&surface_id);
+        self.member_publications.remove(&surface_id);
         let had_member = member_of.is_some();
         let had_soft = self.clear_soft(surface_id);
         had_lock || had_member || had_soft
@@ -331,11 +339,14 @@ impl OccupancyRegistry {
             granted_seq: self.next_seq,
         };
         self.workspace_locks.insert(workspace_id, lock);
+        self.workspace_publications
+            .insert(workspace_id, std::sync::Arc::new(()));
         for s in terminals {
             self.surface_locks.entry(*s).or_insert(lock);
         }
         for s in members {
             self.surface_to_workspace.insert(*s, workspace_id);
+            self.member_publications.insert(*s, std::sync::Arc::new(()));
         }
         Ok(lock)
     }
@@ -354,6 +365,10 @@ impl OccupancyRegistry {
         if is_terminal {
             self.surface_locks.entry(surface_id).or_insert(lock);
         }
+        if self.surface_to_workspace.get(&surface_id) != Some(&workspace_id) {
+            self.member_publications
+                .insert(surface_id, std::sync::Arc::new(()));
+        }
         self.surface_to_workspace.insert(surface_id, workspace_id);
         true
     }
@@ -367,6 +382,7 @@ impl OccupancyRegistry {
 
     /// Publication readiness belongs to the original grant, independently from connection IDs.
     pub(crate) fn set_attachment_ready(&mut self, client: AttachClientId, grant: u64, ready: bool) {
+        self.set_publication_ready(client, grant, ready);
         for lock in self
             .surface_locks
             .values_mut()
@@ -420,6 +436,7 @@ impl OccupancyRegistry {
     /// workspace와 멤버 점유를 지우고 통지 대상 holder를 반환한다.
     pub fn force_detach_workspace(&mut self, workspace_id: WorkspaceId) -> Option<AttachClientId> {
         let lock = self.workspace_locks.remove(&workspace_id)?;
+        self.workspace_publications.remove(&workspace_id);
         self.clear_workspace_members(workspace_id);
         tracing::debug!(
             "attach: force_detach_workspace workspace={workspace_id:?} holder={:?}",
@@ -442,6 +459,7 @@ impl OccupancyRegistry {
         for s in &members {
             self.surface_locks.remove(s);
             self.surface_to_workspace.remove(s);
+            self.member_publications.remove(s);
         }
     }
 }

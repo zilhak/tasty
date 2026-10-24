@@ -2,7 +2,7 @@
 //! Keep normalization aligned with html_http::Document::open and its header cleaner.
 use super::*;
 use sha2::{Digest, Sha256};
-pub(super) fn begin(value: &wire::HttpRequest, header_limit: usize) -> core::Result<[u8; 32]> {
+pub fn begin(value: &wire::HttpRequest, header_limit: usize) -> core::Result<[u8; 32]> {
     let wire::HttpRequest::Begin {
         method,
         logical_url,

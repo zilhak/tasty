@@ -216,6 +216,7 @@ struct StreamSink {
     html_transfer: bool,
     html_viewer: bool,
     html_http: bool,
+    html_https: bool,
     html_admission: Option<(u64, u64)>,
     binding: Arc<()>,
     registration: u128,
@@ -388,6 +389,7 @@ impl StreamHub {
                 html_transfer: false,
                 html_viewer: false,
                 html_http: false,
+                html_https: false,
                 html_admission: None,
                 binding: Arc::new(()),
                 registration: rand::random(),
@@ -445,6 +447,9 @@ impl StreamHub {
             sink.html_http = capabilities
                 .iter()
                 .any(|c| c == crate::html_http::CAPABILITY);
+            sink.html_https = capabilities
+                .iter()
+                .any(|c| c == crate::html_http::HTTPS_CAPABILITY);
             sink.html_viewer = capabilities
                 .iter()
                 .any(|c| c == crate::html_transfer::VIEWER_CAPABILITY);

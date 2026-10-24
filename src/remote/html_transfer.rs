@@ -1,6 +1,8 @@
 //! Engine-owned bounded HTML workers. Main loops deliver owned commands, never file I/O.
+#[cfg(feature = "gui")]
 mod control;
 mod resources;
+#[cfg(feature = "gui")]
 use control::refuse_http;
 
 use crate::{
@@ -146,7 +148,9 @@ impl EngineMut<'_> {
             tasty_ipc::stream_hub::HtmlControl::File(msg) => {
                 self.handle_html_request(hub, client, msg)
             }
-            tasty_ipc::stream_hub::HtmlControl::Http(msg) => refuse_http(hub, client, msg),
+            tasty_ipc::stream_hub::HtmlControl::Http(msg) => {
+                self.handle_http_request(hub, client, msg)
+            }
         }
     }
     pub(crate) fn poll_html_transfers(&mut self) {
@@ -156,6 +160,7 @@ impl EngineMut<'_> {
         let mut transfers = std::mem::take(&mut self.remote.html_transfers);
         transfers.collect(&self.as_ref(), &hub);
         self.remote.html_transfers = transfers;
+        self.poll_http_transfers(&hub);
     }
     pub(crate) fn handle_html_request(&mut self, hub: &StreamHub, client: u32, msg: HtmlRequest) {
         if matches!(msg, HtmlRequest::HtmlCapabilities { .. }) {

@@ -236,3 +236,38 @@ fn ordered_file_and_http_admissions_use_one_registration_cursor() {
         .collect();
     assert_eq!(claims, [true, false, true, false, true]);
 }
+
+#[test]
+fn http_and_https_require_the_current_peer_native_declarations() {
+    let hub = StreamHub::new();
+    let _sink = hub.register(5);
+    let (tx, rx) = mpsc::channel();
+    capabilities(&tx, &[html_transfer::CAPABILITY, html_http::CAPABILITY]);
+    hub.pump_inbound(&rx);
+    assert!(!hub.html_http_enabled(5, false));
+    capabilities(
+        &tx,
+        &[
+            html_transfer::CAPABILITY,
+            html_transfer::VIEWER_CAPABILITY,
+            html_http::CAPABILITY,
+        ],
+    );
+    hub.pump_inbound(&rx);
+    assert!(hub.html_http_enabled(5, false));
+    assert!(!hub.html_http_enabled(5, true));
+    capabilities(
+        &tx,
+        &[
+            html_transfer::CAPABILITY,
+            html_transfer::VIEWER_CAPABILITY,
+            html_http::CAPABILITY,
+            html_http::HTTPS_CAPABILITY,
+        ],
+    );
+    hub.pump_inbound(&rx);
+    assert!(hub.html_http_enabled(5, true));
+    let _replacement = hub.register(5);
+    assert!(!hub.html_http_enabled(5, false));
+    assert!(!hub.html_http_enabled(5, true));
+}

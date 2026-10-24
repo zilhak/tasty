@@ -12,7 +12,11 @@ pub(super) async fn send(
     if cancel.flag.load(Ordering::Acquire) {
         return Err(Error::Cancelled);
     }
-    tokio::select! {biased;_=stop.changed()=>Err(Error::Cancelled),sent=tx.send(event)=>sent.map_err(|_|Error::Cancelled)}
+    let result = tokio::select! {biased;_=stop.changed()=>Err(Error::Cancelled),sent=tx.send(event)=>sent.map_err(|_|Error::Cancelled)};
+    if result.is_ok() {
+        (cancel.wake)();
+    }
+    result
 }
 fn network(e: reqwest::Error) -> Error {
     if e.is_timeout() {

@@ -41,11 +41,17 @@ pub struct FrameReservation {
     client: StreamClientId,
     binding: Weak<()>,
     owner: Option<Weak<()>>,
+    guard: Option<Arc<dyn Fn() -> bool + Send + Sync>>,
     lease: ByteLease,
 }
 impl FrameReservation {
     pub fn for_owner(mut self, owner: &PublicationFence) -> Self {
         self.owner = Some(Arc::downgrade(&owner.0));
+        self
+    }
+    /// An authority check without I/O or executor waits is repeated at attach and immediately before write.
+    pub fn with_guard(mut self, guard: Arc<dyn Fn() -> bool + Send + Sync>) -> Self {
+        self.guard = Some(guard);
         self
     }
     pub fn capacity(&self) -> usize {
@@ -65,6 +71,7 @@ impl FrameReservation {
                 .owner
                 .as_ref()
                 .is_none_or(|owner| owner.upgrade().is_some())
+            && self.guard.as_ref().is_none_or(|guard| guard())
             && frame.payload.len() <= MAX_FRAME_LEN as usize
             && bytes.is_some_and(|n| n <= self.lease.bytes);
         if valid {
@@ -74,6 +81,7 @@ impl FrameReservation {
             frame,
             binding: self.binding,
             owner: self.owner,
+            guard: self.guard,
             _lease: self.lease,
         };
         if valid { Ok(held) } else { Err(held) }
@@ -86,6 +94,7 @@ pub struct HeldFrame {
     frame: StreamFrame,
     binding: Weak<()>,
     owner: Option<Weak<()>>,
+    guard: Option<Arc<dyn Fn() -> bool + Send + Sync>>,
     _lease: ByteLease,
 }
 impl Deref for HeldFrame {
@@ -103,6 +112,7 @@ impl HeldFrame {
                 .owner
                 .as_ref()
                 .is_none_or(|owner| owner.upgrade().is_some())
+            && self.guard.as_ref().is_none_or(|guard| guard())
     }
     pub(super) fn charge(frame: StreamFrame, sink: &StreamSink) -> Result<Self, Self> {
         let counter = &sink.bytes;
@@ -116,12 +126,14 @@ impl HeldFrame {
                 frame,
                 binding,
                 owner: None,
+                guard: None,
                 _lease: lease,
             }),
             None => Err(Self {
                 frame,
                 binding,
                 owner: None,
+                guard: None,
                 _lease: ByteLease {
                     counter: counter.clone(),
                     bytes: 0,
@@ -157,6 +169,7 @@ impl StreamHub {
             client,
             binding: binding.clone(),
             owner: None,
+            guard: None,
             lease,
         })
     }

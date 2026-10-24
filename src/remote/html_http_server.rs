@@ -6,6 +6,7 @@ mod poll;
 use super::html_http as core;
 use convert::*;
 pub use convert::{failure_reply, rejection_reply};
+pub use fingerprint::begin as begin_fingerprint;
 use std::{collections::HashMap, sync::Arc};
 use tasty_ipc::{
     html_http as wire,
@@ -145,7 +146,13 @@ impl Server {
     /// Retire on detach/source replacement/reload/close; never wait for worker joins here.
     pub fn retire(&mut self, token: &OwnerToken) {
         if let Ok(i) = self.index(token) {
-            self.documents.swap_remove(i).document.close();
+            let owner = self.documents.swap_remove(i);
+            owner.document.close();
+            for slot in owner.requests.into_values() {
+                if let State::Running(running) = slot.state {
+                    self.backend.retire(running.operation);
+                }
+            }
         }
     }
     pub fn transferred_bytes(&self, token: &OwnerToken) -> core::Result<u64> {

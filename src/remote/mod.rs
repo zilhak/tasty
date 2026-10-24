@@ -25,3 +25,7 @@ pub(crate) mod html_files;
 pub(crate) mod html_transfer;
 
 mod html_descriptor;
+
+pub(crate) mod html_http;
+pub(crate) mod html_http_host;
+pub(crate) mod html_http_server;

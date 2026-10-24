@@ -2,9 +2,9 @@
 //! The caller validates attach ownership and owns one document generation. Reusing a response
 //! never opens a second upstream request. TLS verification is per client; native TLS termination is a separate adapter.
 mod body;
+#[cfg(test)]
 pub mod endpoint;
 mod headers;
-pub mod local_tls;
 mod tls;
 mod transfer;
 mod types;
@@ -45,6 +45,7 @@ struct BackendInner {
     slots: Arc<Semaphore>,
     serial: AtomicU64,
     runtime: tokio::runtime::Handle,
+    wake: Arc<dyn Fn() + Send + Sync>,
 }
 impl Backend {
     pub fn new(limits: Limits, runtime: tokio::runtime::Handle) -> Result<Self> {
@@ -61,8 +62,32 @@ impl Backend {
                 limits,
                 serial: 1.into(),
                 runtime,
+                wake: Arc::new(|| {}),
             }),
         })
+    }
+    /// Install the host wake callback on a newly constructed, not-yet-shared backend.
+    pub fn with_waker(mut self, wake: Arc<dyn Fn() + Send + Sync>) -> Result<Self> {
+        Arc::get_mut(&mut self.inner)
+            .ok_or(Error::Invalid("shared backend setup"))?
+            .wake = wake;
+        Ok(self)
+    }
+    /// Cancel before joining on the injected runtime; engine cleanup never waits for network IO.
+    pub fn retire(&self, operation: Operation) {
+        operation.cancel();
+        if operation.is_finished() {
+            // Completed handles need no wait; drop their output and queued events immediately.
+            drop(operation);
+            return;
+        }
+        let pending = !operation.is_finished();
+        // The detached cleanup task retains Operation until its actual worker has terminated.
+        drop(self.inner.runtime.spawn(async move {
+            if let Err(error) = operation.join().await {
+                tracing::debug!(?error, pending, "retired HTTP operation finished");
+            }
+        }));
     }
     pub fn upload(&self) -> UploadBuilder {
         UploadBuilder::new(self.inner.quota.clone(), self.inner.limits.upload_bytes)
@@ -151,13 +176,15 @@ impl DocumentInner {
 struct Cancellation {
     tx: watch::Sender<bool>,
     flag: Arc<AtomicBool>,
+    wake: Arc<dyn Fn() + Send + Sync>,
 }
 impl Cancellation {
-    fn new() -> Self {
+    fn new(wake: Arc<dyn Fn() + Send + Sync>) -> Self {
         let (tx, _) = watch::channel(false);
         Self {
             tx,
             flag: Arc::new(AtomicBool::new(false)),
+            wake,
         }
     }
     fn cancel(&self) {
@@ -259,7 +286,7 @@ impl Document {
             source_generation: request.source_generation,
             serial,
         };
-        let cancel = Cancellation::new();
+        let cancel = Cancellation::new(self.inner.backend.wake.clone());
         entries.insert(
             request.id,
             Entry {

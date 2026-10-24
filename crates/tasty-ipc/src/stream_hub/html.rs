@@ -8,6 +8,17 @@ pub enum HtmlControl {
     Http(HttpRequest),
 }
 impl StreamHub {
+    /// The peer must declare both HTTP transport and its native HTML viewer; HTTPS is separate.
+    pub fn html_http_enabled(&self, client: StreamClientId, secure: bool) -> bool {
+        tasty_utils::poison::recover_mutex(self.sinks.lock(), SINKS_WHAT, &SINKS_POISONED)
+            .get(&client)
+            .is_some_and(|sink| {
+                sink.html_transfer
+                    && sink.html_viewer
+                    && sink.html_http
+                    && (!secure || sink.html_https)
+            })
+    }
     /// Claim only a new file request or HTTP Begin, after actual owner validation.
     /// Credits and lifecycle commands never allocate identities. Duplicate HTTP Begin
     /// classification belongs to the existing document before calling this allocator.

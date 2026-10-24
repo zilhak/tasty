@@ -167,3 +167,43 @@ fn retired_owner_before_enqueue_cannot_publish_and_releases_full_reservation() {
     assert_eq!(used(&hub), 0);
     assert!(rx.try_recv().is_err());
 }
+
+#[test]
+fn authority_is_rechecked_after_queueing_without_releasing_live_frame_bytes_early() {
+    let hub = StreamHub::new();
+    let rx = hub.register(5);
+    let binding = hub.client_binding(5).unwrap();
+    let live = Arc::new(std::sync::atomic::AtomicBool::new(true));
+    let check = live.clone();
+    let full = MAX_FRAME_LEN as usize + FRAME_HEADER_LEN;
+    let reservation = hub
+        .reserve_frame(5, &binding, full)
+        .unwrap()
+        .with_guard(Arc::new(move || check.load(Ordering::Acquire)));
+    assert_eq!(
+        hub.push_reserved(
+            reservation,
+            StreamFrame::new(StreamTag::Control, vec![1; 10])
+        ),
+        PushResult::Sent
+    );
+    let held = rx
+        .recv_held_timeout(std::time::Duration::from_secs(1))
+        .unwrap();
+    assert!(held.is_current());
+    live.store(false, Ordering::Release);
+    assert!(!held.is_current());
+    assert!(hub.reserve_frame(5, &binding, full).is_none());
+    drop(held);
+    assert!(hub.reserve_frame(5, &binding, full).is_some());
+    let reservation = hub
+        .reserve_frame(5, &binding, full)
+        .unwrap()
+        .with_guard(Arc::new(|| false));
+    assert_ne!(
+        hub.push_reserved(reservation, StreamFrame::new(StreamTag::Control, vec![])),
+        PushResult::Sent
+    );
+    assert!(rx.try_recv().is_err());
+    assert!(hub.reserve_frame(5, &binding, full).is_some());
+}

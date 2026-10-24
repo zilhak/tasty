@@ -177,6 +177,9 @@ path = "src/main.rs"
 
 [dependencies]
 sha2 = "0.10"
+reqwest = { version = "=0.13.4", default-features = false, features = ["rustls"] }
+tokio = { version = "=1.50.0", features = ["rt-multi-thread", "macros", "sync", "time", "io-util", "net"] }
+flate2 = "=1.1.9"
 tasty-font = { path = "crates/tasty-font" }
 tasty-hooks = { path = "crates/tasty-hooks" }
 tasty-lua = { path = "crates/tasty-lua" }

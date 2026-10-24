@@ -33,6 +33,7 @@ pub(crate) fn explorer_write_refusal(host: Option<&ExplorerRemoteHost>) -> Strin
 pub(crate) struct RemoteState {
     #[cfg(feature = "gui")]
     pub(crate) html_entry_hosts: std::collections::HashSet<u32>,
+    pub(crate) html_http: crate::remote::html_http_host::HttpHost,
     pub(crate) html_transfers: crate::remote::html_transfer::HtmlTransfers,
     pub(crate) attach_subscriptions:
         std::collections::HashMap<(u32, u32), super::subscription::Subscription>,
@@ -132,6 +133,7 @@ impl RemoteState {
             #[cfg(feature = "gui")]
             html_entry_hosts: Default::default(),
             html_transfers: Default::default(),
+            html_http: Default::default(),
             attach_subscriptions: Default::default(),
             attach_mapping_tokens: Default::default(),
             presentation: Default::default(),

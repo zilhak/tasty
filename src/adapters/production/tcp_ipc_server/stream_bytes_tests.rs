@@ -154,3 +154,36 @@ fn rejection_flush_does_not_authorize_retired_or_replaced_frames() {
         );
     }
 }
+
+#[test]
+fn actual_socket_writer_rechecks_authority_before_publishing_queued_frame() {
+    let (mut client, server) = sockets();
+    let hub = StreamHub::new();
+    let rx = hub.register(5);
+    let binding = hub.client_binding(5).unwrap();
+    let current = Arc::new(AtomicBool::new(true));
+    let check = current.clone();
+    let reservation = hub
+        .reserve_frame(5, &binding, FULL)
+        .unwrap()
+        .with_guard(Arc::new(move || check.load(Ordering::Acquire)));
+    assert_eq!(
+        hub.push_reserved(
+            reservation,
+            StreamFrame::new(StreamTag::Control, b"obsolete authority".to_vec())
+        ),
+        PushResult::Sent
+    );
+    current.store(false, Ordering::Release);
+    hub.push(5, StreamFrame::new(StreamTag::Control, b"current".to_vec()));
+    hub.push(5, StreamFrame::new(StreamTag::Detach, vec![]));
+    let writer = TcpIpcServer::spawn_stream_write_thread(server, rx);
+    assert_eq!(stream::read_frame(&mut client).unwrap().payload, b"current");
+    assert_eq!(
+        stream::read_frame(&mut client).unwrap().tag,
+        StreamTag::Detach
+    );
+    writer.join().unwrap();
+    assert!(stream::read_frame(&mut client).is_err());
+    assert!(hub.reserve_frame(5, &binding, FULL).is_some());
+}
