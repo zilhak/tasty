@@ -43,7 +43,7 @@ impl GpuState {
                 occlusion_query_set: None,
             });
         }
-        self.queue.submit(std::iter::once(encoder.finish()));
+        self.submit_commands(std::iter::once(encoder.finish()));
     }
 
     #[allow(clippy::too_many_arguments)] // reason: 터미널 렌더 컨텍스트 전체
@@ -188,7 +188,7 @@ impl GpuState {
             self.renderer
                 .render_all(&mut render_pass, self.size.width, self.size.height);
         }
-        self.queue.submit(std::iter::once(encoder.finish()));
+        self.submit_commands(std::iter::once(encoder.finish()));
     }
 
     pub(super) fn render_egui_pass(
@@ -237,7 +237,7 @@ impl GpuState {
                 .render(&mut render_pass, paint_jobs, screen_descriptor);
         }
 
-        self.queue.submit(std::iter::once(egui_encoder.finish()));
+        self.submit_commands(std::iter::once(egui_encoder.finish()));
     }
 
     /// 이번 프레임에 해제할 egui 텍스처를 푼다. 메인 pass 와 WebView 오버레이 pass 가 모두 끝난 뒤

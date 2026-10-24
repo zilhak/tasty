@@ -1,4 +1,6 @@
 mod boot_error;
+#[cfg(debug_assertions)]
+mod debug_surface;
 mod delayed_repaint;
 mod egui_bridge;
 mod egui_mesh_prepare;
@@ -9,6 +11,7 @@ pub(crate) mod overlay_surface;
 mod render_pass;
 mod screenshot;
 mod shell_setup;
+mod surface_lifecycle;
 
 use crate::runtime::engine_read::EngineRead;
 #[cfg(test)]
@@ -67,6 +70,9 @@ fn clamp_surface_dims(w: u32, h: u32, max: u32) -> (u32, u32) {
 
 pub struct GpuState {
     pub(super) surface: wgpu::Surface<'static>,
+    pub(super) surface_invalid: bool,
+    #[cfg(debug_assertions)]
+    surface_probe: debug_surface::Probe,
     pub(super) device: wgpu::Device,
     pub(super) queue: wgpu::Queue,
     pub(super) config: wgpu::SurfaceConfiguration,
@@ -264,6 +270,9 @@ impl GpuState {
 
         Ok(Self {
             surface,
+            surface_invalid: false,
+            #[cfg(debug_assertions)]
+            surface_probe: Default::default(),
             device,
             queue,
             config,
@@ -290,30 +299,6 @@ impl GpuState {
             terminal_cursor_restore_pending: false,
             proxy,
         })
-    }
-
-    pub fn resize(&mut self, new_size: PhysicalSize<u32>) {
-        if new_size.width == 0 || new_size.height == 0 {
-            return;
-        }
-        // 외부 크기 변경도 어댑터 한계 안으로 제한하고 초과 요청은 기록한다.
-        let max = self.device.limits().max_texture_dimension_2d;
-        let (w, h) = clamp_surface_dims(new_size.width, new_size.height, max);
-        if w != new_size.width || h != new_size.height {
-            tracing::warn!(
-                req_w = new_size.width,
-                req_h = new_size.height,
-                max,
-                "surface resize request exceeds max_texture_dimension_2d; clamping"
-            );
-        }
-        let clamped = PhysicalSize::new(w, h);
-        self.size = clamped;
-        self.config.width = w;
-        self.config.height = h;
-        self.surface.configure(&self.device, &self.config);
-        self.resize_overlay_surface(w, h);
-        self.renderer.resize(&self.queue, w, h);
     }
 
     /// Pass a winit event to egui. Returns (consumed, repaint).
@@ -389,6 +374,8 @@ impl GpuState {
         plugin_manager: Option<crate::app::plugin_display::PluginDisplay<'_>>,
     ) -> Result<(), wgpu::SurfaceError> {
         let render_start = std::time::Instant::now();
+        #[cfg(debug_assertions)]
+        self.debug_main_frame(window.id())?;
 
         // surface 캡처를 먼저 처리한다. 별도 텍스처를 쓰고 투영값을 복원해 뒤의 화면 렌더에 영향이 없게 한다.
         self.handle_pending_surface_screenshot(state, &engine.as_ref());
@@ -429,6 +416,8 @@ impl GpuState {
         let host_popup_on_top =
             egui_bridge::host_popup_should_render_on_top(host_top_z_seq, plugin_top_z_seq);
 
+        stall_watchdog::set_phase(stall_watchdog::Phase::Acquire);
+        let output = self.acquire_surface()?;
         let t0 = std::time::Instant::now();
         let mut full_output = self.run_egui_frame(
             state,
@@ -469,8 +458,6 @@ impl GpuState {
 
         let t0 = std::time::Instant::now();
         let regions = state.surface_regions(engine, terminal_rect, self.scale_factor);
-        stall_watchdog::set_phase(stall_watchdog::Phase::Acquire);
-        let output = self.surface.get_current_texture()?;
         stall_watchdog::set_phase(stall_watchdog::Phase::Submit);
         let view = output
             .texture
@@ -568,7 +555,7 @@ impl GpuState {
         stall_watchdog::set_phase(stall_watchdog::Phase::Present);
         // debug 결함 주입 지점 — release 는 no-op.
         stall_watchdog::take_debug_stall();
-        output.present();
+        self.present_surface(output);
         if let Some(job) = main_overlay_job {
             let size = [self.size.width, self.size.height];
             state.webview_overlay.record_present(job, size);
@@ -671,6 +658,8 @@ impl GpuState {
         window: &Window,
     ) -> Result<(), wgpu::SurfaceError> {
         // 무대에서도 입력을 소비해 나간 뒤 한꺼번에 전달되지 않게 한다.
+        stall_watchdog::set_phase(stall_watchdog::Phase::Acquire);
+        let output = self.acquire_surface()?;
         let raw_input = self.egui_state.take_egui_input(window);
         let egui::FullOutput {
             platform_output,
@@ -689,8 +678,6 @@ impl GpuState {
             pixels_per_point,
         };
 
-        stall_watchdog::set_phase(stall_watchdog::Phase::Acquire);
-        let output = self.surface.get_current_texture()?;
         stall_watchdog::set_phase(stall_watchdog::Phase::Submit);
         let view = output
             .texture
@@ -703,7 +690,7 @@ impl GpuState {
             self.capture_frame_to_png(&output.texture, self.size.width, self.size.height, &path);
         }
         stall_watchdog::set_phase(stall_watchdog::Phase::Present);
-        output.present();
+        self.present_surface(output);
         Ok(())
     }
 

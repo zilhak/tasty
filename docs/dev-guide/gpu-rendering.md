@@ -62,10 +62,11 @@ wgpu 24 기준으로 호출별 상한은 다음과 같다:
 | 호출 | 상한 |
 |------|------|
 | `surface.get_current_texture()` | **있음** — wgpu-core 가 1 초(`FRAME_TIMEOUT_MS`)를 걸고 초과 시 `SurfaceError::Timeout` 반환 |
+| `surface.configure(...)` | **없음** — Vulkan의 이전 swapchain 정리에서 device idle을 기다릴 수 있음 |
 | `queue.submit(...)` | **없음** |
 | `SurfaceTexture::present()` | **없음** |
 
-상한이 없는 두 호출에는 wgpu 가 취소·타임아웃 API 를 제공하지 않는다. 그래서 tasty 는 이 상황을 *막지* 못하고 **관측만** 한다 — 아래 "진단" 의 stall 워치독. 렌더 스레드 분리를 채택하지 않은 근거와 재검토 조건은 [종료 시퀀스 — 종료 cascade + Drop tail](../architecture/shutdown-sequence.md).
+상한이 없는 호출에는 wgpu 가 취소·타임아웃 API 를 제공하지 않는다. 그래서 tasty 는 이 상황을 *막지* 못하고 **관측만** 한다 — 아래 "진단" 의 stall 워치독. 렌더 스레드 분리를 채택하지 않은 근거와 재검토 조건은 [종료 시퀀스 — 종료 cascade + Drop tail](../architecture/shutdown-sequence.md).
 
 `redraw.rs` 의 `SurfaceError` 분기(`Lost`/`Outdated` 재시도 등)는 전부 **호출이 반환됐을 때만** 도는 경로다. 반환하지 않는 상황은 그 분기가 다루지 못한다.
 
@@ -152,6 +153,29 @@ grep -rn 'crate::' src/gfx/renderer.rs src/gfx/renderer/ | grep -v '^[^:]*:[0-9]
 `GpuState`(`src/gfx/gpu.rs`)는 `surface.configure` 에 넘기는 width/height 를 winit 경계에서 `device.limits().max_texture_dimension_2d`(어댑터별 실제 한계, 런타임 조회 — 하드코딩 금지)로 **clamp** 하고, 실제로 clamp 가 걸리면 `warn!` 을 남긴다. 상한을 넘는 치수가 오면 wgpu 가 panic 하기 때문이다(예: 외부 `SetWindowPos` 가 winit `Resized` 로 `1100×65535` 유입). 하한은 `1`(configure 는 0 불가), 0 은 최소화 신호로 `resize` early-return 이 configure 를 스킵한다. `resize` 와 `new`(startup) 모두 공통 `clamp_surface_dims(w,h,max)` 헬퍼를 쓴다.
 
 **거부+안내 계층은 없다** — IPC/CLI/시작단/split 어디에도 상한 초과 치수를 주입하는 진입점이 없어(창 크기 변경 명령·저장된 geometry 복원 부재) winit OS 이벤트 경계가 유일한 유입 경로다. OS 이벤트는 거부할 수 없으므로 방어는 clamp + `warn!` 하나로 일원화한다. 정상 범위(≤max)에서는 no-op 이라 기존 동작에 영향이 없다.
+
+### 중복 크기 통지와 강제 복구
+
+`GpuState::resize`는 요청을 clamp한 물리 크기가 현재 크기와 같고 표면이 유효하면
+주 표면과 오버레이의 configure를 생략한다. 실제 크기가 바뀌면 두 표면과 터미널
+renderer 치수를 함께 갱신한다. 0 크기는 복구 중에도 configure하지 않는다.
+`reconfigure`는 Lost/Outdated 복구를 위한 명시 호출이며 같은 크기도 재설정한다.
+공용 acquire 경계도 Lost/Outdated를 기억하므로 부팅 오류·셸 설정 화면의 기존
+resize-after-error 호출은 같은 크기를 전달해도 복구한다. 성공한 configure가 무효
+상태를 해제한다.
+
+이 생략은 GPU 치수 판단에만 적용한다. MainView의 배율 동기화·기본 grid·PTY resize와
+오버레이 geometry 후처리를 크기 동등성 때문에 건너뛰지 않는다. 배율 변경 뒤 terminal
+font signature는 다음 프레임에서 renderer 폰트와 uniform을 갱신한다. 설정·플러그인·
+프리셋·종료 확인 창도 공용 resize를 사용한다.
+
+`TASTY_LOG=tasty::gpu::surface=debug`는 주 표면의 configure/acquire/submit/present를
+각각 반환 뒤 `elapsed_us`로 기록한다. configure 수는 시작 시 최초 설정을 제외한
+재설정 호출 수이며, acquire 오류와 present 완료를 구분한다. 오버레이의 acquire와
+present는 별도 표면 경로다. 완료 로그가 없다고 호출을 취소했거나 복구했다고 판단하지
+않는다. 중복 configure 억제는 호출 빈도를 줄이며 남은 native 호출의 무상한 대기를
+제거하지 않는다. GPU를 임의 스레드로 옮기거나 join을 포기하는 종료 정책은 도입하지
+않는다.
 
 ## 주요 버퍼
 

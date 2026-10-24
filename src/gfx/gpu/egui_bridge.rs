@@ -288,7 +288,7 @@ impl GpuState {
             pixels_per_point: full_output.pixels_per_point,
         };
 
-        let output = match self.surface.get_current_texture() {
+        let output = match self.acquire_surface() {
             Ok(o) => o,
             Err(e) => {
                 tracing::warn!("modal surface error: {e}");
@@ -327,7 +327,7 @@ impl GpuState {
                 occlusion_query_set: None,
             });
         }
-        self.queue.submit(std::iter::once(encoder.finish()));
+        self.submit_commands(std::iter::once(encoder.finish()));
 
         for (id, image_delta) in &full_output.textures_delta.set {
             self.egui_renderer
@@ -364,7 +364,7 @@ impl GpuState {
             self.egui_renderer
                 .render(&mut render_pass, &paint_jobs, &screen_descriptor);
         }
-        self.queue.submit(std::iter::once(egui_encoder.finish()));
+        self.submit_commands(std::iter::once(egui_encoder.finish()));
 
         for id in &full_output.textures_delta.free {
             self.egui_renderer.free_texture(id);
@@ -375,7 +375,7 @@ impl GpuState {
             self.capture_frame_to_png(&output.texture, self.size.width, self.size.height, &path);
         }
 
-        output.present();
+        self.present_surface(output);
     }
 }
 

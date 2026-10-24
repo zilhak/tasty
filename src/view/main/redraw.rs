@@ -325,7 +325,7 @@ impl MainView {
                 }
             }
             Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
-                self.base.gpu.resize(self.base.winit.inner_size());
+                self.base.gpu.reconfigure(self.base.winit.inner_size());
                 // Surface was lost/outdated; resize recovers it, but we must
                 // re-render now that it's ready. dirty was set to false above,
                 // so restore it and request another frame.

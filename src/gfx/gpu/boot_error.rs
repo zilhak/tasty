@@ -13,7 +13,7 @@ impl GpuState {
         window: &Window,
         info: &BootErrorInfo,
     ) -> Result<bool, wgpu::SurfaceError> {
-        let output = self.surface.get_current_texture()?;
+        let output = self.acquire_surface()?;
         let view = output
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
@@ -71,7 +71,7 @@ impl GpuState {
             &tris,
             &screen_descriptor,
         );
-        self.queue.submit(std::iter::once(update_encoder.finish()));
+        self.submit_commands(std::iter::once(update_encoder.finish()));
 
         let mut encoder = self
             .device
@@ -102,8 +102,8 @@ impl GpuState {
             self.egui_renderer
                 .render(&mut render_pass, &tris, &screen_descriptor);
         }
-        self.queue.submit(std::iter::once(encoder.finish()));
-        output.present();
+        self.submit_commands(std::iter::once(encoder.finish()));
+        self.present_surface(output);
 
         for id in &full_output.textures_delta.free {
             self.egui_renderer.free_texture(id);

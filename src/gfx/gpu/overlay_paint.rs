@@ -204,7 +204,7 @@ impl super::GpuState {
                 occlusion_query_set: None,
             });
         }
-        self.queue.submit(std::iter::once(encoder.finish()));
+        self.submit_commands(std::iter::once(encoder.finish()));
         let paint_jobs = self.egui_ctx.tessellate(shapes, pixels_per_point);
         let screen_descriptor = egui_wgpu::ScreenDescriptor {
             size_in_pixels: size,

@@ -110,7 +110,7 @@ impl GpuState {
             },
         );
 
-        self.queue.submit(std::iter::once(encoder.finish()));
+        self.submit_commands(std::iter::once(encoder.finish()));
         (buffer, padded_bytes_per_row)
     }
 
@@ -246,7 +246,7 @@ impl GpuState {
             });
             self.renderer.render_all(&mut render_pass, width, height);
         }
-        self.queue.submit(std::iter::once(encoder.finish()));
+        self.submit_commands(std::iter::once(encoder.finish()));
 
         self.capture_frame_to_png(&texture, width, height, path);
 
