@@ -17,6 +17,8 @@ tasty-utils = { path = "../tasty-utils" }
 tracing = "0.1"
 base64 = "0.22"
 url = "2"
+flate2 = "=1.1.9"
+sha2 = "0.10"
 
 # Serialization
 serde = { version = "1", features = ["derive"] }

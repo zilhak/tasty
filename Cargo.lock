@@ -6313,8 +6313,10 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
+ "flate2",
  "serde",
  "serde_json",
+ "sha2",
  "tasty-i18n",
  "tasty-ipc",
  "tasty-model",
