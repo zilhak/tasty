@@ -50,6 +50,8 @@ fallback을 후속 작업에 설정해도 의존성 실패로 인한 Skipped에�
 
 자세한 완료 전략과 출력 캡처는 [작업 러너](../../dev-guide/agent-runner.md#완료-판정-전략-레지스트리-srccompletion_strategy)와 [run 출력](../../dev-guide/agent-runner.md#run-출력-캡처)을 따른다.
 
+Custom 완료 조회의 `poll.interval_ms`는 task별로 이전 조회 완료 뒤의 최소 간격이다. 최초·복원 조회는 즉시 하고, 다음 조회 전에 기한이 오면 호출 없이 timeout으로 끝낸다. 느린 조회 뒤 밀린 호출을 몰아서 보내지 않는다. [조회 간격과 기한](../../dev-guide/agent-runner.md#조회-간격과-기한)에 저장·재개와 응답 우선순위가 있다.
+
 #### 참조 검증과 데이터 전달
 
 `task_create`는 `depends_on`, `OnFailure::Fallback{task}`, `TaskCommand::Reduce.inputs`가 가리키는 ID의 존재를 검사하고 없으면 `-32602`로 거절한다(`crates/tasty-agent/src/task/store.rs`). 실패할 때 생성하는 `Fallback{inline}`은 제외한다. 이미 저장된 끊어진 참조를 자동 복구하지는 않는다. 해당 작업은 waiting에 남을 수 있고, 존재하지 않는 fallback은 실패 전이 때 경고도 남긴다.

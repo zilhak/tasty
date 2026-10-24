@@ -1,4 +1,4 @@
-<!-- source-hash: e4582d3c6b1d -->
+<!-- source-hash: 160f9e8560d6 -->
 <a id="task-dag"></a>
 
 # Task workflows (DAG)
@@ -39,6 +39,8 @@ Creating one returns a task ID. Use that ID to define dependencies and to query 
 | `agent` | Sends one instruction to an agent session such as Claude or Codex and takes its answer as the result. See [Asking an agent and taking its answer as the result](#asking-an-agent-and-taking-its-answer-as-the-result) below |
 
 You can also pull the command JSON out into a file and pass it as `--command @build.json`.
+
+For a `custom` task that checks completion periodically, set `poll.interval_ms` to choose the interval (500ms by default). The first check is immediate; later checks wait that long after the previous request finishes. Tasks waiting on the same target check separately. A busy runner may check later, but does not issue missed checks in a burst. If you set `poll.timeout_ms`, the runner checks the deadline even before the next request is due. Starting the runner again after a restart resumes checking with the saved interval and deadline, without sending the original execution request again. An interval of 0ms allows one check each time the runner advances.
 
 A single task definition (command, metadata, result types and so on) can be up to 768 KiB as JSON (less if the memory entry size limit is set below 1 MiB). A larger one is refused with an error and no task is created. Keep large data in a file and pass its path. If the outputs of earlier tasks filled in just before a run would push a task past this size, that task fails without running.
 

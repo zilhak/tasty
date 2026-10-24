@@ -2,7 +2,7 @@
 
 use serde_json::json;
 use tasty_agent::runner::{DispatchHandle, PollOutcome};
-use tasty_agent::{BarrierState, BarrierStore, TaskResult};
+use tasty_agent::{BarrierState, BarrierStore, TaskId, TaskResult};
 use tasty_memory::HOST_OWNER;
 
 use super::{
@@ -11,6 +11,40 @@ use super::{
 };
 
 impl HostExecutor {
+    /// 최초·복원 조회는 즉시 한다. 이후 간격은 요청 완료부터 재므로 느린 조회 뒤에
+    /// 밀린 횟수를 따라잡지 않는다. 스케줄은 task ID로 분리하고 응답은 캐시하지 않는다.
+    pub(super) fn poll_task_handle(
+        &mut self,
+        task_id: &TaskId,
+        handle: &DispatchHandle,
+    ) -> PollOutcome {
+        let DispatchHandle::PolledDispatch {
+            interval_ms,
+            deadline_ms,
+            poll_method,
+            ..
+        } = handle
+        else {
+            return self.poll_handle(handle);
+        };
+        let now = self.holding_clock.now_ms();
+        if self.next_poll_ms.get(task_id).is_some_and(|due| now < *due) {
+            // 조회 간격이 길어도 기한 처리를 미루지 않는다. due인 조회는 기존대로
+            // 응답의 성공·실패를 먼저 판정하고 비종결/호스트 지연일 때 기한을 검사한다.
+            if deadline_ms.is_some_and(|deadline| now >= deadline) {
+                return PollOutcome::Failed(format!("{poll_method}: poll timeout"));
+            }
+            return PollOutcome::Active;
+        }
+        tracing::debug!(task_id, poll_method, interval_ms, "task state poll due");
+        let outcome = self.poll_handle(handle);
+        self.next_poll_ms.insert(
+            task_id.clone(),
+            self.holding_clock.now_ms().saturating_add(*interval_ms),
+        );
+        outcome
+    }
+
     pub(super) fn poll_handle(&mut self, handle: &DispatchHandle) -> PollOutcome {
         match handle {
             DispatchHandle::PolledDispatch {
@@ -28,7 +62,7 @@ impl HostExecutor {
                         v
                     }
                     Err(PluginCallError::Uninitialized) => {
-                        let now = now_ms();
+                        let now = self.holding_clock.now_ms();
                         let deadline = *self
                             .injector_grace_deadline_ms
                             .get_or_insert(now + INJECTOR_GRACE_MS);
@@ -43,7 +77,7 @@ impl HostExecutor {
                     // 끝내지 않고, 기한(있으면) 안에서 다음 poll 에 다시 묻는다.
                     Err(e) if e.is_host_slow() => {
                         if let Some(deadline) = deadline_ms
-                            && now_ms() >= *deadline
+                            && self.holding_clock.now_ms() >= *deadline
                         {
                             return PollOutcome::Failed(format!(
                                 "{poll_method}: poll timeout (last poll: {e})"
@@ -71,7 +105,7 @@ impl HostExecutor {
                 } else {
                     // 미완료 응답에서 기한을 확인한다. 한 번의 IPC 대기 자체를 이 기한으로 중단하지는 않는다.
                     if let Some(deadline) = deadline_ms
-                        && now_ms() >= *deadline
+                        && self.holding_clock.now_ms() >= *deadline
                     {
                         return PollOutcome::Failed(format!("{poll_method}: poll timeout"));
                     }

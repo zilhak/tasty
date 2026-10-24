@@ -225,10 +225,12 @@ pub(crate) struct HostExecutor {
     stopping_runs: Vec<TaskId>,
     /// TTL 을 둔 lease·permit 의 갱신 상태. `held_leases`·`held_permits` 와 함께 놓는다.
     ttl_renewals: HashMap<(TaskId, ttl_renewal::Holding), ttl_renewal::TtlRenewal>,
-    /// TTL 점유의 획득·갱신 시각.
+    /// TTL 점유와 task 조회 간격·기한에 쓰는 시각.
     holding_clock: HoldingClock,
     /// 상한을 넘긴 Custom 요청의 늦은 응답 대기와, 응답 뒤 이어 간 handle.
     late: late_answer::LateAnswers,
+    /// task별 마지막 조회가 끝난 뒤의 다음 조회 시각. 결과나 응답은 공유하지 않는다.
+    next_poll_ms: HashMap<TaskId, u64>,
 }
 
 impl HostExecutor {
@@ -247,10 +249,11 @@ impl HostExecutor {
             ttl_renewals: HashMap::new(),
             holding_clock: HoldingClock::system(),
             late: Default::default(),
+            next_poll_ms: HashMap::new(),
         }
     }
 
-    /// TTL 점유의 획득·갱신 시각을 `clock` 으로 정한다.
+    /// TTL 점유와 task 조회 간격·기한의 시각을 `clock` 으로 정한다.
     // 사용처인 TTL 갱신 시험이 unix 전용이다.
     #[cfg(all(test, unix))]
     pub(crate) fn with_holding_clock(mut self, clock: HoldingClock) -> Self {
@@ -435,7 +438,12 @@ impl TaskExecutor for HostExecutor {
         self.poll_handle(handle)
     }
 
+    fn poll_task(&mut self, task_id: &TaskId, handle: &DispatchHandle) -> PollOutcome {
+        self.poll_task_handle(task_id, handle)
+    }
+
     fn release_permit(&mut self, task_id: &TaskId) {
+        self.next_poll_ms.remove(task_id);
         // 실행 중인 후처리·Run 은 끝내고, 종료를 확인한 뒤(maintain)에야 자원을 놓는다.
         if !self.postprocess.cancel(task_id) && !self.stop_run(task_id) {
             self.release_resources(task_id);
@@ -456,6 +464,10 @@ impl TaskExecutor for HostExecutor {
         self.renew_holdings();
     }
 }
+
+#[cfg(all(test, unix))]
+#[path = "runner_host/poll_interval_tests.rs"]
+mod poll_interval_tests;
 
 #[cfg(test)]
 #[path = "runner_host/typed_tests.rs"]

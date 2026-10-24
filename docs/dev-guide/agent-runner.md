@@ -61,6 +61,27 @@ v1 task 는 회차 id 가 없어 상태만 본다. 시작 뒤 handle 저장이 �
 
 `PolledDispatch { workspace_id, poll_method, poll_params, state_field, terminal_states, failure_states, interval_ms, deadline_ms }`(범용 폴링 — dispatch 시점에 완성된 `poll_params` 로 terminal 상태 도달까지 `poll_method` 반복 호출; `failure_states` 적중은 성공이 아니라 실패로 종결) · `ShellProcess { pid }`(`Run` task 자식; `Child` 객체는 Clone 불가라 executor 의 `shell_children` map 에 별도 보관) · `BarrierPoll { workspace_id, name }` · `ReduceImmediate`/`CustomImmediate`/`ImmediateFail`(dispatch 시점 즉시 결정) · `AwaitDispatchAnswer { workspace_id, task_id, ipc_method }`(응답을 기다리는 실행 요청 — 시작한 Custom 요청이 응답 대기 상한을 넘겨 늦은 응답을 기다리는 중, agent task 새 세션의 `<provider>.spawn` 응답을 기다리는 동안 러너가 드는 handle, agent task 의 `<provider>.tell` 이 늦은 응답을 기다리는 동안의 저장 handle(러너는 `AgentTurn` 을 든다). 아래 "호스트 응답 지연") · `AwaitExternal { wait_key, deadline_ms }`(push-kind 완료 전략, 아래 참조 — `poll` 은 계약대로 **항상 Active**, 종결은 외부에서 store 를 직접 전이시킨다). `deadline_ms` 는 dispatch 시점 `now + timeout_ms` — handle 자체에 실려 영속되므로, 이 handle 을 만든 `hook_task_waits` 매핑(비영속)이 재시작으로 사라져도 재시작 후 reload 가 독자적으로 만료 판정을 할 수 있다(아래 "호스트 재시작 후 정리 + 핸들 영속" 참조). 이 필드 도입 이전에 영속된 구 포맷은 `#[serde(default)]` 로 `0`(=즉시 만료)이 된다.
 
+### 조회 간격과 기한
+
+`Custom.poll.interval_ms`(생략 시 500ms)는 task별 상태 조회가 끝난 뒤 다음 조회까지의 최소 대기다.
+최초 조회는 dispatch 뒤 첫 runner tick에서 즉시 한다. 느린 요청이 끝나거나 tick을 놓쳐도
+한 번만 조회하며 밀린 횟수를 따라잡지 않는다. 0은 매 tick 한 번의 조회를 허용한다.
+러너는 500ms 대기와 깨움 신호로 진행하므로 짧은 간격의 정확한 실행 시각을 보장하지 않는다.
+같은 method·인자를 가진 task도 스케줄·응답·결과를 각각 가진다.
+
+`RunnerLoop`는 task ID와 handle을 `TaskExecutor::poll_task`에 넘기고, `HostExecutor`가
+`HoldingClock`으로 다음 시각을 검사한다. 기본 executor 구현은 기존 `poll`에 위임한다.
+즉시 dispatch 응답과 늦게 도착한 응답 뒤의 `PolledDispatch` 모두 같은 경로를 쓴다.
+조회 시각은 executor 메모리에만 두고, 취소·종결의 자원 해제 때 버린다. 재시작·runner 재개는
+저장된 handle의 간격·기한·인자를 그대로 읽어 최초 조회를 즉시 하고 이후 간격을 지킨다.
+원 실행 명령은 다시 보내지 않으며 이전 task의 성공 응답도 재사용하지 않는다.
+
+다음 조회가 아직 이르더라도 `deadline_ms` 이상인 tick은 endpoint 호출 없이 timeout으로 끝낸다.
+조회가 due이면 기존 응답 우선 계약을 따른다: 실패 상태가 성공 상태보다 우선하고, 성공 응답은
+기한을 지난 뒤 받아도 성공이다. 비종결 응답과 호스트 응답 지연은 기한을 검사한다. 진행 중인
+동기 IPC 대기를 task 기한으로 끊지는 않는다. 호스트 지연을 다시 조회할 때도 완료 뒤 간격을
+지킨다. `stale`·`needs_input` 등은 지정한 성공/실패 목록에 없으면 계속 Active다.
+
 ### HostExecutor 매핑
 
 | TaskCommand | dispatch | poll |

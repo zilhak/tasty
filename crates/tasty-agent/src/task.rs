@@ -210,7 +210,8 @@ pub struct PollSpec {
     /// 옛 DAG JSON도 읽을 수 있도록 생략 시 빈 목록을 사용한다.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub failure_states: Vec<String>,
-    /// 폴링 간격(ms). 생략 시 500ms.
+    /// task별 조회 완료 뒤 다음 조회까지 최소 대기(ms). 생략 시 500ms.
+    /// 최초·복원 조회는 즉시 하며 0은 runner tick마다 한 번을 허용한다.
     #[serde(default = "default_poll_interval_ms")]
     pub interval_ms: u64,
     /// 전체 폴링 timeout (ms). `None` 이면 무한 대기.

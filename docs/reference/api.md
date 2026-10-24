@@ -90,6 +90,7 @@ regular(`put/get/delete/list/exists/count/scopes/stats/query/export/import`) · 
 | 메서드 | 역할과 제한 |
 |---|---|
 | `task_{create,list,get,cancel,retry,graph,reduce,run,delete,purge}` | 작업 생성·조회·실행·정리 |
+| `task_create` | `command.kind=custom`의 인라인 `poll.interval_ms`는 task별 조회 완료 뒤 최소 대기(ms, 기본500). `tasty agent task-create --command`도 같은 JSON을 받는다. 최초·복원 조회와 기한은 [조회 간격과 기한](../dev-guide/agent-runner.md#조회-간격과-기한)을 따른다. |
 | `task_run` | workspace 러너의 시작·중지·상태 조회. 호스트 재시작 후 자동으로 켜지지 않으므로 플러그인이 자기 workspace의 러너를 다시 시작할 수 있다. |
 | `barrier_*`, `semaphore_*`, `lease_*`, `rate_limit_*` | 작업 간 대기와 자원 사용 조정 |
 | `dag_{list,get}` | 작업을 DAG별로 묶어 조회 |

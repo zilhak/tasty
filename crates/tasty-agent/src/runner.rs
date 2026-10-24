@@ -159,6 +159,10 @@ pub trait TaskExecutor {
     fn dispatch(&mut self, task: &Task) -> DispatchOutcome;
     /// 핸들의 현재 상태를 1 tick 확인.
     fn poll(&mut self, handle: &DispatchHandle) -> PollOutcome;
+    /// task별 조회 상태가 필요한 호스트의 진입점. 기본 구현은 handle 조회에 위임한다.
+    fn poll_task(&mut self, _task_id: &TaskId, handle: &DispatchHandle) -> PollOutcome {
+        self.poll(handle)
+    }
     /// task 가 종결(Succeeded/Failed/Cancelled) 됐을 때 permit 등을 해제.
     /// 기본 구현은 no-op — semaphore 통합이 없는 executor 는 override 불필요.
     fn release_permit(&mut self, _task_id: &TaskId) {}
@@ -399,7 +403,7 @@ impl<E: TaskExecutor> RunnerLoop<E> {
                         DispatchHandle::PostprocessResolved(report) => {
                             PollOutcome::Postprocessed(report.clone())
                         }
-                        _ => self.executor.poll(&handle),
+                        _ => self.executor.poll_task(&task.id, &handle),
                     };
                     match outcome {
                         PollOutcome::Active => continue,

@@ -85,7 +85,7 @@ impl HostExecutor {
         ipc_method: &str,
     ) -> PollOutcome {
         if let Some(handle) = self.late.continued.get(task_id).cloned() {
-            return self.poll_handle(&handle);
+            return self.poll_task_handle(task_id, &handle);
         }
         if let Some(outcome) = self.poll_agent_spawn(task_id) {
             return outcome;
@@ -138,7 +138,7 @@ impl HostExecutor {
                 let attempt = dispatch_attempt(&pending.task);
                 self.persist_handle(workspace_id, task_id, &handle, attempt.as_deref());
                 self.late.continued.insert(task_id.clone(), handle.clone());
-                self.poll_handle(&handle)
+                self.poll_task_handle(task_id, &handle)
             }
         }
     }
