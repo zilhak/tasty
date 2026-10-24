@@ -32,6 +32,8 @@ static PAUSED: AtomicU32 = AtomicU32::new(0);
 static REVISION: AtomicU64 = AtomicU64::new(0);
 static DEPTH: AtomicU32 = AtomicU32::new(0);
 static PROGRESS_NS: AtomicU64 = AtomicU64::new(0);
+// Saved ancestor clocks must also honor the most recently completed intentional wait.
+static PAUSE_RESET_NS: AtomicU64 = AtomicU64::new(0);
 static LAST_PHASE: AtomicU8 = AtomicU8::new(0);
 static LAST_PHASE_NS: AtomicU64 = AtomicU64::new(0);
 
@@ -135,7 +137,10 @@ impl Drop for Guard {
         let nested = DEPTH.fetch_sub(1, Ordering::Relaxed) > 1;
         if nested {
             SITE.store(self.previous.0, Ordering::Relaxed);
-            ENTERED_NS.store(self.previous.1, Ordering::Relaxed);
+            ENTERED_NS.store(
+                self.previous.1.max(PAUSE_RESET_NS.load(Ordering::Relaxed)),
+                Ordering::Relaxed,
+            );
             PHASE.store(self.previous.2, Ordering::Relaxed);
         } else {
             PROGRESS_NS.store(now_ns(), Ordering::Relaxed);
@@ -182,8 +187,10 @@ impl Drop for PauseGuard {
     fn drop(&mut self) {
         REVISION.fetch_add(1, Ordering::AcqRel);
         // 블로킹에 쓴 시간은 stall 이 아니다 — 남은 콜백을 지금부터 다시 잰다.
-        ENTERED_NS.store(now_ns(), Ordering::Relaxed);
-        PROGRESS_NS.store(now_ns(), Ordering::Relaxed);
+        let now = now_ns();
+        ENTERED_NS.store(now, Ordering::Relaxed);
+        PROGRESS_NS.store(now, Ordering::Relaxed);
+        PAUSE_RESET_NS.store(now, Ordering::Relaxed);
         // seq 를 2 만큼 올린다: 홀짝(= 콜백 안)은 유지하면서 ① 진행 중인 표본을 무효화하고
         // ② 재보고 추적이 이 이후를 별개 구간으로 보게 한다.
         SEQ.fetch_add(2, Ordering::Release);
@@ -566,6 +573,38 @@ mod tests {
         assert!(snap.seq.is_multiple_of(2));
         assert!(!snap.paused);
         assert!(snap.progress_age < REPORT_AFTER);
+    }
+
+    #[test]
+    fn nested_pause_clock_does_not_resurrect_but_real_outer_work_still_reports() {
+        let _lock = GLOBALS.lock().unwrap_or_else(|e| e.into_inner());
+        {
+            let _outer = Guard::enter(Site::UserEvent);
+            set_phase(Phase::Configure);
+            {
+                let _inner = Guard::enter(Site::WindowEvent);
+                without_stall_watch(|| std::thread::sleep(Duration::from_millis(5200)));
+                assert_eq!(should_report(sample().unwrap(), None), None);
+            }
+            let restored = sample().unwrap();
+            assert_eq!(restored.site, Site::UserEvent as u8);
+            assert_eq!(restored.phase, Phase::Configure as u8);
+            assert_eq!(
+                should_report(restored, None),
+                None,
+                "excluded nested wait must stay excluded after restoring the outer scope"
+            );
+        }
+        let _outer = Guard::enter(Site::UserEvent);
+        std::thread::sleep(Duration::from_millis(5200));
+        {
+            let _inner = Guard::enter(Site::WindowEvent);
+        }
+        assert_eq!(
+            should_report(sample().unwrap(), None),
+            Some(true),
+            "a nested callback without a pause must not erase real outer work"
+        );
     }
 
     #[test]
