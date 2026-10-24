@@ -163,8 +163,10 @@ pub(super) fn upload_windows_hash_empty_and_one_commit() {
             STANDARD.decode(data_b64).unwrap(),
             b[off as usize..off as usize + 3]
         );
-        assert!(d.next_command().is_none());
-        ready(&mut d, 1, off + 3, 3);
+        if off + 3 < b.len() as u64 {
+            assert!(d.next_command().is_none());
+            ready(&mut d, 1, off + 3, 3);
+        }
     }
     assert!(matches!(d.next_command(), Some(HttpRequest::Commit { .. })));
     assert!(d.next_command().is_none());
@@ -325,4 +327,71 @@ pub(super) fn declined_inflight_chunk_is_counted_once_and_not_retained() {
         data_b64: STANDARD.encode(b"abc")
     }));
     assert_eq!(d.snapshot().received, 3);
+}
+
+// This fixture follows Server::poll's initial/min(remaining, CHUNK_BYTES) grants and
+// Server::upload's end < upload.bytes rule, so it never invents a trailing Ready.
+fn upload_with_server_windows(size: usize) {
+    let mut d = model();
+    let bytes = Arc::new(vec![b'x'; size]);
+    d.admit(begin(1, &bytes), bytes.clone())
+        .unwrap_or_else(|_| panic!("admit"));
+    assert!(
+        d.next_command().is_none(),
+        "initial Ready is required even for empty upload"
+    );
+    let mut offset = 0;
+    loop {
+        let max = (size - offset).clamp(1, tasty_ipc::html_http::CHUNK_BYTES);
+        ready(&mut d, 1, offset as u64, max as u32);
+        if size == 0 {
+            break;
+        }
+        let Some(HttpRequest::Upload {
+            offset: actual,
+            data_b64,
+            ..
+        }) = d.next_command()
+        else {
+            panic!("authorized Upload");
+        };
+        assert_eq!(actual, offset as u64);
+        let end = offset + max;
+        assert_eq!(STANDARD.decode(data_b64).unwrap(), bytes[offset..end]);
+        offset = end;
+        if offset == size {
+            break;
+        }
+        assert!(
+            d.next_command().is_none(),
+            "partial Upload must wait for next Ready"
+        );
+    }
+    assert!(matches!(d.next_command(), Some(HttpRequest::Commit { .. })));
+    assert_eq!(d.state(id(1)), Some(ReceiveState::WaitingHead));
+    assert!(d.next_command().is_none(), "Commit is never repeated");
+    assert!(d.next_command().is_none());
+}
+#[test]
+fn upload_empty_waits_initial_ready_and_commits_once() {
+    upload_with_server_windows(0);
+}
+#[test]
+fn upload_single_final_chunk_needs_no_trailing_ready() {
+    upload_with_server_windows(1);
+}
+#[test]
+fn upload_multi_final_chunk_needs_no_trailing_ready() {
+    upload_with_server_windows(49_153);
+}
+#[test]
+fn upload_sender_failure_after_final_chunk_closes_without_commit_retry() {
+    let mut d = model();
+    d.admit(begin(1, b"x"), Arc::new(b"x".to_vec()))
+        .unwrap_or_else(|_| panic!("admit"));
+    ready(&mut d, 1, 0, 1);
+    assert!(matches!(d.next_command(), Some(HttpRequest::Upload { .. })));
+    d.send_failed();
+    assert!(d.next_command().is_none());
+    assert_eq!(d.state(id(1)), Some(ReceiveState::Cancelled));
 }

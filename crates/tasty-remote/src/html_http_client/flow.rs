@@ -126,8 +126,9 @@ fn upload_command(a: &mut Attempt, source_generation: u64) -> Option<HttpRequest
         return None;
     }
     let upload = a.upload.as_mut()?;
-    let max = upload.window.take()?;
-    if upload.offset == upload.bytes.len() {
+    // Empty uploads need their initial Ready. Nonempty uploads finish once their final
+    // authorized bytes have been handed to the ordered sender; the server sends no final ACK.
+    if upload.offset == upload.bytes.len() && (upload.offset != 0 || upload.window.is_some()) {
         a.committed = true;
         a.state = ReceiveState::WaitingHead;
         a.upload = None;
@@ -136,6 +137,7 @@ fn upload_command(a: &mut Attempt, source_generation: u64) -> Option<HttpRequest
             source_generation,
         });
     }
+    let max = upload.window.take()?;
     let offset = upload.offset;
     let end = offset + max.min(upload.bytes.len() - offset);
     let data_b64 = base64::engine::general_purpose::STANDARD.encode(&upload.bytes[offset..end]);
