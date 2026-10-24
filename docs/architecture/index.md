@@ -233,7 +233,7 @@ ports-and-adapters 배치:
 | [event-store](event-store.md) | 구조 journal 저장 계약의 수치·보조 규칙 — 요청별 savepoint·물리 transaction 공유·private SQL 조회 실패의 전체 rollback·batch별 ACK·최초 엔진 binding의 고정 metadata 제출, 실제 SQL commit·worker 구간 계측, import 전송 identity, 잠금 없는 쓰기, ID 예약 경계, 로그 보존, projection 출력, 신규 admission 예산·쓰기 크기 상한, 구조 journal의 App 연결 |
 | [journal-metrics](journal-metrics.md) | GUI/headless system.pressure journal cache: Work/queue/bytes estimates, actual SQL COMMIT counters, fixed histograms and pending/publication ages |
 | [multi-window](multi-window.md) | AppServices·EngineSession·ViewRegistry 소유, parked/pending/retiring, 모달과 읽기 대여 |
-| [input-layer](input-layer.md) | 마우스 입력 z-order 계층 — 소비/버블링 + 커서 결정 |
+| [input-layer](input-layer.md) | X11 조합 종료 키와 마우스 입력 z-order 계층 — 소비/버블링 + 커서 결정 |
 | [data-flows](data-flows.md) | 주요 데이터 흐름 (파일+함수 기준), 설정 저장 receipt와 부팅 순서 |
 | [ipc-server](ipc-server.md) | IPC 서버가 요청을 받아들이고 처리하는 쪽의 규칙 — 전송·저장·읽기 상한의 소유 · journal 오류 분류 · dispatch 회차 예산 · 기한 · wake · 요청 압력 게이지 |
 | [ui-widgets-crate](ui-widgets-crate.md) | `tasty-ui-widgets` — 본체·갤러리 공유 UI primitive |

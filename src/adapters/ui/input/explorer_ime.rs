@@ -9,12 +9,14 @@ use winit::keyboard::{Key, NamedKey, PhysicalKey};
 enum InputOwner {
     List(u32),
     Find(u32),
+    Rename { surface: u32, popup: u64 },
 }
 
 impl InputOwner {
     fn surface(self) -> u32 {
         match self {
             Self::List(surface) | Self::Find(surface) => surface,
+            Self::Rename { surface, .. } => surface,
         }
     }
 
@@ -26,6 +28,7 @@ impl InputOwner {
     ) -> bool {
         match self {
             Self::Find(_) => *key == Key::Named(NamedKey::Escape),
+            Self::Rename { .. } => *key == Key::Named(NamedKey::Enter),
             Self::List(_) => {
                 crate::shortcuts::explorer_composition_list_key(bindings, key, modifiers)
             }
@@ -36,6 +39,7 @@ impl InputOwner {
 #[derive(Default)]
 pub(crate) struct ExplorerImeKeys {
     composing: Option<u32>,
+    rename_composing: Option<InputOwner>,
     presses: HashMap<PhysicalKey, InputOwner>,
 }
 
@@ -52,9 +56,29 @@ impl ExplorerImeKeys {
         // Every new physical press replaces the prior ownership, even if XIM never
         // forwarded that prior key. A later genuine key must not inherit it.
         self.presses.remove(&key);
-        if let Some(owner) = input.filter(|owner| self.composing == Some(owner.surface())) {
+        if let Some(owner) = input.filter(|owner| match owner {
+            InputOwner::Rename { .. } => self.rename_composing == Some(*owner),
+            _ => self.composing == Some(owner.surface()),
+        }) {
             self.presses.insert(key, owner);
         }
+    }
+
+    fn rename_ime(&mut self, event: &Ime, owner: Option<InputOwner>) {
+        match event {
+            Ime::Preedit(text, _) => {
+                self.rename_composing = owner.filter(|_| !text.is_empty());
+            }
+            Ime::Commit(_) => self.rename_composing = None,
+            Ime::Disabled => self.reset_rename(),
+            Ime::Enabled => {}
+        }
+    }
+
+    fn reset_rename(&mut self) {
+        self.rename_composing = None;
+        self.presses
+            .retain(|_, owner| !matches!(owner, InputOwner::Rename { .. }));
     }
 
     fn take(&mut self, key: PhysicalKey, surface: Option<u32>) -> Option<InputOwner> {
@@ -62,6 +86,40 @@ impl ExplorerImeKeys {
             .remove(&key)
             .filter(|owner| Some(owner.surface()) == surface)
     }
+}
+
+fn rename_input_owner(
+    state: &crate::state::MainViewState,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
+) -> Option<InputOwner> {
+    if state.fullscreen_stage_active()
+        || state.has_settings_open_request()
+        || state.has_plugin_popup()
+        || state.popups.keyboard_focused_ids() != ["rename"]
+        || state.dialogs.rename_waiting.is_some()
+    {
+        return None;
+    }
+    let (
+        crate::state::RenameTarget::ExplorerEntry {
+            surface_id,
+            binding,
+            ..
+        },
+        _,
+    ) = state.dialogs.rename.as_ref()?
+    else {
+        return None;
+    };
+    if !binding.current_in(engine) {
+        return None;
+    }
+    // Reopening or raising the popup changes its sequence; old input cannot own a new dialog.
+    let (popup, _) = state.popups.open_geometry("rename")?;
+    Some(InputOwner::Rename {
+        surface: *surface_id,
+        popup,
+    })
 }
 
 impl crate::App {
@@ -105,18 +163,20 @@ impl crate::view::main::MainView {
         event: &RawKeyEvent,
     ) {
         if event.state == ElementState::Pressed {
-            let input = self.ime_explorer_surface(engine).and_then(|sid| {
-                let view = self.state.explorer_views.get(sid)?;
-                if !view.text_input_active() {
-                    Some(InputOwner::List(sid))
-                } else if !view.addr_editing
-                    && view.create.is_none()
-                    && view.find.as_ref().is_some_and(|find| find.field_focused)
-                {
-                    Some(InputOwner::Find(sid))
-                } else {
-                    None
-                }
+            let input = rename_input_owner(&self.state, engine).or_else(|| {
+                self.ime_explorer_surface(engine).and_then(|sid| {
+                    let view = self.state.explorer_views.get(sid)?;
+                    if !view.text_input_active() {
+                        Some(InputOwner::List(sid))
+                    } else if !view.addr_editing
+                        && view.create.is_none()
+                        && view.find.as_ref().is_some_and(|find| find.field_focused)
+                    {
+                        Some(InputOwner::Find(sid))
+                    } else {
+                        None
+                    }
+                })
             });
             self.explorer_ime_keys.press(event.physical_key, input);
         }
@@ -134,13 +194,23 @@ impl crate::view::main::MainView {
                     engine,
                 );
                 self.explorer_ime_keys.ime(ime, surface);
+                let rename = rename_input_owner(&self.state, engine);
+                self.explorer_ime_keys.rename_ime(ime, rename);
             }
             WindowEvent::Focused(_) => self.explorer_ime_keys = ExplorerImeKeys::default(),
             WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed => {
-                let surface = self.ime_explorer_surface(engine);
+                let rename = rename_input_owner(&self.state, engine);
+                let surface = rename
+                    .map(InputOwner::surface)
+                    .or_else(|| self.ime_explorer_surface(engine));
                 if let Some(owner) = self.explorer_ime_keys.take(event.physical_key, surface)
+                    && match owner {
+                        InputOwner::Rename { .. } => Some(owner) == rename,
+                        _ => true,
+                    }
                     && let Some(view) = self.state.explorer_views.get(owner.surface())
                     && match owner {
+                        InputOwner::Rename { .. } => true,
                         InputOwner::List(_) => !view.text_input_active(),
                         InputOwner::Find(_) => {
                             !view.addr_editing && view.create.is_none() && view.find.is_some()
@@ -164,6 +234,10 @@ impl crate::view::main::MainView {
         false
     }
 }
+
+#[cfg(test)]
+#[path = "explorer_ime_rename_tests.rs"]
+mod rename_tests;
 
 #[cfg(test)]
 mod tests {
