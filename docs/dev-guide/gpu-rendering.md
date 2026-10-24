@@ -189,7 +189,38 @@ per-surface 위치 정보가 인스턴스에 들어가 있으므로 uniform 은 
 
 ## 프레임 구동 정책 — 무엇이 프레임을 유발하고 무엇이 상한을 거는가
 
-프레임은 **`View::mark_dirty()` 하나로 수렴**한다. 이 호출이 `base.dirty` 를 세우고 그 자리에서 `Window::request_redraw()` 를 발화하므로, `mark_dirty()` 호출 = 프레임 1 회 요청이다. 실제 렌더는 `render_if_dirty`(`src/view/main/redraw.rs`)가 `dirty` 일 때만 수행한다.
+프레임은 **`View::mark_dirty()` 하나로 수렴**한다. 이 호출은 `base.dirty`를 세우고 repaint gate가 허용하면 `Window::request_redraw()`를 요청한다. 지연된 요청은 dirty를 유지한다. 실제 렌더는 `render_if_dirty`(`src/view/main/redraw.rs`)가 `dirty` 일 때만 수행한다.
+
+### 반환된 surface 오류의 재시도
+
+MainView는 GPU 시도 직전에 dirty만 소비하고, `GpuState::render`가 실제 present를 마친
+`Ok`에서 repaint의 성공 기준 시각을 갱신한다. acquire는 egui frame의 texture delta를
+소비하기 전에 수행한다. 획득 실패로 이번 폰트·텍스처 갱신을 잃지 않도록 하기 위해서다.
+
+Timeout과 그 밖의 비치명적 오류는 dirty를 복구하고 창별 `RepaintGate`에 단 하나의
+지연 예약을 둔다. 첫 간격은 16ms이고 연속 실패마다 두 배로 늘려 최대 1초로 제한한다.
+기존 about_to_wait의 deferred repaint/WaitUntil 경로가 깨우므로 입력·PTY 출력이
+없어도 다음 시도가 진행된다. 재시도 전 stale redraw와 새 dirty 요청도 같은 대기
+기한을 지킨다. 유발원별 정상 주사율 정책은 성공한 뒤 다시 적용된다.
+
+Lost/Outdated는 먼저 강제 재구성한 뒤 같은 지연 재시도를 예약한다. OutOfMemory는
+기존 error/crash-report 정책을 유지하고 자동 재시도 예약을 지운다. 종료 코드를 새로
+정하지 않는다. 실제 present 성공은 실패 횟수와 대기 예약을 지우고, View 제거는 소유한
+예약을 함께 버린다. 별도 worker나 해제할 반복 타이머가 없다. 반복 오류 로그와 crash
+report에는 연속 실패 횟수 1, 2, 4, 8, …에서만 기록하여 경고 폭주를 막는다.
+
+`TASTY_LOG=tasty::gpu::surface=debug`의 `phase="main_present"`는 MainView가 실제
+present를 마친 프레임만 센다. 로딩 화면·모달의 present와 구별한다. 유휴 복구 검증은
+초기 로딩 프레임 수나 캡처 요청 자체를 성공으로 해석하지 않고, 안정된 View에서 한 번
+유발한 실패 뒤 추가 요청 없이 이 완료 로그와 예약했던 캡처 파일을 대조한다.
+
+Debug 빌드의 opt-in 결함 주입은 `src/gfx/gpu/debug_surface.rs`에 격리한다.
+`TASTY_DEBUG_GPU_FAULT=timeout:1`(또는 lost/outdated/oom)과
+`TASTY_DEBUG_GPU_FAULT_AFTER_MS`는 첫 MainView GPU 프레임 이후 지정 시간이 지난
+다음 acquire 시도를 합성 오류로 끝낸다. 창별 오류 횟수는 최대 1000회, 지연은 최대
+60초이며 유휴 창을 스스로 깨우지 않는다. `TASTY_DEBUG_GPU_RESIZE_REPEATS`는 첫 시도에
+동일 크기의 실제 공용 resize를 최대 1000회 호출하는 계측 fixture다. OS의 중복 이벤트를
+발생시켰다는 뜻은 아니다. release에는 이 모듈과 환경 변수 처리 경로가 없다.
 
 ### 유발원과 상한 적용
 
@@ -197,7 +228,7 @@ per-surface 위치 정보가 인스턴스에 들어가 있으므로 uniform 은 
 
 | 유발원 | `RepaintSource` | 상한 | 좌표 |
 |---|---|---|---|
-| 키·마우스·IME·리사이즈·포커스·구조 변경 | `Interactive` (기본값) | **없음 — 즉시 발화** | `mark_dirty()` 호출 전반 |
+| 키·마우스·IME·리사이즈·포커스·구조 변경 | `Interactive` (기본값) | **정상 시 즉시 발화** | `mark_dirty()` 호출 전반 |
 | PTY 출력 | `TerminalOutput` | 주사율까지 coalesce | `src/app/event_handler.rs` `handle_terminal_output` |
 | egui 내부 delay 0 즉시 repaint | `EguiAnimation` | 주사율까지 coalesce | `AppEvent::EguiRepaint` 핸들러 |
 | egui 지연 repaint(`request_repaint_after`) | `EguiAnimation` | 주사율까지 coalesce | `AppEvent::EguiRepaintAfter` → `Tick::EguiRepaint(창)` 발화 |

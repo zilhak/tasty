@@ -5,6 +5,8 @@
 //! 요청의 통과·지연과 실제 present 횟수를 1초 단위로 기록한다.
 //! 로그: TASTY_LOG=tasty::view::repaint=info.
 
+mod surface_retry;
+
 use std::time::{Duration, Instant};
 
 /// 리페인트 요청의 유발원. 상한 적용 여부와 계측 분류를 함께 결정한다.
@@ -61,6 +63,7 @@ pub struct RepaintGate {
     /// 미룬 요청을 다시 처리할 예정 시각.
     deferred_until: Option<Instant>,
     stats: RepaintStats,
+    retry: surface_retry::SurfaceRetry,
 }
 
 impl RepaintGate {
@@ -75,6 +78,7 @@ impl RepaintGate {
             last_present: None,
             deferred_until: None,
             stats: RepaintStats::default(),
+            retry: Default::default(),
         }
     }
 
@@ -93,12 +97,17 @@ impl RepaintGate {
     /// [`Self::admit`] 에서 모니터 조회만 뺀 판정 본체 — 시각을 주입할 수 있어
     /// 헤드리스 테스트가 가능하다.
     fn admit_at(&mut self, source: RepaintSource, now: Instant) -> bool {
-        let admitted = !source.coalescable() || self.window_open(now);
+        let admitted = self.retry.ready(now) && (!source.coalescable() || self.window_open(now));
         if admitted {
             // 지금 그리는 프레임이 미뤄뒀던 요청까지 덮는다.
             self.deferred_until = None;
         } else {
-            let at = self.next_allowed(now);
+            let at = if self.retry.ready(now) {
+                self.next_allowed(now)
+            } else {
+                self.deferred_until
+                    .expect("a failed frame reserves its retry")
+            };
             self.deferred_until = Some(self.deferred_until.map_or(at, |cur| cur.min(at)));
         }
         self.stats
@@ -124,10 +133,27 @@ impl RepaintGate {
 
     /// 실제로 프레임을 그리기로 확정한 지점. 다음 상한 창의 기준점을 갱신한다.
     pub fn note_present(&mut self, now: Instant) {
+        self.retry.recovered();
         self.last_present = Some(now);
         // 이 프레임이 미뤄뒀던 요청을 소진한다.
         self.deferred_until = None;
         self.stats.note_present(now, self.min_interval);
+    }
+
+    /// Preserve dirty after a returned surface error and reserve a delayed wakeup.
+    pub(crate) fn surface_failed(&mut self, now: Instant) -> bool {
+        let (at, report) = self.retry.failed(now);
+        self.deferred_until = Some(at);
+        report
+    }
+
+    pub(crate) fn cancel_surface_retry(&mut self) {
+        self.retry.recovered();
+        self.deferred_until = None;
+    }
+
+    pub(crate) fn surface_ready(&self, now: Instant) -> bool {
+        self.retry.ready(now)
     }
 
     /// 지금 즉시 그려도 상한을 넘지 않는가.
@@ -361,5 +387,61 @@ mod tests {
     fn first_frame_is_never_deferred() {
         let mut gate = RepaintGate::with_min_interval(Duration::from_millis(20));
         assert!(gate.admit_at(RepaintSource::TerminalOutput, Instant::now()));
+    }
+
+    #[test]
+    fn surface_timeout_reserves_wakeup_and_blocks_input_and_stale_redraw() {
+        let now = Instant::now();
+        let mut gate = RepaintGate::new();
+        assert!(gate.surface_failed(now));
+        let due = gate.deferred_deadline().unwrap();
+        assert!(due > now);
+        assert!(!gate.surface_ready(now));
+        for source in [
+            RepaintSource::Interactive,
+            RepaintSource::TerminalOutput,
+            RepaintSource::EguiAnimation,
+            RepaintSource::AttachMirror,
+        ] {
+            assert!(!gate.admit_at(source, now));
+            assert_eq!(gate.deferred_deadline(), Some(due));
+        }
+        assert!(!gate.take_due(now));
+        assert!(gate.take_due(due));
+        assert!(gate.surface_ready(due));
+        assert!(!gate.take_due(due));
+        gate.note_present(due);
+        assert_eq!(gate.deferred_deadline(), None);
+        assert!(gate.admit_at(RepaintSource::Interactive, due));
+    }
+
+    #[test]
+    fn repeated_surface_errors_back_off_until_actual_present() {
+        let now = Instant::now();
+        let mut gate = RepaintGate::new();
+        gate.surface_failed(now);
+        let due = gate.deferred_deadline().unwrap();
+        assert!(gate.take_due(due));
+        gate.surface_failed(due);
+        let next = gate.deferred_deadline().unwrap();
+        assert_eq!(next - due, Duration::from_millis(32));
+        gate.note_present(next);
+        gate.surface_failed(next);
+        assert_eq!(
+            gate.deferred_deadline().unwrap() - next,
+            Duration::from_millis(16)
+        );
+    }
+
+    #[test]
+    fn fatal_error_cancels_retry_without_recording_a_present() {
+        let now = Instant::now();
+        let mut gate = RepaintGate::new();
+        gate.surface_failed(now);
+        gate.cancel_surface_retry();
+        assert_eq!(gate.deferred_deadline(), None);
+        assert_eq!(gate.last_present, None);
+        assert_eq!(gate.stats.presents, 0);
+        assert!(!gate.take_due(now + Duration::from_secs(2)));
     }
 }

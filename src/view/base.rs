@@ -36,6 +36,29 @@ impl ViewBase {
         }
     }
 
+    /// Main surface attempts consume dirty without recording a successful present.
+    pub(crate) fn begin_surface_frame(&mut self) {
+        self.state.dirty = false;
+    }
+
+    pub(crate) fn surface_presented(&mut self) {
+        tracing::debug!(target: "tasty::gpu::surface", phase = "main_present", window_id = u64::from(self.winit.id()));
+        self.state.repaint.note_present(std::time::Instant::now());
+    }
+
+    pub(crate) fn surface_failed(&mut self, error: &wgpu::SurfaceError) {
+        self.state.dirty = true;
+        if self.state.repaint.surface_failed(std::time::Instant::now()) {
+            let message = format!("surface error: {error}; delayed retry scheduled");
+            tracing::warn!("{message}");
+            crate::crash_report::record_error(&message);
+        }
+    }
+
+    pub(crate) fn surface_ready(&self) -> bool {
+        self.state.repaint.surface_ready(std::time::Instant::now())
+    }
+
     /// 프레임을 그릴 때 dirty 해제와 다시 그리기 시간 기준 갱신을 함께 처리한다.
     pub fn begin_frame(&mut self) {
         self.state.dirty = false;

@@ -140,7 +140,7 @@ impl MainView {
 
         self.poll_outbound_drag(engine);
 
-        if self.base.state.dirty {
+        if self.base.state.dirty && self.base.surface_ready() {
             self.base.winit.request_redraw();
         }
     }
@@ -285,12 +285,12 @@ impl MainView {
         engine: &EngineRead<'_>,
         plugin_manager: Option<PluginDisplay<'_>>,
     ) {
-        if !self.base.state.dirty {
+        if !self.base.state.dirty || !self.base.surface_ready() {
             return;
         }
         // Preparation and drawing share the same dirty frame. Consume it only after
         // this final admission check, so prepare_render_inputs cannot skip the draw.
-        self.base.begin_frame();
+        self.base.begin_surface_frame();
         self.submit_gpu_frame(engine, plugin_manager);
         self.drain_full_texture_requests(engine);
     }
@@ -318,28 +318,23 @@ impl MainView {
             plugin_manager,
         ) {
             Ok(()) => {
+                self.base.surface_presented();
                 // 실제 present에 성공한 첫 시각만 부팅 계측에 기록한다.
                 crate::boot::trace::mark_first_paint();
                 if self.base.gpu.take_terminal_cursor_restore_pending() {
                     self.base.state.dirty = true;
                 }
             }
-            Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
+            Err(e @ (wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated)) => {
                 self.base.gpu.reconfigure(self.base.winit.inner_size());
-                // Surface was lost/outdated; resize recovers it, but we must
-                // re-render now that it's ready. dirty was set to false above,
-                // so restore it and request another frame.
-                self.base.state.dirty = true;
+                self.base.surface_failed(&e);
             }
             Err(wgpu::SurfaceError::OutOfMemory) => {
+                self.base.state.repaint.cancel_surface_retry();
                 tracing::error!("GPU out of memory");
                 crate::crash_report::record_error("GPU out of memory");
             }
-            Err(e) => {
-                let msg = format!("surface error: {e}");
-                tracing::warn!("{}", msg);
-                crate::crash_report::record_error(&msg);
-            }
+            Err(e) => self.base.surface_failed(&e),
         }
     }
 
