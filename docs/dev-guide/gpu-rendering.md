@@ -157,7 +157,8 @@ grep -rn 'crate::' src/gfx/renderer.rs src/gfx/renderer/ | grep -v '^[^:]*:[0-9]
 ### 중복 크기 통지와 강제 복구
 
 `GpuState::resize`는 요청을 clamp한 물리 크기가 현재 크기와 같고 표면이 유효하면
-주 표면과 오버레이의 configure를 생략한다. 실제 크기가 바뀌면 두 표면과 터미널
+주 표면과 오버레이의 configure를 생략한다. 요청이 어댑터 한계를 초과했으면
+이 생략 판정 전에도 기존 clamp 경고를 남긴다. 실제 크기가 바뀌면 두 표면과 터미널
 renderer 치수를 함께 갱신한다. 0 크기는 복구 중에도 configure하지 않는다.
 `reconfigure`는 Lost/Outdated 복구를 위한 명시 호출이며 같은 크기도 재설정한다.
 공용 acquire 경계도 Lost/Outdated를 기억하므로 부팅 오류·셸 설정 화면의 기존
@@ -170,7 +171,8 @@ font signature는 다음 프레임에서 renderer 폰트와 uniform을 갱신한
 프리셋·종료 확인 창도 공용 resize를 사용한다.
 
 `TASTY_LOG=tasty::gpu::surface=debug`는 주 표면의 configure/acquire/submit/present를
-각각 반환 뒤 `elapsed_us`로 기록한다. configure 수는 시작 시 최초 설정을 제외한
+각각 반환 뒤 `elapsed_us`로 기록한다. submit은 같은 device queue의 오버레이·
+offscreen 작업도 포함한다. configure 수는 시작 시 최초 설정을 제외한
 재설정 호출 수이며, acquire 오류와 present 완료를 구분한다. 오버레이의 acquire와
 present는 별도 표면 경로다. 완료 로그가 없다고 호출을 취소했거나 복구했다고 판단하지
 않는다. 중복 configure 억제는 호출 빈도를 줄이며 남은 native 호출의 무상한 대기를

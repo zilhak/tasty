@@ -15,6 +15,14 @@ fn configure_dimensions(
         return None;
     }
     let dims = clamp_surface_dims(requested.width, requested.height, max);
+    if dims != (requested.width, requested.height) {
+        tracing::warn!(
+            req_w = requested.width,
+            req_h = requested.height,
+            max,
+            "surface resize request exceeds max_texture_dimension_2d; clamping"
+        );
+    }
     (force || dims != (current.width, current.height)).then_some(dims)
 }
 
@@ -38,18 +46,11 @@ impl GpuState {
             }
             return;
         };
-        if (width, height) != (requested.width, requested.height) {
-            tracing::warn!(
-                req_w = requested.width,
-                req_h = requested.height,
-                max,
-                "surface resize request exceeds max_texture_dimension_2d; clamping"
-            );
-        }
         self.size = PhysicalSize::new(width, height);
         self.config.width = width;
         self.config.height = height;
         let start = Instant::now();
+        crate::stall_watchdog::set_phase(crate::stall_watchdog::Phase::Configure);
         self.surface.configure(&self.device, &self.config);
         self.surface_invalid = false;
         tracing::debug!(target: "tasty::gpu::surface", phase = "configure", width, height, force,
@@ -119,5 +120,57 @@ mod tests {
                 None
             );
         }
+    }
+    #[test]
+    fn oversized_equivalent_size_warns_without_reconfiguring() {
+        use std::sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        };
+        struct Warnings(Arc<AtomicUsize>);
+        impl tracing::Subscriber for Warnings {
+            fn enabled(&self, metadata: &tracing::Metadata<'_>) -> bool {
+                *metadata.level() == tracing::Level::WARN
+                    && metadata.fields().field("req_w").is_some()
+            }
+            fn new_span(&self, _attrs: &tracing::span::Attributes<'_>) -> tracing::span::Id {
+                tracing::span::Id::from_u64(1)
+            }
+            fn record(&self, _span: &tracing::span::Id, _values: &tracing::span::Record<'_>) {}
+            fn record_follows_from(&self, _span: &tracing::span::Id, _follows: &tracing::span::Id) {
+            }
+            fn event(&self, _event: &tracing::Event<'_>) {
+                self.0.fetch_add(1, Ordering::Relaxed);
+            }
+            fn enter(&self, _span: &tracing::span::Id) {}
+            fn exit(&self, _span: &tracing::span::Id) {}
+        }
+        let warnings = Arc::new(AtomicUsize::new(0));
+        tracing::subscriber::with_default(Warnings(warnings.clone()), || {
+            let current = PhysicalSize::new(4096, 700);
+            assert_eq!(configure_dimensions(current, current, 4096, false), None);
+            assert_eq!(warnings.load(Ordering::Relaxed), 0);
+            let oversized = PhysicalSize::new(65535, 700);
+            assert_eq!(configure_dimensions(current, oversized, 4096, false), None);
+            assert_eq!(
+                warnings.load(Ordering::Relaxed),
+                1,
+                "an oversized equivalent request must still emit its clamp warning"
+            );
+            assert_eq!(
+                configure_dimensions(current, oversized, 4096, true),
+                Some((4096, 700))
+            );
+            assert_eq!(warnings.load(Ordering::Relaxed), 2);
+            assert_eq!(
+                configure_dimensions(current, PhysicalSize::new(0, 65535), 4096, true),
+                None
+            );
+            assert_eq!(
+                warnings.load(Ordering::Relaxed),
+                2,
+                "minimization must keep its original no-configure/no-warning contract"
+            );
+        });
     }
 }
