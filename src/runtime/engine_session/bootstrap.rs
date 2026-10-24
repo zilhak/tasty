@@ -43,6 +43,7 @@ impl EngineSession {
 
     /// 다른 engine과 발급기를 공유할 수 있다. 슬롯이 있고 restore_layout이 켜져 있을 때만 읽는다.
     /// runner 등록부는 TaskService가 가진 Arc를 넘긴다.
+    #[cfg(feature = "gui")]
     pub fn new_with_ids(
         spec: EngineSessionSpec,
         registries: super::super::registries::RuntimeRegistries,

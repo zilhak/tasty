@@ -14,6 +14,8 @@ pub(crate) mod headless_dispatch;
 mod headless_memory;
 #[cfg(not(feature = "gui"))]
 pub(crate) mod headless_plugins;
+#[cfg(all(test, not(feature = "gui")))]
+mod headless_settings_tests;
 #[cfg(not(feature = "gui"))]
 pub(crate) mod headless_stream;
 #[cfg(feature = "gui")]
@@ -542,6 +544,9 @@ fn bootstrap_engine(
     boot_settings: &crate::settings::Settings,
     factory: crate::waker::SharedWakerFactory,
 ) -> anyhow::Result<crate::runtime::engine_session::EngineSession> {
+    // The engine and file writer share the already normalized boot snapshot.
+    app.services
+        .submit_settings_save(boot_settings.clone(), None, None);
     app.services.registries.child_terminals.wait_bootstrap();
     let base_waker = factory.make_default_waker();
     // 부팅 때 한 번 전체 슬롯을 기준으로 마이그레이션·scrollback GC를 수행한다.
@@ -550,7 +555,7 @@ fn bootstrap_engine(
         tracing::warn!("{notice}");
     }
     // 헤드리스는 슬롯을 점유하지 않으며 레이아웃을 저장·복원하지 않는다.
-    let mut engine = crate::runtime::engine_session::EngineSession::new_with_ids(
+    let mut engine = crate::runtime::engine_session::EngineSession::for_journal(
         crate::runtime::engine_session::EngineSessionSpec {
             cols: 80,
             rows: 24,
@@ -560,6 +565,7 @@ fn bootstrap_engine(
             memory: app.services.memory_access().clone(),
             runner_registry: std::sync::Arc::clone(app.services.tasks.runner_registry()),
         },
+        boot_settings.clone(),
         app.services.registries.clone(),
     )?;
     engine.runtime.waker_factory = Some(factory);
@@ -844,6 +850,13 @@ fn settle_headless_lua_outcomes(app: &mut crate::app::App) {
     }
 }
 
+#[cfg(not(feature = "gui"))]
+fn load_headless_settings() -> crate::settings::Settings {
+    let mut settings = crate::settings::Settings::load();
+    settings.normalize();
+    settings
+}
+
 /// gui feature 없는 빌드의 호스트 루프. IPC·PTY·플러그인 이벤트와 타이머를 처리한다.
 #[cfg(not(feature = "gui"))]
 fn run_headless(cli: cli::Cli) -> anyhow::Result<std::process::ExitCode> {
@@ -857,7 +870,7 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<std::process::ExitCode> {
     let (tx, rx) = mpsc::channel::<crate::AppEvent>();
     let waker = HeadlessWaker::new(tx);
 
-    let boot_settings = crate::settings::Settings::load();
+    let boot_settings = load_headless_settings();
     // 명시 지정한 웹훅 포트를 열지 못해도 데몬은 시작한다. 원인은 경고 알림과 webhook.config로 남는다.
     let webhook = crate::webhook::prepare(cli.webhook_port, &boot_settings.webhook);
 
