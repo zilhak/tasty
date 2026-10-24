@@ -119,6 +119,8 @@ RSS 값 소스는 caller 타입별로 다르다: **Plugin** 은 host(`tasty-host
 
 탐지기의 창과 emit 기록은 메모리에만 있다. `SLOW_LOOP_WINDOW_MS` 마다 한 번, 창 안에 호출이 남지 않은 조합과 쿨다운이 지난 emit 기록을 지운다. 닫힌 surface 처럼 다시 오지 않는 params 조합이 프로세스 수명 동안 쌓이지 않게 하려는 것이다. 지운 항목은 빈 창·기록 없음과 판정이 같아 검출 결과는 바뀌지 않는다. 보존 상한은 [저장소 시스템 (Storage System)](../../design/systems/storage.md) 의 공통 정책(50시간 · 5,000건)을 따른다.
 
+RssSurge도 하나의 엄격한 증가 추세를 한 번만 기록·알린다. 평탄하거나 감소한 샘플에서 보고 표시를 풀며, 새 증가 추세가 샘플 수와 기존 60초 쿨다운을 모두 만족하면 다시 발화한다. 호출 창을 정리해도 이어지는 RSS 추세의 표시는 유지한다.
+
 ### 세션 요약
 
 결정론적 순수 집계(LLM 없음): tokens(ipc_calls 제외 metric sum) / ipc_calls(method 별 top-N) / approvals 분포 / anomalies. `workspace_id` 미지정 시 전 워크스페이스 합산(포커스 독립).

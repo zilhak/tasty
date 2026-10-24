@@ -268,3 +268,6 @@ pub use slow_requests::SlowRequestLog;
 #[cfg(test)]
 #[path = "lib_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+mod rss_episode_tests;

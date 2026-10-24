@@ -93,9 +93,8 @@ pub struct AnomalyDetector {
     >,
     /// (agent, method, params_hash) → 5분 윈도우의 호출 시각과 보고 여부. SlowLoop 용.
     loop_windows: std::sync::Mutex<std::collections::HashMap<(String, String, u64), LoopWindow>>,
-    /// agent → 최근 [`RSS_SURGE_MIN_SAMPLES`]개의 RSS 샘플 (bytes). RssSurge 용.
-    rss_samples:
-        std::sync::Mutex<std::collections::HashMap<String, std::collections::VecDeque<u64>>>,
+    /// agent → 최근 RSS 샘플과 이 증가 추세의 보고 여부.
+    rss_samples: std::sync::Mutex<std::collections::HashMap<String, RssWindow>>,
     /// 마지막 emit 시각 — 같은 (agent, kind, subject) 의 연속 emit 방지.
     last_emitted: std::sync::Mutex<std::collections::HashMap<(String, AnomalyKind, String), u64>>,
     /// 마지막으로 만료 항목을 정리한 호출 시각(ms). [`SLOW_LOOP_WINDOW_MS`] 마다 한 번 정리한다.
@@ -108,6 +107,14 @@ pub struct AnomalyDetector {
 struct LoopWindow {
     calls: std::collections::VecDeque<u64>,
     /// 이 루프를 이미 알렸는지. 창이 임계 아래로 내려가면(루프가 멈추면) 풀린다.
+    reported: bool,
+}
+
+/// RSS 추세는 시간 만료가 없다. 평탄·감소 샘플을 볼 때만 새 추세를 허용한다.
+/// 호출 창 정리에서도 이 상태를 유지해야 긴 증가 추세를 다시 보고하지 않는다.
+#[derive(Debug, Default)]
+struct RssWindow {
+    samples: std::collections::VecDeque<u64>,
     reported: bool,
 }
 
@@ -282,26 +289,32 @@ impl AnomalyDetector {
         ts_ms: u64,
         id_seq: u64,
     ) -> Option<Anomaly> {
-        let (is_monotonic, snapshot) = {
-            let mut samples = tasty_utils::poison::recover_mutex(
-                self.rss_samples.lock(),
-                RSS_SAMPLES_WHAT,
-                &RSS_SAMPLES_POISONED,
-            );
-            let dq = samples.entry(agent.to_string()).or_default();
-            dq.push_back(rss_bytes);
-            while dq.len() > RSS_SURGE_MIN_SAMPLES {
-                dq.pop_front();
-            }
-            let monotonic = dq.len() == RSS_SURGE_MIN_SAMPLES
-                && dq.iter().zip(dq.iter().skip(1)).all(|(a, b)| a < b);
-            (monotonic, dq.iter().copied().collect::<Vec<_>>())
-        };
-
-        if !is_monotonic {
+        let mut windows = tasty_utils::poison::recover_mutex(
+            self.rss_samples.lock(),
+            RSS_SAMPLES_WHAT,
+            &RSS_SAMPLES_POISONED,
+        );
+        let window = windows.entry(agent.to_string()).or_default();
+        if window
+            .samples
+            .back()
+            .is_some_and(|previous| rss_bytes <= *previous)
+        {
+            window.reported = false;
+        }
+        window.samples.push_back(rss_bytes);
+        while window.samples.len() > RSS_SURGE_MIN_SAMPLES {
+            window.samples.pop_front();
+        }
+        let monotonic = window.samples.len() == RSS_SURGE_MIN_SAMPLES
+            && window
+                .samples
+                .iter()
+                .zip(window.samples.iter().skip(1))
+                .all(|(a, b)| a < b);
+        if !monotonic || window.reported {
             return None;
         }
-
         let dedup_key = (
             agent.to_string(),
             AnomalyKind::RssSurge,
@@ -310,6 +323,8 @@ impl AnomalyDetector {
         if !self.try_mark_emitted(dedup_key, ts_ms) {
             return None;
         }
+        window.reported = true;
+        let snapshot: Vec<_> = window.samples.iter().copied().collect();
 
         Some(Anomaly {
             id: anomaly_id(ts_ms, id_seq),
