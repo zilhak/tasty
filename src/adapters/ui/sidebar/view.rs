@@ -130,7 +130,7 @@ pub enum SidebarFullAction {
     DragUpdate {
         y: f32,
     },
-    /// 마우스 떼짐 — drop_target=None 이면 drop 위치가 from 과 동일 (순서 변경 없음).
+    /// 마우스 떼짐 — drop_target은 이동 후 전역 인덱스이며 자기 앞뒤 슬롯은 None.
     /// `target_category` 는 그룹 모드에서 드롭 위치가 속한 카테고리 id(평면 모드는 None).
     /// 소속이 다르면 카테고리 이동, 같으면 순서 변경.
     DragReleased {
@@ -263,14 +263,77 @@ struct SectionSpan {
     end_y: f32,
     /// 카테고리 헤더 rect — 행 rect 가 없는(빈/접힌) 섹션의 marker x·폭·y anchor.
     header_rect: egui::Rect,
-    /// 행이 실제로 렌더됐는가 (`!collapsed && !entries.is_empty()`).
-    has_visible_rows: bool,
+    /// 이 섹션에 실제로 그린 카드의 범위. 빈/접힌 섹션은 빈 범위다.
+    card_range: std::ops::Range<usize>,
 }
 
 /// 드롭 결과와 표시선을 같은 규칙으로 정한다. 위·아래 바깥은 첫·마지막 섹션에 속한다.
 /// 평면 모드는 spans 가 비어 None.
 fn resolve_drop_section(spans: &[SectionSpan], y: f32) -> Option<&SectionSpan> {
     spans.iter().find(|s| y < s.end_y).or_else(|| spans.last())
+}
+
+/// 가이드와 드롭이 공유하는, 이동 전 카드 사이의 전역 삽입 슬롯.
+struct WorkspaceDrop {
+    slot: Option<usize>,
+    preceding: Option<usize>,
+    following: Option<usize>,
+    category: Option<crate::model::WorkspaceCategoryId>,
+    marker: Option<egui::Rect>,
+}
+
+impl WorkspaceDrop {
+    fn reorder_target(&self, from: usize) -> Option<usize> {
+        let slot = self.slot?;
+        if self.preceding == Some(from) || self.following == Some(from) {
+            return None;
+        }
+        // remove(from)이 아래쪽 슬롯을 한 칸 당긴다. 자기 앞뒤 슬롯은 같은 결과다.
+        let target = slot - usize::from(from < slot);
+        (target != from).then_some(target)
+    }
+}
+
+fn resolve_workspace_drop(
+    card_rects: &[(usize, egui::Rect)],
+    spans: &[SectionSpan],
+    y: f32,
+) -> WorkspaceDrop {
+    let section = resolve_drop_section(spans, y);
+    let cards = section.map_or(card_rects, |s| &card_rects[s.card_range.clone()]);
+    let local_slot = cards
+        .iter()
+        .position(|(_, rect)| y < rect.center().y)
+        .unwrap_or(cards.len());
+    let next = cards.get(local_slot);
+    let slot = next
+        .map(|(index, _)| *index)
+        .or_else(|| cards.last().map(|(index, _)| index + 1));
+    let marker = if let Some((_, rect)) = next.or_else(|| cards.last()) {
+        let marker_y = if next.is_some() {
+            rect.min.y - 1.0
+        } else {
+            rect.max.y + 1.0
+        };
+        Some(egui::Rect::from_min_size(
+            egui::pos2(rect.min.x, marker_y),
+            egui::vec2(rect.width(), 2.0),
+        ))
+    } else {
+        section.map(|s| {
+            egui::Rect::from_min_size(
+                egui::pos2(s.header_rect.min.x, s.header_rect.max.y + 1.0),
+                egui::vec2(s.header_rect.width(), 2.0),
+            )
+        })
+    };
+    WorkspaceDrop {
+        slot,
+        preceding: local_slot.checked_sub(1).map(|i| cards[i].0),
+        following: next.map(|(index, _)| *index),
+        category: section.map(|s| s.id),
+        marker,
+    }
 }
 
 /// 최초 프레임은 제외하고 활성 인덱스가 바뀔 때만 자동 스크롤해 사용자 스크롤을 유지한다.
@@ -362,6 +425,7 @@ pub fn draw_full_sidebar_view(
 
             if let Some(sections) = props.categories {
                 for (sec_i, section) in sections.iter().enumerate() {
+                    let first_card = card_rects.len();
                     // 헤더 앞의 간격도 이 섹션 드롭 영역에 포함한다.
                     if sec_i > 0 {
                         ui.add_space(th.spacing_md.value());
@@ -441,7 +505,7 @@ pub fn draw_full_sidebar_view(
                         id: section.id,
                         end_y: ui.cursor().min.y,
                         header_rect: header.rect,
-                        has_visible_rows: !section.collapsed && !section.entries.is_empty(),
+                        card_range: first_card..card_rects.len(),
                     });
                 }
             } else {
@@ -480,54 +544,16 @@ pub fn draw_full_sidebar_view(
             }
 
             if let Some(drag) = props.drag {
+                let drop = resolve_workspace_drop(&card_rects, &section_spans, drag.current_y);
                 let released = !ui.input(|i| i.pointer.primary_down());
                 if released {
-                    let pos = card_rects
-                        .iter()
-                        .position(|(_, rect)| drag.current_y < rect.center().y)
-                        .unwrap_or(card_rects.len().saturating_sub(1));
-                    let target = card_rects
-                        .get(pos)
-                        .map(|(gi, _)| *gi)
-                        .unwrap_or(drag.ws_idx);
-                    let drop = (target != drag.ws_idx).then_some(target);
-                    let target_category =
-                        resolve_drop_section(&section_spans, drag.current_y).map(|s| s.id);
                     actions.push(SidebarFullAction::DragReleased {
-                        drop_target: drop,
-                        target_category,
+                        drop_target: drop.reorder_target(drag.ws_idx),
+                        target_category: drop.category,
                     });
                 } else {
-                    // 빈·접힌 카테고리는 헤더 아래에 드롭 표시선을 그린다.
-                    if let Some(sec) = resolve_drop_section(&section_spans, drag.current_y)
-                        .filter(|s| !s.has_visible_rows)
-                    {
-                        let line = egui::Rect::from_min_size(
-                            egui::pos2(sec.header_rect.min.x, sec.header_rect.max.y + 1.0),
-                            egui::vec2(sec.header_rect.width(), 2.0),
-                        );
+                    if let Some(line) = drop.marker {
                         ui.painter().rect_filled(line, 0.0, th.accent_primary());
-                    } else {
-                        let insert_idx = card_rects
-                            .iter()
-                            .position(|(_, rect)| drag.current_y < rect.center().y)
-                            .unwrap_or(card_rects.len());
-                        if let Some(marker_rect) = if insert_idx < card_rects.len() {
-                            Some(card_rects[insert_idx].1)
-                        } else {
-                            card_rects.last().map(|(_, r)| *r)
-                        } {
-                            let marker_y = if insert_idx < card_rects.len() {
-                                marker_rect.min.y - 1.0
-                            } else {
-                                marker_rect.max.y + 1.0
-                            };
-                            let line = egui::Rect::from_min_size(
-                                egui::pos2(marker_rect.min.x, marker_y),
-                                egui::vec2(marker_rect.width(), 2.0),
-                            );
-                            ui.painter().rect_filled(line, 0.0, th.accent_primary());
-                        }
                     }
 
                     if let Some(ws) = props.workspaces.get(drag.ws_idx)
@@ -1526,7 +1552,7 @@ mod tests {
                 egui::pos2(0.0, end_y - 26.0),
                 egui::vec2(180.0, 26.0),
             ),
-            has_visible_rows,
+            card_range: 0..usize::from(has_visible_rows),
         }
     }
 
@@ -1545,17 +1571,172 @@ mod tests {
         assert_eq!(resolve_drop_section(&spans, 999.0).map(|s| s.id), Some(2));
         // 경계값: 섹션 간 gap 은 end_y 연속으로 다음 섹션에 귀속 (y == 이전 end_y).
         assert_eq!(resolve_drop_section(&spans, 100.0).map(|s| s.id), Some(1));
-        assert!(resolve_drop_section(&spans, 50.0).unwrap().has_visible_rows);
         assert!(
-            !resolve_drop_section(&spans, 120.0)
+            !resolve_drop_section(&spans, 50.0)
                 .unwrap()
-                .has_visible_rows
+                .card_range
+                .is_empty()
+        );
+        assert!(
+            resolve_drop_section(&spans, 120.0)
+                .unwrap()
+                .card_range
+                .is_empty()
         );
     }
 
     #[test]
     fn resolve_drop_section_empty_spans_yields_none() {
         assert!(resolve_drop_section(&[], 42.0).is_none());
+    }
+
+    fn mock_cards(indices: &[usize]) -> Vec<(usize, egui::Rect)> {
+        indices
+            .iter()
+            .enumerate()
+            .map(|(row, &index)| {
+                (
+                    index,
+                    egui::Rect::from_min_size(
+                        egui::pos2(0.0, row as f32 * 20.0),
+                        egui::vec2(180.0, 20.0),
+                    ),
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn workspace_drop_downward_matches_guide_slot() {
+        let cards = mock_cards(&[0, 1, 2, 3]);
+        let drop = resolve_workspace_drop(&cards, &[], 60.0);
+        assert_eq!(drop.slot, Some(3));
+        assert_eq!(drop.marker.unwrap().top(), cards[3].1.top() - 1.0);
+        assert_eq!(drop.reorder_target(0), Some(2));
+    }
+
+    #[test]
+    fn workspace_drop_own_adjacent_slots_are_noop() {
+        let cards = mock_cards(&[0, 1, 2, 3]);
+        assert_eq!(
+            resolve_workspace_drop(&cards, &[], 20.0).reorder_target(0),
+            None
+        );
+        assert_eq!(
+            resolve_workspace_drop(&cards, &[], 5.0).reorder_target(0),
+            None
+        );
+    }
+
+    #[test]
+    fn workspace_drop_upward_first_and_last_controls() {
+        let cards = mock_cards(&[0, 1, 2, 3]);
+        assert_eq!(
+            resolve_workspace_drop(&cards, &[], 20.0).reorder_target(3),
+            Some(1)
+        );
+        assert_eq!(
+            resolve_workspace_drop(&cards, &[], 999.0).reorder_target(0),
+            Some(3)
+        );
+        assert_eq!(
+            resolve_workspace_drop(&cards, &[], -5.0).reorder_target(2),
+            Some(0)
+        );
+    }
+
+    #[test]
+    fn workspace_drop_every_guide_slot_matches_resulting_neighbors() {
+        for count in 1..=8 {
+            let ids: Vec<_> = (0..count).collect();
+            let cards = mock_cards(&ids);
+            for y in -5..=(count as i32 * 20 + 5) {
+                let drop = resolve_workspace_drop(&cards, &[], y as f32);
+                let slot = drop.slot.unwrap();
+                let marker_y = if slot < count {
+                    cards[slot].1.top() - 1.0
+                } else {
+                    cards[count - 1].1.bottom() + 1.0
+                };
+                assert_eq!(drop.marker.unwrap().top(), marker_y);
+                for from in 0..count {
+                    let mut actual = ids.clone();
+                    if let Some(to) = drop.reorder_target(from) {
+                        actual.remove(from);
+                        actual.insert(to, from);
+                    }
+                    // Build the expected list by inserting at the guide's original gap,
+                    // independently of the remove/insert final-index calculation.
+                    let mut expected = Vec::new();
+                    for gap in 0..=count {
+                        if gap == slot {
+                            expected.push(from);
+                        }
+                        if gap < count && gap != from {
+                            expected.push(gap);
+                        }
+                    }
+                    assert_eq!(actual, expected, "count={count} y={y} from={from}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn workspace_drop_category_end_uses_only_its_section_cards() {
+        let cards = mock_cards(&[0, 1, 2, 3]);
+        let mut normal = mock_span(0, 50.0, true);
+        normal.card_range = 0..2;
+        let mut other = mock_span(1, 100.0, true);
+        other.card_range = 2..4;
+        let spans = [normal, other];
+        let drop = resolve_workspace_drop(&cards, &spans, 45.0);
+        assert_eq!(drop.category, Some(0));
+        assert_eq!(drop.slot, Some(2));
+        assert_eq!(drop.marker.unwrap().top(), cards[1].1.bottom() + 1.0);
+        assert_eq!(drop.reorder_target(0), Some(1));
+        assert!(drop.marker.unwrap().bottom() < spans[0].end_y);
+    }
+
+    #[test]
+    fn workspace_drop_interleaved_global_indices_keep_local_adjacent_slots_noop() {
+        let cards = mock_cards(&[0, 2, 4]);
+        assert_eq!(
+            resolve_workspace_drop(&cards, &[], 20.0).reorder_target(0),
+            None
+        );
+        assert_eq!(
+            resolve_workspace_drop(&cards, &[], 40.0).reorder_target(2),
+            None
+        );
+        assert_eq!(
+            resolve_workspace_drop(&cards, &[], 60.0).reorder_target(0),
+            Some(4)
+        );
+        assert_eq!(
+            resolve_workspace_drop(&cards, &[], 0.0).reorder_target(4),
+            Some(0)
+        );
+    }
+
+    #[test]
+    fn workspace_drop_empty_or_collapsed_section_anchors_to_its_header() {
+        let cards = mock_cards(&[0, 1]);
+        let mut visible = mock_span(0, 50.0, true);
+        visible.card_range = 0..2;
+        let mut empty = mock_span(1, 85.0, false);
+        empty.card_range = 2..2;
+        let spans = [visible, empty];
+        let drop = resolve_workspace_drop(&cards, &spans, 60.0);
+        assert_eq!(drop.category, Some(1));
+        assert_eq!(drop.reorder_target(0), None);
+        assert_eq!(
+            drop.marker.unwrap().top(),
+            spans[1].header_rect.bottom() + 1.0
+        );
+        let flat_empty = resolve_workspace_drop(&[], &[], 0.0);
+        assert_eq!(flat_empty.reorder_target(0), None);
+        assert!(flat_empty.marker.is_none());
     }
 
     #[test]

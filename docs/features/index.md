@@ -23,7 +23,7 @@ Surface 종류(kind)마다의 명세는 제공 주체와 관계없이 [`surfaces
 | [workspace-category](workspace-category/index.md) — 워크스페이스 카테고리 (사이드바 폴더) | AI Agent · 로컬 사용자 | [사이드바](sidebar/index.md#화면) 카테고리 섹션 (토글 on 시 그룹 렌더) · 레일 `---` 팝업 · 생성/이름변경/삭제 다이얼로그 |
 | [window-chrome](window-chrome/index.md) — 윈도우 크롬 (CSD 타이틀바) | 로컬 사용자 | [화면](window-chrome/index.md#화면) |
 | [workspace-status-bar](workspace-status-bar/index.md) — 상태바 (작업영역 하단) | 로컬 사용자 | [화면](workspace-status-bar/index.md#화면) |
-| [sidebar](sidebar/index.md) — 사이드바 (MainView 좌측 패널) | 로컬 사용자 | [화면](sidebar/index.md#화면) |
+| [sidebar](sidebar/index.md) — 사이드바 (MainView 좌측 패널) | 로컬 사용자 | [화면](sidebar/index.md#화면) · 드래그 삽입선과 재정렬 |
 | [tools-menu](tools-menu/index.md) — 도구 메뉴 (사이드바 도구 버튼) | 로컬 사용자 | [메뉴](tools-menu/index.md#화면) |
 | [settings](settings/index.md) — 설정 창 (사이드바 설정 버튼) | 로컬 사용자 | [창](settings/screens/settings.md) |
 | [plugin-system](plugin-system/index.md) — 플러그인 관리 (설치 패키지 활성/비활성 · 사이드바 플러그인 버튼) | 로컬 사용자 · AI Agent | [창](plugin-system/index.md#화면) |

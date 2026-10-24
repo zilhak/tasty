@@ -39,6 +39,8 @@ full 의 폭은 `appearance.ui_scale` 이 정한다(small 150 · medium 180 · l
   스크롤해 둔 상태를 매 프레임 덮어쓰지 않는다. collapsed 사이드바는 `ScrollArea` 자체가
   없어 해당 없음.
 - **재정렬**: 카드 drag-and-drop (full). 카테고리 토글 on 이면 다른 카테고리 섹션에 드롭해 소속을 옮기는 경로가 추가된다 → [`features/workspace-category/`](../workspace-category/index.md).
+  같은 목록·카테고리 안에서는 표시선의 삽입 슬롯에 놓인다. 이동 전 슬롯을 이동 후 전역 인덱스로
+  바꿀 때 아래 방향은 한 칸 보정하며, 자기 앞뒤 슬롯은 순서를 바꾸지 않는다.
 - **생성**: New workspace 버튼(좌클릭) / 우클릭 → 프리셋으로 생성 — 카테고리 토글 off 일 때. on 이면 버튼이 숨고 카테고리 헤더 메뉴·레일 `---` 팝업의 Add workspace 로 생성한다 (경로 전체는 → [`features/workspace-category/`](../workspace-category/index.md)).
 - **hover**: 비활성 카드에 포인터를 올리면 카드 전체를 `overlay-hover`로 채운다. 채움은 점·스피너·키캡·글자 아래에 깐다. hover 판정은 카드 전체의 클릭 응답을 따른다.
 - **attach 인디케이터**: 다른 client(원격 사용자)가 그 Workspace 를 점유 중이면 status dot 둘레의 attached ring(`border_attached` — red 는 error 전용) ([점유 모델](../../concepts/actors.md)). 점 칸에 포인터를 올리면 `attach.occupied_workspace` 툴팁을 띄운다. 카드 전체가 클릭 위젯이라 egui 는 그보다 먼저 등록한 hover 영역을 hover 로 보지 않는다. 점 칸과 아래 REMOTE 줄의 툴팁 영역은 카드 응답 뒤에 등록한다.
@@ -64,6 +66,10 @@ full 의 폭은 `appearance.ui_scale` 이 정한다(small 150 · medium 180 · l
 
 - 접기 버튼 클릭 시 full ↔ collapsed 가 토글된다.
 - 워크스페이스 카드 클릭 시 해당 Workspace 로 전환된다.
+- Given 평면 목록 A B C D When A를 C와 D 사이의 표시선에 놓는다 Then 순서는 B C A D가 된다. 위 방향과 목록 처음·끝도 표시선의 슬롯과 결과가 일치한다.
+- Given 워크스페이스 카드를 드래그 중 When 자기 바로 앞이나 바로 뒤 슬롯에 놓는다 Then 순서 변경을 요청하지 않는다. 카테고리 안에서 전역 인덱스가 떨어져 있는 이웃 카드도 같다.
+- Given 카테고리 normal에 a0 a1, 다음 섹션에 b0 b1이 있다 When a0를 normal의 마지막 카드 아래에 놓는다 Then 표시선은 normal 안의 a1 아래에 있고 normal 순서는 a1 a0가 된다. 슬롯 후보는 포인터가 속한 섹션의 카드만 사용한다.
+- Given 빈·접힌 카테고리에 카드를 드래그한다 When 그 섹션에 포인터가 있다 Then 표시선은 해당 헤더 아래에 있다. 다른 카테고리로의 드롭은 기존 소속 변경·전역 인덱스 유지 계약을 따른다.
 - 워크스페이스 이름·부제 변경 팝업이 열린 동안 에이전트가 다른 Workspace 를 닫거나 옮겨 인덱스가 바뀌어도, 저장한 값은 팝업을 연 Workspace 에 적용된다. 그 Workspace 가 닫히면 팝업이 닫힌다.
 - Given 워크스페이스 우클릭 메뉴가 열림 When 에이전트가 다른 Workspace 를 닫거나 옮겨 인덱스가 바뀐다 Then 고른 항목(이름 변경·이동·프리셋 저장·닫기·카테고리 이동)은 메뉴를 연 Workspace 에 적용된다. 그 Workspace 가 먼저 닫혔으면 아무것도 하지 않는다.
 - 카테고리 토글 off: New workspace 버튼으로 새 Workspace 가 생성된다 (우클릭 시 프리셋).
