@@ -40,7 +40,9 @@ finish_boot
 초기 journal projection과 activation을 공개하기 전에는 일반 입력·변경 처리를 보류한다. 부팅 미완 동안:
 
 - **window event** 는 전부 소비한다 (`handle_boot_window_event` — RedrawRequested
-  = 스텝 구동, Resized = gpu.resize, CloseRequested = 종료, 그 외 무시).
+  = 스텝 구동, Resized = gpu.resize, Focused = egui의 OS 포커스 갱신, CloseRequested = 종료, 그 외 무시).
+  부팅 중 받은 포커스를 버리면 첫 화면의 입력칸이 계속 비포커스로 판정되어 Enter 확정이 막히므로,
+  포커스는 입력 실행과 분리해 로딩 화면부터 보존한다.
   CloseRequested 시 `shutdown_step_reclaim_boot_worker` 가 먼저 불려 —
   `WaitingEngine` 체류 중이면 워커 결과(최대 5s 대기)를 회수해 그 안의
   `PluginManager` 를 graceful shutdown 한다(잔존 plugin 자식 프로세스 방지).

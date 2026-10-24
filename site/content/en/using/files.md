@@ -1,4 +1,4 @@
-<!-- source-hash: d13f9ae062b1 -->
+<!-- source-hash: a4e73ca71b71 -->
 # Opening files
 
 Read a README or check an image beside your terminal. Tasty can open an Explorer, Markdown documents, images, and HTML pages, with a Git viewer for reviewing changes.
@@ -76,7 +76,7 @@ Names whose accents or Hangul letters were stored as separate characters are com
 
 On Linux X11, pressing a list navigation, open, clear selection, rename, or trash key during IME composition handles the composition first. The same press does not move or open files. Pressing the key again after composition ends works normally. In the Find field, the Esc that ends composition also leaves the query intact. The next Esc works normally. Other Find keys, the address bar, and name fields keep their own input handling.
 
-On native Linux Wayland, a key that ends Hangul composition can also trigger a list action or clear the Find query. In some Wayland and XWayland environments, `Enter` does not confirm a rename. On XWayland, you can confirm it with the **Save** button in the rename popup.
+On native Linux Wayland, a key that ends Hangul composition can also trigger a list action or clear the Find query. Confirm a rename from the name field with `Enter` or **Save**, or cancel with `Esc`. This works from the first window without switching focus away and back.
 
 ### New folder · New file
 

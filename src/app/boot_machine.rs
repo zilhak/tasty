@@ -891,7 +891,7 @@ impl App {
         }
     }
 
-    /// 복원 중 사용자 입력이 구조를 바꾸지 않도록 렌더·크기·종료 외 이벤트는 소비한다.
+    /// 복원 중 사용자 입력은 소비하되 OS 포커스는 egui에 보존한다.
     pub(crate) fn handle_boot_window_event(
         &mut self,
         event_loop: &ActiveEventLoop,
@@ -903,6 +903,13 @@ impl App {
             WindowEvent::Resized(size) => {
                 if let Some(boot) = self.boot.as_mut() {
                     boot.gpu.resize(size);
+                }
+            }
+            WindowEvent::Focused(_) => {
+                if let Some(boot) = self.boot.as_mut() {
+                    // Focus may arrive while the loading frame is visible, before MainView exists.
+                    // Dropping it leaves egui unfocused until the next OS focus transition.
+                    boot.gpu.handle_egui_event(&boot.window, &event);
                 }
             }
             WindowEvent::CloseRequested => {
