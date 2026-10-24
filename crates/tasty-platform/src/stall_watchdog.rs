@@ -3,8 +3,8 @@
 //! native 모달처럼 사용자 응답을 기다리는 정상 구간은 without_stall_watch로 제외한다.
 //! 단계 표시는 멈춘 위치를 좁히는 자료이며 GPU 드라이버 등 근본 원인을 확정하지는 않는다.
 
-use std::sync::LazyLock;
 use std::sync::atomic::{AtomicU8, AtomicU32, AtomicU64, Ordering};
+use std::sync::{LazyLock, OnceLock};
 use std::time::{Duration, Instant};
 
 /// 콜백이 반환하지 않았다고 처음 보고할 시간. 정상 블로킹 구간은 별도로 제외해야 한다.
@@ -29,6 +29,27 @@ static SITE: AtomicU8 = AtomicU8::new(0);
 static PHASE: AtomicU8 = AtomicU8::new(0);
 /// 의도적 블로킹 구간의 중첩 깊이 ([`without_stall_watch`]). 0 보다 크면 보고하지 않는다.
 static PAUSED: AtomicU32 = AtomicU32::new(0);
+static REVISION: AtomicU64 = AtomicU64::new(0);
+static DEPTH: AtomicU32 = AtomicU32::new(0);
+static PROGRESS_NS: AtomicU64 = AtomicU64::new(0);
+static LAST_PHASE: AtomicU8 = AtomicU8::new(0);
+static LAST_PHASE_NS: AtomicU64 = AtomicU64::new(0);
+
+/// Start of a continuous nonempty main-loop queue-obligation period.
+#[derive(Clone, Copy, Debug)]
+pub struct PendingWork {
+    pub count: u64,
+    pub since: Instant,
+    pub generation: u64,
+}
+static PENDING_PROBE: OnceLock<fn() -> Option<PendingWork>> = OnceLock::new();
+/// Install a cached, bounded, I/O-free probe. No periodic event-loop wake is added.
+pub fn install_pending_probe(probe: fn() -> Option<PendingWork>) {
+    PENDING_PROBE.get_or_init(|| probe);
+}
+fn now_ns() -> u64 {
+    ORIGIN.elapsed().as_nanos().min(u64::MAX as u128) as u64
+}
 
 /// 관측 대상 winit 콜백.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -41,6 +62,8 @@ pub enum Site {
     Redraw = 3,
     UserEvent = 4,
     AboutToWait = 5,
+    DeviceEvent = 6,
+    NewEvents = 7,
 }
 
 fn site_label(raw: u8) -> &'static str {
@@ -50,6 +73,8 @@ fn site_label(raw: u8) -> &'static str {
         3 => "redraw",
         4 => "user_event",
         5 => "about_to_wait",
+        6 => "device_event",
+        7 => "new_events",
         _ => "unknown",
     }
 }
@@ -66,6 +91,8 @@ pub enum Phase {
     Submit = 2,
     /// `SurfaceTexture::present()`.
     Present = 3,
+    /// Surface configuration; reporting never cancels this native operation.
+    Configure = 4,
 }
 
 fn phase_label(raw: u8) -> &'static str {
@@ -74,37 +101,61 @@ fn phase_label(raw: u8) -> &'static str {
         1 => "acquire",
         2 => "submit",
         3 => "present",
+        4 => "configure",
         _ => "unknown",
     }
 }
 
 /// 콜백 구간을 표시하는 RAII 가드. 콜백 최상단에서 만들고, 조기 return 을 포함한
 /// 모든 이탈 경로를 `Drop` 이 덮는다.
-pub struct Guard;
-
+pub struct Guard {
+    previous: (u8, u64, u8),
+}
 impl Guard {
     pub fn enter(site: Site) -> Self {
+        REVISION.fetch_add(1, Ordering::AcqRel);
+        let previous = (
+            SITE.load(Ordering::Relaxed),
+            ENTERED_NS.load(Ordering::Relaxed),
+            PHASE.load(Ordering::Relaxed),
+        );
+        let nested = DEPTH.fetch_add(1, Ordering::Relaxed) > 0;
         SITE.store(site as u8, Ordering::Relaxed);
         PHASE.store(Phase::None as u8, Ordering::Relaxed);
-        ENTERED_NS.store(ORIGIN.elapsed().as_nanos() as u64, Ordering::Relaxed);
-        // payload 를 다 쓴 뒤 마지막에 홀수로 올린다 — 워치독이 "안에 있음" 으로
-        // 읽는 순간엔 site/phase/시각이 이미 이 콜백의 값이다.
-        SEQ.fetch_add(1, Ordering::Release);
-        Guard
+        ENTERED_NS.store(now_ns(), Ordering::Relaxed);
+        PROGRESS_NS.store(now_ns(), Ordering::Relaxed);
+        SEQ.fetch_add(if nested { 2 } else { 1 }, Ordering::Release);
+        REVISION.fetch_add(1, Ordering::Release);
+        Self { previous }
     }
 }
-
 impl Drop for Guard {
     fn drop(&mut self) {
-        SEQ.fetch_add(1, Ordering::Release);
-        PHASE.store(Phase::None as u8, Ordering::Relaxed);
+        REVISION.fetch_add(1, Ordering::AcqRel);
+        let nested = DEPTH.fetch_sub(1, Ordering::Relaxed) > 1;
+        if nested {
+            SITE.store(self.previous.0, Ordering::Relaxed);
+            ENTERED_NS.store(self.previous.1, Ordering::Relaxed);
+            PHASE.store(self.previous.2, Ordering::Relaxed);
+        } else {
+            PROGRESS_NS.store(now_ns(), Ordering::Relaxed);
+            PHASE.store(Phase::None as u8, Ordering::Relaxed);
+        }
+        SEQ.fetch_add(if nested { 2 } else { 1 }, Ordering::Release);
+        REVISION.fetch_add(1, Ordering::Release);
     }
 }
 
 /// 렌더 세부 단계 표시. 가드 안에서만 의미가 있고, 가드 `Drop` 이 자동으로 되돌린다.
 #[inline]
 pub fn set_phase(phase: Phase) {
+    REVISION.fetch_add(1, Ordering::AcqRel);
     PHASE.store(phase as u8, Ordering::Relaxed);
+    if phase != Phase::None {
+        LAST_PHASE.store(phase as u8, Ordering::Relaxed);
+        LAST_PHASE_NS.store(now_ns(), Ordering::Release);
+    }
+    REVISION.fetch_add(1, Ordering::Release);
 }
 
 /// 사용자 응답을 기다리는 native 모달 같은 정상 블로킹 구간의 보고를 중지한다.
@@ -120,26 +171,39 @@ struct PauseGuard;
 
 impl PauseGuard {
     fn enter() -> Self {
+        REVISION.fetch_add(1, Ordering::AcqRel);
         PAUSED.fetch_add(1, Ordering::Release);
+        REVISION.fetch_add(1, Ordering::Release);
         PauseGuard
     }
 }
 
 impl Drop for PauseGuard {
     fn drop(&mut self) {
+        REVISION.fetch_add(1, Ordering::AcqRel);
         // 블로킹에 쓴 시간은 stall 이 아니다 — 남은 콜백을 지금부터 다시 잰다.
-        ENTERED_NS.store(ORIGIN.elapsed().as_nanos() as u64, Ordering::Relaxed);
+        ENTERED_NS.store(now_ns(), Ordering::Relaxed);
+        PROGRESS_NS.store(now_ns(), Ordering::Relaxed);
         // seq 를 2 만큼 올린다: 홀짝(= 콜백 안)은 유지하면서 ① 진행 중인 표본을 무효화하고
         // ② 재보고 추적이 이 이후를 별개 구간으로 보게 한다.
         SEQ.fetch_add(2, Ordering::Release);
         // 시각을 갱신한 뒤에 푼다 — 반대 순서면 낡은 진입 시각이 잠깐 노출된다.
         PAUSED.fetch_sub(1, Ordering::Release);
+        REVISION.fetch_add(1, Ordering::Release);
     }
 }
 
 /// 관측 스냅샷 — 보고 판정을 순수 함수로 떼어내기 위한 값 묶음.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 struct Snapshot {
+    pending: u64,
+    work_generation: u64,
+    site: u8,
+    phase: u8,
+    last_phase: u8,
+    last_phase_age: Duration,
+    progress_age: Duration,
+    pending_age: Duration,
     seq: u64,
     stuck: Duration,
     /// 표본 시점에 의도적 블로킹 구간([`without_stall_watch`]) 안이었나.
@@ -150,14 +214,15 @@ struct Snapshot {
 #[derive(Clone, Copy, Debug, Default)]
 struct Reported {
     seq: u64,
+    work_generation: u64,
     at: Duration,
 }
 
 /// 이번 폴링에서 보고할지 판정한다. `None` 이면 보고하지 않는다.
 /// 반환하는 `bool` 은 "이 stall 의 첫 보고인가".
 fn should_report(snap: Snapshot, reported: Option<Reported>) -> Option<bool> {
-    if snap.seq.is_multiple_of(2) {
-        return None; // 콜백 바깥 — 정상
+    if snap.seq.is_multiple_of(2) && snap.pending == 0 {
+        return None; // Idle has no known work requiring main-loop progress.
     }
     if snap.paused {
         return None; // 의도적 블로킹(native 모달 등) — 행이 아니다
@@ -166,7 +231,7 @@ fn should_report(snap: Snapshot, reported: Option<Reported>) -> Option<bool> {
         return None;
     }
     match reported {
-        Some(prev) if prev.seq == snap.seq => {
+        Some(prev) if prev.seq == snap.seq && prev.work_generation == snap.work_generation => {
             // 같은 stall — 재보고 간격을 채웠을 때만.
             (snap.stuck.saturating_sub(prev.at) >= REPEAT_EVERY).then_some(false)
         }
@@ -188,39 +253,84 @@ pub fn spawn() {
 
 /// 이벤트 루프 상태를 한 번 읽는다. 읽는 도중 콜백이 교체되면 `None`(그 표본은 버린다).
 fn sample() -> Option<Snapshot> {
+    let revision = REVISION.load(Ordering::Acquire);
+    if !revision.is_multiple_of(2) {
+        return None;
+    }
     let seq = SEQ.load(Ordering::Acquire);
     let paused = PAUSED.load(Ordering::Acquire) > 0;
-    let entered = Duration::from_nanos(ENTERED_NS.load(Ordering::Relaxed));
-    let stuck = ORIGIN.elapsed().checked_sub(entered)?;
-    // 읽는 사이에 콜백이 끝났거나 블로킹 구간이 닫혔으면(seq += 2) 위 값들은 과거 것이다.
-    (SEQ.load(Ordering::Acquire) == seq).then_some(Snapshot { seq, stuck, paused })
+    let pending = PENDING_PROBE.get().and_then(|probe| probe());
+    let now = Instant::now();
+    let progress = *ORIGIN + Duration::from_nanos(PROGRESS_NS.load(Ordering::Relaxed));
+    let entered = *ORIGIN + Duration::from_nanos(ENTERED_NS.load(Ordering::Relaxed));
+    let start = if seq.is_multiple_of(2) {
+        pending.map_or(progress, |p| p.since.max(progress))
+    } else {
+        entered
+    };
+    let snap = Snapshot {
+        seq,
+        paused,
+        stuck: now.checked_duration_since(start)?,
+        pending: pending.map_or(0, |p| p.count),
+        work_generation: if seq.is_multiple_of(2) {
+            pending.map_or(0, |p| p.generation)
+        } else {
+            0
+        },
+        site: SITE.load(Ordering::Relaxed),
+        phase: if seq.is_multiple_of(2) {
+            0
+        } else {
+            PHASE.load(Ordering::Relaxed)
+        },
+        last_phase: LAST_PHASE.load(Ordering::Relaxed),
+        last_phase_age: now.saturating_duration_since(
+            *ORIGIN + Duration::from_nanos(LAST_PHASE_NS.load(Ordering::Acquire)),
+        ),
+        progress_age: now.saturating_duration_since(progress),
+        pending_age: pending.map_or(Duration::ZERO, |p| now.saturating_duration_since(p.since)),
+    };
+    (SEQ.load(Ordering::Acquire) == seq && REVISION.load(Ordering::Acquire) == revision)
+        .then_some(snap)
 }
 
 /// stall 1 건 보고. `first` 면 파일 리포트까지 남긴다(재보고는 로그만 — 파일 폭주 방지).
-fn report(stuck: Duration, first: bool) {
-    let site = site_label(SITE.load(Ordering::Relaxed));
-    let phase = phase_label(PHASE.load(Ordering::Relaxed));
-    let stuck_ms = stuck.as_millis() as u64;
-
-    tracing::error!(
-        target: "tasty::stall",
-        site,
-        phase,
-        stuck_ms,
-        first,
-        "event loop stalled — winit callback has not returned; \
-         main-loop input and IPC dispatch may be delayed; see the recorded site and phase"
-    );
-
+fn report(snap: Snapshot, first: bool) {
+    let inside_callback = !snap.seq.is_multiple_of(2);
+    let site = if inside_callback {
+        site_label(snap.site)
+    } else {
+        "outside_callback"
+    };
+    let phase = phase_label(snap.phase);
+    let stuck_ms = snap.stuck.as_millis() as u64;
+    tracing::error!(target: "tasty::stall", site, phase, stuck_ms, first,
+        inside_callback, pending = snap.pending,
+        progress_age_ms = snap.progress_age.as_millis() as u64,
+        pending_age_ms = snap.pending_age.as_millis() as u64,
+        last_callback = site_label(snap.site), last_phase = phase_label(snap.last_phase),
+        last_phase_age_ms = snap.last_phase_age.as_millis() as u64,
+        "event loop stalled — no observed main-loop progress; recorded regions do not establish the cause");
     if first {
-        write_report_file(site, phase, stuck_ms);
+        write_report_file(site, phase, stuck_ms, snap);
     }
 }
 
 /// stall 리포트 파일 1 개를 남기고 결과를 로그로 확인한다.
-fn write_report_file(site: &str, phase: &str, stuck_ms: u64) {
+fn write_report_file(site: &str, phase: &str, stuck_ms: u64, snap: Snapshot) {
     // 리포트를 못 써도 호출자의 error 로그는 이미 남았다 — 진단이 얕아질 뿐이다.
     let written = crate::crash_report::write_hang_report(site, phase, stuck_ms);
+    if let Some(path) = &written {
+        use std::io::Write;
+        let result = std::fs::OpenOptions::new().append(true).open(path).and_then(|mut file| {
+            writeln!(file, "Inside callback: {}\nPending main-loop work: {}\nLast progress age: {} ms\nPending period age: {} ms\nLast callback: {}\nLast recorded render phase: {} ({} ms ago)",
+                !snap.seq.is_multiple_of(2), snap.pending, snap.progress_age.as_millis(), snap.pending_age.as_millis(), site_label(snap.site), phase_label(snap.last_phase), snap.last_phase_age.as_millis())
+        });
+        if let Err(error) = result {
+            tracing::warn!(%error, "hang progress context append failed");
+        }
+    }
     tracing::error!(
         target: "tasty::stall",
         path = ?written,
@@ -239,9 +349,10 @@ fn watch_loop() {
         };
         reported = Some(Reported {
             seq: snap.seq,
+            work_generation: snap.work_generation,
             at: snap.stuck,
         });
-        report(snap.stuck, first);
+        report(snap, first);
     }
 }
 
@@ -286,9 +397,11 @@ mod tests {
 
     fn snap(seq: u64, secs: u64) -> Snapshot {
         Snapshot {
+            pending: 0,
             seq,
             stuck: Duration::from_secs(secs),
             paused: false,
+            ..Default::default()
         }
     }
 
@@ -305,6 +418,15 @@ mod tests {
     }
 
     #[test]
+    fn outside_callback_pending_work_is_not_indistinguishable_from_idle() {
+        let idle = snap(4, 6);
+        assert_eq!(should_report(idle, None), None);
+        let pending = Snapshot { pending: 1, ..idle };
+        assert_eq!(pending.pending, 1);
+        assert_eq!(should_report(pending, None), Some(true));
+    }
+
+    #[test]
     fn short_callback_does_not_report() {
         assert_eq!(should_report(snap(3, 1), None), None);
     }
@@ -318,6 +440,7 @@ mod tests {
     fn same_stall_waits_for_repeat_interval() {
         let prev = Reported {
             seq: 3,
+            work_generation: 0,
             at: Duration::from_secs(5),
         };
         // 5s → 20s: 재보고 간격(30s) 미달.
@@ -330,6 +453,7 @@ mod tests {
     fn new_stall_after_previous_report_is_first_again() {
         let prev = Reported {
             seq: 3,
+            work_generation: 0,
             at: Duration::from_secs(40),
         };
         assert_eq!(should_report(snap(7, 6), Some(prev)), Some(true));
@@ -388,18 +512,78 @@ mod tests {
     }
 
     #[test]
+    fn outside_work_period_and_progress_have_independent_report_identity() {
+        let s = Snapshot {
+            pending: 2,
+            work_generation: 7,
+            ..snap(4, 5)
+        };
+        assert_eq!(should_report(s, None), Some(true));
+        let old = Reported {
+            seq: 4,
+            work_generation: 7,
+            at: Duration::from_secs(5),
+        };
+        assert_eq!(should_report(s, Some(old)), None);
+        assert_eq!(
+            should_report(
+                Snapshot {
+                    stuck: Duration::from_secs(35),
+                    ..s
+                },
+                Some(old)
+            ),
+            Some(false)
+        );
+        assert_eq!(
+            should_report(
+                Snapshot {
+                    work_generation: 8,
+                    ..s
+                },
+                Some(old)
+            ),
+            Some(true)
+        );
+        assert_eq!(should_report(Snapshot { paused: true, ..s }, None), None);
+    }
+    #[test]
+    fn nested_callback_restores_outer_scope_and_pause_resets_outside_progress() {
+        let _lock = GLOBALS.lock().unwrap_or_else(|e| e.into_inner());
+        let outer = Guard::enter(Site::UserEvent);
+        set_phase(Phase::Configure);
+        {
+            let _inner = Guard::enter(Site::WindowEvent);
+            assert!(!SEQ.load(Ordering::Acquire).is_multiple_of(2));
+        }
+        let snap = sample().unwrap();
+        assert!(!snap.seq.is_multiple_of(2));
+        assert_eq!(snap.site, Site::UserEvent as u8);
+        assert_eq!(snap.phase, Phase::Configure as u8);
+        drop(outer);
+        without_stall_watch(|| without_stall_watch(|| assert!(sample().unwrap().paused)));
+        let snap = sample().unwrap();
+        assert!(snap.seq.is_multiple_of(2));
+        assert!(!snap.paused);
+        assert!(snap.progress_age < REPORT_AFTER);
+    }
+
+    #[test]
     fn labels_cover_every_variant() {
         assert_eq!(site_label(Site::Resumed as u8), "resumed");
         assert_eq!(site_label(Site::WindowEvent as u8), "window_event");
         assert_eq!(site_label(Site::Redraw as u8), "redraw");
         assert_eq!(site_label(Site::UserEvent as u8), "user_event");
         assert_eq!(site_label(Site::AboutToWait as u8), "about_to_wait");
+        assert_eq!(site_label(Site::DeviceEvent as u8), "device_event");
+        assert_eq!(site_label(Site::NewEvents as u8), "new_events");
         assert_eq!(site_label(0), "unknown");
 
         assert_eq!(phase_label(Phase::None as u8), "none");
         assert_eq!(phase_label(Phase::Acquire as u8), "acquire");
         assert_eq!(phase_label(Phase::Submit as u8), "submit");
         assert_eq!(phase_label(Phase::Present as u8), "present");
+        assert_eq!(phase_label(Phase::Configure as u8), "configure");
         assert_eq!(phase_label(9), "unknown");
     }
 }

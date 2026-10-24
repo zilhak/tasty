@@ -20,6 +20,7 @@ pub mod mesh_stream;
 pub mod method_meta;
 pub mod output_cursor;
 pub mod port_file;
+pub mod progress;
 pub mod protocol;
 pub mod server;
 pub mod session;

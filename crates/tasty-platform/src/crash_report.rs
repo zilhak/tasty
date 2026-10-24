@@ -134,7 +134,7 @@ pub fn write_hang_report(site: &str, phase: &str, stuck_ms: u64) -> Option<PathB
     writeln!(file).ok();
     writeln!(
         file,
-        "The winit callback did not return within the watchdog threshold.\n\
+        "The event loop made no observed progress within the watchdog threshold.\n\
          Main-loop input and IPC dispatch may be delayed while it is blocked.\n\
          The render phase identifies the last recorded region; it does not establish the cause.\n\
          This watchdog records the stall and does not cancel the blocked operation."

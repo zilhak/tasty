@@ -929,6 +929,7 @@ impl TcpIpcServer {
             return false;
         }
 
+        lifecycle.mark_enqueued();
         if let Some(waker) = waker {
             waker();
         }

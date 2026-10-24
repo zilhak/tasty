@@ -180,11 +180,15 @@ impl HostIpcInjector {
         {
             return Waited::Done(Err(InjectError::Refused(r)));
         }
+        // Queued-progress ownership stays on cmd: send failure/drop/dequeue or withdrawal ends it.
+        // The waiter/late answer keeps flight ownership, not a main-loop queue obligation.
         // 시작/철회를 판정하고 in-flight 수명을 유지하도록 대기 중 lifecycle을 보유한다.
         let lifecycle = cmd.lifecycle();
+        let request_seq = cmd.request_seq();
         if let Err(e) = self.sender.send(cmd) {
             return Waited::Done(Err(InjectError::Send(e.to_string())));
         }
+        lifecycle.mark_enqueued();
         (self.waker)();
         // 실제 응답 또는 기한 만료의 결과를 기록한다. 기한 없는 대기 만료는 이후 실행될 수 있어 기록하지 않는다.
         Waited::Done(match resp_rx.recv_timeout(timeout) {
@@ -194,21 +198,24 @@ impl HostIpcInjector {
             }
             // 기한이 있으면 소켓 경로(`await_dispatch_response`)와 같은 판정이다 — 아직 큐에
             // 있었으면 꺼내질 때 실행되지 않게 막는다. 기한이 없으면 명령은 큐에 남는다.
-            Err(mpsc::RecvTimeoutError::Timeout) if with_deadline => match lifecycle.withdraw() {
-                Withdraw::NotRun => {
-                    lifecycle.record_error_code(ERR_EXPIRED_BEFORE_RUN);
-                    Err(InjectError::Expired(timeout))
+            Err(mpsc::RecvTimeoutError::Timeout) if with_deadline => {
+                tracing::debug!(target: "tasty::ipc_wait", request_seq = request_seq.get(), timeout_ms = timeout.as_millis(), "host IPC response wait bound reached; queued withdrawal and started outcome remain distinct");
+                match lifecycle.withdraw() {
+                    Withdraw::NotRun => {
+                        lifecycle.record_error_code(ERR_EXPIRED_BEFORE_RUN);
+                        Err(InjectError::Expired(timeout))
+                    }
+                    Withdraw::Started => {
+                        // 호출자의 상한은 지났으므로 답이 나간 방식은 결과 불명으로 적는다.
+                        lifecycle.record_error_code(ERR_RESPONSE_TIMEOUT_OUTCOME_UNKNOWN);
+                        return Waited::StartedPastBound(LateAnswer {
+                            rx: resp_rx,
+                            _lifecycle: lifecycle,
+                            timeout,
+                        });
+                    }
                 }
-                Withdraw::Started => {
-                    // 호출자의 상한은 지났으므로 답이 나간 방식은 결과 불명으로 적는다.
-                    lifecycle.record_error_code(ERR_RESPONSE_TIMEOUT_OUTCOME_UNKNOWN);
-                    return Waited::StartedPastBound(LateAnswer {
-                        rx: resp_rx,
-                        _lifecycle: lifecycle,
-                        timeout,
-                    });
-                }
-            },
+            }
             Err(mpsc::RecvTimeoutError::Timeout) => Err(InjectError::Timeout(timeout)),
             Err(mpsc::RecvTimeoutError::Disconnected) => Err(InjectError::Disconnected),
         })
@@ -497,9 +504,17 @@ mod tests {
         assert_eq!(err, InjectError::Timeout(Duration::from_millis(10)));
         assert!(!err.nothing_ran());
         let stale = rx.try_recv().expect("still queued");
+        assert!(
+            stale.queue_progress_pending(),
+            "abandonment without deadline does not cancel queued work"
+        );
         assert_eq!(stale.request.response_timeout_ms, None);
         thread::sleep(Duration::from_millis(20));
         assert_eq!(stale.claim(&stats()), Claim::Run, "it still runs");
+        assert!(
+            !stale.queue_progress_pending(),
+            "async completion is not a queued obligation"
+        );
     }
 
     #[test]

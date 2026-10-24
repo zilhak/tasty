@@ -71,3 +71,22 @@ impl App {
         window
     }
 }
+
+/// Watchdog-thread probe: cached queue obligations only, no App/store/native access.
+pub(super) fn pending_ipc_work() -> Option<crate::stall_watchdog::PendingWork> {
+    tasty_ipc::progress::pending_main_loop_work().map(|p| crate::stall_watchdog::PendingWork {
+        count: p.count,
+        since: p.since,
+        generation: p.generation,
+    })
+}
+
+#[cfg(debug_assertions)]
+pub(super) fn record_wake(cause: winit::event::StartCause, shutting_down: bool) {
+    if let winit::event::StartCause::ResumeTimeReached {
+        requested_resume, ..
+    } = cause
+    {
+        super::super::loop_measurement::wake(requested_resume, shutting_down);
+    }
+}

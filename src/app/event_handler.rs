@@ -23,17 +23,14 @@ impl ApplicationHandler<AppEvent> for App {
         _device_id: winit::event::DeviceId,
         event: winit::event::DeviceEvent,
     ) {
+        let _stall_guard = stall_watchdog::Guard::enter(Site::DeviceEvent);
         self.observe_explorer_device_key(event_loop, event);
     }
 
-    #[cfg(debug_assertions)]
-    fn new_events(&mut self, _event_loop: &ActiveEventLoop, cause: winit::event::StartCause) {
-        if let winit::event::StartCause::ResumeTimeReached {
-            requested_resume, ..
-        } = cause
-        {
-            super::loop_measurement::wake(requested_resume, self.state.shutdown.is_some());
-        }
+    fn new_events(&mut self, _event_loop: &ActiveEventLoop, _cause: winit::event::StartCause) {
+        let _stall_guard = stall_watchdog::Guard::enter(Site::NewEvents);
+        #[cfg(debug_assertions)]
+        window_helpers::record_wake(_cause, self.state.shutdown.is_some());
     }
 
     #[allow(clippy::cognitive_complexity)] // complexity-exempt: 이벤트별 핸들러에 위임하는 평면 match이며 플랫폼 cfg를 포함한다. 분기를 한곳에서 볼 수 있도록 유지한다.
@@ -234,6 +231,7 @@ impl ApplicationHandler<AppEvent> for App {
 
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         self.view.display_owner = Some(event_loop.owned_display_handle());
+        stall_watchdog::install_pending_probe(window_helpers::pending_ipc_work);
         let _stall_guard = stall_watchdog::Guard::enter(Site::Resumed);
         #[cfg(debug_assertions)]
         let _measurement = super::loop_measurement::Guard::enter(

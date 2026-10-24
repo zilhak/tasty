@@ -59,6 +59,7 @@ pub struct IpcCommand {
     /// 호스트가 이 요청에 붙인 번호. 생성자가 받으므로 명령을 만드는 모든 경로(소켓 · 호스트
     /// 주입)가 번호를 갖는다 — `enqueued_at` 과 같은 강제다.
     request_seq: RequestSeq,
+    queued_progress: crate::progress::Ticket,
 }
 
 impl IpcCommand {
@@ -98,6 +99,11 @@ impl IpcCommand {
             .response_timeout_ms
             .filter(|ms| *ms > 0)
             .map(Duration::from_millis);
+        let queued_progress = crate::progress::Ticket::new();
+        let lifecycle = Arc::new(CommandLifecycle {
+            queued_progress: queued_progress.weak(),
+            ..Default::default()
+        });
         Self {
             request,
             response_tx,
@@ -105,8 +111,9 @@ impl IpcCommand {
             wire_bytes,
             admission: None,
             wait_bound,
-            lifecycle: Arc::new(CommandLifecycle::default()),
+            lifecycle,
             request_seq,
+            queued_progress,
         }
     }
 
@@ -128,7 +135,13 @@ impl IpcCommand {
 
     /// 큐에서 꺼냈다 — 몫을 반납한다. 여러 번 불러도 한 번만 반납된다.
     pub fn mark_dequeued(&mut self) {
+        self.queued_progress.finish();
         self.admission = None;
+    }
+
+    #[cfg(test)]
+    pub(crate) fn queue_progress_pending(&self) -> bool {
+        self.queued_progress.is_pending()
     }
 
     /// 큐에 들어간 뒤 지금까지 기다린 시간.
@@ -152,6 +165,7 @@ impl IpcCommand {
     /// 시작 전 만료는 expired_before_run, 실행 시작은 in-flight에 기록한다.
     /// in-flight는 명령과 응답 대기자가 모두 lifecycle을 놓을 때 해제된다.
     pub fn claim(&self, stats: &Arc<DispatchStats>) -> Claim {
+        self.queued_progress.finish();
         if let Some(bound) = self.wait_bound {
             let waited = self.queue_wait();
             if waited >= bound {
@@ -217,6 +231,7 @@ const WITHDRAWN: u8 = 2;
 /// 비교-교환으로 실행과 철회 중 하나만 성공하게 한다.
 #[derive(Debug, Default)]
 pub struct CommandLifecycle {
+    queued_progress: std::sync::Weak<crate::progress::Work>,
     state: AtomicU8,
     /// 실행을 시작한 명령의 in-flight 몫. 이 칸을 든 마지막 쪽(명령 또는 기다리는 쪽)이 놓을 때
     /// 버려진다.
@@ -227,6 +242,11 @@ pub struct CommandLifecycle {
 }
 
 impl CommandLifecycle {
+    fn finish_queued(&self) {
+        if let Some(work) = self.queued_progress.upgrade() {
+            work.finish();
+        }
+    }
     fn transition(&self, from: u8, to: u8) -> Result<(), u8> {
         self.state
             .compare_exchange(from, to, Ordering::AcqRel, Ordering::Acquire)
@@ -248,10 +268,20 @@ pub enum Withdraw {
 }
 
 impl LifecycleHandle {
+    /// Mark successful queue publication before waking the main loop. A prior dequeue/drop/withdraw
+    /// wins this race: it cannot resurrect an obligation that no longer needs loop progress.
+    pub fn mark_enqueued(&self) {
+        if let Some(work) = self.0.queued_progress.upgrade() {
+            work.start();
+        }
+    }
     /// 기다림을 상한에서 끝낸다. 명령이 아직 큐에 있었으면 실행되지 않게 막는다.
     pub fn withdraw(&self) -> Withdraw {
         match self.0.transition(QUEUED, WITHDRAWN) {
-            Ok(()) => Withdraw::NotRun,
+            Ok(()) => {
+                self.0.finish_queued();
+                Withdraw::NotRun
+            }
             Err(WITHDRAWN) => Withdraw::NotRun,
             Err(_) => Withdraw::Started,
         }
@@ -260,6 +290,7 @@ impl LifecycleHandle {
     /// 호출자에게 실제로 나간 답을 적는다 — 받은 답이든, 상한에서 스스로 만든 답이든. 한 명령에
     /// 처음 한 번만 적힌다.
     pub fn record_answer(&self, response: &JsonRpcResponse) {
+        self.0.finish_queued();
         self.0.outcome.set(match &response.error {
             Some(err) => HostOutcome::Error { code: err.code },
             None => HostOutcome::Ok,
@@ -319,6 +350,36 @@ mod tests {
             idempotency_key: None,
         };
         (IpcCommand::new(req, tx), rx)
+    }
+
+    #[test]
+    fn queued_progress_finishes_on_dequeue_claim_withdraw_answer_and_drop() {
+        let (mut c, _rx) = cmd(None);
+        assert!(!c.queue_progress_pending());
+        c.lifecycle().mark_enqueued();
+        assert!(c.queue_progress_pending());
+        c.mark_dequeued();
+        c.mark_dequeued();
+        assert!(!c.queue_progress_pending());
+        let (c, _rx) = cmd(None);
+        let waiter = c.lifecycle();
+        assert_eq!(c.claim(&stats()), Claim::Run);
+        assert!(!c.queue_progress_pending());
+        assert_eq!(waiter.withdraw(), Withdraw::Started);
+        let (c, _rx) = cmd(None);
+        assert_eq!(c.lifecycle().withdraw(), Withdraw::NotRun);
+        assert!(!c.queue_progress_pending());
+        assert_eq!(c.claim(&stats()), Claim::Withdrawn);
+        let (c, _rx) = cmd(None);
+        c.lifecycle().record_answer(&JsonRpcResponse::success(
+            serde_json::Value::Null,
+            serde_json::Value::Null,
+        ));
+        assert!(!c.queue_progress_pending());
+        let (c, _rx) = cmd(None);
+        let waiter = c.lifecycle();
+        drop(c);
+        assert!(waiter.0.queued_progress.upgrade().is_none());
     }
 
     #[test]

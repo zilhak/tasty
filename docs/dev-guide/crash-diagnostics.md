@@ -130,11 +130,11 @@ host 역할의 파일 로그는 공용 부팅 경로에서 설치한다.
 
 ## panic 없이 멈춤 (이벤트 루프 stall / 무한루프 / 데드락)
 
-panic 이 아니라 hang 이면 **panic hook 이 발동하지 않으므로 `crash-*.log` 는 생기지 않는다.** 다만 그중 한 부류 — winit 이벤트 루프 콜백이 반환하지 않는 stall — 은 워치독이 별도로 잡아 `hang-*.log` 를 남긴다.
+panic 이 아니라 hang 이면 **panic hook 이 발동하지 않으므로 `crash-*.log` 는 생기지 않는다.** 다만 winit 콜백이 반환하지 않거나, 처리할 IPC 작업이 큐에 남은 채 콜백 바깥에서 진행이 멎은 경우는 워치독이 별도로 잡아 `hang-*.log` 를 남긴다.
 
 ### 이벤트 루프 stall — `hang-*.log` (모든 빌드, 자동)
 
-콜백(`resumed` / `window_event` / `redraw` / `user_event` / `about_to_wait`)이 **5 초** 안에 반환하지 않으면, 독립 워치독 스레드가 `~/.tasty/crash-reports/hang-<YYYY-MM-DDTHH-MM-SS>.log` 를 남긴다. 창이 클릭·키입력·IPC 에 전혀 반응하지 않는 증상 — GPU 드라이버 행이 대표적이다 — 이 여기 해당한다.
+콜백(`resumed` / `window_event` / `redraw` / `user_event` / `about_to_wait` / `device_event` / `new_events`)이 **5 초** 안에 반환하지 않으면 독립 워치독이 `~/.tasty/crash-reports/hang-<YYYY-MM-DDTHH-MM-SS>.log`를 남긴다. 콜백 바깥에서도 아직 메인 루프가 꺼내야 할 IPC 명령이 있고 관측한 진행이 5초 동안 없으면 `outside_callback`으로 보고한다. 이때는 마지막 콜백 진행과 연속 pending 기간 시작 중 더 늦은 시각부터 잰다. 정상 idle에는 pending이 없으므로 시간만으로 보고하지 않는다.
 
 ```
 === Tasty Hang Report ===
@@ -144,19 +144,27 @@ OS: linux aarch64
 
 === Stall ===
 Callback: redraw                    ← 어느 winit 콜백이 안 돌아왔나
-Render phase: present               ← none / acquire / submit / present
+Render phase: present               ← none / acquire / submit / present / configure
 Stuck for: 5745 ms                  ← 최초 탐지 시점 기준
+Inside callback: true
+Pending main-loop work: 1
+Last progress age: 5745 ms
+Pending period age: 5745 ms
+Last callback: redraw
+Last recorded render phase: present (5745 ms ago)
 ```
 
-- `Render phase`가 `acquire`/`submit`/`present`면 해당 GPU 호출에서 멈춘 것으로 기록된 상태다. 드라이버를 포함한 실제 원인은 스택과 추가 로그로 확인한다. `none` 이면 GPU 구간 밖이므로 아래 gdb/strace 로 이어간다.
+- `Render phase`는 현재 계측 구간이다. `acquire`/`submit`/`present`/`configure`도 드라이버 원인을 확정하는 증거는 아니다. 콜백 바깥에서는 `none`이며 `Last callback`과 `Last recorded render phase`는 나이를 함께 표시한 과거 관측이다. 이를 현재 GPU/IME 호출의 스택으로 해석하지 않는다.
+- pending은 응답을 기다리는 호출자 수가 아니라 성공적으로 큐에 게시된 메인 루프 처리 의무다. send 성공 뒤 기존 wake 전에 시작하며 dequeue·claim·실행 전 철회·명령 drop·확인한 응답으로 한 번만 끝난다. 이미 시작한 비동기 작업이나 늦은 응답 소유권은 pending을 유지하지 않는다. 기한 없이 보낸 명령은 호출자가 떠나도 실제 dequeue/drop까지 남는다. pending 나이는 개별 최장 요청이 아니라 큐 의무가 연속해서 남아 있는 기간이다.
+- probe는 고정 메타데이터만 읽고 요청을 소비하거나 저장소를 조회하지 않는다. 요청 본문·URL·인증 정보는 보고하지 않는다. 호스트 주입 대기 상한은 `tasty::ipc_wait`의 숫자 request_seq·timeout_ms 및 기존 slow-request 결과와 함께 대조한다. 대기 상한은 실행 취소나 완료 확인을 뜻하지 않는다. 소켓·호스트 주입의 기존 미실행/결과 불명/늦은 응답 계약은 유지한다.
 - **파일은 stall 당 1 개**이고 `Stuck for` 는 최초 탐지 시점(≈5~6 초)의 값이다. 총 지속 시간이 실린 30 초 주기 재보고는 `tracing` 으로만 나가는데(`target: "tasty::stall"`), 그 로그 파일은 host 가 뜰 때마다 truncate 되므로 행을 겪고 강제 종료 후 다시 띄우면 사라진다. 즉 **재시작을 넘겨 남는 증거는 "어디서 멎었나" 까지이고 "얼마나 오래 멎었나" 는 아니다**(행이 진행되는 동안에는 파일에서 읽을 수 있다 — CLI 실행이 지우지는 않는다).
 - **워치독은 복구하지 않는다.** 기록만 남기며 프로세스를 종료하지도, 응답성을 되돌리지도 않는다 — 사용자는 여전히 강제 종료해야 한다. 근거·대안(렌더 스레드 분리 / 자동 종료)의 기각 사유는 [종료 시퀀스 — 종료 cascade + Drop tail](../architecture/shutdown-sequence.md).
-- native 파일 다이얼로그처럼 **의도적으로** 메인 스레드를 막는 구간은 보고 대상에서 빠진다(`stall_watchdog::without_stall_watch`) — 그런 리포트가 섞이면 이 디렉토리가 신호를 잃기 때문이다.
+- native 파일 다이얼로그처럼 **의도적으로** 메인 스레드를 막는 구간은 pending 여부와 관계없이 보고 대상에서 빠지고, 구간 종료 뒤부터 다시 잰다(`stall_watchdog::without_stall_watch`) — 그런 리포트가 섞이면 이 디렉토리가 신호를 잃기 때문이다.
 - debug 빌드에서는 `tasty debug gpu-stall --ms N` 으로 재현할 수 있다(다음 프레임의 `present` 직전을 1 회 블로킹).
 
 ### 그 밖의 hang (무한루프 / 데드락)
 
-이벤트 루프 콜백 바깥에서 멎었거나 `Render phase: none` 이면 외부 도구로 붙는다:
+콜백 바깥에 처리할 IPC 작업이 없으면 이 watchdog만으로 정지를 구별할 수 없다. `outside_callback` 또는 `Render phase: none`도 원인 위치를 확정하지 않으므로 외부 도구로 붙는다. 별도 main-loop probe나 주기적 wake를 추가하지 않으며 실제 X11/IME/RDP 재연결 경로는 주입 시험과 구분한다:
 
 ```bash
 # 멈춘 프로세스
@@ -178,7 +186,7 @@ dev 빌드가 심볼이 온전해 위치 파악이 쉽다.
 | 파일 / 경로 | 빌드 | 내용 |
 |-------------|------|------|
 | `~/.tasty/crash-reports/crash-*.log` | 모두 | panic 시 자동(버전·OS·위치·메시지·backtrace) |
-| `~/.tasty/crash-reports/hang-*.log` | 모두 | 이벤트 루프 stall 시 자동(어느 콜백·어느 GPU 단계에서 멎었나). stall 당 1 개, 복구는 하지 않음 |
+| `~/.tasty/crash-reports/hang-*.log` | 모두 | 이벤트 루프 stall 시 자동(콜백 안팎·pending·진행 나이·기록된 GPU 구간). stall 당 1 개, 복구는 하지 않음 |
 | `~/.tasty-debug/debug-dev.log` | dev 만 | 전체 debug tracing(host 프로세스 전용, host 시작 시 truncate) |
 | `~/.tasty/debug.log` | release / dist 만 | warn 이상 tracing(host 프로세스 전용, host 시작 시 truncate) |
 | `~/.tasty/hook-failures.log` | 모두 | agent hook 전달 실패(CLI 프로세스가 tasty 에 닿지 못한 기록). append-only + 256KB 회전. 한 줄은 `<UTC> method=… event=… surface=… code=… reason=…`. **로케일 무관성은 좌표 필드(`method`/`event`/`surface`/`code`)가 지고 `reason` 산문은 그 문구를 만든 쪽의 언어를 따른다**([CLI 크레이트 내부 구조 — 세 갈래 대칭](cli-structure.md)). CLI 가 만드는 두 갈래(미실행·연결 실패)는 영어이고 타입이 그것을 지킨다. 오류 응답을 싣는 셋째 갈래는 답한 쪽이 문구를 만들며 `claude.hook`·`codex.hook` 은 설정 언어로 답한다 |
