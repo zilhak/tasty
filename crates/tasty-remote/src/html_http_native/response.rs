@@ -25,9 +25,11 @@ pub async fn write_response<S: AsyncWrite + Unpin>(
     if limits.io_timeout.is_zero() {
         return Err(NativeError::Timeout);
     }
-    tokio::time::timeout(limits.io_timeout, write(io, &body, current))
+    let mut io = super::io::CurrentIo::new(io, current);
+    let result = tokio::time::timeout(limits.io_timeout, write(&mut io, &body, current))
         .await
-        .map_err(|_| NativeError::Timeout)?
+        .map_err(|_| NativeError::Timeout)?;
+    super::io::finish(result, current)
 }
 fn headers(body: &VerifiedBody) -> Result<bool> {
     let mut length = false;

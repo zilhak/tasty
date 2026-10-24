@@ -1,5 +1,6 @@
 //! Finite native HTTP codec. It performs no DNS, connect, upstream request or browser trust change.
 mod budget;
+mod io;
 mod request;
 mod response;
 pub use budget::NativeBudget;

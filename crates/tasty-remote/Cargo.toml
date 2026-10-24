@@ -33,4 +33,4 @@ anyhow = "1"
 workspace = true
 
 [dev-dependencies]
-tokio = { version = "=1.50.0", features = ["rt", "macros", "sync"] }
+tokio = { version = "=1.50.0", features = ["rt", "macros", "sync", "net"] }

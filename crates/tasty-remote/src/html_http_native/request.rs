@@ -2,7 +2,7 @@ use super::{NativeBudget, NativeError, NativeLimits, Result, budget::Lease};
 use sha2::{Digest, Sha256};
 use std::sync::Arc;
 use tasty_ipc::html_http::{
-    BodyIdentity, HEADER_BYTES, HEADER_COUNT, Header, METHOD_BYTES, URL_BYTES,
+    BodyIdentity, CHUNK_BYTES, HEADER_BYTES, HEADER_COUNT, Header, METHOD_BYTES, URL_BYTES,
 };
 use tokio::io::{
     AsyncBufRead, AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader,
@@ -206,12 +206,14 @@ pub async fn read_request<S: AsyncRead + AsyncWrite + Unpin>(
     if !current() {
         return Err(NativeError::Closed);
     }
-    tokio::time::timeout(
+    let mut io = super::io::CurrentIo::new(io, current);
+    let result = tokio::time::timeout(
         limits.io_timeout,
-        read(io, destination, limits, budget, current),
+        read(&mut io, destination, limits, budget, current),
     )
     .await
-    .map_err(|_| NativeError::Timeout)?
+    .map_err(|_| NativeError::Timeout)?;
+    super::io::finish(result, current)
 }
 async fn read<S: AsyncRead + AsyncWrite + Unpin>(
     io: &mut S,
@@ -240,6 +242,17 @@ async fn read<S: AsyncRead + AsyncWrite + Unpin>(
     if !current() {
         return Err(NativeError::Closed);
     }
+    // Reserve known capacity, or an initial finite chunked window, before inviting an upload.
+    let capacity = if head.chunked {
+        if head.expect {
+            limits.upload_bytes.min(CHUNK_BYTES)
+        } else {
+            0
+        }
+    } else {
+        head.length.unwrap_or(0)
+    };
+    let (mut body, lease) = body_capacity(capacity, budget)?;
     if head.expect {
         io.get_mut()
             .write_all(b"HTTP/1.1 100 Continue\r\n\r\n")
@@ -248,19 +261,13 @@ async fn read<S: AsyncRead + AsyncWrite + Unpin>(
         io.get_mut().flush().await.map_err(|_| NativeError::Io)?;
     }
     let (body, lease) = if head.chunked {
-        chunked(&mut io, limits.upload_bytes, budget).await?
+        chunked(&mut io, limits.upload_bytes, budget, body, lease).await?
     } else {
-        let length = head.length.unwrap_or(0);
-        let mut lease = budget.reserve(length)?;
-        let mut body = Vec::new();
-        body.try_reserve_exact(length)
-            .map_err(|_| NativeError::Quota)?;
-        lease.grow(body.capacity().saturating_sub(length))?;
-        body.resize(length, 0);
+        body.resize(capacity, 0);
         io.read_exact(&mut body)
             .await
             .map_err(|_| NativeError::Io)?;
-        (body, Some(lease))
+        (body, lease)
     };
     if !current() {
         return Err(NativeError::Closed);
@@ -276,15 +283,26 @@ async fn read<S: AsyncRead + AsyncWrite + Unpin>(
         upload: Arc::new(body),
         identity,
         _metadata: metadata,
-        _body: lease,
+        _body: Some(lease),
     })
 }
+fn body_capacity(length: usize, budget: &NativeBudget) -> Result<(Vec<u8>, Lease)> {
+    let mut lease = budget.reserve(length)?;
+    let mut body = Vec::new();
+    body.try_reserve_exact(length)
+        .map_err(|_| NativeError::Quota)?;
+    lease.grow(body.capacity().saturating_sub(length))?;
+    Ok((body, lease))
+}
+
 async fn chunked<R: AsyncBufRead + Unpin>(
     io: &mut R,
     limit: usize,
     budget: &NativeBudget,
-) -> Result<(Vec<u8>, Option<Lease>)> {
-    let (mut body, mut lease, mut overhead) = (Vec::new(), None, 0usize);
+    mut body: Vec<u8>,
+    lease: Lease,
+) -> Result<(Vec<u8>, Lease)> {
+    let (mut lease, mut overhead) = (lease, 0usize);
     loop {
         let next = line(io, 4096).await?;
         overhead = overhead
@@ -324,7 +342,7 @@ async fn chunked<R: AsyncBufRead + Unpin>(
             next_lease.grow(next.capacity().saturating_sub(capacity))?;
             next.extend_from_slice(&body);
             body = next;
-            lease = Some(next_lease);
+            lease = next_lease;
         }
         let offset = body.len();
         body.resize(end, 0);

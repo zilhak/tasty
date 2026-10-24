@@ -353,3 +353,5 @@ async fn malformed_response_framing_is_rejected_before_status_publication() {
         assert!(io.is_empty());
     }
 }
+
+mod correction;
