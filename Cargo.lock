@@ -6781,6 +6781,7 @@ dependencies = [
  "anyhow",
  "base64 0.22.1",
  "flate2",
+ "httparse",
  "serde",
  "serde_json",
  "sha2",
@@ -6790,6 +6791,7 @@ dependencies = [
  "tasty-remote-profiles",
  "tasty-ssh",
  "tasty-utils",
+ "tokio",
  "tracing",
  "url",
 ]
