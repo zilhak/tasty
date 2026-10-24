@@ -54,19 +54,19 @@ impl GpuState {
         {
             return Ok(());
         }
-        if self.surface_probe.remaining > 0 {
-            if let Some(error) = self.surface_probe.error.clone() {
-                self.surface_probe.remaining -= 1;
-                if matches!(
-                    error,
-                    wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated
-                ) {
-                    self.surface_invalid = true;
-                }
-                tracing::info!(target: "tasty::gpu::surface", phase = "injected_acquire",
-                    window_id = u64::from(window_id), remaining = self.surface_probe.remaining, ?error);
-                return Err(error);
+        if self.surface_probe.remaining > 0
+            && let Some(error) = self.surface_probe.error.clone()
+        {
+            self.surface_probe.remaining -= 1;
+            if matches!(
+                error,
+                wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated
+            ) {
+                self.surface_invalid = true;
             }
+            tracing::info!(target: "tasty::gpu::surface", phase = "injected_acquire",
+                    window_id = u64::from(window_id), remaining = self.surface_probe.remaining, ?error);
+            return Err(error);
         }
         Ok(())
     }
