@@ -49,7 +49,7 @@ pub(crate) fn synchronize(
         proofs.invalidate(&view.state.webview_identity, surface);
     }
     sync_webviews(view, &engine.as_ref(), plugins, proofs);
-    if view.base.state.dirty {
+    if view.base.state.dirty && view.base.surface_ready() {
         view.base.winit.request_redraw();
     }
 }

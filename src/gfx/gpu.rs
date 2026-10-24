@@ -690,7 +690,10 @@ impl GpuState {
             self.capture_frame_to_png(&output.texture, self.size.width, self.size.height, &path);
         }
         stall_watchdog::set_phase(stall_watchdog::Phase::Present);
-        self.present_surface(output);
+        let present_start = std::time::Instant::now();
+        output.present();
+        tracing::debug!(target: "tasty::gpu::surface", phase = "present",
+            elapsed_us = present_start.elapsed().as_micros() as u64);
         Ok(())
     }
 

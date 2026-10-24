@@ -201,7 +201,9 @@ Timeout과 그 밖의 비치명적 오류는 dirty를 복구하고 창별 `Repai
 지연 예약을 둔다. 첫 간격은 16ms이고 연속 실패마다 두 배로 늘려 최대 1초로 제한한다.
 기존 about_to_wait의 deferred repaint/WaitUntil 경로가 깨우므로 입력·PTY 출력이
 없어도 다음 시도가 진행된다. 재시도 전 stale redraw와 새 dirty 요청도 같은 대기
-기한을 지킨다. 유발원별 정상 주사율 정책은 성공한 뒤 다시 적용된다.
+기한을 지킨다. 프레임 후 WebView 동기화의 dirty 재요청도 같은 기한을 지킨다.
+WebView가 없는 창에서도 이 재요청 경로가 실행되므로 GPU 진입만 막으면 redraw 콜백이
+계속 도는 문제가 남는다. 유발원별 정상 주사율 정책은 성공한 뒤 다시 적용된다.
 
 Lost/Outdated는 먼저 강제 재구성한 뒤 같은 지연 재시도를 예약한다. OutOfMemory는
 기존 error/crash-report 정책을 유지하고 자동 재시도 예약을 지운다. 종료 코드를 새로
