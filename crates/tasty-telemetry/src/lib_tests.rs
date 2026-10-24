@@ -509,6 +509,11 @@ fn slow_loop_anomaly_does_not_fire_when_params_vary() {
 #[test]
 fn rss_surge_anomaly_fires_on_sustained_monotonic_growth() {
     let d = AnomalyDetector::new();
+    d.set_thresholds(crate::AnomalyThresholds {
+        rss_surge_min_bytes: 0,
+        ..Default::default()
+    })
+    .unwrap();
     let mut fired = None;
     for (i, rss) in [100u64, 200, 300, 400, 500].into_iter().enumerate() {
         fired = d.record_rss_sample("plugin_a", rss, 1_000 + i as u64, i as u64);
@@ -523,6 +528,11 @@ fn rss_surge_anomaly_fires_on_sustained_monotonic_growth() {
 #[test]
 fn rss_surge_anomaly_does_not_fire_on_single_spike_then_plateau() {
     let d = AnomalyDetector::new();
+    d.set_thresholds(crate::AnomalyThresholds {
+        rss_surge_min_bytes: 0,
+        ..Default::default()
+    })
+    .unwrap();
     // 스파이크(300) 후 평탄화 — 마지막 min_samples 윈도우 안에서 엄격
     // 단조증가가 깨지므로 발화하면 안 된다.
     let samples = [100u64, 100, 300, 300, 300, 300, 300];

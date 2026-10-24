@@ -134,7 +134,7 @@ pub(super) fn handle_debug_settings_apply(
             return JsonRpcResponse::invalid_params(id, format!("invalid settings patch: {e}"));
         }
     };
-    if let Err(e) = new_settings.task_pipeline.validate() {
+    if let Err(e) = new_settings.validate_runtime() {
         return JsonRpcResponse::invalid_params(id, e);
     }
     reapply_theme_on_change(
@@ -284,6 +284,49 @@ mod tests {
         assert_eq!(state.take_pending_intents().len(), 1);
         // 적용 결과를 기다리는 응답을 치운다.
         drop(core.answer_parked_for_test());
+    }
+
+    #[test]
+    fn anomaly_settings_patch_rejects_invalid_values_and_reaches_headless_runtime() {
+        use crate::app::settings_change::test_support::{ProbeStorage, core_with, settle};
+        let mut core = core_with(std::sync::Arc::new(ProbeStorage::default()));
+        let (mut state, mut session) = crate::state::tests::test_state();
+        let mut engine = session.borrow_mut();
+        let response = super::handle_debug_settings_apply(
+            &core,
+            &mut state,
+            &mut engine,
+            serde_json::json!(1),
+            &serde_json::json!({"settings":{"anomaly_detection":{"slow_loop_threshold":1}}}),
+        );
+        assert_eq!(response.error.unwrap().code, -32602);
+        assert!(state.take_pending_intents().is_empty());
+        let _pending = super::handle_debug_settings_apply(
+            &core,
+            &mut state,
+            &mut engine,
+            serde_json::json!(2),
+            &serde_json::json!({"settings":{"anomaly_detection":{"rss_surge_min_mib":0,"rss_surge_samples":3}}}),
+        );
+        let intents = state.take_pending_intents();
+        let response = settle(&mut core, &mut state, &mut engine, intents);
+        assert_eq!(response.result, Some(serde_json::json!({"applied":true})));
+        assert_eq!(
+            engine.runtime.settings.anomaly_detection.rss_surge_samples,
+            3
+        );
+        for i in 0..2 {
+            assert!(
+                core.anomaly_detector
+                    .record_rss_sample("test", 100 + i, 1000 + i, i)
+                    .is_none()
+            );
+        }
+        assert!(
+            core.anomaly_detector
+                .record_rss_sample("test", 102, 1002, 2)
+                .is_some()
+        );
     }
 
     #[test]

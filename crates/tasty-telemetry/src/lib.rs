@@ -247,6 +247,10 @@ impl TelemetrySeq {
 /// 이벤트 목록을 (metric, agent) 별 단일 버킷으로 집계.
 mod aggregate;
 mod anomaly;
+mod anomaly_thresholds;
+pub use anomaly_thresholds::*;
+#[cfg(test)]
+mod anomaly_threshold_tests;
 mod cap;
 mod gate;
 pub mod pressure;

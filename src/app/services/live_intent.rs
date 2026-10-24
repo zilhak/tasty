@@ -11,8 +11,7 @@ impl AppServices {
         match intent {
             DomainIntent::UpdateSettings(new_settings) => {
                 new_settings
-                    .task_pipeline
-                    .validate()
+                    .validate_runtime()
                     .map_err(|e| anyhow::anyhow!("settings not applied: {e}"))?;
                 Ok(vec![CoreEvent::SettingsUpdated {
                     settings: new_settings,
@@ -23,7 +22,7 @@ impl AppServices {
                 use crate::app::settings_change::SettingsOutcome;
                 let mut new_settings = engine.runtime.settings.clone();
                 let checked = change.apply(&mut new_settings).and_then(|changed| {
-                    new_settings.task_pipeline.validate()?;
+                    new_settings.validate_runtime()?;
                     Ok(changed)
                 });
                 match checked {

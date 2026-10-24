@@ -581,6 +581,7 @@ fn bootstrap_engine(
         }
     }
     crate::app::task_report::apply(&app.services, boot_settings);
+    crate::app::anomaly_settings::apply(&app.services, boot_settings);
     // 이전 실행의 agent 상태를 정리하되 작업을 자동 재시작하지는 않는다.
     app.services.tasks.purge_stale_agent_state_on_boot(
         &engine.task_scope,

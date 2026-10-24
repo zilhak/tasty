@@ -17,6 +17,12 @@ pub(in crate::adapters::ipc::handler) fn fire_anomaly_notification(
     engine: &mut crate::runtime::engine_access::EngineMut<'_>,
     anomaly: &Anomaly,
 ) {
+    if !crate::app::anomaly_settings::should_notify(
+        &engine.runtime.settings.anomaly_detection,
+        anomaly.kind,
+    ) {
+        return;
+    }
     let Some(ws) = engine.workspace_at(window.active_workspace_index(engine)) else {
         return;
     };

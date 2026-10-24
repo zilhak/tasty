@@ -47,7 +47,7 @@ Surface 종류(kind)마다의 명세는 제공 주체와 관계없이 [`surfaces
 | [child-terminal](child-terminal/index.md) — 자식 터미널 관리 (`tasty terminal`, soft 점유) | AI Agent | 없음 (headless) |
 | [headless-pty](headless-pty/index.md) — Surface 없는 PTY (`tasty pty`, exit-code·승격) — Terminal/Pty 단일 소유 | AI Agent | 없음 (headless) |
 | [human-handoff](human-handoff/index.md) — 휴먼 핸드오프 (approval) | AI Agent · 로컬 사용자 | approval popup |
-| [telemetry](telemetry/index.md) — 텔레메트리 (IPC 진입 단일 관측/비용/cap) | AI Agent · 로컬 사용자 | 없음 |
+| [telemetry](telemetry/index.md) — 텔레메트리 (IPC 관측/비용/cap·이상 탐지 기준 설정) | AI Agent · 로컬 사용자 | 없음 |
 | [terminal-output](terminal-output/index.md) — 출력 구조화 (parse/commands/observe) | AI Agent | 없음 |
 | [capability-elevation](capability-elevation/index.md) — 권한 상승 & 감사 | AI Agent · 로컬 사용자 | elevation popup |
 | [hooks](hooks/index.md) — 훅 (surface/global, 자동 실행, 사용자 핸들러 비동기 저장) | 로컬 사용자 · AI Agent | [설정 탭](settings/screens/settings.md) Hook Handlers |

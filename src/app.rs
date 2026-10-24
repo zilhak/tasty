@@ -571,6 +571,7 @@ pub(crate) async fn select_gpu_adapter(
     }
 }
 
+pub(crate) mod anomaly_settings;
 pub(crate) mod task_completion;
 pub(crate) mod task_report;
 pub(crate) mod terminal_input;

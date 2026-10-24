@@ -101,11 +101,11 @@ GUI·headless의 외부 소켓과 plugin host-call은 라우팅 전에 권한·c
 
 | 휴리스틱 | 판정 | 기본값 |
 |---|---|---|
-| `CallBurst` | (agent, method) sliding window 호출 카운트 | 1분 1000회↑ |
-| `SlowLoop` | (agent, method, params-hash) sliding window 반복 카운트(동일 파라미터 반복). 응답 시간은 보지 않는다 — 15초보다 짧은 주기 폴링은 정상이어도 걸린다. 이 params-hash 는 **dedup 단위이기도 하다**(아래) | 5분 20회↑ |
-| `RssSurge` | agent 당 최근 5개 RSS 샘플의 **엄격한 단조 증가**(한 번의 급증에는 반응하지 않음, 추세만) | 5 샘플 |
+| `CallBurst` | (agent, method) sliding window 호출 카운트 | 60초 1000회↑, 알림 켬 |
+| `SlowLoop` | (agent, method, params-hash) sliding window 반복 카운트(동일 파라미터 반복). 응답 시간은 보지 않는다 — 15초보다 짧은 주기 폴링은 정상이어도 걸린다. 이 params-hash 는 **dedup 단위이기도 하다**(아래) | 300초 20회↑, 기록만 |
+| `RssSurge` | agent 당 최근 5개 RSS 샘플의 **엄격한 단조 증가**(한 번의 급증에는 반응하지 않음, 추세만) | 5 샘플, 마지막 RSS 256MiB 이상, 알림 켬 |
 
-RSS 값 소스는 caller 타입별로 다르다: **Plugin** 은 host(`tasty-host-plugin::PluginManager`)가 `PluginProcess.child` 의 PID 를 sysinfo 로 30초 간격 직접 sampling(agent 자가 보고는 신뢰 불가 — 정확한 자기 RSS 를 보고할 유인이 없음). **Agent** 는 PID 기반이 구조적으로 불가능(원격/별도 프로세스)해 `telemetry.record` 자가 보고(`metric == "rss_bytes"`)로 받는다. 세 경우 모두 동일하게 `tasty.telemetry.anomaly.*` 영속 + 알림이고, 1분 쿨다운 dedup 도 공유한다. 다만 **dedup 키가 셋 다 `subject` 인 것은 아니다**:
+RSS 값 소스는 caller 타입별로 다르다: **Plugin** 은 host(`tasty-host-plugin::PluginManager`)가 `PluginProcess.child` 의 PID 를 sysinfo 로 30초 간격 직접 sampling(agent 자가 보고는 신뢰 불가 — 정확한 자기 RSS 를 보고할 유인이 없음). **Agent** 는 PID 기반이 구조적으로 불가능(원격/별도 프로세스)해 `telemetry.record` 자가 보고(`metric == "rss_bytes"`)로 받는다. 세 경로 모두 동일하게 `tasty.telemetry.anomaly.*`에 영속하고 설정에 따라 알리며, 1분 쿨다운 dedup 도 공유한다. 다만 **dedup 키가 셋 다 `subject` 인 것은 아니다**:
 
 | 휴리스틱 | dedup 키 | subject |
 |---|---|---|
@@ -115,11 +115,44 @@ RSS 값 소스는 caller 타입별로 다르다: **Plugin** 은 host(`tasty-host
 
 `SlowLoop` 만 dedup 키에 `params_hash` 를 덧붙여, 같은 method 라도 파라미터 조합이 다르면 **독립된 loop 로 취급해 각자 쿨다운을 갖는다**(`params_hash` 는 detail 에도 실린다). 여러 surface 를 주기적으로 조회하면 surface 마다 한 건씩 알릴 수 있다.
 
-`SlowLoop` 는 쿨다운에 더해 **루프 하나를 한 번만 알린다.** 조합의 창에 든 호출 수가 `SLOW_LOOP_THRESHOLD` 이상인 동안에는 쿨다운이 지나도 다시 레코드를 만들지 않는다. 호출이 멈춰 창의 호출 수가 그 아래로 줄어든 뒤 다시 넘으면 새 루프로 보고 다시 알린다. 감시 대상마다 800ms 로 도는 claude plugin 폴링이 대상 하나·메서드 하나에 1분마다 알림을 쌓던 것을 이렇게 막는다. `SLOW_LOOP_THRESHOLD`·`SLOW_LOOP_WINDOW_MS` 는 그대로라 첫 알림은 이전과 같은 시점에 나간다.
+`SlowLoop`는 쿨다운에 더해 루프 하나를 한 번만 기록한다. 창 안 호출 수가
+`anomaly_detection.slow_loop_threshold` 이상인 동안 다시 발화하지 않는다. 창의 호출 수가
+그 아래로 줄어든 뒤 다시 넘으면 새 루프다. 응답 시간을 측정하지 않고 정상 폴링도 잡으므로
+기본값은 기록만 하고 알림을 띄우지 않는다.
 
-탐지기의 창과 emit 기록은 메모리에만 있다. `SLOW_LOOP_WINDOW_MS` 마다 한 번, 창 안에 호출이 남지 않은 조합과 쿨다운이 지난 emit 기록을 지운다. 닫힌 surface 처럼 다시 오지 않는 params 조합이 프로세스 수명 동안 쌓이지 않게 하려는 것이다. 지운 항목은 빈 창·기록 없음과 판정이 같아 검출 결과는 바뀌지 않는다. 보존 상한은 [저장소 시스템 (Storage System)](../../design/systems/storage.md) 의 공통 정책(50시간 · 5,000건)을 따른다.
+`RssSurge`도 엄격한 증가 추세 하나를 한 번만 기록한다. 평탄하거나 감소한 샘플에서 보고
+표시를 풀며, 새 추세가 샘플 수·최소 RSS·기존 60초 쿨다운을 만족하면 다시 발화한다.
+호출 창을 정리해도 이어지는 RSS 추세의 표시는 유지한다. 크기는 마지막 샘플의 절대 크기이며
+증가량이나 증가율이 아니다. 최소 크기 0은 크기 조건만 없앤다.
 
-RssSurge도 하나의 엄격한 증가 추세를 한 번만 기록·알린다. 평탄하거나 감소한 샘플에서 보고 표시를 풀며, 새 증가 추세가 샘플 수와 기존 60초 쿨다운을 모두 만족하면 다시 발화한다. 호출 창을 정리해도 이어지는 RSS 추세의 표시는 유지한다.
+`[anomaly_detection]`은 config.toml과 debug 설정 IPC에서 바꿀 수 있다. 설정 화면은 제공하지 않는다.
+
+| 설정 키 | 기본값 | 허용 범위 |
+|---|---|---|
+| `rss_surge_notify` | true | bool |
+| `rss_surge_samples` | 5 | 3~20 |
+| `rss_surge_min_mib` | 256 | 0~65536 MiB |
+| `slow_loop_notify` | false | bool |
+| `slow_loop_window_secs` | 300 | 30~3600초 |
+| `slow_loop_threshold` | 20 | 2~10000 |
+| `call_burst_notify` | true | bool |
+| `call_burst_window_secs` | 60 | 1~600초 |
+| `call_burst_threshold` | 1000 | 10~100000 |
+
+`*_notify=false`는 알림 출력만 막는다. 탐지·영속 기록·anomaly list·세션 요약은 유지하며,
+그동안 발화한 추세나 루프를 다시 켰다는 이유로 소급 알리지 않는다. 기준을 바꾸어도
+관측 창·이미 보고한 표시는 버리지 않는다. 새 기준은 다음 판정부터 적용한다. 창/샘플 수를
+줄이면 다음 판정에서 잘라내며, 늘려도 이미 버린 이력은 돌아오지 않는다. 늘린 범위가 온전히
+채워지려면 이후 호출·샘플이 쌓여야 한다. RSS 증가가 끊기거나 루프가 새 기준 아래로 내려간
+뒤 다시 넘을 때 새 episode를 기록한다.
+
+파일의 범위 밖 값은 경고와 함께 해당 절 전체를 기본값으로 정규화해 저장한다. 실행 중
+변경의 범위 밖 값은 거절하며 이전 설정을 유지한다. GUI/headless의 부팅과 설정 적용은
+같은 변환으로 공유 탐지기에 반영한다. 탐지기는 설정 크레이트에 의존하지 않는다.
+
+탐지 창과 emit 표시는 메모리 전용이며 앱 재시작 때 비운다. 현재 SlowLoop 창 주기로
+빈 호출 창과 쿨다운이 지난 emit 기록을 정리한다. 기록 보존은
+[저장소 시스템](../../design/systems/storage.md)의 공통 정책(50시간·5000건)을 따른다.
 
 ### 세션 요약
 

@@ -567,7 +567,7 @@ impl App {
 
     /// 검사를 통과한 설정만 journal 에 들인다. 거절하면 이전 설정을 유지하고 사유를 돌려준다.
     fn admit_settings(&mut self, new_settings: &Settings) -> Result<u64, String> {
-        if let Err(e) = new_settings.task_pipeline.validate() {
+        if let Err(e) = new_settings.validate_runtime() {
             tracing::error!("settings not applied: {e}");
             return Err(e);
         }
@@ -638,6 +638,7 @@ impl App {
         done: Option<crate::app::settings_change::SettingsDone>,
     ) {
         crate::app::task_report::apply(&self.services, &new_settings);
+        crate::app::anomaly_settings::apply(&self.services, &new_settings);
         let prev_settings = self
             .engines()
             .windowed_and_parked()

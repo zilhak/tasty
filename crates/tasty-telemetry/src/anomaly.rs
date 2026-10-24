@@ -1,6 +1,7 @@
 //! 호출 빈도·반복과 RSS 증가를 보고 조사할 만한 신호를 찾는다.
 //! 실제 정체·성능 저하·메모리 누수를 확정하지 않으며 오탐과 누락이 있을 수 있다.
 
+use crate::AnomalyThresholds;
 use std::sync::atomic::AtomicBool;
 
 use serde::{Deserialize, Serialize};
@@ -87,6 +88,7 @@ fn hash_params(params: &serde_json::Value) -> u64 {
 /// anomaly **레코드** 는 호스트가 memory store 에 영속.
 #[derive(Debug, Default)]
 pub struct AnomalyDetector {
+    thresholds: std::sync::Mutex<AnomalyThresholds>,
     /// (agent, method) → 1분 윈도우의 호출 시각 (ms). CallBurst 용.
     call_windows: std::sync::Mutex<
         std::collections::HashMap<(String, String), std::collections::VecDeque<u64>>,
@@ -119,6 +121,7 @@ struct RssWindow {
 }
 
 /// 탐지용 자료구조 락은 poison을 복구해 관측을 계속하고, 각각 처음 한 번 보고한다.
+static THRESHOLDS_POISONED: AtomicBool = AtomicBool::new(false);
 static CALL_WINDOWS_POISONED: AtomicBool = AtomicBool::new(false);
 static LOOP_WINDOWS_POISONED: AtomicBool = AtomicBool::new(false);
 static RSS_SAMPLES_POISONED: AtomicBool = AtomicBool::new(false);
@@ -130,6 +133,24 @@ const RSS_SAMPLES_WHAT: &str = "telemetry rss sample window";
 const LAST_EMITTED_WHAT: &str = "telemetry anomaly dedup map";
 
 impl AnomalyDetector {
+    /// 새 기준은 다음 판정부터 쓰며 관측 창과 이미 보고한 episode는 버리지 않는다.
+    pub fn set_thresholds(&self, thresholds: AnomalyThresholds) -> Result<(), String> {
+        thresholds.validate()?;
+        *tasty_utils::poison::recover_mutex(
+            self.thresholds.lock(),
+            "telemetry thresholds",
+            &THRESHOLDS_POISONED,
+        ) = thresholds;
+        Ok(())
+    }
+    fn thresholds(&self) -> AnomalyThresholds {
+        *tasty_utils::poison::recover_mutex(
+            self.thresholds.lock(),
+            "telemetry thresholds",
+            &THRESHOLDS_POISONED,
+        )
+    }
+
     pub fn new() -> Self {
         Self::default()
     }
@@ -150,15 +171,21 @@ impl AnomalyDetector {
         ts_ms: u64,
         id_seq: u64,
     ) -> Vec<Anomaly> {
-        self.sweep_expired(ts_ms);
+        let thresholds = self.thresholds();
+        self.sweep_expired(ts_ms, &thresholds);
         let mut out = Vec::new();
-        if let Some(a) = self.check_call_burst(agent, method, ts_ms, id_seq) {
+        if let Some(a) = self.check_call_burst(agent, method, ts_ms, id_seq, &thresholds) {
             out.push(a);
         }
         let params_hash = hash_params(params);
-        if let Some(a) =
-            self.check_slow_loop(agent, method, params_hash, ts_ms, id_seq.wrapping_add(1))
-        {
+        if let Some(a) = self.check_slow_loop(
+            agent,
+            method,
+            params_hash,
+            ts_ms,
+            id_seq.wrapping_add(1),
+            &thresholds,
+        ) {
             out.push(a);
         }
         out
@@ -170,6 +197,7 @@ impl AnomalyDetector {
         method: &str,
         ts_ms: u64,
         id_seq: u64,
+        thresholds: &AnomalyThresholds,
     ) -> Option<Anomaly> {
         let key = (agent.to_string(), method.to_string());
         let count = {
@@ -180,7 +208,7 @@ impl AnomalyDetector {
             );
             let dq = windows.entry(key).or_default();
             dq.push_back(ts_ms);
-            let cutoff = ts_ms.saturating_sub(CALL_BURST_WINDOW_MS);
+            let cutoff = ts_ms.saturating_sub(thresholds.call_burst_window_ms);
             while let Some(&front) = dq.front() {
                 if front < cutoff {
                     dq.pop_front();
@@ -191,7 +219,7 @@ impl AnomalyDetector {
             dq.len()
         };
 
-        if count < CALL_BURST_THRESHOLD {
+        if count < thresholds.call_burst_threshold {
             return None;
         }
 
@@ -211,8 +239,8 @@ impl AnomalyDetector {
             subject: method.to_string(),
             detected_at: ts_ms,
             detail: serde_json::json!({
-                "window_ms": CALL_BURST_WINDOW_MS,
-                "threshold": CALL_BURST_THRESHOLD,
+                "window_ms": thresholds.call_burst_window_ms,
+                "threshold": thresholds.call_burst_threshold,
                 "count": count,
             }),
         })
@@ -225,13 +253,14 @@ impl AnomalyDetector {
         params_hash: u64,
         ts_ms: u64,
         id_seq: u64,
+        thresholds: &AnomalyThresholds,
     ) -> Option<Anomaly> {
         let key = (agent.to_string(), method.to_string(), params_hash);
         let count = {
             let mut windows = self.lock_loop_windows();
             let w = windows.entry(key.clone()).or_default();
             w.calls.push_back(ts_ms);
-            let cutoff = ts_ms.saturating_sub(SLOW_LOOP_WINDOW_MS);
+            let cutoff = ts_ms.saturating_sub(thresholds.slow_loop_window_ms);
             while let Some(&front) = w.calls.front() {
                 if front < cutoff {
                     w.calls.pop_front();
@@ -240,7 +269,7 @@ impl AnomalyDetector {
                 }
             }
             let count = w.calls.len();
-            if count < SLOW_LOOP_THRESHOLD {
+            if count < thresholds.slow_loop_threshold {
                 w.reported = false;
                 return None;
             }
@@ -272,8 +301,8 @@ impl AnomalyDetector {
             subject: method.to_string(),
             detected_at: ts_ms,
             detail: serde_json::json!({
-                "window_ms": SLOW_LOOP_WINDOW_MS,
-                "threshold": SLOW_LOOP_THRESHOLD,
+                "window_ms": thresholds.slow_loop_window_ms,
+                "threshold": thresholds.slow_loop_threshold,
                 "count": count,
                 "params_hash": format!("{params_hash:016x}"),
             }),
@@ -289,6 +318,7 @@ impl AnomalyDetector {
         ts_ms: u64,
         id_seq: u64,
     ) -> Option<Anomaly> {
+        let thresholds = self.thresholds();
         let mut windows = tasty_utils::poison::recover_mutex(
             self.rss_samples.lock(),
             RSS_SAMPLES_WHAT,
@@ -303,16 +333,16 @@ impl AnomalyDetector {
             window.reported = false;
         }
         window.samples.push_back(rss_bytes);
-        while window.samples.len() > RSS_SURGE_MIN_SAMPLES {
+        while window.samples.len() > thresholds.rss_surge_samples {
             window.samples.pop_front();
         }
-        let monotonic = window.samples.len() == RSS_SURGE_MIN_SAMPLES
+        let monotonic = window.samples.len() == thresholds.rss_surge_samples
             && window
                 .samples
                 .iter()
                 .zip(window.samples.iter().skip(1))
                 .all(|(a, b)| a < b);
-        if !monotonic || window.reported {
+        if !monotonic || window.reported || rss_bytes < thresholds.rss_surge_min_bytes {
             return None;
         }
         let dedup_key = (
@@ -334,7 +364,7 @@ impl AnomalyDetector {
             detected_at: ts_ms,
             detail: serde_json::json!({
                 "samples": snapshot,
-                "min_samples": RSS_SURGE_MIN_SAMPLES,
+                "min_samples": thresholds.rss_surge_samples,
                 "latest_rss_bytes": rss_bytes,
             }),
         })
@@ -343,21 +373,21 @@ impl AnomalyDetector {
     /// 창 안에 호출이 하나도 남지 않은 조합과 쿨다운이 지난 emit 기록을 지운다. 닫힌 surface 처럼
     /// 다시 오지 않는 params 조합이 프로세스 수명 동안 쌓이지 않게 한다. 지운 항목은 빈 창·기록 없음과
     /// 판정이 같으므로 검출 결과는 바뀌지 않는다.
-    fn sweep_expired(&self, ts_ms: u64) {
+    fn sweep_expired(&self, ts_ms: u64, thresholds: &AnomalyThresholds) {
         use std::sync::atomic::Ordering;
         let last = self.last_sweep_ms.load(Ordering::Relaxed);
-        if ts_ms.saturating_sub(last) < SLOW_LOOP_WINDOW_MS {
+        if ts_ms.saturating_sub(last) < thresholds.slow_loop_window_ms {
             return;
         }
         self.last_sweep_ms.store(ts_ms, Ordering::Relaxed);
-        let burst_cutoff = ts_ms.saturating_sub(CALL_BURST_WINDOW_MS);
+        let burst_cutoff = ts_ms.saturating_sub(thresholds.call_burst_window_ms);
         tasty_utils::poison::recover_mutex(
             self.call_windows.lock(),
             CALL_WINDOWS_WHAT,
             &CALL_WINDOWS_POISONED,
         )
         .retain(|_, dq| dq.back().is_some_and(|&t| t >= burst_cutoff));
-        let loop_cutoff = ts_ms.saturating_sub(SLOW_LOOP_WINDOW_MS);
+        let loop_cutoff = ts_ms.saturating_sub(thresholds.slow_loop_window_ms);
         self.lock_loop_windows()
             .retain(|_, w| w.calls.back().is_some_and(|&t| t >= loop_cutoff));
         let emit_cutoff = ts_ms.saturating_sub(ANOMALY_DEDUP_COOLDOWN_MS);
@@ -419,6 +449,11 @@ mod poison_tests {
     #[test]
     fn a_poisoned_sample_window_still_fires() {
         let d = AnomalyDetector::new();
+        d.set_thresholds(AnomalyThresholds {
+            rss_surge_min_bytes: 0,
+            ..Default::default()
+        })
+        .unwrap();
         let held = std::sync::Arc::new(d);
         let poisoner = std::sync::Arc::clone(&held);
         // poison이 실제로 발생했는지 확인한 뒤 복구 경로를 검사한다.

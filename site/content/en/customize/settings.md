@@ -1,4 +1,4 @@
-<!-- source-hash: 029802235956 -->
+<!-- source-hash: 5d5767cb42fc -->
 # Settings
 
 Adjust your shell, fonts, and workspace preferences to suit the way you work. Use the settings window or edit `~/.tasty/config.toml` directly. For key combinations and colours, see [Keybindings](keybindings.md) and [Themes](themes.md).
@@ -304,9 +304,22 @@ allow_external = false           # true = also accept webhook calls from other c
 report_append_bytes = 1024       # note size limit, 64-65536
 report_block_bytes = 16384       # attempt report limit, 128-131072, larger than the note size limit
 
+[anomaly_detection]
+rss_surge_notify = true
+rss_surge_samples = 5            # 3~20
+rss_surge_min_mib = 256          # 0~65536 MiB
+slow_loop_notify = false
+slow_loop_window_secs = 300      # 30~3600
+slow_loop_threshold = 20         # 2~10000
+call_burst_notify = true
+call_burst_window_secs = 60      # 1~600
+call_burst_threshold = 1000      # 10~100000
+
 [keybindings]
 new_tab = ["alt+t"]              # the rest is in keybindings.md
 ```
+
+Anomaly settings are edited in this file. A disabled notification still leaves a detection record. SlowLoop is recorded without notifications by default because normal polling can trigger it; it does not measure response time. RSS growth requires the latest sample to reach the minimum size. An ongoing RSS growth trend or SlowLoop episode is recorded once; re-enabling notifications does not replay earlier records. Live threshold changes keep observation state. Reducing a window or sample count discards history on the next check, and increasing it cannot recover that history. Invalid file values reset this whole section to its defaults; invalid live changes are rejected.
 
 - `[terminal_input]` stores per-app Shift+Enter behavior. Configure it under **Terminal → Input**. For example, a `[[terminal_input.rules]]` entry with `app = "claude"` and `shift_enter_newline = true` sends a newline to Claude Code. `initialized_defaults` records which plugin defaults have been applied and does not need manual editing.
 - `[appearance]` also stores the full set of theme colours (`theme_base`) and the values overridden in the Colors tab (`theme_overrides`). Using the settings window is safer than editing these by hand.

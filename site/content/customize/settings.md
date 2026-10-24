@@ -294,9 +294,22 @@ allow_external = false           # true 면 다른 컴퓨터의 웹훅 호출도
 report_append_bytes = 1024       # 기록 한 건 상한, 64~65536
 report_block_bytes = 16384       # 회차 report 상한, 128~131072, 기록 한 건 상한보다 커야 함
 
+[anomaly_detection]
+rss_surge_notify = true
+rss_surge_samples = 5            # 3~20
+rss_surge_min_mib = 256          # 0~65536 MiB
+slow_loop_notify = false
+slow_loop_window_secs = 300      # 30~3600
+slow_loop_threshold = 20         # 2~10000
+call_burst_notify = true
+call_burst_window_secs = 60      # 1~600
+call_burst_threshold = 1000      # 10~100000
+
 [keybindings]
 new_tab = ["alt+t"]              # 나머지는 keybindings.md
 ```
+
+이상 탐지 기준은 이 파일에서 바꿉니다. 알림을 꺼도 탐지 기록은 남습니다. SlowLoop는 응답 시간을 재지 않고 정상 폴링에도 걸리므로 기본으로 기록만 남깁니다. RSS 증가 신호는 마지막 샘플이 최소 크기에 도달해야 합니다. 이어지는 RSS 증가 추세와 SlowLoop 반복 호출은 한 번만 기록하고, 알림을 다시 켜도 이전 기록을 소급해서 알리지 않습니다. 실행 중 기준을 바꾸어도 관측 상태를 유지합니다. 조회 기간이나 샘플 수를 줄이면 다음 확인에서 이력을 자르고, 늘려도 이미 버린 이력은 돌아오지 않습니다. 파일의 범위 밖 값은 이 절 전체를 기본값으로 되돌리고, 실행 중 잘못된 변경은 거절합니다.
 
 - `[terminal_input]`에는 앱별 Shift+Enter 동작이 저장됩니다. **터미널 → 입력**에서 설정하세요. 예를 들어 `[[terminal_input.rules]]`에 `app = "claude"`, `shift_enter_newline = true`를 지정하면 Claude Code에 줄바꿈 문자를 보냅니다. `initialized_defaults`는 플러그인 기본값 적용 기록이므로 직접 수정하지 않아도 됩니다.
 - `[appearance]` 아래에는 이 밖에도 테마 색 전체(`theme_base`)와 색상 탭에서 덮어쓴 값(`theme_overrides`)이 저장됩니다. 손으로 고치기보다 설정 윈도우를 쓰는 편이 안전합니다.

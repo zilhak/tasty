@@ -1,3 +1,4 @@
+mod anomaly_detection;
 mod appearance;
 /// 단축키 설정 — `KeybindingSettings` 와 그 값의 해석 규칙([`keybindings::parse`]).
 pub mod keybindings;
@@ -17,6 +18,7 @@ pub mod webhook_port_file;
 
 use serde::{Deserialize, Serialize};
 
+pub use anomaly_detection::*;
 pub use persistence::FileObservation;
 
 pub use appearance::{
@@ -81,6 +83,7 @@ pub struct Settings {
     pub webhook: WebhookSettings,
     /// 작업 파이프라인의 report 상한. 누락 시 기본값이다.
     pub task_pipeline: TaskPipelineSettings,
+    pub anomaly_detection: AnomalyDetectionSettings,
     /// Plugin-contributed settings page 의 generic 값 저장소.
     /// `plugin_settings[plugin_id][storage_key]` = `PluginSettingValue`.
     /// FontOverride(`appearance.plugin_font_overrides`)와 별개 네임스페이스.
@@ -101,6 +104,12 @@ pub struct Settings {
 }
 
 impl Settings {
+    /// Admission과 live 갱신에서 쓰는 backend 설정 검증. 파일 로드는 normalize로 복구한다.
+    pub fn validate_runtime(&self) -> Result<(), String> {
+        self.task_pipeline.validate()?;
+        self.anomaly_detection.validate()
+    }
+
     /// 전역 Theme 설치에 필요한 UI 배율·모션 설정을 함께 반환한다.
     pub fn theme_runtime(&self) -> tasty_themes::ThemeRuntime {
         tasty_themes::ThemeRuntime {
@@ -274,6 +283,7 @@ impl Settings {
 
         self.performance.normalize(&mut report.changed);
         self.task_pipeline.normalize(&mut report.changed);
+        self.anomaly_detection.normalize(&mut report.changed);
 
         report
     }
