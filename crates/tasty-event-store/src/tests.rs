@@ -10,6 +10,7 @@ mod fencing;
 mod group;
 mod identity;
 mod manifest_alias;
+mod manifest_rebase;
 mod metrics;
 mod projection;
 mod schema;

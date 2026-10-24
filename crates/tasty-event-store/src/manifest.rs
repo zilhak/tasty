@@ -14,6 +14,8 @@ pub struct NewRestoreManifest {
     pub sequence: u64,
     pub snapshot_id: SnapshotId,
     pub view: Vec<u8>,
+    /// Explicit byte ownership, retained across snapshot rebases even when it overlaps a body.
+    /// These refs alone do not require a historical snapshot row or its event tail to survive.
     pub referenced_payloads: Vec<PayloadRef>,
 }
 
@@ -334,5 +336,15 @@ pub(crate) fn save_in(
             VALUES(?1,?2,?3,?4,?5,?6) ON CONFLICT(restore_key) DO UPDATE SET incarnation=excluded.incarnation,
             runtime_epoch=excluded.runtime_epoch,sequence=excluded.sequence,snapshot_id=excluded.snapshot_id,payload_id=excluded.payload_id",
             params![manifest.restore_key,incoming.0,incoming.1,incoming.2,to_i64(manifest.snapshot_id)?,to_i64(view.0)?])?;
+    conn.execute(
+        "DELETE FROM restore_manifest_refs WHERE restore_key=?1",
+        [&manifest.restore_key],
+    )?;
+    for reference in &manifest.referenced_payloads {
+        conn.execute(
+            "INSERT OR IGNORE INTO restore_manifest_refs(restore_key,payload_id) VALUES(?1,?2)",
+            params![manifest.restore_key, to_i64(reference.0)?],
+        )?;
+    }
     Ok(())
 }

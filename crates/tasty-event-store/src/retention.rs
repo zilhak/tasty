@@ -1,5 +1,5 @@
 //! Event-body retention. Batch identity/revision headers, commands and effect evidence survive.
-use crate::snapshot::{snapshot_holder, verify_snapshot};
+use crate::snapshot::{externally_held, snapshot_holder, verify_snapshot};
 use crate::store::{to_i64, to_u64};
 use crate::{EventStore, PayloadRef, StoreError, StoreResult, StreamId, WriterEpoch};
 use rusqlite::{Connection, OptionalExtension, params};
@@ -54,11 +54,7 @@ impl EventStore {
             if batch >= boundary {
                 continue;
             }
-            let held: bool = tx.query_row(
-                "SELECT EXISTS(SELECT 1 FROM payload_pins WHERE payload_id = ?1 AND holder != ?2)",
-                params![body, snapshot_holder(to_u64(id)?)],
-                |row| row.get(0),
-            )?;
+            let held = externally_held(&tx, to_u64(id)?)?;
             if held {
                 if version != model_version {
                     return Ok(None);

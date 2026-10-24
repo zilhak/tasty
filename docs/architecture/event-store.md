@@ -118,7 +118,18 @@ View 및 읽기 lease의 payload pin도 남는다. snapshot 두 개의 본문과
 기존 snapshot과 같고(다른 stream 사건도 전진시키는 global applied batch만 정규화) View binding도 유효할 때 manifest를 최신 완전 snapshot으로 재연결한다.
 저장소는 두 cut의 해당 stream revision이 같고 존재하는지도 검사한다. View 바이트와
 incarnation·runtime epoch·sequence·명시 pin은 바꾸지 않고 snapshot body pin만 원자적으로
-이전한다. 따라서 휴면 슬롯이 다른 stream의 capture tail을 붙잡지 않는다. stream이 바뀌었거나
+이전한다. schema V9의 `restore_manifest_refs`는 명시한 바이트 참조를 별도로 기록하므로,
+명시 참조가 옛 snapshot body와 겹쳐도 재연결·snapshot 행 삭제·GC 뒤 바이트가 유지된다.
+현재 manifest의 snapshot 포인터는 전체 복원 cut을 보존하지만, 다른 snapshot body에 대한
+명시 바이트 참조만으로 그 snapshot 행이나 event tail을 보존하지는 않는다. 일반 외부 holder와
+고정 alias의 원 cut 보존은 그대로다.
+
+V8까지의 합쳐진 holder 집합에서는 중복 소유 의도를 알아낼 수 없다. V9 migration은 그 집합
+전체를 명시 바이트 소유로 보존적으로 이관하며 없던 정보를 추측하지 않는다. 따라서 기존
+manifest당 최초 source body 하나를 추가 보존할 수 있다. 이 참조는 별도 표에서 조회할 수 있고,
+다음 명시 manifest 저장/삭제가 대체·해제한다. 재연결만 반복하면 새 implicit body가 더 쌓이지
+않는다. 이 호환 보존도 옛 snapshot 행이나 event tail의 압축을 막지 않는다.
+따라서 휴면 슬롯이 다른 stream의 capture tail을 붙잡지 않는다. stream이 바뀌었거나
 해석·검증에 실패하면 옮기지 않는다. 고정 import alias와 다른 외부 holder는 원 cut을 유지한다.
 재연결 실패는 이전 manifest를 보존하며 압축보다 먼저 재시도한다. 개발 로그에는 재연결된 슬롯과
 옮기지 않은 변경 stream을 기록한다. 사용자가 조치할 수 없는 보존 판단을 반복 알림으로 만들지 않는다.

@@ -8,7 +8,7 @@ use rusqlite::{Connection, ErrorCode, OptionalExtension};
 use crate::error::{StoreError, StoreResult};
 
 /// 순서대로 적용하는 migration. 인덱스 + 1이 버전이다. 이미 배포한 항목은 고치지 않고 뒤에 추가한다.
-const MIGRATIONS: &[&str] = &[V1, V2, V3, V4, V5, V6, V7, V8];
+const MIGRATIONS: &[&str] = &[V1, V2, V3, V4, V5, V6, V7, V8, V9];
 
 /// 이 빌드가 읽고 쓸 수 있는 가장 새 스키마 버전.
 pub const SCHEMA_VERSION: u32 = MIGRATIONS.len() as u32;
@@ -243,6 +243,21 @@ CREATE TABLE restore_alias_inputs (
     source_key TEXT NOT NULL,
     request_digest BLOB NOT NULL
 );
+"#;
+
+// Older manifests merged explicit and implicit ownership into one set. Preserve that entire
+// set as byte ownership rather than guessing which overlapping source-body pins were explicit.
+const V9: &str = r#"
+-- Payload pins remain the lifetime authority. Metadata can preserve an already missing legacy
+-- payload identity without turning previously diagnosable manifest damage into migration failure.
+CREATE TABLE restore_manifest_refs (
+    restore_key TEXT NOT NULL REFERENCES restore_manifests(restore_key) ON DELETE CASCADE,
+    payload_id INTEGER NOT NULL,
+    PRIMARY KEY(restore_key, payload_id)
+);
+INSERT INTO restore_manifest_refs(restore_key,payload_id)
+SELECT manifest.restore_key, pin.payload_id FROM restore_manifests AS manifest
+JOIN payload_pins AS pin ON pin.holder = 'restore-manifest:' || manifest.restore_key;
 "#;
 
 /// 버전 표를 만들고 부족한 migration을 적용한다. 호출자가 연 쓰기 transaction 안에서 부른다.

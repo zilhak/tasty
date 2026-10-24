@@ -95,11 +95,7 @@ impl EventStore {
                 "cannot delete the retained history anchor snapshot".into(),
             ));
         }
-        let externally_held: bool = tx.query_row(
-            "SELECT EXISTS(SELECT 1 FROM snapshots AS snapshot JOIN payload_pins AS pin
-             ON pin.payload_id = snapshot.payload_id WHERE snapshot.snapshot_id = ?1 AND pin.holder != ?2)",
-            params![to_i64(id)?, snapshot_holder(id)], |row| row.get(0),
-        )?;
+        let externally_held = externally_held(&tx, id)?;
         if externally_held {
             return Err(StoreError::Corrupt(
                 "cannot delete a snapshot retained by an external holder".into(),
@@ -242,11 +238,7 @@ pub(crate) fn retain_snapshots(conn: &Connection, version: u32, keep: usize) -> 
             continue;
         }
         let holder = snapshot_holder(id);
-        let external: bool = conn.query_row(
-            "SELECT EXISTS(SELECT 1 FROM payload_pins WHERE payload_id = ?1 AND holder != ?2)",
-            params![body, holder],
-            |row| row.get(0),
-        )?;
+        let external = externally_held(conn, id)?;
         if external || crate::retention::anchor_snapshot(conn)? == Some(id) {
             continue;
         }
@@ -257,6 +249,21 @@ pub(crate) fn retain_snapshots(conn: &Connection, version: u32, keep: usize) -> 
         conn.execute("DELETE FROM payload_pins WHERE holder = ?1", [holder])?;
     }
     Ok(())
+}
+
+/// A manifest's current pointer owns a complete restore cut. Its explicit references to other
+/// snapshot bodies own opaque bytes only; retaining those bytes does not require rows or tails.
+/// All other external holder contracts, including frozen alias pointers, remain conservative.
+pub(crate) fn externally_held(conn: &Connection, id: SnapshotId) -> StoreResult<bool> {
+    Ok(conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM snapshots AS snapshot JOIN payload_pins AS pin
+         ON pin.payload_id=snapshot.payload_id WHERE snapshot.snapshot_id=?1 AND pin.holder != ?2
+         AND NOT EXISTS(SELECT 1 FROM restore_manifests AS manifest JOIN restore_manifest_refs AS explicit
+             ON explicit.restore_key=manifest.restore_key
+             WHERE pin.holder='restore-manifest:' || manifest.restore_key
+             AND manifest.snapshot_id != snapshot.snapshot_id AND explicit.payload_id=pin.payload_id))",
+        params![to_i64(id)?, snapshot_holder(id)], |row| row.get(0),
+    )?)
 }
 
 /// snapshot이 payload를 참조할 때 쓰는 pin holder 이름.

@@ -58,7 +58,11 @@ impl EventStore {
         let holder = format!("restore-manifest:{key}");
         // Pin the successor first. No View payload is inserted or rewritten by maintenance.
         crate::payload::pin_in(&tx, PayloadRef(to_u64(body)?), &holder)?;
-        if old_body != body {
+        let explicitly_owned: bool = tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM restore_manifest_refs WHERE restore_key=?1 AND payload_id=?2)",
+            params![key, old_body], |row| row.get(0),
+        )?;
+        if old_body != body && !explicitly_owned {
             tx.execute(
                 "DELETE FROM payload_pins WHERE holder=?1 AND payload_id=?2",
                 params![holder, old_body],

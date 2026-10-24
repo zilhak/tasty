@@ -256,7 +256,7 @@ fn a_read_only_journal_falls_back_without_being_called_damaged() {
 }
 
 #[test]
-fn post_binding_boot_failure_reaps_installed_pty_before_starting_empty_ephemeral_state() {
+fn post_binding_boot_failure_retains_detached_pty_until_reaped_after_ephemeral_start() {
     let mut session = new_session();
     let mut journal = JournalApplication::new(Arc::new(|| {})).unwrap();
     journal.begin_engine(&session, SELECTION).unwrap();
