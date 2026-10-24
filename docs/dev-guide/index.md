@@ -99,4 +99,4 @@ DAG 화면의 읽기 요청과 App 워커 소유 경계는 [Model + Host View �
 
 - [HTML entry 전송](html-transfer.md) — source 메타데이터, opt-in 협상, 같은 root의 파일 worker, native 응답 대기와 문서 세대.
 
-- [HTTP transport bridge](html-http-bridge.md) — bounded encoded HTTP wire, engine executor admission/publication and client representation verification.
+- [HTTP transport bridge](html-http-bridge.md) — bounded encoded HTTP wire, engine executor admission/publication, client receive model and worker verification.
