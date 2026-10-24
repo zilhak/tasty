@@ -332,6 +332,15 @@ pub(super) fn checkpoint(
         .is_some_and(|cut| cut.last_batch == Some(batch_id));
     let epoch = inner.epoch;
     if current {
+        let target = inner
+            .store
+            .snapshot_and_tail(tasty_core::MODEL_VERSION)
+            .map_err(|error| error.to_string())?
+            .snapshot
+            .ok_or("maintenance snapshot missing")?
+            .snapshot_id;
+        let models = inner.state.clone();
+        super::manifest_rebase::rebase(&mut inner.store, epoch, &models, target)?;
         return readers.with_refs(|references| {
             inner
                 .store
@@ -369,10 +378,12 @@ pub(super) fn checkpoint(
             .replace_payload_holder(epoch, "structure-readers", &references)
             .map_err(|error| error.to_string())?;
         snapshot.referenced_payloads.extend(references);
-        inner
+        let target = inner
             .store
             .save_live_snapshot(epoch, &snapshot, CONSUMER)
             .map_err(|error| error.to_string())?;
+        let models = inner.state.clone();
+        super::manifest_rebase::rebase(&mut inner.store, epoch, &models, target)?;
         inner
             .store
             .compact_history(epoch, tasty_core::MODEL_VERSION)

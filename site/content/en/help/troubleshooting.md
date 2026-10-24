@@ -1,4 +1,4 @@
-<!-- source-hash: 0166eb2c1408 -->
+<!-- source-hash: 7eee74888e93 -->
 # Troubleshooting
 
 If something is not working, find the matching symptom below. Check installation, permissions, terminal connections, and notifications, or use the reporting steps at the end if you still need help.
@@ -24,6 +24,8 @@ If you need more detailed logs, run Tasty from a terminal with the log level rai
 ```sh
 TASTY_LOG=debug tasty 2> tasty.log
 ```
+
+- **A notice says the saved workspace could not be recovered** — Accumulated journal size alone does not block terminal startup. If restore cannot continue, Tasty preserves the original and opens an empty workspace for this run. Terminal input and new tabs remain available, but this temporary layout is not kept for the next run. Check free disk space and data folder permissions, then restart. Actual disk write failures are reported as failures; the notification gives the cause.
 
 ## Install · first launch
 

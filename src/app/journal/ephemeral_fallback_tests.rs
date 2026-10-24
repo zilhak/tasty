@@ -254,3 +254,74 @@ fn a_read_only_journal_falls_back_without_being_called_damaged() {
         "{failure}"
     );
 }
+
+#[test]
+fn post_binding_boot_failure_reaps_installed_pty_before_starting_empty_ephemeral_state() {
+    let mut session = new_session();
+    let mut journal = JournalApplication::new(Arc::new(|| {})).unwrap();
+    journal.begin_engine(&session, SELECTION).unwrap();
+    bootstrap(&mut journal, &mut session).unwrap();
+    let original_binding = session.journal_binding.clone().unwrap();
+    assert!(session.runtime.terminals.iter().next().is_some());
+    let original = session.runtime.terminals.iter().next().unwrap().0;
+    let generation = session
+        .runtime
+        .terminals
+        .pty(original)
+        .unwrap()
+        .generation();
+    let original_pid = session
+        .runtime
+        .terminals
+        .pty(original)
+        .unwrap()
+        .process_id();
+    journal.halted = Some("injected post-binding publication failure".into());
+    journal
+        .poll_boot_recovery(
+            &mut session,
+            None,
+            "injected post-binding publication failure",
+        )
+        .unwrap();
+    assert!(journal.is_ephemeral());
+    assert!(session.journal_binding.is_none());
+    assert!(session.runtime.terminals.iter().next().is_none());
+    assert!(session.pending_materializations.is_empty());
+    assert!(session.pending_resource_retirements.is_empty());
+    bootstrap(&mut journal, &mut session).unwrap();
+    assert_eq!(session.core_state.local_workspaces().len(), 1);
+    let replacement = session.journal_binding.as_ref().unwrap();
+    assert_ne!(original_binding.journal_id, replacement.journal_id);
+    let new_surface = session.runtime.terminals.iter().next().unwrap().0;
+    assert_ne!(
+        session
+            .runtime
+            .terminals
+            .pty(new_surface)
+            .unwrap()
+            .generation(),
+        generation
+    );
+    let notice = journal.take_notices();
+    assert_eq!(notice.len(), 1);
+    assert_eq!(
+        notice[0].popup.as_ref().unwrap().cause,
+        notices::NoticeCause::SaveStopped
+    );
+    let mut stall = StallBudget::new(&journal);
+    while journal.boot_release.is_some() {
+        journal.poll_bootstrap(&mut [&mut session], None).unwrap();
+        stall.nap("exact detached boot resource disposal");
+    }
+    #[cfg(target_os = "linux")]
+    if let Some(pid) = original_pid {
+        assert!(
+            !std::path::Path::new(&format!("/proc/{pid}")).exists(),
+            "old exact PTY process was reaped"
+        );
+    }
+    #[cfg(not(target_os = "linux"))]
+    let _original_pid = original_pid;
+    assert!(!journal.is_halted());
+}

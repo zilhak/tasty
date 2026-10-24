@@ -262,7 +262,7 @@ fn load_checked(
         }))
 }
 
-fn check_manifest(
+pub(super) fn check_manifest(
     manifest: &tasty_event_store::RestoreManifest,
     binding: &EngineBinding,
 ) -> Result<Option<ImportedView>, String> {

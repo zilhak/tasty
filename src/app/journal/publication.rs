@@ -7,6 +7,8 @@ impl JournalApplication {
         sessions: &mut [&mut EngineSession],
         mut plugins: Option<&mut crate::plugin::PluginManager>,
     ) -> Result<(), String> {
+        #[cfg(feature = "gui")]
+        self.poll_boot_release(plugins.as_deref_mut());
         const MAX_COMPLETIONS: usize = 16;
         for _ in 0..MAX_COMPLETIONS {
             if self.started {
@@ -721,11 +723,16 @@ impl JournalApplication {
                 .iter_mut()
                 .find(|session| session.id == id)
                 .ok_or("creating engine disappeared")?;
+            let result = result.map_err(|error| {
+                tracing::error!(ticket, engine = ?id, bound = session.journal_binding.is_some(),
+                    %error, "journal creation completion failed");
+                error
+            })?;
             if self
                 .creations
                 .get_mut(&key)
                 .expect("creation exists")
-                .answered(&self.worker, session, &self.spawner, result?)?
+                .answered(&self.worker, session, &self.spawner, result)?
             {
                 if let Some(mut creation) = self.creations.remove(&key) {
                     self.note_first_workspace_failure(id, &creation);

@@ -662,3 +662,162 @@ fn repeated_view_only_saves_prune_same_cut_snapshots() {
         9
     );
 }
+
+#[test]
+fn dormant_slot_manifest_does_not_freeze_compaction_of_other_streams() {
+    let (_dir, mut store, epoch) = fresh();
+    commit_round(&mut store, epoch, 0);
+    let old = snapshot_now(&mut store, epoch, 1);
+    store
+        .save_restore_manifest(
+            epoch,
+            &crate::NewRestoreManifest {
+                restore_key: "view:slot-2".into(),
+                incarnation: 1,
+                runtime_epoch: epoch.0,
+                sequence: 7,
+                snapshot_id: old,
+                view: b"unchanged selection".to_vec(),
+                referenced_payloads: vec![],
+            },
+        )
+        .unwrap();
+    for round in 1..5 {
+        let mut request = CommitRequest::new(epoch);
+        request.appends.push(append(
+            "engine-a",
+            ExpectedRevision::Any,
+            &[&format!("active-{round}")],
+        ));
+        store.commit(&request).unwrap();
+    }
+    let target = snapshot_now(&mut store, epoch, 4);
+    snapshot_now(&mut store, epoch, 5);
+    // The caller proves model equivalence too; equal revisions alone do not validate opaque bytes.
+    let before = store.restore_manifest("view:slot-2").unwrap().unwrap();
+    let old_model = decode(&before.snapshot.bytes);
+    assert_eq!(old_model["engine-b"], full_replay(&store)["engine-b"]);
+    assert!(
+        store
+            .rebase_restore_manifest(epoch, "view:slot-2", &StreamId::new("engine-b"), target)
+            .unwrap()
+    );
+    let result = store.compact_history(epoch, MODEL).unwrap().unwrap();
+    assert_eq!(result.retained_after_batch, 4);
+    assert!(result.removed_events > 0);
+    let after = store.restore_manifest("view:slot-2").unwrap().unwrap();
+    assert_eq!(after.view, before.view);
+    assert_eq!(
+        (after.incarnation, after.runtime_epoch, after.sequence),
+        (before.incarnation, before.runtime_epoch, before.sequence)
+    );
+    assert_eq!(
+        decode(&after.snapshot.bytes)["engine-b"],
+        old_model["engine-b"]
+    );
+}
+
+#[test]
+fn changed_stream_and_frozen_alias_keep_their_original_cut() {
+    let (_dir, mut store, epoch) = fresh();
+    commit_round(&mut store, epoch, 0);
+    let old = snapshot_now(&mut store, epoch, 1);
+    store
+        .save_restore_manifest(
+            epoch,
+            &crate::NewRestoreManifest {
+                restore_key: "view:slot-2".into(),
+                incarnation: 1,
+                runtime_epoch: epoch.0,
+                sequence: 7,
+                snapshot_id: old,
+                view: b"selection".to_vec(),
+                referenced_payloads: vec![],
+            },
+        )
+        .unwrap();
+    store
+        .freeze_restore_alias(epoch, "frozen", "view:slot-2", b"transfer")
+        .unwrap();
+    commit_round(&mut store, epoch, 1);
+    let unchanged = snapshot_now(&mut store, epoch, 2);
+    assert!(
+        !store
+            .rebase_restore_manifest(epoch, "frozen", &StreamId::new("engine-b"), unchanged)
+            .unwrap()
+    );
+    commit_round(&mut store, epoch, 2);
+    let changed = snapshot_now(&mut store, epoch, 3);
+    assert!(
+        !store
+            .rebase_restore_manifest(epoch, "view:slot-2", &StreamId::new("engine-b"), changed)
+            .unwrap()
+    );
+    assert_eq!(
+        store
+            .restore_manifest("view:slot-2")
+            .unwrap()
+            .unwrap()
+            .snapshot
+            .snapshot_id,
+        old
+    );
+    assert_eq!(
+        store
+            .restore_manifest("frozen")
+            .unwrap()
+            .unwrap()
+            .snapshot
+            .snapshot_id,
+        old
+    );
+}
+
+#[test]
+fn failed_manifest_rebase_preserves_view_ordering_pins_and_source_cut() {
+    let (dir, mut store, epoch) = fresh();
+    commit_round(&mut store, epoch, 0);
+    let old = snapshot_now(&mut store, epoch, 1);
+    let explicit = store
+        .put_payload(epoch, b"explicit view reference")
+        .unwrap();
+    store
+        .save_restore_manifest(
+            epoch,
+            &crate::NewRestoreManifest {
+                restore_key: "view:slot-2".into(),
+                incarnation: 1,
+                runtime_epoch: epoch.0,
+                sequence: 7,
+                snapshot_id: old,
+                view: b"selection".to_vec(),
+                referenced_payloads: vec![explicit],
+            },
+        )
+        .unwrap();
+    commit_round(&mut store, epoch, 1);
+    let target = snapshot_now(&mut store, epoch, 2);
+    raw(&db_path(&dir)).execute("UPDATE payloads SET bytes=X'00' WHERE payload_id=(SELECT payload_id FROM snapshots WHERE snapshot_id=?1)", [target as i64]).unwrap();
+    assert!(
+        store
+            .rebase_restore_manifest(epoch, "view:slot-2", &StreamId::new("engine-b"), target)
+            .is_err()
+    );
+    let valid = snapshot_now(&mut store, epoch, 2);
+    raw(&db_path(&dir)).execute_batch("CREATE TRIGGER fail_rebase BEFORE UPDATE ON restore_manifests BEGIN SELECT RAISE(ABORT, 'injected rebase failure'); END;").unwrap();
+    assert!(
+        store
+            .rebase_restore_manifest(epoch, "view:slot-2", &StreamId::new("engine-b"), valid)
+            .is_err(),
+        "failure after pin transfer rolls the transaction back"
+    );
+    let retained = store.restore_manifest("view:slot-2").unwrap().unwrap();
+    assert_eq!(retained.snapshot.snapshot_id, old);
+    assert_eq!(retained.view, b"selection");
+    assert_eq!(retained.sequence, 7);
+    store.gc_payloads(epoch).unwrap();
+    assert_eq!(
+        store.read_payload(explicit).unwrap(),
+        b"explicit view reference"
+    );
+}

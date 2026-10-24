@@ -7037,3 +7037,8 @@ waiting = "+{} more waiting"
 progress = "{} · {} files"
 progress_one = "{} · {} file"
 declined = "Declined: {}"
+
+[boot.journal_error]
+title = "Could not recover the saved workspace"
+body = "The workspace journal could not be used: {}"
+hint = "Check available disk space and data folder permissions, then restart Tasty. The original journal is preserved."

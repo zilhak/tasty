@@ -101,7 +101,7 @@ OS 호출은 `tasty-platform` 크레이트에 둬 본체 타입에 직접 의존
 - effect 상태(Pending·Running·Deferred·Succeeded·Failed·Cancelled·Superseded·Uncertain)의 허용 전이, activation claim과 attempt 기록, 이전 attempt·generation의 늦은 결과 거절.
 - domain snapshot(파생 cache)과 snapshot+tail 읽기, consumer checkpoint, 불변 payload와 참조 기반 GC. retention anchor 이후 재구성 가능한 snapshot만 fallback 후보로 사용한다. 필요한 history가 이미 정리됐으면 전체 로그가 있는 것처럼 성공하지 않고 resync 또는 복구 오류를 반환한다.
 - projection 출력 행(consumer·projection version별 key→바이트)과 consumer 위치를 한 transaction으로 확정한다. 전역 cut API와 고정 stream scope API를 구별하며 부분 cut도 실제 batch에서만 추출한다. scope 변경에는 새 version이 필요하고, 같은 batch의 다른 write·위치 역행·없는 batch는 행 변경 없이 거절한다. 선택 stream의 retention floor 이전 cursor는 ResyncRequired이며 명시한 전체 출력 교체로 재동기화한다. 행을 가진 consumer는 위치만 저장하는 API로 위치를 옮길 수 없다.
-- 새 명령 admission은 활성 DB 페이지와 실제 WAL 바이트에 미확정 명령 credit을 더해 내부 예산을 검사한다. 신규 effect commit은 Pending·Deferred·Running·Uncertain 총수 한도를 검사한다. 원 key 응답·이미 수락된 효과의 전이·cleanup은 이 압력 때문에 차단하지 않는다. 물리 디스크 hard cap은 아니며 수치·WAL 회복·reader pin을 지키는 GC 경계는 [이벤트 저장소](event-store.md)에 있다.
+- 새 명령 admission은 미확정 준비 credit만 제한하며 누적 DB·WAL 크기로 터미널 사용을 거절하지 않는다. 신규 effect commit은 Pending·Deferred·Running·Uncertain 총수 한도를 검사한다. 원 key 응답·이미 수락된 효과의 전이·cleanup은 이 압력 때문에 차단하지 않는다. 물리 디스크 hard cap은 아니며 준비 한도·동등한 휴면 슬롯 manifest 재연결·reader pin을 지키는 GC 경계는 [이벤트 저장소](event-store.md)에 있다.
 - kind별 영속 ID 예약. 예약한 범위는 재오픈 뒤에도 다시 내주지 않으며, 예약 뒤 commit이 실패해 쓰지 않은 구간은 빈 채로 남는다. 상한을 넘는 예약은 되감지 않고 거절한다.
 
 이 크레이트는 도메인 타입을 모른다. 이벤트·effect·snapshot 내용은 type tag·schema version·바이트로 저장하고 해석은 호출자의 codec이 맡는다. WAL과 `synchronous=FULL`이 실제로 적용되지 않거나 journal의 스키마 버전이 이 빌드보다 새로우면 열지 않는다. 비어 있지 않은데 journal 버전 표가 없는 SQLite 파일은 설정을 바꾸기 전에 거절하며 파일을 변경하지 않는다. memory.db·state.db와 독립된 저장소이며 그 DB들과의 원자성은 없다.

@@ -26,7 +26,7 @@ finish_boot
 
 `BootResources`의 handle과 `BootProgress`의 값은 소유자가 다르다. worker 반환형도 CoreState 한 개가 아니라 EngineSession과 PluginManager다. journal의 초기 projection만 재생하는 단계와 실제 자원 activation을 구분한다. 오류 화면을 만들 수 있는 Window/GPU가 있으면 진단을 표시하고, 초기 View 조립 실패로 기존 journal stream을 삭제하지 않는다.
 
-터미널을 열기 전의 내부 실패는 계속할 세션이 없으므로 원인을 보이고 실패 코드 1로 끝낸다. 같은 내용은 error 로그에 남고, 이 실행이 쓴 instance 파일(`tasty.instance`)은 끝나기 전에 지운다.
+복구 가능한 journal 실패는 아래 임시 상태 경로로 계속한다. App·그래픽 초기화처럼 계속할 세션을 만들 수 없는 내부 실패는 원인을 보이고 실패 코드 1로 끝낸다. 같은 내용은 error 로그에 남고, 이 실행이 쓴 instance 파일(`tasty.instance`)은 끝나기 전에 지운다.
 
 - `App::new` 실패(데이터 홈 부재, `structure-journal` worker·`TerminalSpawner` 스레드 생성 실패): 이벤트 루프는 프로세스당 하나뿐이므로 이미 만든 루프로 부팅 오류 화면(`boot.app_error.*`)을 띄운다(`home_in_use::run_screen_on`).
 - `assemble_app_state` 실패: 부팅 창과 GPU가 준비돼 있으므로 엔진 오류와 같은 부팅 오류 화면 모드로 넘긴다. 문구는 `boot.app_error.*`다.
@@ -154,9 +154,12 @@ hidden 창은 `RedrawRequested` 를 못 받을 수 있으므로 첫 프레임은
   스크롤하고 Quit은 그 아래에 고정한다. 엔진 생성 실패(첫 workspace를 만들지 못함 포함), App 생성·첫 화면 조립 실패, 다른 프로세스가
   쓰는 데이터 폴더에서 뜨고 Quit·Esc·Enter·창 닫기가 종료 코드 1로 끝낸다. 키 판정은 호스트가 한다.
   열지 못한 명시 웹훅 포트는 실행을 막지 않고 경고 알림으로 남긴다([웹훅](../features/webhook/index.md#리스너-주소와-포트)).
-- **저장소를 열지 못한 부팅** — 첫 엔진의 journal 시작이 저장소에 묶이기 전에 실패하고 홈 사용 중이
-  아니면 부팅 오류 화면 대신 `JournalApplication::fall_back_to_ephemeral`로 빈 임시 저장소를 열어
-  같은 엔진을 다시 시작한다. 기본 workspace가 생기면 평소처럼 창을 보이고, 원인·원본 경로를 담은
+- **저장소를 열지 못한 부팅** — 첫 엔진의 journal 시작 또는 첫 View 공개 전 복원이 실패하고 홈 사용 중이
+  아니면 부팅 오류 화면 대신 `JournalApplication::poll_boot_recovery`로 빈 임시 저장소를 열어
+  같은 엔진을 다시 시작한다. binding 이후에는 먼저 원 worker를 종료 checkpoint 없이 중단하고
+  Creation·설치된 PTY·plugin을 별도 회수 컨테이너에 분리한 뒤 binding·projection을 비운다.
+  정확한 reap·plugin 응답이 미완이면 그 컨테이너를 보관하고 새 터미널과 별도로 관측한다.
+  임시 상태는 원본을 재수입하지 않고 저장된 복원 명령을 재실행하지 않는다. 기본 workspace가 생기면 평소처럼 창을 보이고, 원인·원본 경로를 담은
   오류 알림과 오른쪽 위 비포커스 안내를 전달한다. 임시 저장소도 실패하면 부팅 오류 화면으로 간다.
   판정은 `src/app/boot_machine.rs`의 `journal_failure_falls_back`.
 - **View 밖 창의 다시 그리기** — 첫 실행 셸 설정 창과 부팅 오류 화면은 View 밖에 있어 dirty

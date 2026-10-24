@@ -1,4 +1,6 @@
 //! Application side of the data-home worker. Engine bindings live on their EngineSession.
+#[cfg(feature = "gui")]
+mod boot_recovery;
 mod capture;
 pub(crate) mod commands;
 mod creation;
@@ -98,6 +100,8 @@ pub(crate) struct JournalApplication {
     /// 원본 저널을 열지 못해 이번 실행에만 쓰는 임시 저장소. worker가 먼저 멈추도록 마지막 필드다.
     #[cfg(feature = "gui")]
     ephemeral_home: Option<tempfile::TempDir>,
+    #[cfg(feature = "gui")]
+    boot_release: Option<crate::runtime::resource_retirement::EngineRelease>,
 }
 
 /// 원본 저널을 연 실패의 원인을 파일에서 확인할 수 있는 만큼만 가린다. 읽을 권한이 없으면
@@ -259,6 +263,8 @@ impl JournalApplication {
             notices: Vec::new(),
             #[cfg(feature = "gui")]
             ephemeral_home: None,
+            #[cfg(feature = "gui")]
+            boot_release: None,
         })
     }
 
@@ -266,11 +272,21 @@ impl JournalApplication {
     /// 원본(`structure/journal.db`와 부속 파일)에는 쓰지 않는다. 원인을 가리려고 머리만 읽는다. 임시 저장소는
     /// 종료할 때 지우므로 다음 실행은 원본을 다시 읽는다. 원인과 원본 위치는 오류 알림과
     /// 비포커스 안내로 `engine`의 창에 알린다.
-    #[cfg(feature = "gui")]
+    #[cfg(all(test, feature = "gui"))]
     pub(crate) fn fall_back_to_ephemeral(
         &mut self,
         engine: EngineId,
         failure: &str,
+    ) -> anyhow::Result<()> {
+        self.replace_with_ephemeral(engine, failure, false)
+    }
+
+    #[cfg(feature = "gui")]
+    fn replace_with_ephemeral(
+        &mut self,
+        engine: EngineId,
+        failure: &str,
+        after_binding: bool,
     ) -> anyhow::Result<()> {
         let original = tasty_utils::path::tasty_home()
             .ok_or_else(|| anyhow::anyhow!("data home unavailable for structure journal"))?;
@@ -288,7 +304,11 @@ impl JournalApplication {
             Some(engine),
             notices::NoticePopup {
                 variant: notices::NoticeVariant::Restore,
-                cause: journal_read_cause(&database),
+                cause: if after_binding {
+                    notices::NoticeCause::SaveStopped
+                } else {
+                    journal_read_cause(&database)
+                },
                 path: database.display().to_string(),
             },
             &format!(
@@ -584,14 +604,25 @@ impl JournalApplication {
     }
 
     pub(crate) fn cleanup_poll_deadline(&self) -> Option<std::time::Instant> {
-        self.resource_cleanup_deadline()
+        let deadline = self
+            .resource_cleanup_deadline()
             .into_iter()
             .chain(
                 self.creations
                     .values()
                     .filter_map(creation::Creation::cleanup_deadline),
             )
-            .min()
+            .min();
+        #[cfg(feature = "gui")]
+        if self
+            .boot_release
+            .as_ref()
+            .is_some_and(|release| release.needs_detached_poll())
+        {
+            let next = std::time::Instant::now() + std::time::Duration::from_millis(100);
+            return Some(deadline.map_or(next, |existing| existing.min(next)));
+        }
+        deadline
     }
 
     #[cfg(not(feature = "gui"))]

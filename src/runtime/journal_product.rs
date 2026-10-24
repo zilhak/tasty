@@ -385,6 +385,8 @@ pub(crate) struct JournalWorker {
     completions: Option<mpsc::Receiver<Completion>>,
     acknowledgements: Option<mpsc::SyncSender<(u64, Result<(), String>)>>,
     closed: Arc<AtomicBool>,
+    #[cfg(feature = "gui")]
+    skip_final_checkpoint: Arc<AtomicBool>,
     thread: Option<JoinHandle<()>>,
     shutdown_timer: tasty_utils::batch_writer::ShutdownTimer,
     #[cfg(test)]
@@ -417,6 +419,8 @@ impl JournalWorker {
         let (acknowledgements, acks) = mpsc::sync_channel(1);
         let closed = Arc::new(AtomicBool::new(false));
         let stopped = closed.clone();
+        let skip_final_checkpoint = Arc::new(AtomicBool::new(false));
+        let worker_skip_checkpoint = skip_final_checkpoint.clone();
         let metrics = Arc::new(JournalMetrics::default());
         let worker_metrics = metrics.clone();
         let readers = Arc::new(super::journal_payload::PayloadReaders::default());
@@ -447,6 +451,7 @@ impl JournalWorker {
                     outgoing,
                     acks,
                     stopped,
+                    worker_skip_checkpoint,
                     wake,
                     #[cfg(test)]
                     publication_fault,
@@ -463,6 +468,8 @@ impl JournalWorker {
             completions: Some(completions),
             acknowledgements: Some(acknowledgements),
             closed,
+            #[cfg(feature = "gui")]
+            skip_final_checkpoint,
             thread: Some(thread),
             shutdown_timer: Default::default(),
             #[cfg(test)]
@@ -574,6 +581,13 @@ impl JournalWorker {
             Err(mpsc::TrySendError::Full(_)) => Err(SubmitError::Busy),
             Err(mpsc::TrySendError::Disconnected(_)) => Err(SubmitError::Stopped),
         }
+    }
+
+    /// Boot recovery preserves the failed source instead of publishing shutdown maintenance.
+    #[cfg(feature = "gui")]
+    pub(crate) fn abort_without_checkpoint(&mut self) {
+        self.skip_final_checkpoint.store(true, Ordering::Release);
+        self.stop();
     }
 
     /// Disconnecting both outbound paths unblocks a worker waiting for publication or completion.

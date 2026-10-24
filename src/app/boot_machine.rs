@@ -73,7 +73,14 @@ fn journal_error_info(
             tracing::error!("structure journal refused: {err:#}");
             crate::boot::home_in_use::error_info(home)
         }
-        None => boot_engine_error_info(err),
+        None => {
+            tracing::error!("structure journal bootstrap failed: {err:#}");
+            crate::gpu::BootErrorInfo {
+                title: crate::i18n::t("boot.journal_error.title").to_owned(),
+                body: crate::i18n::t_fmt("boot.journal_error.body", &err.to_string()),
+                hint: crate::i18n::t("boot.journal_error.hint").to_owned(),
+            }
+        }
     }
 }
 
@@ -486,23 +493,14 @@ impl App {
         if !journal_failure_falls_back(self.journal.home_in_use(), self.journal.is_ephemeral()) {
             return false;
         }
-        if let Err(error) = self.journal.fall_back_to_ephemeral(id, failure) {
-            tracing::error!("temporary structure journal could not be opened: {error:#}");
-            return false;
-        }
         let session = self.engines.session_mut(id).expect("pending engine exists");
-        let slot = session
-            .persistence
-            .slot
-            .expect("GUI engine has a layout slot");
-        let resume = session.runtime.settings.general.restore_layout;
-        match self.journal.begin_first_gui_engine(
-            session,
-            crate::runtime::journal_product::EngineSelection::Slot { slot, resume },
-        ) {
+        match self
+            .journal
+            .poll_boot_recovery(session, self.plugin_manager.as_mut(), failure)
+        {
             Ok(()) => true,
             Err(error) => {
-                tracing::error!("temporary structure journal refused the first engine: {error}");
+                tracing::error!("temporary structure journal recovery failed: {error:#}");
                 false
             }
         }
@@ -519,9 +517,7 @@ impl App {
             .journal
             .poll_bootstrap(&mut [session], self.plugin_manager.as_mut())
         {
-            // 저장소를 열기 전의 실패만 임시 저장소로 물러난다. 엔진이 묶인 뒤의 실패는 이미 일부를
-            // 보여 줬을 수 있어 같은 엔진을 다른 저장소로 다시 열지 않는다.
-            if session.journal_binding.is_none() && self.boot_fall_back_to_ephemeral(id, &error) {
+            if self.boot_fall_back_to_ephemeral(id, &error) {
                 return false;
             }
             self.state.boot_error_info =
@@ -543,6 +539,9 @@ impl App {
         }
         let session = self.engines.session_mut(id).expect("pending engine exists");
         if let Err(error) = self.journal.poll_restore_bootstrap(session) {
+            if self.boot_fall_back_to_ephemeral(id, &error) {
+                return false;
+            }
             self.state.boot_error_info =
                 Some(self.boot_journal_error_info(&anyhow::anyhow!(error)));
             return false;
@@ -554,6 +553,9 @@ impl App {
         // which no View can show. Report it like other engine startup failures.
         if session.core_state.workspaces().is_empty() {
             let error = first_workspace_error(self.journal.take_first_workspace_failure(id));
+            if self.boot_fall_back_to_ephemeral(id, &error) {
+                return false;
+            }
             self.state.boot_error_info = Some(boot_engine_error_info(&anyhow::anyhow!(error)));
             return false;
         }
@@ -945,12 +947,12 @@ mod boot_error_tests {
     }
 
     #[test]
-    fn other_journal_failures_keep_the_engine_error_text() {
+    fn other_journal_failures_describe_storage_instead_of_the_shell() {
         crate::i18n::init("en");
         // 같은 문자열이어도 종류가 홈 사용 중이 아니면 엔진 오류 문구다(문자열로 판정하지 않는다).
         let err = anyhow::anyhow!("another store holds the journal writer lock");
         let info = journal_error_info(None, &err);
-        assert_eq!(info.title, crate::i18n::t("boot.engine_error.title"));
+        assert_eq!(info.title, crate::i18n::t("boot.journal_error.title"));
     }
 
     /// App 생성·첫 화면 조립 실패 문구는 원인을 담고 셸 설정 안내(엔진 오류)와 구별된다.

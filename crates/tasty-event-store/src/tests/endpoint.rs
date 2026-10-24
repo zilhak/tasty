@@ -142,3 +142,62 @@ fn prepared_holder_bound_and_existing_effect_completion_survive_pressure() {
     store.commit(&finish).unwrap();
     store.commit(&request).unwrap();
 }
+
+#[test]
+fn accumulated_database_and_wal_do_not_consume_pending_preparation_credit() {
+    let dir = tempfile::tempdir().unwrap();
+    let budget = crate::AdmissionBudget {
+        max_pending_preparation_bytes: 1024,
+        command_credit_bytes: 512,
+        ..Default::default()
+    };
+    let mut store = crate::EventStore::open_with_admission_budget(
+        &dir.path().join("journal.db"),
+        "test",
+        budget,
+    )
+    .unwrap();
+    let epoch = store.acquire_writer().unwrap();
+    store
+        .put_payload_pinned(epoch, &vec![0u8; 1024 * 1024], "kept")
+        .unwrap();
+    let usage = store.ensure_new_admission(epoch, 512).unwrap();
+    assert!(usage.active_database_bytes > budget.admission_ceiling());
+    assert!(usage.wal_file_bytes > budget.admission_ceiling());
+    assert!(matches!(
+        store.ensure_new_admission(epoch, 513),
+        Err(crate::StoreError::AdmissionCapacity { used: 0, .. })
+    ));
+    store.conn.execute_batch("PRAGMA query_only=ON").unwrap();
+    assert!(
+        store.ensure_new_admission(epoch, 0).is_err(),
+        "real SQLite write failure is not admission success"
+    );
+}
+
+#[test]
+fn sqlite_full_does_not_report_a_payload_write_as_success_or_replace_kept_bytes() {
+    let (_dir, mut store, epoch) = fresh();
+    let kept = store
+        .put_payload_pinned(epoch, b"kept source", "original")
+        .unwrap();
+    store
+        .conn
+        .execute_batch("PRAGMA wal_checkpoint(TRUNCATE)")
+        .unwrap();
+    let pages: u64 = store
+        .conn
+        .query_row("PRAGMA page_count", [], |row| row.get(0))
+        .unwrap();
+    store
+        .conn
+        .pragma_update(None, "max_page_count", pages)
+        .unwrap();
+    let error = store
+        .put_payload_pinned(epoch, &vec![42; 1024 * 1024], "new")
+        .unwrap_err();
+    assert!(
+        matches!(error, StoreError::Sqlite(rusqlite::Error::SqliteFailure(code, _)) if code.code == rusqlite::ErrorCode::DiskFull)
+    );
+    assert_eq!(store.read_payload(kept).unwrap(), b"kept source");
+}

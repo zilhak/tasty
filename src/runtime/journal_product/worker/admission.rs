@@ -57,12 +57,16 @@ pub(super) fn admit(
         match inner.store.ensure_new_admission(epoch, outstanding) {
             Ok(_) => {}
             // Credits held by unresolved admissions return on their Resolve or Cancel.
-            // Wait for them instead of failing; with none outstanding the store is full.
+            // Wait for unresolved preparations instead of refusing because of stored history.
             Err(tasty_event_store::StoreError::AdmissionCapacity { .. }) if !pending.is_empty() => {
                 *deferred = Some(admission);
                 return Ok(ResultValue::NeedsResolution);
             }
-            Err(error) => return Err(error.into()),
+            Err(error) => {
+                tracing::warn!(ticket, origin = %admission.origin, category = ?error,
+                    "journal admission failed before resource preparation");
+                return Err(error.into());
+            }
         }
         inner.store.admission_budget().command_credit_bytes
     };

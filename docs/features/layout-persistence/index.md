@@ -2,7 +2,14 @@
 
 ## 원칙과 현재 동작
 
-[복구 원칙](../../principles/feedback-and-recovery.md)은 일부 손실 시 가능한 부분 복원, 전체 읽기 불가 시 오류 알림·앱 우측 상단 비포커스 팝업 후 초기 상태에서 계속 작업을 요구한다. surface 하나의 복원 자료나 레이아웃 stream 하나의 기록을 읽지 못하면 그 범위만 경고와 함께 잃고 나머지를 복원한다. 부팅 중 저장소 전체를 열지 못하면(읽기 권한 없음, 저장소가 아닌 바이트 등) 첫 창은 이번 실행에만 쓰는 빈 임시 저장소로 기본 workspace와 셸을 연 뒤 오류 알림과 오른쪽 위 비포커스 안내(원인·원본 경로)를 띄운다. 원인 문구는 읽을 권한이 없으면 읽기 거절, 파일 머리가 SQLite 저장소가 아니면 손상, 그 밖(머리는 맞지만 열리지 않음, 쓰기 거절, 파일 없음 등)은 손상으로 단정하지 않는 "열지 못함"이며 실제 오류는 알림 항목 본문에만 붙으므로 그 문구는 알림 항목을 가리킨다. 원본 `structure/journal.db`와 부속 파일은 바꾸거나 옮기거나 지우지 않는다. 원인을 가리려고 `journal.db` 머리 16바이트만 읽는다. 이번 실행의 구조 journal 기록(workspace·탭·레이아웃 배치와 복원용 상태)은 임시 저장소에만 쌓이고 정상 종료할 때 지운다(강제 종료되면 OS 임시 폴더의 `tasty-ephemeral-journal-*`에 남을 수 있다). 터미널에서 프로그램이 바꾼 파일과는 무관하다. 그래서 다음 실행은 원본을 다시 읽어 읽을 수 있게 되었으면 원래 배치를 복원한다. 다른 프로세스가 같은 홈을 쓰는 경우(홈 사용 중)와 첫 workspace를 만들지 못한 경우는 부팅 오류 화면에 남는다. 엔진이 저장소에 묶인 뒤의 실행 중 halt는 이 경로를 쓰지 않고 [실행 중 halt 안내](#실행-중-halt-안내)로 알린다.
+[복구 원칙](../../principles/feedback-and-recovery.md)은 일부 손실 시 가능한 부분 복원, 전체 읽기 불가 시 오류 알림·앱 우측 상단 비포커스 팝업 후 초기 상태에서 계속 작업을 요구한다. surface 하나의 복원 자료나 레이아웃 stream 하나의 기록을 읽지 못하면 그 범위만 경고와 함께 잃고 나머지를 복원한다. 부팅 중 저장소 전체를 열지 못하면(읽기 권한 없음, 저장소가 아닌 바이트 등) 첫 창은 이번 실행에만 쓰는 빈 임시 저장소로 기본 workspace와 셸을 연 뒤 오류 알림과 오른쪽 위 비포커스 안내(원인·원본 경로)를 띄운다. 원인 문구는 읽을 권한이 없으면 읽기 거절, 파일 머리가 SQLite 저장소가 아니면 손상, 그 밖(머리는 맞지만 열리지 않음, 쓰기 거절, 파일 없음 등)은 손상으로 단정하지 않는 "열지 못함"이며 실제 오류는 알림 항목 본문에만 붙으므로 그 문구는 알림 항목을 가리킨다. 원본 `structure/journal.db`와 부속 파일은 바꾸거나 옮기거나 지우지 않는다. 원인을 가리려고 `journal.db` 머리 16바이트만 읽는다. 이번 실행의 구조 journal 기록(workspace·탭·레이아웃 배치와 복원용 상태)은 임시 저장소에만 쌓이고 정상 종료할 때 지운다(강제 종료되면 OS 임시 폴더의 `tasty-ephemeral-journal-*`에 남을 수 있다). 터미널에서 프로그램이 바꾼 파일과는 무관하다. 그래서 다음 실행은 원본을 다시 읽어 읽을 수 있게 되었으면 원래 배치를 복원한다. 첫 View와 IPC 공개 전에는 binding 이후의 복원·첫 workspace 저장 실패도 임시 상태로 계속한다.
+이때 원 worker를 중단하고 종료 checkpoint를 생략한다. Creation·후보·설치된 PTY와 plugin 자원을
+기존 소유권 회수 경로로 분리한 뒤 binding과 projection을 비운다.
+미완 reap/plugin 응답은 별도 회수 컨테이너가 계속 보관·관측하며 새 기본 터미널을 막지 않는다.
+원본의 미완 effect는 성공으로 만들지 않으며 저장된 복원 명령을 다시 실행하지 않는다.
+임시 상태는 legacy 자료를 재수입하지 않는 새 기본 workspace다. 원본 크기가 커도 정상 복원이
+가능하면 그대로 복원한다. 실제 저장 오류는 실패로 남기고 원인을 알린다.
+다른 프로세스가 같은 홈을 쓰는 경우(홈 사용 중)와 임시 저장소도 실패한 경우는 부팅 오류 화면에 남는다. 엔진이 저장소에 묶인 뒤의 실행 중 halt는 이 경로를 쓰지 않고 [실행 중 halt 안내](#실행-중-halt-안내)로 알린다.
 
 - **Status**: Implemented
 - **주체**: 로컬 사용자 (설정 토글)
@@ -156,7 +163,10 @@ Parked engine은 슬롯을 점유하지만 윈도우 ID가 없어 `window.list`�
 
 ### Surface 내용 복원 (현재: 터미널 scrollback)
 
-`general.restore_surface_content`(기본 on)가 켜져 있으면 터미널 capture가 scrollback과 화면 라인을 journal의 불변 surface payload에 담는다. payload는 cwd·`restore.command`와 함께 직렬화한 scrollback 바이트(`TSSB` 형식)를 가지며, 저장할 때마다 새 payload를 만들고 기존 payload를 고쳐 쓰지 않는다. 복원 시 이전 scrollback과 화면 내용을 새 터미널의 출력 앞에 넣는다. legacy `~/.tasty/scrollback/<persist_id>.bin`은 최초 이관 때 슬롯 JSON의 `scrollback_ref`로 읽어 payload에 복사하는 입력이며, 현재 capture가 쓰는 곳이 아니다.
+`general.restore_surface_content`(기본 on)가 켜져 있으면 터미널 capture가 scrollback과 화면 라인을 journal의 불변 surface payload에 담는다. payload는 cwd·`restore.command`와 함께 직렬화한 scrollback 바이트(`TSSB` 형식)를 가지며, 저장할 때마다 새 payload를 만들고 기존 payload를 고쳐 쓰지 않는다.
+전체 capture를 저장하는 코덱은 유지한다. 부분 scrollback delta로 바꾸면 복원·undo·pin 계약을
+함께 바꿔야 하므로 현재 압축과는 별도 최적화 영역이다. 정상 압축은 최근 유효 snapshot 두 개와
+그 사이 tail, 현재 holder의 참조만 남기며 단일 capture의 64 MiB 요청 한도는 그대로 적용한다. 복원 시 이전 scrollback과 화면 내용을 새 터미널의 출력 앞에 넣는다. legacy `~/.tasty/scrollback/<persist_id>.bin`은 최초 이관 때 슬롯 JSON의 `scrollback_ref`로 읽어 payload에 복사하는 입력이며, 현재 capture가 쓰는 곳이 아니다.
 
 옵션이 꺼져 있으면 새 capture에 scrollback을 담지 않는다. 복원할 때도 payload에 남아 있는 scrollback을 터미널에 넣지 않으며, 배치·cwd·`restore.command`는 그대로 복원한다. 닫은 항목 복원도 같은 기준을 따른다.
 
@@ -317,7 +327,11 @@ DB manifest가 없을 때만 이전 sidecar를 초기 자료로 읽으며, 첫 �
 manifest만 해제하고 미완·Uncertain domain 의무의 참조는 계속 유지한다.
 구조 변경 없이 View만 반복 저장해도 같은 transaction에서 이전 cache snapshot을 정리하며,
 현재 manifest·외부 holder·anchor가 잡은 snapshot은 남긴다.
-Manifest가 가리키는 snapshot은 보존 경계의 하한이며, 선택 자료만 domain event에서
+휴면 슬롯의 전체 stream 상태와 revision이 checkpoint에서도 같으면 manifest의 View 바이트·
+incarnation·runtime epoch·sequence를 유지한 채 최신 domain snapshot으로 연결한다.
+미완 operation과 undo를 포함해 상태가 다르거나 View 검증이 실패하면 이전 연결을 유지한다.
+고정 전송 alias는 옮기지 않는다. 따라서 열리지 않은 두 번째 슬롯도 선택과 내용을 유지하면서
+활성 슬롯의 capture 이력이 정리된다. 재연결하지 않은 manifest의 snapshot은 보존 경계의 하한이며, 선택 자료만 domain event에서
 재생하거나 최신 선택으로 다시 생성하지 않는다.
 
 새 journal import의 payload 복사는 source import holder를 먼저 영속화하고 destination에
@@ -368,16 +382,12 @@ source pin 해제 실패는 보수적으로 참조를 남기고 다음 같은 �
 저장한다. 출력과 위치는 함께 확정하며, 보존 경계보다 이전 위치는 전체 snapshot으로
 재동기화한다. global 위치와 부분 위치를 같은 consumer/version에서 혼용하지 않는다.
 
-신규 구조 명령에는 활성 DB 페이지와 WAL을 기준으로 내부 admission 예산이 적용된다.
-기본 ceiling은 896 MiB, 미확정 명령 credit은 64 MiB다. 앞선 명령의 credit 때문에 예산이
-부족하면 그 credit이 풀릴 때까지 도착 순서대로 기다리고, 대기 중인 명령이 없는데도 부족할 때만
-거절한다. 재사용 가능한 DB freelist는 과금에서
-제외하며 압력 시 reader를 기다리지 않는 WAL truncate를 시도한다. payload GC는 기존
-checkpoint에서 reader lease를 잠그고 최신 참조를 durable pin으로 옮긴 뒤 수행한다.
-admission gate가 그 동기화 없이 독립 GC를 실행하지 않는다.
-이미 확정된 명령의 같은 key 조회와 효과 완료·정리·복구는 이 gate 때문에 거절하지 않는다.
-이 값은 전체 DB 파일의 hard cap이나 OS 저장 공간 보장이 아니다. 정확한 범위와 설정 API는
-[저장소 결정](../../architecture/event-store.md)에 있다.
+신규 구조 명령은 누적 DB·WAL 크기로 거절하지 않는다. 미확정 준비의 credit만 제한하며
+앞선 명령의 credit이 풀릴 때까지 도착 순서대로 기다린다. 준비 한도와 실제 OS 저장 오류는
+서로 다르다. 이미 확정된 명령의 같은 key 조회와 효과 완료·정리·복구·checkpoint는 새 준비
+credit을 요구하지 않는다. payload GC는 checkpoint에서 reader lease를 잠그고 최신 참조를
+durable pin으로 옮긴 뒤 수행한다. admission이 그 동기화 없이 독립 GC를 실행하지 않는다.
+정확한 준비 한도와 진단용 파일 사용량 API는 [저장소 계약](../../architecture/event-store.md)에 있다.
 
 ### 복원 입력과 View 저장의 수명
 

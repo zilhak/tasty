@@ -25,7 +25,7 @@ pub enum StoreError {
     #[error("journal admission usage: {0}")]
     AdmissionUsageIo(std::io::Error),
     #[error(
-        "journal admission capacity: used={used}, reserved={reserved}, requested={requested}, ceiling={ceiling}"
+        "journal pending preparation capacity: used={used}, reserved={reserved}, requested={requested}, ceiling={ceiling}"
     )]
     AdmissionCapacity {
         used: u64,

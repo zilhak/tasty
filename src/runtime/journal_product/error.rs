@@ -3,7 +3,7 @@
 pub(crate) enum JournalError {
     QueueFull(&'static str),
     KeyConflict,
-    StorageBudget {
+    PreparationBudget {
         used: u64,
         reserved: u64,
         requested: u64,
@@ -15,7 +15,7 @@ pub(crate) enum JournalError {
 impl JournalError {
     pub(crate) fn ipc_code(&self) -> i32 {
         match self {
-            Self::QueueFull(_) | Self::StorageBudget { .. } => {
+            Self::QueueFull(_) | Self::PreparationBudget { .. } => {
                 tasty_ipc::protocol::ERR_COMMAND_QUEUE_FULL
             }
             Self::KeyConflict => tasty_ipc::protocol::ERR_IDEMPOTENCY_KEY_CONFLICT,
@@ -41,7 +41,7 @@ impl From<tasty_event_store::StoreError> for JournalError {
                 reserved,
                 requested,
                 ceiling,
-            } => Self::StorageBudget {
+            } => Self::PreparationBudget {
                 used,
                 reserved,
                 requested,
@@ -57,14 +57,14 @@ impl std::fmt::Display for JournalError {
         match self {
             Self::QueueFull(message) => f.write_str(message),
             Self::KeyConflict => f.write_str("idempotency key belongs to a different request"),
-            Self::StorageBudget {
+            Self::PreparationBudget {
                 used,
                 reserved,
                 requested,
                 ceiling,
             } => write!(
                 f,
-                "journal admission capacity: used={used}, reserved={reserved}, requested={requested}, ceiling={ceiling}"
+                "journal pending preparation capacity: used={used}, reserved={reserved}, requested={requested}, ceiling={ceiling}"
             ),
             Self::Halted(message) | Self::Internal(message) => f.write_str(message),
         }
@@ -83,7 +83,7 @@ mod tests {
             requested: 2,
             ceiling: 5,
         });
-        assert!(matches!(budget, JournalError::StorageBudget { .. }));
+        assert!(matches!(budget, JournalError::PreparationBudget { .. }));
         assert_eq!(
             budget.ipc_code(),
             tasty_ipc::protocol::ERR_COMMAND_QUEUE_FULL

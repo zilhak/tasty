@@ -453,6 +453,25 @@ impl UnreturnedStandalone {
 }
 
 impl EngineRelease {
+    #[cfg(feature = "gui")]
+    pub(crate) fn has_unreturned_standalones(&self) -> bool {
+        !self.unreturned.is_empty()
+    }
+    #[cfg(feature = "gui")]
+    pub(crate) fn needs_detached_poll(&self) -> bool {
+        !self.spawns.is_empty()
+            || !self.owners.is_empty()
+            || self.ptys.iter().any(|receipt| {
+                !matches!(
+                    receipt.observation().phase,
+                    PtyPhase::Reaped | PtyPhase::WaitFailed
+                )
+            })
+            || self
+                .remote
+                .iter()
+                .any(|receipt| receipt.observation().is_none())
+    }
     pub(crate) fn retain_unreturned_standalone(
         &mut self,
         pty_id: u32,
@@ -524,10 +543,22 @@ impl EngineRelease {
         session: &mut EngineSession,
         plugins: Option<&mut crate::plugin::PluginManager>,
     ) -> bool {
-        let spawning = self.collect_spawns();
         if !self.begin_release(session) {
             return false;
         }
+        self.poll_detached(plugins)
+    }
+
+    /// Once all runtime maps have transferred to this container, receipt polling cannot touch
+    /// a successor session. Failed/missing receipts retain their exact owners indefinitely.
+    pub(crate) fn poll_detached(
+        &mut self,
+        plugins: Option<&mut crate::plugin::PluginManager>,
+    ) -> bool {
+        if !self.started {
+            return false;
+        }
+        let spawning = self.collect_spawns();
         self.retire_surface_owners(plugins);
         let failed = self
             .ptys

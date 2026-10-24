@@ -1,12 +1,10 @@
-//! Soft active-storage admission budget, not a filesystem quota on accepted obligations.
+//! Bounded unresolved preparation, independent of cumulative journal storage.
 use crate::{EventStore, StoreError, StoreResult, WriterEpoch};
-use std::time::Duration;
 
 #[derive(Debug, Clone, Copy)]
 pub struct AdmissionBudget {
-    /// Planning envelope, including operational headroom. Not SQLite max_page_count.
-    pub nominal_bytes: u64,
-    pub completion_headroom_bytes: u64,
+    /// Aggregate credit for unresolved preparations; persisted history never consumes it.
+    pub max_pending_preparation_bytes: u64,
     /// Credit held by each unresolved new command; also its cumulative prepared-payload limit.
     pub command_credit_bytes: u64,
     pub max_pending_effects: u64,
@@ -14,8 +12,7 @@ pub struct AdmissionBudget {
 impl Default for AdmissionBudget {
     fn default() -> Self {
         Self {
-            nominal_bytes: 1024 * 1024 * 1024,
-            completion_headroom_bytes: 128 * 1024 * 1024,
+            max_pending_preparation_bytes: 14 * 64 * 1024 * 1024,
             command_credit_bytes: 64 * 1024 * 1024,
             max_pending_effects: 4096,
         }
@@ -23,13 +20,11 @@ impl Default for AdmissionBudget {
 }
 impl AdmissionBudget {
     pub fn admission_ceiling(self) -> u64 {
-        self.nominal_bytes
-            .saturating_sub(self.completion_headroom_bytes)
+        self.max_pending_preparation_bytes
     }
     pub(crate) fn validate(self) -> StoreResult<()> {
         if self.max_pending_effects == 0
             || self.command_credit_bytes == 0
-            || self.completion_headroom_bytes >= self.nominal_bytes
             || self.command_credit_bytes > self.admission_ceiling()
         {
             return Err(StoreError::AdmissionBudgetInvalid);
@@ -73,69 +68,27 @@ impl EventStore {
             active_database_bytes: pages.saturating_sub(free).saturating_mul(page_size),
         })
     }
-    /// Check only a new command, after durable-key lookup. Existing accepted commands, effects,
-    /// cleanup, GC and their duplicate replies must not enter this admission gate.
-    /// Caller retains one credit until resolution/cancellation/error and passes all outstanding
-    /// credits here. Pinned preparation bytes remain charged by SQLite after credit release.
+    /// Fence a new request and bound only unresolved preparation credits. Cumulative DB/WAL
+    /// bytes are diagnostic metadata, never grounds to refuse terminal startup or a new tab.
+    /// Actual SQLite and filesystem errors remain errors, including failures reading usage.
     pub fn ensure_new_admission(
         &mut self,
         epoch: WriterEpoch,
         outstanding_credits: u64,
     ) -> StoreResult<AdmissionUsage> {
-        drop(self.write_tx(epoch)?); // Validate the active fenced writer before maintenance/admission.
-        let mut usage = self.admission_usage()?;
-        if !self.fits(usage, outstanding_credits) {
-            // The store cannot see in-process read leases. Payload GC belongs to the product
-            // checkpoint that synchronizes reader pins under its lease lock, never this gate.
-            self.try_reclaim_admission_wal()?;
-            usage = self.admission_usage()?;
-        }
-        if !self.fits(usage, outstanding_credits) {
+        drop(self.write_tx(epoch)?);
+        if outstanding_credits
+            .checked_add(self.admission_budget.command_credit_bytes)
+            .is_none_or(|total| total > self.admission_budget.admission_ceiling())
+        {
             return Err(StoreError::AdmissionCapacity {
-                used: usage.charged_bytes(),
+                used: 0,
                 reserved: outstanding_credits,
                 requested: self.admission_budget.command_credit_bytes,
                 ceiling: self.admission_budget.admission_ceiling(),
             });
         }
-        Ok(usage)
-    }
-    fn fits(&self, usage: AdmissionUsage, reserved: u64) -> bool {
-        usage
-            .charged_bytes()
-            .checked_add(reserved)
-            .and_then(|n| n.checked_add(self.admission_budget.command_credit_bytes))
-            .is_some_and(|total| total <= self.admission_budget.admission_ceiling())
-    }
-    fn try_reclaim_admission_wal(&self) -> StoreResult<()> {
-        // PASSIVE does not shrink physical WAL bytes. TRUNCATE may do so when readers permit it;
-        // a zero busy timeout means reader pressure is a refusal, never a wait for a reader.
-        let timeout: u64 = self
-            .conn
-            .query_row("PRAGMA busy_timeout", [], |row| row.get(0))?;
-        self.conn.busy_timeout(Duration::ZERO)?;
-        let attempt = self
-            .conn
-            .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |row| {
-                Ok((
-                    row.get::<_, i64>(0)?,
-                    row.get::<_, i64>(1)?,
-                    row.get::<_, i64>(2)?,
-                ))
-            });
-        self.conn.busy_timeout(Duration::from_millis(timeout))?;
-        match attempt {
-            Ok(_) => Ok(()), // Busy result retains WAL bytes and therefore retains admission pressure.
-            Err(rusqlite::Error::SqliteFailure(error, _))
-                if matches!(
-                    error.code,
-                    rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked
-                ) =>
-            {
-                Ok(())
-            }
-            Err(error) => Err(error.into()),
-        }
+        self.admission_usage()
     }
 }
 fn file_bytes(path: &std::path::Path) -> StoreResult<u64> {

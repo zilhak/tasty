@@ -28,6 +28,7 @@ mod error;
 mod group;
 mod identity;
 mod manifest;
+mod manifest_rebase;
 mod metrics;
 mod payload;
 mod projection;

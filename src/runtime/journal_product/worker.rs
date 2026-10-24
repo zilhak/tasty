@@ -6,6 +6,9 @@ mod capture;
 mod credit_tests;
 mod effects;
 mod group;
+mod manifest_rebase;
+#[cfg(test)]
+mod manifest_rebase_tests;
 mod metrics;
 #[cfg(all(test, unix))]
 mod preservation_tests;
@@ -64,6 +67,7 @@ pub(super) fn run(
     completions: mpsc::SyncSender<Completion>,
     acknowledgements: Acknowledgements,
     closed: Arc<AtomicBool>,
+    skip_final_checkpoint: Arc<AtomicBool>,
     wake: Arc<dyn Fn() + Send + Sync>,
     #[cfg(test)] fail_next_publication: Arc<AtomicBool>,
     #[cfg(test)] muted: Arc<AtomicBool>,
@@ -82,7 +86,7 @@ pub(super) fn run(
     };
     metrics::total(&executor, "opened");
     let mut pending: HashMap<u64, Pending> = HashMap::new();
-    // Admissions waiting for a disk credit, in arrival order. They count toward QUEUE_CAPACITY.
+    // Admissions waiting for a preparation credit, in arrival order. They count toward QUEUE_CAPACITY.
     let mut waiting: VecDeque<(u64, Admission)> = VecDeque::new();
     let mut halted: Option<String> = None;
     let mut requests = group::Requests::new(requests);
@@ -259,7 +263,7 @@ pub(super) fn run(
         }
         observe_admissions(&observed, &pending, &waiting);
     }
-    if halted.is_none() {
+    if halted.is_none() && !skip_final_checkpoint.load(Ordering::Acquire) {
         checkpoint_published(&executor, published, &readers);
     }
     observed.admissions(0, waiting.len(), 0);

@@ -2,7 +2,7 @@
 
 ## 원칙과 현재 동작
 
-[복구 원칙](../principles/feedback-and-recovery.md)은 복원 데이터를 읽지 못해도 오류 안내 후 초기 상태에서 작업을 계속할 수 있어야 한다. 아래 저장소의 잠금·schema·내구성 검사는 원본 보호를 위한 현재 계약이다. 부팅 중 저장소를 열지 못하면 App은 원본을 건드리지 않고 이번 실행에만 쓰는 임시 저장소로 계속한다([레이아웃 저장](../features/layout-persistence/index.md#원칙과-현재-동작)). 홈 사용 중 거절은 원본 보호를 위해 부팅 오류로 남는다. 엔진이 묶인 뒤의 실행 중 halt는 사유와 재시작 필요를 담은 오류 알림 하나와 오른쪽 위 비포커스 안내로 알린다([레이아웃 저장](../features/layout-persistence/index.md#실행-중-halt-안내)). halt 뒤에도 입력과 작업을 계속하게 하는 경로는 아직 제품 원칙의 미충족이며, 저장소 검사를 우회하거나 원본을 덮어쓰라는 뜻은 아니다.
+[복구 원칙](../principles/feedback-and-recovery.md)은 복원 데이터를 읽지 못해도 오류 안내 후 초기 상태에서 작업을 계속할 수 있어야 한다. 아래 저장소의 잠금·schema·내구성 검사는 원본 보호를 위한 현재 계약이다. 부팅 중 저장소를 열지 못하거나 첫 View 공개 전에 복원이 실패하면 App은 원본을 보존하고 이번 실행에만 쓰는 임시 저장소로 계속한다([레이아웃 저장](../features/layout-persistence/index.md#원칙과-현재-동작)). 홈 사용 중 거절은 원본 보호를 위해 부팅 오류로 남는다. 엔진이 묶인 뒤의 실행 중 halt는 사유와 재시작 필요를 담은 오류 알림 하나와 오른쪽 위 비포커스 안내로 알린다([레이아웃 저장](../features/layout-persistence/index.md#실행-중-halt-안내)). halt 뒤에도 입력과 작업을 계속하게 하는 경로는 아직 제품 원칙의 미충족이며, 저장소 검사를 우회하거나 원본을 덮어쓰라는 뜻은 아니다.
 
 데이터 홈 구조 journal의 저장 계약 중 수치·형식·보조 규칙과, App이 그 journal을 원본으로 연결한 현재 상태를 적는다. 저장 형식과 제약의 이유는 아래 각 절에,
 저장소가 제공하는 기능의 개요는 [아키텍처](index.md)의 `tasty-event-store` 문단에 있다. 구현은 `crates/tasty-event-store/src/`다.
@@ -114,6 +114,14 @@ WAL 전환은 transaction 밖에서 하며, 다른 연결의 전환과 겹쳐 �
 별도 명부에 남기며 같은 ID를 새 이벤트로 다시 넣는 쓰기를 거절한다. snapshot/live/undo/import/
 View 및 읽기 lease의 payload pin도 남는다. snapshot 두 개의 본문과 참조 checksum을 검증하며,
 외부 holder가 잡은 더 오래된 snapshot이 있으면 보존 경계를 그 cut 이하로 제한한다.
+단, 제품 checkpoint는 View 슬롯의 전체 stream 모델(미완 operation·undo·payload 참조 포함)이
+기존 snapshot과 같고(다른 stream 사건도 전진시키는 global applied batch만 정규화) View binding도 유효할 때 manifest를 최신 완전 snapshot으로 재연결한다.
+저장소는 두 cut의 해당 stream revision이 같고 존재하는지도 검사한다. View 바이트와
+incarnation·runtime epoch·sequence·명시 pin은 바꾸지 않고 snapshot body pin만 원자적으로
+이전한다. 따라서 휴면 슬롯이 다른 stream의 capture tail을 붙잡지 않는다. stream이 바뀌었거나
+해석·검증에 실패하면 옮기지 않는다. 고정 import alias와 다른 외부 holder는 원 cut을 유지한다.
+재연결 실패는 이전 manifest를 보존하며 압축보다 먼저 재시도한다. 개발 로그에는 재연결된 슬롯과
+옮기지 않은 변경 stream을 기록한다. 사용자가 조치할 수 없는 보존 판단을 반복 알림으로 만들지 않는다.
 보존 경계 이전 cursor는 명시적 재동기화 오류다. snapshot이 손상돼도 보존 로그 없이 처음부터
 재생하는 성공 fallback을 만들지 않는다. `snapshot_and_tail_excluding`은 호출자가 해석하지 못한
 snapshot을 건너뛰고 더 이전 snapshot이나 로그 처음을 기반으로 돌려준다. 보존 경계 위에 남은 기반이
@@ -141,38 +149,26 @@ write만 retry로 받아들이며 다른 output 변경은 거절한다. digest�
 위치 역행이나 scope 변경은 허용하지 않는다. 관련 없는 stream의 compaction만으로 부분
 consumer를 재동기화시키지는 않는다. 기존 global projection API의 cut 의미는 유지한다.
 
-## 활성 저장량의 신규 admission 예산
+## 신규 admission과 저장량
 
-`AdmissionBudget`은 내부 기본값으로 1 GiB 운영 기준, 128 MiB 완료·정리 여유, 신규 admission
-ceiling 896 MiB, 미확정 명령당 64 MiB credit을 사용한다. `EventStore::open_with_admission_budget`
-으로 명시적으로 바꿀 수 있으며 값 검증을 거친다. 이 값은 측정된 처리량·디스크 성능이나
-filesystem quota가 아니다. SQLite `max_page_count`를 걸어 기수락 효과의 완료를 막지 않는다.
+누적 DB·WAL 크기는 신규 명령·engine·tab·selected restore를 거절하는 기준이 아니다.
+`AdmissionUsage`는 활성 DB 페이지, 재사용 가능한 빈 페이지, 실제 DB·WAL 파일 바이트를
+진단용으로 제공한다. 오래된 DB가 커도 복원·새 터미널 생성과 checkpoint를 계속한다.
+용량 때문에 강제 GC·WAL truncate를 admission의 선행 조건으로 실행하지 않는다.
+실제 OS FULL·I/O·쓰기 권한 오류는 여전히 실패이며 저장 성공으로 처리하지 않는다.
 
-과금은 `(page_count - freelist_count) * page_size + 실제 WAL 파일 바이트`다. DB 물리 파일
-크기와 재사용 가능한 freelist도 조회 결과에 별도로 제공한다. GC 뒤 DB 파일이 커도 빈 페이지는
-다음 쓰기에 재사용할 수 있어 과금에서 제외한다. 한도 판단이 실패하면
-busy timeout 0의 WAL TRUNCATE를 시도한 뒤 재측정한다. payload GC는 메모리 reader lease를
-잠근 채 최신 참조를 durable pin으로 옮기는 기존 제품 checkpoint에서만 수행한다. admission
-gate는 그 잠금과 참조를 알 수 없으므로 독립 GC를 실행하지 않는다. reader가 막으면 기다리거나 성공을
-추측하지 않고 남은 WAL을 그대로 과금한다. PASSIVE checkpoint만으로 물리 WAL이 줄었다고
-간주하지 않는다. key·최초 응답·미완료 effect·ID 기록을 예산 때문에 삭제하지 않는다.
+`AdmissionBudget`은 동시에 미확정인 준비만 제한한다. 명령 하나의 준비 payload 누계는
+64 MiB이고, 미확정 명령 credit의 합계는 14 × 64 MiB다. 이 값은 저장된 이력과 무관하며
+큐가 임시 준비 작업을 무제한으로 받아들이지 않게 하는 내부 경계다. durable key hit와
+follower 합류를 먼저 처리하고 credit이 부족하면 앞선 Resolve·Cancel·준비 오류로 credit이
+풀릴 때까지 FIFO로 기다린다. 대기도 worker 64건에 포함된다. 구조 ID 예약은 명령당
+16,384개다. credit 반환은 payload 삭제나 확정 효과 취소를 뜻하지 않는다.
+`open_with_admission_budget`은 이 준비 한도와 미완료 effect 한도를 검증하여 받는다.
 
-worker는 durable key hit와 현재 admission follower 합류를 먼저 처리한다. 새 명령은
-현재 과금량+기존 pending credit+새 credit이 ceiling 안일 때만 수락한다. 기존 pending credit
-때문에 맞지 않으면 바로 거절하지 않고 worker 안에서 도착 순서대로 기다린다. pending admission이
-끝나 credit이 해제되면 다시 판단하고, pending이 하나도 없는데도 맞지 않으면 거절한다. 기다리는
-요청도 아래 worker queue 64건 한도에 포함하며, 앞선 대기가 있으면 새 admission은 그 뒤에 선다. 각 미확정 admission의
-새 준비 payload는 holder별 누적 64 MiB를 초과할 수 없고 구조 ID 예약은 총 16,384개로 제한한다.
-credit은 최초 Resolve, Cancel, 준비 오류에서 해제한다. 성공/실패로 credit을 해제해도 DB의
-payload 페이지는 계속 과금되고 pin은 기존 event/snapshot/GC 수명에 따른다.
-
-새 engine 구조/legacy import는 같은 gate를 거친다. 기존 stream resume, 이미 수락된 effect의
-결과·cleanup·Recovery·capture·checkpoint·GC는 신규 admission gate로 막지 않는다.
-그 의무가 진행하며 기준값을 넘을 수 있고 SQLite page/index/WAL 증폭도 있어 총 물리 파일의
-최대 초과량이나 1 GiB hard cap은 보장하지 않는다. 128 MiB는 완료를 보장하는 예약 디스크가
-아니다. OS FULL/IO 실패는 여전히 별도의 실제 오류다. 큰 기존 DB는 읽기/복구를 유지한 채
-신규 admission을 거절할 수 있으며 GC/freelist 재사용·reader 종료 후 WAL truncate 또는
-명시한 더 큰 내부 예산으로 다시 수락할 수 있다.
+기존 stream resume, 이미 수락된 효과의 결과·cleanup·Recovery·capture·checkpoint·GC는
+새 준비 credit을 요구하지 않는다. checkpoint는 초과한 기존 DB에서도 admission 없이
+동일 stream의 manifest 재연결·압축·GC를 진행한다. 파일 전체 크기 자체는 빈 페이지와
+batch/command/effect 헤더를 포함하므로 압축 후에도 줄어들지 않을 수 있다.
 
 기존 worker queue는 64건/64 MiB, 공개 원 요청은 8 MiB이며 App command 대기는 64건이다.
 주기 surface capture가 이 64 MiB를 넘어 거절되거나 계속 실패할 때의 경고 알림은
