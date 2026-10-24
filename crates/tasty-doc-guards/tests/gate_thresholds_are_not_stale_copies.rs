@@ -129,6 +129,21 @@ enum Kind {
 /// 검색 결과 중 현재 값 설명이 아닌 파일과 제외 근거.
 const EXCLUDED: &[(&str, Kind, &str)] = &[
     (
+        "src/app/anomaly_settings.rs",
+        Kind::OtherMeaning,
+        "SlowLoop 기본 반복 건수 20을 검증하는 시험이며 코드 복잡도 기준이 아니다",
+    ),
+    (
+        "crates/tasty-settings/src/anomaly_detection.rs",
+        Kind::OtherMeaning,
+        "CallBurst 기본 호출 건수 1000이며 파일 SLOC 기준이 아니다",
+    ),
+    (
+        "crates/tasty-telemetry/src/anomaly_thresholds.rs",
+        Kind::OtherMeaning,
+        "CallBurst 시간 창 1000ms와 기본 호출 건수이며 파일 SLOC 기준이 아니다",
+    ),
+    (
         "docs/features/telemetry/index.md",
         Kind::OtherMeaning,
         "anomaly_detection의 SlowLoop 반복 건수 기본 20과 RSS 샘플 범위 3~20이며 코드 복잡도 기준이 아니다",
