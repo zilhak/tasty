@@ -75,7 +75,12 @@ impl Fixture {
                 }
                 if !s.load(Ordering::Acquire) {
                     // Cancellation cases deliberately close the socket before this fixture writes.
-                    let _ = stream.write_all(b"owned body");
+                    if let Err(error) = stream.write_all(b"owned body") {
+                        tracing::debug!(
+                            ?error,
+                            "HTTP fixture response body write ended after cancellation"
+                        );
+                    }
                 }
             }
         });
