@@ -79,9 +79,11 @@ impl EndpointBudget {
     pub(crate) fn active_preparations(&self) -> usize {
         8 - self.0.preparations.available_permits()
     }
+    #[cfg(test)]
     pub(crate) fn active_connections(&self) -> usize {
         8 - self.0.sockets.available_permits()
     }
+    #[cfg(test)]
     pub(crate) fn active_owners(&self) -> usize {
         self.0.owners.load(Ordering::Acquire)
     }

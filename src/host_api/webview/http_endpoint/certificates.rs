@@ -3,7 +3,9 @@ mod budget;
 mod stream;
 use crate::remote::html_http::local_tls::LocalTls;
 pub(crate) use budget::CertificateBudget;
+#[cfg(test)]
 use rcgen::PublicKeyData;
+#[cfg(test)]
 use sha2::{Digest, Sha256};
 use std::{
     collections::HashMap,
@@ -12,7 +14,6 @@ use std::{
         atomic::{AtomicBool, AtomicUsize, Ordering},
     },
 };
-pub(crate) use stream::AuthorityStream;
 use tokio::{runtime::Handle, sync::Notify};
 use tokio_rustls::rustls::pki_types::PrivatePkcs8KeyDer;
 #[derive(Clone, PartialEq, Eq, Hash)]
@@ -62,6 +63,7 @@ pub(crate) struct AuthorityTls {
     tls: LocalTls,
     map: Weak<Certificates>,
     leaf: [u8; 32],
+    #[cfg(test)]
     spki: [u8; 32],
     _lease: Arc<budget::Lease>,
     #[cfg(test)]
@@ -71,6 +73,7 @@ impl AuthorityTls {
     pub(crate) fn leaf(&self) -> [u8; 32] {
         self.leaf
     }
+    #[cfg(test)]
     pub(crate) fn spki(&self) -> [u8; 32] {
         self.spki
     }
@@ -286,6 +289,7 @@ impl Generate {
         let rcgen::CertifiedKey { cert, signing_key } =
             rcgen::generate_simple_self_signed(vec![self.authority.host.clone()])
                 .map_err(|_| CertificateError::Tls)?;
+        #[cfg(test)]
         let spki = Sha256::digest(signing_key.subject_public_key_info()).into();
         let key = PrivatePkcs8KeyDer::from(signing_key.serialize_der());
         let tls = LocalTls::new(vec![cert.der().clone()], key.into(), CERTIFICATE_BYTES)
@@ -295,6 +299,7 @@ impl Generate {
             tls,
             map: self.map.clone(),
             leaf,
+            #[cfg(test)]
             spki,
             _lease: self
                 .slot

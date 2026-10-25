@@ -17,9 +17,11 @@ impl CertificateBudget {
             reserved: AtomicUsize::new(0),
         }))
     }
+    #[cfg(test)]
     pub(crate) fn reserved(&self) -> usize {
         self.0.reserved.load(Ordering::Acquire)
     }
+    #[cfg(test)]
     pub(crate) fn generators(&self) -> usize {
         self.0.generators.load(Ordering::Acquire)
     }
