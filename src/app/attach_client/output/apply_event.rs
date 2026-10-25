@@ -9,8 +9,15 @@ pub(super) fn apply_one_mirror_event(
 ) {
     match ev {
         MirrorEvent::Html(reply) => super::super::html::receive(sess, reply),
+        MirrorEvent::Http(reply) => {
+            sess.transport.html.http_documents.receive(reply);
+        }
         MirrorEvent::Desynced { frames } => {
             sess.transport.html.documents.clear();
+            sess.transport
+                .html
+                .http_documents
+                .close_all(&sess.transport.frame_tx);
             sess.state.resize_sync.forget_pending();
             begin_resync(sess, host, frames);
         }

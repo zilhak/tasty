@@ -76,7 +76,16 @@ pub(in crate::app::attach_client) fn synchronize(
         }
         sess.transport.html.viewer_declared = true;
     }
-    let mut changed = bind_mirrors(sess, engine, live, available);
+    let mut changed = if live && sess.transport.html.server_http {
+        sess.transport
+            .html
+            .http_documents
+            .pump_commands(&sess.transport.frame_tx)
+    } else {
+        sess.transport.html.http_documents.clear();
+        false
+    };
+    changed |= bind_mirrors(sess, engine, live, available);
     let mirrors: Vec<_> = sess
         .transport
         .html
@@ -230,3 +239,6 @@ fn bind_mirrors(
     });
     changed
 }
+
+#[cfg(test)]
+mod tests;

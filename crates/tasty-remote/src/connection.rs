@@ -29,6 +29,12 @@ pub struct QueuedFrame {
     pub epoch: ConnectionEpoch,
     pub frame: OutFrame,
     _bytes: QueuedBytes,
+    current: Option<Arc<dyn Fn() -> bool + Send + Sync>>,
+}
+impl QueuedFrame {
+    pub(crate) fn owner_current(&self) -> bool {
+        self.current.as_ref().is_none_or(|current| current())
+    }
 }
 struct QueuedBytes {
     counter: Arc<AtomicUsize>,
@@ -148,6 +154,14 @@ impl ConnectionSender {
         let _input = self.input();
         self.send_frame(frame)
     }
+    pub(crate) fn send_guarded(
+        &self,
+        frame: OutFrame,
+        current: Arc<dyn Fn() -> bool + Send + Sync>,
+    ) -> Result<(), mpsc::SendError<OutFrame>> {
+        let _input = self.input();
+        self.enqueue_frame(frame, Some(current))
+    }
     /// Called only after explicit user input was dispatched to this connection.
     /// Agent writes and terminal-generated replies use `send` without a receipt.
     pub fn user_input_dispatched(&self, admitted: std::time::Instant) {
@@ -160,7 +174,14 @@ impl ConnectionSender {
         }
     }
     fn send_frame(&self, frame: OutFrame) -> Result<(), mpsc::SendError<OutFrame>> {
-        if !self.epoch.is_active() {
+        self.enqueue_frame(frame, None)
+    }
+    fn enqueue_frame(
+        &self,
+        frame: OutFrame,
+        current: Option<Arc<dyn Fn() -> bool + Send + Sync>>,
+    ) -> Result<(), mpsc::SendError<OutFrame>> {
+        if !self.epoch.is_active() || current.as_ref().is_some_and(|current| !current()) {
             return Err(mpsc::SendError(frame));
         }
         let weight = frame
@@ -181,6 +202,7 @@ impl ConnectionSender {
         let queued = QueuedFrame {
             epoch: self.epoch.clone(),
             frame,
+            current,
             _bytes: QueuedBytes {
                 counter: self.bytes.clone(),
                 bytes: weight,
@@ -267,5 +289,26 @@ mod input_tests {
         sender.input_processed(2);
         assert!(sender.oldest_unprocessed_input().is_none());
         assert!(queue.try_recv().is_err());
+    }
+    #[test]
+    fn guarded_frame_retains_byte_lease_until_actual_queue_drop() {
+        let (sender, queue) = channel();
+        let current = Arc::new(AtomicBool::new(true));
+        let captured = current.clone();
+        sender
+            .send_guarded(data(7), Arc::new(move || captured.load(Ordering::Acquire)))
+            .unwrap();
+        let used = sender.bytes.load(Ordering::Acquire);
+        assert!(used > 0);
+        let frame = queue.try_recv().unwrap();
+        current.store(false, Ordering::Release);
+        assert!(!frame.owner_current());
+        assert_eq!(sender.bytes.load(Ordering::Acquire), used);
+        drop(frame);
+        assert_eq!(sender.bytes.load(Ordering::Acquire), 0);
+        assert!(sender.epoch().is_active());
+        assert!(sender.send_guarded(data(8), Arc::new(|| false)).is_err());
+        assert_eq!(sender.bytes.load(Ordering::Acquire), 0);
+        assert!(sender.epoch().is_active());
     }
 }

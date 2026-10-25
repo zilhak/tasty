@@ -132,6 +132,9 @@ pub fn spawn_attach_write_thread(
                 }
                 Err(_) => break,
             };
+            if !queued.owner_current() {
+                continue;
+            }
             let item = queued.frame;
             let detach = item.tag == StreamTag::Detach;
             if !detach && (!queued.epoch.is_active() || disconnected.load(Ordering::Acquire)) {

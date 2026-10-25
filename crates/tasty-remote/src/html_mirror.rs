@@ -1,5 +1,7 @@
 //! Client entry state shared by transport effects and host chrome; no native or local-file access.
+mod http_source;
 mod resources;
+pub use http_source::{HttpSource, HttpView};
 
 use crate::{
     connection::ConnectionEpoch,
@@ -25,6 +27,7 @@ pub struct HtmlMirror {
     pub metadata: Option<HtmlMetadata>,
     pub bodies: Arc<Mutex<EntryBodyStore>>,
     pub failure: Option<String>,
+    http_source: Option<HttpSource>,
     pending: Vec<HtmlRequest>,
     reload: bool,
     scan: Option<(
@@ -47,6 +50,7 @@ impl HtmlMirror {
             metadata: None,
             bodies: Arc::default(),
             failure: None,
+            http_source: None,
             pending: Vec::new(),
             reload: true,
             scan: None,
@@ -82,6 +86,7 @@ impl HtmlMirror {
         {
             return vec![];
         }
+        self.retire_http_source();
         self.cancel_scan();
         let mut cancelled = self.document.take().map_or_else(Vec::new, |mut d| d.stop());
         let mut document = HtmlDocument::new(id.epoch, id.surface_id, id.binding, id.document);
@@ -125,6 +130,7 @@ impl HtmlMirror {
                 .and_then(|id| document.resources.get(&id))
                 .and_then(|r| r.metadata.clone());
         }
+        self.invalidate_http_source();
         accepted
     }
     pub fn credit(&mut self) -> Option<HtmlRequest> {
@@ -214,6 +220,7 @@ impl HtmlMirror {
         let Some(next) = self.generation.checked_add(1) else {
             return false;
         };
+        self.retire_http_source();
         self.cancel_scan();
         self.body_store().clear();
         self.generation = next;
@@ -290,6 +297,7 @@ impl HtmlMirror {
         }
     }
     pub fn disconnect(&mut self) {
+        self.retire_http_source();
         self.connected = false;
         self.pending.clear();
         self.cancel_scan();
@@ -306,6 +314,7 @@ impl HtmlMirror {
 }
 impl Drop for HtmlMirror {
     fn drop(&mut self) {
+        self.retire_http_source();
         self.cancel_scan();
     }
 }

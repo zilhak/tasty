@@ -8,6 +8,8 @@ mod capture_tests;
 mod close_history_tests;
 #[cfg(test)]
 mod home_probe_tests;
+#[cfg(test)]
+mod http_tests;
 mod list_dir;
 mod remote_entry;
 #[cfg(test)]

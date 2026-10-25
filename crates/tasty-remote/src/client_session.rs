@@ -104,6 +104,7 @@ pub enum MirrorEvent {
     /// 작업 엔진을 가진 호스트가 해석하므로 JSON 그대로 전달한다.
     ExplorerOp(Value),
     Html(tasty_ipc::html_transfer::HtmlReply),
+    Http(tasty_ipc::html_http::HttpReply),
     /// 서버 전송 손실. 데이터가 연속이라는 가정을 버리고 재동기화를 요청한다.
     Desynced {
         frames: u64,
@@ -445,6 +446,7 @@ impl MirrorEvent {
                 .saturating_add(text(image_reason)),
             Self::ExplorerOp(value) => json(value),
             Self::Html(reply) => reply.retained_bytes(),
+            Self::Http(reply) => reply.retained_bytes(),
             Self::ListDirResult {
                 dir,
                 entries,

@@ -19,10 +19,14 @@ impl crate::app::App {
     }
 }
 pub(super) fn parse(payload: &[u8]) -> Option<MirrorEvent> {
-    serde_json::from_slice::<HtmlReply>(payload)
-        .ok()
-        .map(MirrorEvent::Html)
+    if let Ok(reply) = serde_json::from_slice::<HtmlReply>(payload) {
+        return Some(MirrorEvent::Html(reply));
+    }
+    let reply = serde_json::from_slice::<tasty_ipc::html_http::HttpReply>(payload).ok()?;
+    reply.validate().ok()?;
+    Some(MirrorEvent::Http(reply))
 }
+
 pub(super) fn receive(sess: &mut AttachClientSession, reply: HtmlReply) {
     let remote = reply.id().surface_id;
     if let Some(mirror) = sess.transport.html.mirrors.get(&remote) {
@@ -36,6 +40,14 @@ pub(super) fn receive(sess: &mut AttachClientSession, reply: HtmlReply) {
     }
 }
 pub(super) fn retain(sess: &mut AttachClientSession, surfaces: &[serde_json::Value]) {
+    sess.transport
+        .html
+        .http_documents
+        .retain_with_sender(&sess.transport.frame_tx, |remote| {
+            surfaces.iter().any(|surface| {
+                surface["remote_id"].as_u64() == Some(remote as u64) && surface["role"] == "html"
+            })
+        });
     sess.transport.html.mirrors.retain(|remote, mirror| {
         let keep = surfaces.iter().any(|surface| {
             surface["remote_id"].as_u64() == Some(*remote as u64) && surface["role"] == "html"
@@ -63,4 +75,51 @@ pub(crate) fn lock_mirror(
 }
 pub(super) fn viewer_available() -> bool {
     cfg!(all(feature = "gui", target_os = "linux"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tasty_ipc::html_http::{CommandKind, FailureCode, HttpReply};
+    #[test]
+    fn http_session_parser_preserves_rejection_and_terminal_reply_kinds_without_file_fallback() {
+        let id = tasty_ipc::html_transfer::TransferId {
+            epoch: 1,
+            surface_id: 2,
+            binding: 3,
+            document: 4,
+            request: 5,
+            transfer: 6,
+        };
+        let rejection = HttpReply::CommandRejected {
+            id,
+            source_generation: 7,
+            response: None,
+            command: CommandKind::Credit,
+            code: FailureCode::InProgress,
+            reason: "Pending".into(),
+        };
+        assert!(matches!(
+            parse(&rejection.frame().unwrap().payload),
+            Some(MirrorEvent::Http(HttpReply::CommandRejected {
+                command: CommandKind::Credit,
+                ..
+            }))
+        ));
+        let terminal = HttpReply::Failure {
+            id,
+            source_generation: 7,
+            response: None,
+            code: FailureCode::Network,
+            reason: "Network".into(),
+        };
+        assert!(matches!(
+            parse(&terminal.frame().unwrap().payload),
+            Some(MirrorEvent::Http(HttpReply::Failure { .. }))
+        ));
+        let mut malformed = serde_json::to_value(&terminal).unwrap();
+        malformed["reason"] = "bad\nreason".into();
+        assert!(parse(&serde_json::to_vec(&malformed).unwrap()).is_none());
+        assert!(parse(br#"{"event":"future_html_http_reply"}"#).is_none());
+    }
 }

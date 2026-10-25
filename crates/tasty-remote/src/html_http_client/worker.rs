@@ -38,6 +38,16 @@ pub struct VerifyJob {
     pub(super) wake: Arc<dyn Fn() + Send + Sync>,
 }
 impl VerifyJob {
+    /// Read-only correlation for retiring an unstarted job in the caller's bounded pool queue.
+    /// This is the captured Begin identity, not authority supplied by a worker completion.
+    pub fn request_id(&self) -> tasty_ipc::html_transfer::TransferId {
+        self.work
+            .as_ref()
+            .expect("unconsumed verify job")
+            .request
+            .begin
+            .id()
+    }
     pub fn run(mut self) {
         let work = self.work.take().expect("unconsumed verify job");
         if !self.epoch.is_active() || self.owner.upgrade().is_none() {

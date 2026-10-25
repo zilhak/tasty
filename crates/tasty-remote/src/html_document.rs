@@ -300,6 +300,9 @@ pub struct HtmlSession {
     pub server_transfer: bool,
     pub server_entry: bool,
     pub server_resources: bool,
+    pub server_http: bool,
+    pub server_https: bool,
+    pub http_documents: crate::html_http_session::HttpDocuments,
     pub viewer_declared: bool,
     pub mirrors: HashMap<u32, Arc<std::sync::Mutex<crate::html_mirror::HtmlMirror>>>,
     epoch: u64,
@@ -346,6 +349,14 @@ impl HtmlSession {
             server_entry: crate::transport::descriptor_has_capability(
                 descriptor,
                 tasty_ipc::html_transfer::VIEWER_CAPABILITY,
+            ),
+            server_http: crate::transport::descriptor_has_capability(
+                descriptor,
+                tasty_ipc::html_http::CAPABILITY,
+            ),
+            server_https: crate::transport::descriptor_has_capability(
+                descriptor,
+                tasty_ipc::html_http::HTTPS_CAPABILITY,
             ),
             server_resources: crate::transport::descriptor_has_capability(
                 descriptor,
