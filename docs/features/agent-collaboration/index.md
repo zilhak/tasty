@@ -7,6 +7,8 @@
 - **화면**: 둘 다 호스트의 작업 조회 데이터를 사용한다 — [DAG 그래프 surface](../../surfaces/dag-graph/index.md)(`tasty new tab --type dag_graph`)는 탭 하나를 점유하는 상주 관찰용, [DAG 목록 popup](screens/dag-list-popup.md)(도구 메뉴 · `KeybindingSettings.toggle_dag_list`)은 목록에서 하나를 골라 잠깐 확인하고 닫는 용도의 workspace 스코프 창이다. IPC/CLI 관측 수단(`agent.task_list`/`task_graph`/`task_get`/`dag_list`/`dag_get`)은 그대로 유효하다.
 - **메서드 목록**: [reference/api](../../reference/api.md#에이전트-협업-agent)
 
+부모 Claude의 자식 상태 수신은 [완료 알림 mod](../../plugins/claude/notify-mod.md)가 담당하며, mod가 없는 세션에서는 Monitor로 구독한다. 상태 알림은 task 결과 검증과 별개다.
+
 ## 목적
 
 여러 AI 에이전트가 같은 인스턴스에서 작업을 조율하는 6가지 기능이다. 모두 `agent`(AgentManage) 권한으로 사용한다 — `agent.*` 단일 네임스페이스 + `<verb>_<modifier>` 패턴. 영속은 `tasty.agent.*` memory 키(task/barrier/semaphore/lease 는 `workspace:<id>` scope, rate-limit 은 `global`).

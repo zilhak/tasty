@@ -29,7 +29,7 @@ Tasty는 나와 AI 에이전트가 함께 일하는 GPU 가속 터미널입니�
 - [tasty CLI 로 터미널 조작하기](agents/cli.md) — 작업용 터미널을 만들고 명령을 보내 출력을 읽는 첫 실습과 기본 패턴.
 - [CLI 명령 참조](agents/cli-reference.md) — 읽기 위치 지정, 메타데이터, 큐, 메모리, 관찰자 등 입문 밖의 명령.
 - [백그라운드 작업을 탭으로 가져오기](agents/background-tasks.md) — 숨겨진 PTY의 출력과 종료 상태를 확인하고 실행 중인 작업을 탭으로 옮기세요.
-- [Claude · Codex 와 함께 쓰기](agents/claude-codex.md) — 훅 설치, spawn과 tell, Claude Monitor 수신 설정.
+- [Claude · Codex 와 함께 쓰기](agents/claude-codex.md) — 훅 설치, spawn과 tell, Claude 완료 알림 mod와 Monitor 대체 경로.
 - [작업 순서 관리](agents/tasks.md) — 할 일을 의존 관계로 묶어 순서대로 실행하고 진행을 그래프로 보기.
 - [훅 · 알림 · 웹훅](agents/hooks-notifications.md) — 서피스 훅, 글로벌 훅, 알림, 외부 HTTP 트리거.
 

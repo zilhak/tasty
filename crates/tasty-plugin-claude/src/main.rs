@@ -14,6 +14,7 @@ mod handlers;
 mod hook;
 mod install;
 mod notifications;
+mod notify_mod;
 mod profile;
 mod profile_attach;
 mod profile_merge;
@@ -192,9 +193,9 @@ impl Plugin for ClaudePlugin {
                 &self.translator,
             ),
             "claude.install" => match install::run_install(&self.translator) {
-                Ok(changes) => {
-                    Ok(json!({ "installed": changes.added, "updated": changes.updated }))
-                }
+                Ok(changes) => Ok(
+                    json!({ "installed": changes.added, "updated": changes.updated, "mod_updated": changes.mod_updated }),
+                ),
                 Err(e) => Err(IpcMethodError::new(
                     self.translator
                         .t_fmt("claude.install.install_failed", &e.to_string()),

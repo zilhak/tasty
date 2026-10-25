@@ -119,11 +119,12 @@ pub(crate) fn is_tasty_stop_hook_installed(tr: &Translator) -> Result<bool> {
 pub(crate) struct InstallChanges {
     pub added: Vec<&'static str>,
     pub updated: Vec<&'static str>,
+    pub mod_updated: bool,
 }
 
 impl InstallChanges {
     pub fn is_empty(&self) -> bool {
-        self.added.is_empty() && self.updated.is_empty()
+        self.added.is_empty() && self.updated.is_empty() && !self.mod_updated
     }
 }
 
@@ -266,8 +267,11 @@ fn install_into_file(path: &std::path::Path, tr: &Translator) -> Result<InstallC
         json!({})
     };
 
-    let changes = install_hooks_in_value(&mut root, tr)?;
-    if changes.is_empty() {
+    let original = root.clone();
+    let mut changes = install_hooks_in_value(&mut root, tr)?;
+    changes.mod_updated = crate::notify_mod::install(&mut root, path)
+        .map_err(|e| anyhow::anyhow!(tr.t_fmt("claude.install.mod_failed", &e.to_string())))?;
+    if changes.is_empty() || root == original {
         return Ok(changes);
     }
 
@@ -279,22 +283,28 @@ fn install_into_file(path: &std::path::Path, tr: &Translator) -> Result<InstallC
     Ok(changes)
 }
 
-/// `claude.uninstall` IPC 핸들러. 파일이 없으면 빈 목록 반환.
+/// `claude.uninstall` IPC 핸들러. settings가 없어도 남은 관리 mod 파일을 제거한다.
 pub(crate) fn run_uninstall(tr: &Translator) -> Result<Vec<&'static str>> {
-    let path = claude_settings_path(tr)?;
-    if !path.exists() {
-        return Ok(Vec::new());
+    uninstall_from_file(&claude_settings_path(tr)?)
+}
+
+fn uninstall_from_file(path: &std::path::Path) -> Result<Vec<&'static str>> {
+    let mut root: Value = if path.exists() {
+        serde_json::from_str(&std::fs::read_to_string(path)?)?
+    } else {
+        json!({})
+    };
+    let original = root.clone();
+    let mut removed = uninstall_hooks_from_value(&mut root);
+    if crate::notify_mod::uninstall(&mut root, path)? {
+        removed.push("notify-mod");
     }
 
-    let content = std::fs::read_to_string(&path)?;
-    let mut root: Value = serde_json::from_str(&content)?;
-    let removed = uninstall_hooks_from_value(&mut root);
-
-    if removed.is_empty() {
+    if root == original {
         return Ok(removed);
     }
     let output = serde_json::to_string_pretty(&root)?;
-    std::fs::write(&path, output)?;
+    std::fs::write(path, output)?;
     Ok(removed)
 }
 
@@ -305,6 +315,57 @@ mod tests {
     fn test_translator() -> Translator {
         let lang_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("lang");
         Translator::load(&lang_dir, "en")
+    }
+
+    #[test]
+    fn full_file_install_and_uninstall_preserve_user_hooks_and_environment() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        let user = json!({"env":{"OTHER":"keep"},"hooks":{"Stop":[{"hooks":[{"type":"command","command":"user-stop"}]}]}});
+        std::fs::write(&path, serde_json::to_string(&user).unwrap()).unwrap();
+        let changes = install_into_file(&path, &test_translator()).unwrap();
+        assert!(changes.mod_updated);
+        assert!(!changes.added.is_empty());
+        assert!(
+            install_into_file(&path, &test_translator())
+                .unwrap()
+                .is_empty()
+        );
+        let removed = uninstall_from_file(&path).unwrap();
+        assert!(removed.contains(&"notify-mod"));
+        let final_value: Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(final_value, user);
+        assert!(uninstall_from_file(&path).unwrap().is_empty());
+    }
+
+    #[test]
+    fn asset_repair_preserves_unchanged_settings_bytes() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        let tr = test_translator();
+        install_into_file(&path, &tr).unwrap();
+        let content = format!("{}\n\n", std::fs::read_to_string(&path).unwrap());
+        std::fs::write(&path, &content).unwrap();
+        let asset = crate::notify_mod::directory(&path)
+            .unwrap()
+            .join("hooks/reader.ts");
+        std::fs::write(&asset, "old asset").unwrap();
+        assert!(install_into_file(&path, &tr).unwrap().mod_updated);
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), content);
+        assert_ne!(std::fs::read_to_string(asset).unwrap(), "old asset");
+    }
+
+    #[test]
+    fn uninstall_cleans_assets_without_recreating_missing_settings() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        install_into_file(&path, &test_translator()).unwrap();
+        let asset_dir = crate::notify_mod::directory(&path).unwrap();
+        std::fs::remove_file(&path).unwrap();
+        assert_eq!(uninstall_from_file(&path).unwrap(), vec!["notify-mod"]);
+        assert!(!path.exists());
+        assert!(!asset_dir.exists());
     }
 
     fn count_managed_entries(root: &Value, event_name: &str, marker: &str) -> usize {

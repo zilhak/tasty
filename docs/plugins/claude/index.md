@@ -38,7 +38,7 @@
 
 ## 부모의 완료 수신 채널
 
-자식의 상태 변경은 caller surface의 `<parent_home>/notify/<caller_surface>.log`에 한 줄로 기록한다. 자식 CLI 종류에 따라 수신 경로를 바꾸지 않는다. 훅 설치와 부모의 로그 수신 준비는 별개이며 idle·needs_input·interrupt·exit는 작업 성공을 뜻하지 않는다. [완료 알림 로그](../../dev-guide/external-interaction.md#child-완료-알림--completion-log)를 따른다.
+자식의 상태 변경은 caller surface의 `<parent_home>/notify/<caller_surface>.log`에 한 줄로 기록한다. 자식 CLI 종류에 따라 수신 경로를 바꾸지 않는다. install은 훅과 부모 수신 mod를 함께 설치하지만 실제 세션의 mod 활성화·수신 확인은 설치 성공과 별개이며 idle·needs_input·interrupt·exit는 작업 성공을 뜻하지 않는다. [완료 알림 로그](../../dev-guide/external-interaction.md#child-완료-알림--completion-log)를 따른다.
 
 ### Codex 부모로 결과 반환
 
@@ -291,6 +291,10 @@ status는 `{ enabled: false, registered: false }`로 답한다. 데이터 디렉
 옛 `checklist/enabled.marker`는 내장 게이트 위치로 한 번 옮긴다.
 SessionEnd는 모든 게이트에서 해당 세션의 반복 파일을 지우고 옛 `checklist/rounds/`의
 같은 세션 파일도 정리한다. 옛 반복 수는 읽거나 이전하지 않는다.
+
+### 부모 완료 알림 mod
+
+`tasty claude install`은 기존 훅과 함께 Claude Code `tasty-notify` mod를 고정 관리 경로에 설치한다. 지원되는 Claude에서는 세션 시작부터 자기 완료 로그를 감시하고 플러그인 출처의 새 턴으로 전달한다. 동작 확인 표식이 있는 세션은 Monitor를 함께 켜지 않는다. 경로 선택, 재개·보존 한계, 버전과 검증 범위는 [완료 알림 mod](notify-mod.md)에 있다. 기존 사용자는 install을 다시 실행한 뒤 새 Claude 프로세스를 시작한다. 설치·로컬 시험만으로 실제 모델 턴 수신이나 작업 성공이 입증되지는 않는다.
 
 ### Claude Code 훅 통합
 

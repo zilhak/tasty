@@ -205,7 +205,7 @@ tasty codex install     # ~/.codex/config.toml
 
 ### 부모 에이전트가 자식 결과를 받지 못합니다
 
-자식의 테두리·배지 상태와 부모 결과 수신은 별개입니다. 부모가 Claude Code이면 완료 로그와 Monitor 구독을 확인하세요. [연결·복구 안내](../agents/claude-codex.md)를 따르세요.
+자식의 테두리·배지 상태와 부모 결과 수신은 별개입니다. 부모가 Claude Code이면 install을 다시 실행한 뒤 새 세션의 완료 알림 mod 표식과 수신을 확인하세요. mod가 없을 때만 Monitor 구독을 확인하며 둘을 함께 켜지 마세요. [연결·복구 안내](../agents/claude-codex.md)를 따르세요.
 
 ### 세마포어 · 배리어를 만들 때 "invalid char" 로 거절됩니다
 

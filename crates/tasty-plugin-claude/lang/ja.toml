@@ -100,6 +100,7 @@ warning_idle_children = " index {} の idle な子は、新規 spawn の代わ�
 warning_stale_children = " 直近のフォアグラウンドプロセスの照会では、インデックス {} の子はシェルとして記録されていますが、完了報告はありません。現在の状態を確認してから respawn を検討してください。"
 
 [claude.install]
+mod_failed = "完了通知 mod をインストールできませんでした: {}"
 no_home_dir = "ホームディレクトリを特定できません"
 settings_root_not_object = "~/.claude/settings.json のルート値が JSON object ではありません"
 hooks_not_object = "~/.claude/settings.json の 'hooks' キーが JSON object ではありません"
@@ -190,10 +191,10 @@ description = "サーフェスのClaudeを再起動し同じセッションを�
 description = "子インスタンスに永続的なClaudeセッションプロファイルを適用（--childのサーフェスを解決し 'claude reboot --profile' と同じ手順を実行）。子だけを再起動するためrebootと異なり呼び出し元のターンは中断しません。子がidle/needs_inputへ移行した時と終了時に呼び出し元へ通知します。"
 
 [claude.cli.sub.install]
-description = "~/.claude/settings.json に tasty フックを設定するか、matcher やコマンドが現在の値と異なる既存の Tasty 項目を更新します。応答の installed に追加したイベント、updated に更新したイベントが入ります。"
+description = "Tasty フックと Claude 完了通知 mod をインストールまたは更新します。既存のユーザーフックとプラグインパスを保持します。応答には installed・updated フックイベントと mod_updated が含まれます。"
 
 [claude.cli.sub.uninstall]
-description = "~/.claude/settings.jsonからtastyフックを削除"
+description = "Tasty フックと管理対象の完了通知 mod パス・ファイルを削除し、他のユーザー設定を保持します。"
 
 [claude.cli.sub.hook]
 description = "Claude Codeフック連携。Claude Codeのフックシステムから呼び出されるとstdinからJSONペイロード（session_id、cwd、prompt_id、message、notification_type、error、agent_id、background_tasks、tool_name、tool_response、prompt、source、reason、last_assistant_message）を読み取ります。公式 hooks ドキュメントと実測 payload にはありませんが、waiting_on_background_work も防御的に読み取ります。"

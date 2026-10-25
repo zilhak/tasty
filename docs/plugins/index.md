@@ -4,6 +4,8 @@ Tasty가 관리하는 공식 플러그인 목록이다([plugins 개념](../conce
 
 surface kind 를 제공하는 플러그인(markdown·image·html)은 그 kind 의 명세가 정본이므로 [`surfaces/`](../surfaces/index.md)의 kind 문서에 둔다. 파일 핸들러·CLI·설정 페이지·popup 처럼 같은 플러그인의 다른 기여도 그 문서에 함께 적는다. surface 를 제공하지 않는 플러그인은 `plugins/<id>/index.md`(동작) + 화면(UI 가 있으면 — 기획문서의 `## 화면` 절이 기본, 화면이 둘 이상이거나 자기 규칙을 가지면 `screens/` 파일. 기준은 [documentation-model §3](../documentation-model.md#3-폴더-구조-중첩))에 둔다. 이 영역은 [features/](../features/index.md) 와 구조가 같되, **host 가 아니라 플러그인이 제공**하는 동작이라 분리되어 있다. 양식은 features 템플릿을 그대로 쓴다.
 
+Claude의 훅 설치는 [완료 알림 mod](claude/notify-mod.md)도 관리한다. 실제 모델 수신과 로컬 시험의 범위는 구분한다.
+
 ## 카탈로그 (`BUILTINS`)
 
 | 플러그인 (id) | 무엇 | 주요 기여 |

@@ -191,7 +191,13 @@ reader는 `next_offset = retention_start + 파일 안 위치`를 저장한다.
 읽으려면 현재 retention_start에서, 새 알림만 보려면 현재 파일 끝에서 시작한다.
 이전 호스트의 next_offset을 새 실행에 그대로 사용하지 않는다.
 
+#### 부모 Claude 운영 규약 — 자동 mod 수신
+
+`tasty claude install`은 [완료 알림 mod](../plugins/claude/notify-mod.md)를 함께 설치한다. 지원되는 Claude에서 자기 `TASTY_CLAUDE_NOTIFY_MOD` 값이 실제 surface ID와 일치하면 세션 시작부터 완료 로그를 폴링하고 플러그인 출처로 `$.prompt.submit`한다. 같은 세션에 Monitor를 함께 켜면 중복 알림이 된다. 이 경로도 상태 변화만 전달하며 실제 결과를 검증하지 않는다. 세션 재개, 잠금 없는 snapshot과 두 API 호출 사이의 replay 한계는 mod 문서에 있다.
+
 #### 부모 Claude 운영 규약 — Monitor arm
+
+아래는 mod를 지원하지 않거나 활성화하지 못한 Claude의 대체 경로다. 구독은 첫 spawn/tell 전에 시작하고, 시작 직후에도 자식 목록을 확인한다.
 
 새 알림을 놓치지 않도록 자식을 실행하기 전에 자기 서피스의 로그 구독을 준비한다.
 이미 자식을 실행했다면 구독 이전에 기록된 내용도 먼저 확인한다.

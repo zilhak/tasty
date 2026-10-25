@@ -1,4 +1,4 @@
-<!-- source-hash: 7eee74888e93 -->
+<!-- source-hash: b5eb0478c32c -->
 # Troubleshooting
 
 If something is not working, find the matching symptom below. Check installation, permissions, terminal connections, and notifications, or use the reporting steps at the end if you still need help.
@@ -206,7 +206,7 @@ Describe the problem in a [GitHub issue](https://github.com/zilhak/tasty/issues)
 
 ### The parent agent does not receive a child result
 
-Child attention indicators and parent delivery are separate. If the parent is Claude Code, check the completion log and the Monitor subscription. See [connection and recovery](../agents/claude-codex.md).
+Child attention indicators and parent delivery are separate. For a Claude Code parent, re-run install and check the notification mod marker and delivery in a new session. Check Monitor only when the mod is unavailable; do not enable both. See [connection and recovery](../agents/claude-codex.md).
 
 ### Creating a semaphore or barrier fails with "invalid char"
 

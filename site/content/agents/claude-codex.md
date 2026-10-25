@@ -2,7 +2,7 @@
 
 Claude Code와 Codex CLI를 연결해 여러 에이전트에게 일을 나눠 맡겨보세요. 한 에이전트가 다른 에이전트를 실행하고 결과를 받는 방식으로 구현, 테스트, 검토를 함께 진행할 수 있습니다.
 
-Claude Code와 Codex CLI는 별도로 설치하세요. Tasty는 에이전트 실행과 배치, 작업을 맡긴 에이전트와의 연결을 관리합니다. 훅 설치와 함께 부모의 수신 설정도 마치세요. 완료는 부모 종류와 관계없이 같은 완료 로그에 쌓이고, 부모가 Claude Code이면 그 로그를 Monitor로 구독합니다. 자세한 절차는 [완료 알림 받기](#4-완료-알림-받기)를 따르세요.
+Claude Code와 Codex CLI는 별도로 설치하세요. Tasty는 에이전트 실행과 배치, 작업을 맡긴 에이전트와의 연결을 관리합니다. 훅 설치와 함께 부모의 수신 설정도 마치세요. 완료는 부모 종류와 관계없이 같은 완료 로그에 쌓이고, 부모가 Claude Code이면 설치된 완료 알림 mod가 로그를 자동으로 읽습니다. mod를 지원하지 않는 버전은 Monitor로 구독합니다. 자세한 절차는 [완료 알림 받기](#4-완료-알림-받기)를 따르세요.
 
 ## 빠른 시작
 
@@ -18,7 +18,7 @@ Claude Code와 Codex CLI는 별도로 설치하세요. Tasty는 에이전트 실
 에이전트의 상태(작업 중 / 대기 / 입력 필요 / 종료)를 Tasty 가 알려면 각 CLI 의 훅 설정에 Tasty 항목이 들어가야 합니다.
 
 ```sh
-tasty claude install    # ~/.claude/settings.json 의 hooks 에 Tasty 항목 추가
+tasty claude install    # Tasty 훅과 완료 알림 mod 설치
 tasty codex install     # ~/.codex/config.toml 의 [hooks] 에 Tasty 항목 추가
 ```
 
@@ -44,7 +44,7 @@ tasty codex install --config-file /absolute/codex-home/work.config.toml
 
 - 에이전트가 응답을 마치거나 질문을 던지면 그 서피스에 **주의 환기 테두리**가 켜지고 사이드바 워크스페이스에 배지가 붙습니다 (질문 대기는 노란색 우선).
 - 탭을 닫았다가 복원하거나 Tasty 를 재시작하면 같은 세션으로 다시 이어집니다 (`claude -r` / `codex resume`).
-- 자식의 상태·결과를 부모가 받으려면 [수신 설정](#4-완료-알림-받기)도 필요합니다. 완료는 완료 로그에 한 줄로 쌓이고, 부모 Claude Code는 그것을 Monitor로 구독합니다.
+- 자식의 상태·결과를 부모가 받으려면 [수신 설정](#4-완료-알림-받기)도 필요합니다. 완료는 완료 로그에 한 줄로 쌓이고, 지원되는 부모 Claude Code는 완료 알림 mod로 그것을 받습니다.
 
 `tasty codex install` 후 Tasty의 Bash·zsh 터미널에서는 평소처럼 `codex`나 `codex resume`을
 입력해도 복원 정보가 저장됩니다. 세션 선택기를 그대로 사용할 수 있고, 선택한 대화는 새 메시지를
@@ -146,9 +146,17 @@ tasty claude spawn --workspace workers --cwd ~/proj --model opus --effort high \
 Claude 자식이 API 에러로 턴을 끝냈으면 완료 알림 줄 끝에 그 사실과 에러 종류(예: `overloaded`)가 붙습니다. 백그라운드 작업이 남아 자식이 계속 기다리는 경우에는 완료 줄 대신 그 사실을 적은 줄이 한 번 남습니다.
 자식이 백그라운드 셸이나 서브에이전트를 기다리는 동안 그 작업의 출력이 2분 동안 늘지 않으면, 작업 이름을 적은 줄(`background work <이름> has written no output for <분> min`)이 한 번 남습니다. Tasty가 그 작업의 출력을 찾지 못하면 10분 동안 화면 출력이 없을 때 한 번 남깁니다.
 
+### Claude Code에서 자동으로 받기
+
+업데이트 후 `tasty claude install`을 다시 실행하고 새 Claude Code 세션을 시작하세요. 설치 명령은 기존 훅과 다른 플러그인 경로를 보존하면서 완료 알림 mod도 설치합니다. Claude Code 2.1.307의 mod API를 기준으로 작성됐습니다. 실제 모델 턴 수신 검증은 별도이며, 사용량 제한이나 인증 오류를 성공으로 보지 않습니다.
+
+mod가 활성화되면 세션 시작부터 자기 완료 로그를 읽고, Claude가 작업 중이면 그 턴이 끝난 뒤 플러그인 메시지로 알립니다. 새 세션은 이전 로그를 다시 전달하지 않고, 정상적인 mod 새로고침은 저장된 위치에서 이어 읽습니다. 읽지 않은 로그가 정리되면 복구할 수 없으며, 메시지 접수와 읽기 위치 저장 사이에 프로세스가 끊기면 마지막 묶음이 다시 올 수 있습니다. 상태 알림은 작업 성공의 증거가 아닙니다.
+
+그 Claude의 Bash에서 `TASTY_CLAUDE_NOTIFY_MOD` 값이 자기 서피스 번호와 일치하는지 확인할 수 있습니다. mod와 Monitor를 함께 켜면 중복 알림이 됩니다. 기존 개인 지침이나 스킬의 Monitor 절차도 이 표식이 있는 세션에서는 생략하세요. Tasty가 그 파일들을 자동으로 바꾸지는 않습니다. 제거는 `tasty claude uninstall`입니다.
+
 ### Claude Code의 Monitor로 받기
 
-부모가 Claude Code이면 완료 로그를 Monitor로 구독합니다.
+mod를 지원하지 않거나 활성화하지 못한 부모 Claude Code에서만 Monitor를 사용합니다. 첫 spawn/tell 전에 구독하고, 구독 직후 자식 목록도 확인하세요.
 
 ```text
 Monitor({ command: "tail -n0 -F \"$TASTY_PARENT_HOME/notify/$TASTY_SURFACE_ID.log\"", timeout_ms: 1800000 })
@@ -324,7 +332,7 @@ tasty claude spawn --workspace w --profile continue-checklist
 
 ## 문제 해결
 
-- **완료 알림이 안 옵니다** — 자식 CLI의 훅 설치·실행과 [수신 설정](#4-완료-알림-받기)을 확인하세요. 부모가 Claude Code이면 Monitor가 완료 로그를 구독하는지 확인하세요. 훅 전달 실패는 `~/.tasty/hook-failures.log` 에 남습니다. 플러그인 로그는 `tasty plugin logs com.tasty.claude --follow`.
+- **완료 알림이 안 옵니다** — 자식 CLI의 훅 설치·실행과 [수신 설정](#4-완료-알림-받기)을 확인하세요. 부모가 Claude Code이면 완료 알림 mod가 활성화됐는지 확인하세요. mod가 없을 때는 Monitor 구독을 확인하세요. 훅 전달 실패는 `~/.tasty/hook-failures.log` 에 남습니다. 플러그인 로그는 `tasty plugin logs com.tasty.claude --follow`.
 - **`reboot` 가 "claude-session-id meta not set" 으로 실패합니다** — 세션 시작 훅이 세션 ID 를 못 남긴 것입니다. `tasty surface-meta set --key claude-session-id --value <세션ID>` 로 직접 넣습니다.
 - **자식이 spawn 되지 않고 "occupied" 오류** — 대상 워크스페이스가 원격에서 attach 중이거나 mirror 입니다. 다른 워크스페이스를 씁니다.
 - **`kill` 이 "hard-occupied" 오류로 거부됩니다** — 그 자식이 있는 워크스페이스를 원격 사용자가 attach 해 쓰는 중입니다. 자식과의 관계와 탭은 그대로 남습니다. 원격 쪽이 연결을 끊거나 강제 끊기로 점유를 푼 뒤 다시 `kill` 합니다.

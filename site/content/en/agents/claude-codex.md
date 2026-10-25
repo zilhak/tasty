@@ -1,9 +1,9 @@
-<!-- source-hash: cfc65ed250b8 -->
+<!-- source-hash: 38755ac6fbfd -->
 # Working with Claude and Codex
 
 Connect Claude Code and Codex CLI to share work across several agents. One agent can launch others and receive their results, so implementation, testing, and review can run alongside each other.
 
-Install Claude Code and Codex CLI separately. Tasty manages launching, placement, and the connection to the agent that delegated the work. Set up both the hooks and the parent’s receiving channel. Completion lands in the same completion log whatever the parent is, and a Claude Code parent uses Monitor to subscribe to that log. Follow [Receiving completion notifications](#4-receiving-completion-notifications).
+Install Claude Code and Codex CLI separately. Tasty manages launching, placement, and the connection to the agent that delegated the work. Set up both the hooks and the parent’s receiving channel. Completion lands in the same completion log whatever the parent is, and a supported Claude Code parent receives that log through the notification mod, with Monitor as fallback. Follow [Receiving completion notifications](#4-receiving-completion-notifications).
 
 ## Quick start
 
@@ -45,7 +45,7 @@ When the installed hooks run successfully in the current session, Tasty receives
 
 - When an agent finishes a response or asks a question, an **attention border** lights up on that Surface and a badge appears on the Workspace in the sidebar (waiting for a question takes priority, in yellow).
 - When you close and restore a Tab, or restart Tasty, the same session resumes (`claude -r` / `codex resume`).
-- Receiving a child’s state and results also requires [parent setup](#4-receiving-completion-notifications). Completion lands in the completion log as one line, and a Claude Code parent uses Monitor to subscribe to it.
+- Receiving a child’s state and results also requires [parent setup](#4-receiving-completion-notifications). Completion lands in the completion log as one line, and a supported Claude Code parent receives it through the notification mod.
 
 After `tasty codex install`, typing `codex` or `codex resume` in a Tasty Bash or zsh terminal
 also records the conversation for restoration. The native resume picker stays available, and the selected
@@ -148,9 +148,17 @@ interruptions, errors, and process exits are state notifications too; they do no
 When a Claude child ended its turn on an API error, the end of the completion line says so and names the error kind (for example `overloaded`). If background work is still running and the child keeps waiting, a single line saying so is written instead of a completion line.
 While a child waits on a background shell or subagent and that work's output has not grown for 2 minutes, one line naming the work is written (`background work <name> has written no output for <min> min`). If Tasty cannot find that work's output, it writes one line after 10 minutes without screen output instead.
 
+### Receive automatically in Claude Code
+
+After updating Tasty, run `tasty claude install` again and start a new Claude Code session. It installs the notification mod alongside the existing hooks, preserving other hooks and plugin paths. The mod uses the API bundled with Claude Code2.1.307. Real model-turn acceptance is a separate check; a usage limit or authentication error is not success.
+
+The active mod watches its own completion log from session start. When Claude is busy, its plugin-origin notification is queued for a separate turn after the current turn. New sessions skip old log content; an ordinary mod reload resumes its saved cursor. Retention can discard unread lines, and a process interrupted between prompt acceptance and cursor storage can receive the last batch again. A status notification does not prove task success.
+
+In that Claude's Bash, `TASTY_CLAUDE_NOTIFY_MOD` should match its surface number. Do not also arm Monitor: both consumers send notifications. Skip Monitor in personal instructions or skills only for a session with this matching marker; Tasty does not edit those files. Remove the integration with `tasty claude uninstall`.
+
 ### Receiving through Claude Code's Monitor
 
-When the parent is Claude Code, subscribe to the completion log with Monitor.
+Use Monitor only when the parent Claude Code does not support or has not activated the mod. Subscribe before the first spawn/tell and check the child list immediately after subscribing.
 
 ```text
 Monitor({ command: "tail -n0 -F \"$TASTY_PARENT_HOME/notify/$TASTY_SURFACE_ID.log\"", timeout_ms: 1800000 })
@@ -326,7 +334,7 @@ tasty claude spawn --workspace w --profile continue-checklist
 
 ## Troubleshooting
 
-- **No completion notification arrives** — check the child CLI’s hook installation and execution, then [receiving setup](#4-receiving-completion-notifications). If the parent is Claude Code, check that Monitor subscribes to the completion log. Hook delivery failures are recorded in `~/.tasty/hook-failures.log`. Plugin logs: `tasty plugin logs com.tasty.claude --follow`.
+- **No completion notification arrives** — check the child CLI’s hook installation and execution, then [receiving setup](#4-receiving-completion-notifications). For a Claude Code parent, check the notification mod marker and delivery; check Monitor only when the mod is unavailable. Hook delivery failures are recorded in `~/.tasty/hook-failures.log`. Plugin logs: `tasty plugin logs com.tasty.claude --follow`.
 - **`reboot` fails with "claude-session-id meta not set"** — the session-start hook failed to record the session ID. Set it directly with `tasty surface-meta set --key claude-session-id --value <session ID>`.
 - **The child is not spawned and you get an "occupied" error** — the target Workspace is being attached from a remote, or is a mirror. Use another Workspace.
 - **`kill` is refused with a "hard-occupied" error** — a remote user is attached to the Workspace that holds that child. The child relationship and its Tab stay as they are. Run `kill` again after the remote side disconnects or you release the hold with Force detach.
