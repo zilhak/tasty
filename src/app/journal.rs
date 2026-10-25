@@ -272,7 +272,7 @@ impl JournalApplication {
     /// 원본(`structure/journal.db`와 부속 파일)에는 쓰지 않는다. 원인을 가리려고 머리만 읽는다. 임시 저장소는
     /// 종료할 때 지우므로 다음 실행은 원본을 다시 읽는다. 원인과 원본 위치는 오류 알림과
     /// 비포커스 안내로 `engine`의 창에 알린다.
-    #[cfg(all(test, feature = "gui"))]
+    #[cfg(all(test, unix, feature = "gui"))]
     pub(crate) fn fall_back_to_ephemeral(
         &mut self,
         engine: EngineId,

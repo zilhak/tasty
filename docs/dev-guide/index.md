@@ -63,7 +63,7 @@ Tasty 개발자를 위한 가이드다. Tasty를 사용하는 에이전트용 �
 | [cli-structure](cli-structure.md) | CLI 크레이트 내부 세 갈래(commands/ · request/ · local/), `Dispatch`, Codex 호출·실행 문맥 |
 | [debug-ipc](debug-ipc.md) | debug 전용 IPC + 격리 |
 | [headless-ipc-surface](headless-ipc-surface.md) | 헤드리스 IPC의 단일 진입 검사·관측·PTY 종료 수명과 메서드별 제공 범위 |
-| [headless-build-boundaries](headless-build-boundaries.md) | GUI·헤드리스 컴파일 경계와 여덟 빌드 조합 검사 |
+| [headless-build-boundaries](headless-build-boundaries.md) | GUI·헤드리스 컴파일 경계, 시험 helper의 OS 조건과 여덟 빌드 조합 검사 |
 | [app-state-ownership](app-state-ownership.md) | App·Engine·View 상태 소유권, EngineRead와 실행 대여, receipt 기반 정리와 headless 문맥 |
 | [attach-behavior](attach-behavior.md) | GUI client 모듈·접근 범위·대기 수명, attach(서버=loopback / 로컬-원격=클라이언트) · self-attach connector 진입/완료 검증 · raw 출력 오류 처리 |
 | [agent-runner](agent-runner.md) | task DAG executor + 동기화 primitive · 결과 불명 뒤 종결 의무 확인·알림 복구 |

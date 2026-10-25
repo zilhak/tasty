@@ -28,7 +28,7 @@ impl Default for ChildTerminalRegistry {
     }
 }
 impl ChildTerminalRegistry {
-    #[cfg(all(test, feature = "gui"))]
+    #[cfg(all(test, unix, feature = "gui"))]
     pub fn load() -> Self {
         let data = RegistryData::load();
         let hub = Hub::new(data.path.clone());

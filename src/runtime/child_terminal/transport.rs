@@ -143,7 +143,7 @@ impl Hub {
             }),
         })
     }
-    #[cfg(all(test, feature = "gui"))]
+    #[cfg(all(test, unix, feature = "gui"))]
     pub(super) fn test_initial(&self, data: RegistryData) {
         self.state.lock().unwrap().initial = Some(data);
     }

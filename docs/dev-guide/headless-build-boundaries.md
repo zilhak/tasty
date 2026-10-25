@@ -22,6 +22,8 @@ View의 비동기 파일 읽기 receipt와 대기 스크립트는 GUI 전용이�
 정의는 라이브러리 대신 테스트 구성에서 사용되지 않는 정의로 남는다. 테스트의
 존재는 headless 제품 코드가 그 정의를 쓴다는 증거가 아니다.
 
+시험 helper의 OS 조건도 실제 호출자와 맞춘다. journal의 임시 저장소 전환 helper와 child registry의 동기 load·flush·초기 데이터 주입 helper는 Unix GUI 시험만 호출하므로 `all(test, unix, feature = "gui")` 범위에 둔다. 시험 전용 모듈 안에서는 `test`가 이미 적용되므로 OS와 feature 조건만 더한다. Windows에서는 이 helper를 만들지 않으며 production 복구·writer 동작의 조건은 바꾸지 않는다.
+
 **③ headless 도 만들지만 읽는 자가 GUI 뿐인 정의 — `expect(dead_code, reason = ...)`**
 
 빼면 동작이 바뀌므로 제외하지 않는다. 자리마다 `cfg_attr(not(feature = "gui"), expect(...))`

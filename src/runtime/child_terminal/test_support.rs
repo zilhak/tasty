@@ -33,7 +33,7 @@ impl Hub {
     }
 }
 impl ChildTerminalRegistry {
-    #[cfg(feature = "gui")]
+    #[cfg(all(unix, feature = "gui"))]
     pub(crate) fn flush_for_test(&mut self) {
         wait(self.submit().expect("real child file admission"))
             .expect("real child file replacement");
