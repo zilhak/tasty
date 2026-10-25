@@ -34,8 +34,8 @@ pub(in crate::app::attach_client) fn source_changed(
     };
     // A source notification is not a native Reload continuation. Retire its receipt
     // before fetching new metadata, and let the old native allocation be destroyed.
-    session.cancel_retained();
     session.close();
+    session.cancel_retained();
     if let Some(mut mirror) = surface.lock_html_mirror() {
         mirror.user_reload();
     }
@@ -164,11 +164,12 @@ fn refresh(
     }
     let mut predecessor = None;
     if surface.http_session.as_ref().is_some_and(|session| {
-        source.as_ref().is_none_or(|source| {
-            source.metadata_id() != session.source.metadata_id()
-                || source.source_generation() != session.source.source_generation()
-                || source.entry_url() != session.source.entry_url()
-        })
+        !session.native_owner_current()
+            || source.as_ref().is_none_or(|source| {
+                source.metadata_id() != session.source.metadata_id()
+                    || source.source_generation() != session.source.source_generation()
+                    || source.entry_url() != session.source.entry_url()
+            })
     }) && let Some(session) = surface.http_session.take()
     {
         predecessor = match session.take_successor() {

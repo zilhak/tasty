@@ -29,6 +29,8 @@ use tasty_remote::{
     html_mirror::{HttpSource, HttpView},
 };
 mod delivery;
+mod native_store;
+pub(crate) use native_store::NativeStore;
 mod receive;
 mod reload;
 mod retirement;
@@ -59,7 +61,8 @@ pub(crate) struct HttpSession {
     failed: AtomicBool,
     joined: Arc<AtomicU8>,
     retaining: AtomicBool,
-    pub(crate) native_store: Arc<AtomicBool>,
+    pub(crate) native_store: Arc<NativeStore>,
+    native_generation: u64,
     final_body: Mutex<Option<Arc<tasty_remote::html_http_body::VerifiedBody>>>,
     state: Mutex<State>,
     wake: Arc<dyn Fn() + Send + Sync>,
@@ -72,16 +75,22 @@ impl HttpSession {
         sender: Arc<ConnectionSender>,
         allow_remote_content: bool,
         https: bool,
-        native_store: Arc<AtomicBool>,
+        native_store: Arc<NativeStore>,
         wake: Arc<dyn Fn() + Send + Sync>,
         reload: ReloadSetup,
     ) -> Result<Arc<Self>, String> {
         let view = source.new_view().ok_or("retired native HTTP source")?;
         let live = Arc::new(AtomicBool::new(true));
+        let native_generation = native_store.generation();
         let current: Current = {
             let view = view.clone();
             let live = live.clone();
-            Arc::new(move || live.load(Ordering::Acquire) && view.is_current())
+            let native_store = native_store.clone();
+            Arc::new(move || {
+                live.load(Ordering::Acquire)
+                    && native_store.is_current(native_generation)
+                    && view.is_current()
+            })
         };
         let metadata = source.metadata_id();
         let cap = tasty_ipc::admission::QUEUED_BYTES_LIMIT;
@@ -134,6 +143,7 @@ impl HttpSession {
             joined: Arc::new(AtomicU8::new(0)),
             retaining: AtomicBool::new(false),
             native_store,
+            native_generation,
             final_body: Mutex::default(),
             state: Mutex::new(State {
                 setup: Some(setup),
@@ -225,10 +235,7 @@ impl HttpSession {
             }));
             state.endpoint_pending = Some(rx);
         }
-        if state.runtime.is_some()
-            && state.preparation.is_none()
-            && !self.native_store.load(Ordering::Acquire)
-        {
+        if state.runtime.is_some() && state.preparation.is_none() && !self.native_store.is_live() {
             let runtime = state.runtime.as_ref().expect("ready runtime");
             let (receipt, work) = Preparation::new(
                 tasty_utils::path::tasty_home().ok_or("native HTTP data home unavailable")?,
@@ -349,11 +356,15 @@ impl HttpSession {
         self.retaining.store(true, Ordering::Release);
     }
     pub(crate) fn cancel_retained(&self) {
+        self.native_store.invalidate(self.native_generation);
         self.retaining.store(false, Ordering::Release);
         self.close_reload();
     }
+    pub(crate) fn native_owner_current(&self) -> bool {
+        self.native_store.is_current(self.native_generation)
+    }
     pub(crate) fn retaining(&self) -> bool {
-        self.retaining.load(Ordering::Acquire)
+        self.native_owner_current() && self.retaining.load(Ordering::Acquire)
     }
 }
 impl Drop for HttpSession {

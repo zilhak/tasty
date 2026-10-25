@@ -57,7 +57,7 @@ pub struct RemoteSurface {
     #[cfg(all(feature = "gui", target_os = "linux"))]
     pub(crate) http_session: Option<Arc<crate::app::http_session::HttpSession>>,
     #[cfg(all(feature = "gui", target_os = "linux"))]
-    pub(crate) http_native_store: Arc<AtomicBool>,
+    pub(crate) http_native_store: Arc<crate::app::http_session::NativeStore>,
 }
 
 // 필드별로 poison을 처음 한 번 기록한다. 값 하나를 교체하는 락이므로 기존 값을 복구한다.
@@ -122,7 +122,7 @@ impl RemoteSurface {
             #[cfg(all(feature = "gui", target_os = "linux"))]
             http_session: None,
             #[cfg(all(feature = "gui", target_os = "linux"))]
-            http_native_store: Arc::new(AtomicBool::new(false)),
+            http_native_store: Arc::default(),
         }
     }
 
@@ -334,9 +334,7 @@ impl Surface for RemoteSurface {
         if let Some(session) = &self.http_session {
             return (session.is_current()
                 || session.entry_body().is_some()
-                || session
-                    .native_store
-                    .load(std::sync::atomic::Ordering::Acquire))
+                || session.native_store.is_live())
             .then(|| session.source.address().to_owned());
         }
         if let Some(mirror) = &self.html_mirror {

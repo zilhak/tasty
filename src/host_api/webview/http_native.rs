@@ -90,9 +90,7 @@ impl PendingNative {
             result.map_err(|error| format!("native HTTP selected-clear barrier: {error:?}"))?;
         view.use_endpoint_trust()
             .map_err(|error| format!("native endpoint TLS owner: {error:?}"))?;
-        self.session
-            .native_store
-            .store(true, std::sync::atomic::Ordering::Release);
+        self.session.native_store.publish();
         let native_owner = Arc::new(());
         self.session.bind_native_owner(&native_owner)?;
         Ok(Some(NativeDocument {
@@ -167,11 +165,9 @@ impl Drop for NativeDocument {
     fn drop(&mut self) {
         // Revoke endpoint/body callbacks before destroying the native view. The session's runtime
         // retains endpoint teardown on its worker, without joining on GTK.
-        self.session
-            .borrow()
-            .native_store
-            .store(false, std::sync::atomic::Ordering::Release);
-        self.session.borrow().close();
+        let session = self.session.borrow();
+        session.close();
+        session.cancel_retained();
         self.view.close();
     }
 }
