@@ -20,6 +20,10 @@ const EXPECTED_BLOCKS: &[(&str, &str)] = &[
         "src/host_api/webview/entry_response/macos.rs",
         "EntryHandler",
     ),
+    (
+        "src/host_api/webview/http_context/macos/delegate.rs",
+        "NavigationDelegate",
+    ),
     ("src/host_api/webview/macos.rs", "NavDelegate"),
     ("src/host_api/webview/macos.rs", "KeyWebView"),
     ("src/host_api/webview/overlay_host/macos.rs", "OverlayView"),
@@ -231,6 +235,29 @@ fn entry_handler_catalog_membership_does_not_exempt_value_returns() {
     let after = scan(&mask_non_code(&mutated));
     assert_eq!(after.names, before.names);
     assert_eq!(after.blocks, before.blocks);
+    assert_eq!(after.violations.len(), 1);
+}
+
+#[test]
+fn navigation_delegate_catalog_membership_does_not_exempt_value_returns() {
+    let raw = std::fs::read_to_string(
+        repo_root().join("src/host_api/webview/http_context/macos/delegate.rs"),
+    )
+    .unwrap();
+    let before = scan(&mask_non_code(&raw));
+    assert_eq!(before.names, ["NavigationDelegate"]);
+    assert!(before.unclosed.is_empty());
+    assert!(before.violations.is_empty());
+    let mutated = raw.replacen(
+        "self.respond(challenge, done);",
+        "return self.respond(challenge, done);",
+        1,
+    );
+    assert_ne!(raw, mutated, "the real delegate callback must be mutated");
+    let after = scan(&mask_non_code(&mutated));
+    assert_eq!(after.names, before.names);
+    assert_eq!(after.blocks, before.blocks);
+    assert!(after.unclosed.is_empty());
     assert_eq!(after.violations.len(), 1);
 }
 
