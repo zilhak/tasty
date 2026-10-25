@@ -1,6 +1,8 @@
 //! Same native view, selected-clear barrier and one captured original Reload continuation.
 use super::super::http_context::linux::{ReadyView, RetiredView};
 use super::*;
+#[cfg(debug_assertions)]
+use std::cell::Cell;
 use webkit2gtk::WebViewExt;
 pub(super) struct Replacement {
     old: Arc<HttpSession>,
@@ -8,6 +10,26 @@ pub(super) struct Replacement {
     retired: Option<RetiredView>,
     prepared: PendingNative,
     result: Rc<RefCell<Option<Result<ReadyView, super::super::http_context::linux::ContextError>>>>,
+    #[cfg(debug_assertions)]
+    control_held: Cell<bool>,
+}
+#[cfg(debug_assertions)]
+impl Replacement {
+    fn hold_ready_for_control(&self) -> bool {
+        if !crate::remote::http_native_fixture::hold_retained_resume()
+            || !self.result.borrow().as_ref().is_some_and(Result::is_ok)
+        {
+            return false;
+        }
+        if !self.control_held.replace(true) {
+            tracing::debug!(
+                old_document = self.old.source.metadata_id().document,
+                prepared_document = self.prepared.session.source.metadata_id().document,
+                "native HTTP selected clear ready; host control holds continuation"
+            );
+        }
+        true
+    }
 }
 impl NativeDocument {
     pub(crate) fn session_slot(&self) -> Rc<RefCell<Arc<HttpSession>>> {
@@ -67,6 +89,8 @@ impl NativeDocument {
             retired: Some(retired),
             prepared: PendingNative::new(old),
             result: Rc::default(),
+            #[cfg(debug_assertions)]
+            control_held: Cell::new(false),
         });
         Ok(())
     }
@@ -113,6 +137,10 @@ impl NativeDocument {
                         wake();
                     }),
                 );
+        }
+        #[cfg(debug_assertions)]
+        if replacement.hold_ready_for_control() {
+            return Ok(None);
         }
         let result = replacement.result.borrow_mut().take();
         let Some(result) = result else {
