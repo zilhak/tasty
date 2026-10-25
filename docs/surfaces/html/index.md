@@ -412,3 +412,11 @@ overlay). 3자 매핑: [design-gallery-mapping.md](../../design/systems/design-g
 ### 시각 소스
 
 콘텐츠는 OS 네이티브 WebView 가 렌더하므로 design-system 토큰이 적용되지 않는다(웹 페이지 자체 스타일). 타일 정렬/경계만 작업영역 레이아웃을 따른다.
+
+### 원격 HTTP(S) native viewer
+
+Linux X11 client는 지원하는 GUI·headless 원격 서버에 attach하면 HTTP·HTTPS·Reload를 별도로 협상한다. 실제 등록된 Xlib 창과 X11 GDK backend가 준비되어야 하며 환경 변수로 켜지 않는다. native Wayland·macOS·Windows client는 이 경로를 알리지 않고 미지원 표시를 유지한다. macOS 최소 버전 11은 바뀌지 않는다. 파일 mirror·구 peer fallback은 별도 기존 경로다.
+
+원격 호스트가 실제 HTTP 요청을 실행한다. POST 같은 요청은 원격 서비스의 상태를 바꿀 수 있다. client의 sandboxScripts·allowRemoteContent 설정, 같은 origin 기본 허용과 각 redirect/cross-origin 검사, 브라우저 CORS·CSP·mixed-content 정책을 유지한다. 수신한 정확한 본문을 검사하고 지문과 문서에 묶인 스크립트 허용은 이미 받은 응답으로 다시 표시하여 POST를 재실행하지 않는다. 명시적 Reload는 같은 native view에서 원래 method/upload와 cookie로 새 요청을 보낸다.
+
+각 응답의 encoded 100000바이트와 문서 encoded 누적 2000000바이트 한도에서 기존 허용/거절·계속/중지 UI를 사용한다. Reload는 수신 동의를 초기화하며 본문 지문이 바뀌면 스크립트 동의도 초기화한다. 연결 종료 뒤 받은 본문은 JS를 끄고 남길 수 있으나 재연결과 source 교체에는 cookie나 스크립트 동의를 옮기지 않는다. client 직접 접속·global TLS trust·미지원 backend fallback은 없다. native owner와 전송 수명은 [HTTP bridge](../../dev-guide/html-http-bridge.md#linux-app-session-and-native-factory)를 따른다.

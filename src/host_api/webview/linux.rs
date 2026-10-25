@@ -24,6 +24,8 @@ use super::load_generation::SignalOrderLoads;
 use super::script_gate::{DeferredScan, Response, ScriptGate};
 use super::{NavState, PendingNavigation, WebViewBounds};
 
+mod availability;
+pub(crate) use availability::http_available;
 mod content_filter;
 mod navigation_policy;
 mod overlay_backend;

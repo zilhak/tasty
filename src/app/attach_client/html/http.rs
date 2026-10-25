@@ -5,16 +5,6 @@ use crate::{app::http_session::HttpSession, runtime::engine_access::EngineMut};
 use std::sync::Arc;
 use tasty_remote::client_session::AttachClientSession;
 
-fn enabled() -> bool {
-    #[cfg(debug_assertions)]
-    {
-        crate::remote::http_native_fixture::enabled()
-    }
-    #[cfg(not(debug_assertions))]
-    {
-        false
-    }
-}
 pub(in crate::app::attach_client) fn source_changed(
     sess: &AttachClientSession,
     engine: &mut EngineMut<'_>,
@@ -52,7 +42,7 @@ pub(super) fn synchronize(sess: &mut AttachClientSession, engine: &mut EngineMut
         settings_source.as_ref(),
         &engine.runtime.settings,
     );
-    let available = enabled()
+    let available = engine.runtime.http_viewer_available
         && sess.state.resync_pending.is_none()
         && !sess
             .transport

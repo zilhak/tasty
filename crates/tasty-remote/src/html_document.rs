@@ -305,6 +305,8 @@ pub struct HtmlSession {
     pub server_http_reload: bool,
     pub http_documents: crate::html_http_session::HttpDocuments,
     pub viewer_declared: bool,
+    /// The current native renderer declaration, updated when its actual window is parked/restored.
+    pub viewer_http_declared: bool,
     pub mirrors: HashMap<u32, Arc<std::sync::Mutex<crate::html_mirror::HtmlMirror>>>,
     epoch: u64,
     sequence: u64,

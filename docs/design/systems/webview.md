@@ -572,3 +572,7 @@ native WebView는 winit 창의 X 자식이라 포인터는 X 서버가 자식 �
 - `debug inject window-mouse`·`egui-mouse`는 host 창의 입력 경로에 들어가므로 WebView 자식에 닿지 않는다
   (`injected:true` 를 돌려주지만 페이지는 바뀌지 않음). Xvfb에서 WebView에 클릭을 넣는 수단은 XTest(xdotool)다.
 
+
+## 원격 HTTP native backend 가용성
+
+원격 HTTP(S) viewer는 Linux X11 native factory가 받는 실제 Xlib 창·display와 X11 GDK 준비에 한정한다. 등록한 창에서 판정하여 engine 수명에 보관하고, parked 상태에서는 해제하며 복원 때 다시 판정한다. 서버 HTTP/HTTPS/Reload protocol 지원은 GUI·headless 공통이고 client renderer 가용성과 구별한다. native Wayland·macOS·Windows client는 이 capability를 선언하지 않는다. 실제 전송과 script/size consent는 기존 수신·배너 widgets를 사용하며 신규 UI나 포커스 이동은 없다. [원격 HTTP viewer](../../surfaces/html/index.md#원격-https-native-viewer)의 설정·trust boundary를 따른다.

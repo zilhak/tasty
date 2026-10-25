@@ -406,6 +406,9 @@ impl App {
         wid: winit::window::WindowId,
         main: Box<crate::view::main::MainView>,
     ) {
+        if let Some(engine) = self.engines.window_engine_mut(wid) {
+            engine.runtime.http_viewer_available = false;
+        }
         let crate::view::main::MainView { state, .. } = *main;
         if self.engines_mut().park(wid, state).is_none() {
             tracing::error!("parking window {wid:?} without an engine relation");
@@ -478,6 +481,10 @@ impl App {
         origin: WindowRequestOrigin,
     ) {
         let window_id = window.id();
+        if let Some(engine) = self.engines.get_mut(engine) {
+            engine.runtime.http_viewer_available =
+                crate::webview::http_viewer_available(window.as_ref());
+        }
         state.tutorial.persistence = self.tutorial_progress.client();
         let main = window::main::MainView::new(
             gpu,

@@ -96,3 +96,67 @@ fn http_sender_old_peer_and_disconnect_retire_captured_owners_without_sending() 
     assert!(!second.is_current());
     assert!(rx.try_recv().is_err());
 }
+
+#[test]
+fn http_declaration_requires_server_transport_and_actual_renderer_readiness() {
+    let (mut sess, _) = test_session_with_frames(9000, HashMap::new());
+    for readiness in [false, true] {
+        assert!(
+            !viewer_capabilities(&sess, readiness)
+                .contains(&tasty_ipc::html_http::CAPABILITY.into())
+        );
+    }
+    sess.transport.html.server_http = true;
+    sess.transport.html.server_https = true;
+    sess.transport.html.server_http_reload = true;
+    let unavailable = viewer_capabilities(&sess, false);
+    assert!(unavailable.contains(&VIEWER_CAPABILITY.into()));
+    for capability in [
+        tasty_ipc::html_http::CAPABILITY,
+        tasty_ipc::html_http::HTTPS_CAPABILITY,
+        tasty_ipc::html_http::RELOAD_CAPABILITY,
+    ] {
+        assert!(!unavailable.contains(&capability.into()));
+        assert!(viewer_capabilities(&sess, true).contains(&capability.into()));
+    }
+    sess.transport.html.server_https = false;
+    sess.transport.html.server_http_reload = false;
+    let http_only = viewer_capabilities(&sess, true);
+    assert!(http_only.contains(&tasty_ipc::html_http::CAPABILITY.into()));
+    assert!(!http_only.contains(&tasty_ipc::html_http::HTTPS_CAPABILITY.into()));
+    assert!(!http_only.contains(&tasty_ipc::html_http::RELOAD_CAPABILITY.into()));
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn actual_sync_updates_native_capabilities_without_resetting_the_file_viewer() {
+    let (mut sess, rx) = test_session_with_frames(9000, HashMap::new());
+    sess.transport.html.server_transfer = true;
+    sess.transport.html.server_entry = true;
+    sess.transport.html.server_http = true;
+    sess.transport.html.server_https = true;
+    sess.transport.html.server_http_reload = true;
+    let (_, mut session) = crate::state::tests::test_state();
+    let mut engine = session.borrow_mut();
+    for readiness in [false, true, false] {
+        engine.runtime.http_viewer_available = readiness;
+        synchronize(&mut sess, &mut engine);
+        let frame = rx.try_recv().expect("capability transition");
+        let HtmlRequest::HtmlCapabilities { capabilities } =
+            serde_json::from_slice(&frame.frame.payload).unwrap()
+        else {
+            panic!("actual declaration");
+        };
+        assert!(capabilities.contains(&CAPABILITY.into()));
+        assert!(capabilities.contains(&VIEWER_CAPABILITY.into()));
+        assert_eq!(
+            capabilities.contains(&tasty_ipc::html_http::CAPABILITY.into()),
+            readiness
+        );
+        synchronize(&mut sess, &mut engine);
+        assert!(
+            rx.try_recv().is_err(),
+            "unchanged availability does not repeat declarations"
+        );
+    }
+}

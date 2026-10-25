@@ -57,12 +57,17 @@ pub(in crate::app::attach_client) fn synchronize(
             .html_entry_hosts
             .remove(&sess.state.local_workspace);
     }
-    if available && !sess.transport.html.viewer_declared {
-        let capabilities = viewer_capabilities(sess);
+    let http_available = engine.runtime.http_viewer_available && sess.transport.html.server_http;
+    if available
+        && (!sess.transport.html.viewer_declared
+            || sess.transport.html.viewer_http_declared != http_available)
+    {
+        let capabilities = viewer_capabilities(sess, http_available);
         if !send(sess, HtmlRequest::HtmlCapabilities { capabilities }) {
             return false;
         }
         sess.transport.html.viewer_declared = true;
+        sess.transport.html.viewer_http_declared = http_available;
     }
     let mut changed = if live && sess.transport.html.server_http {
         sess.transport
@@ -256,8 +261,8 @@ fn bind_mirrors(
 #[cfg(test)]
 mod tests;
 
-fn viewer_capabilities(sess: &AttachClientSession) -> Vec<String> {
-    let capabilities = if sess.transport.html.server_resources {
+fn viewer_capabilities(sess: &AttachClientSession, http_available: bool) -> Vec<String> {
+    let mut capabilities = if sess.transport.html.server_resources {
         vec![
             CAPABILITY.into(),
             VIEWER_CAPABILITY.into(),
@@ -266,20 +271,14 @@ fn viewer_capabilities(sess: &AttachClientSession) -> Vec<String> {
     } else {
         vec![CAPABILITY.into(), VIEWER_CAPABILITY.into()]
     };
-    #[cfg(all(debug_assertions, feature = "gui", target_os = "linux"))]
-    let capabilities =
-        if crate::remote::http_native_fixture::enabled() && sess.transport.html.server_http {
-            let mut capabilities = capabilities;
-            capabilities.push(tasty_ipc::html_http::CAPABILITY.into());
-            if sess.transport.html.server_http_reload {
-                capabilities.push(tasty_ipc::html_http::RELOAD_CAPABILITY.into());
-            }
-            if sess.transport.html.server_https {
-                capabilities.push(tasty_ipc::html_http::HTTPS_CAPABILITY.into());
-            }
-            capabilities
-        } else {
-            capabilities
-        };
+    if http_available && sess.transport.html.server_http {
+        capabilities.push(tasty_ipc::html_http::CAPABILITY.into());
+        if sess.transport.html.server_http_reload {
+            capabilities.push(tasty_ipc::html_http::RELOAD_CAPABILITY.into());
+        }
+        if sess.transport.html.server_https {
+            capabilities.push(tasty_ipc::html_http::HTTPS_CAPABILITY.into());
+        }
+    }
     capabilities
 }

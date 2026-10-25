@@ -265,7 +265,10 @@ mod tests {
                 tasty_ipc::explorer_op::CAPABILITY,
                 tasty_ipc::html_transfer::CAPABILITY,
                 tasty_ipc::html_transfer::VIEWER_CAPABILITY,
-                tasty_ipc::html_transfer::RESOURCE_CAPABILITY
+                tasty_ipc::html_transfer::RESOURCE_CAPABILITY,
+                tasty_ipc::html_http::CAPABILITY,
+                tasty_ipc::html_http::HTTPS_CAPABILITY,
+                tasty_ipc::html_http::RELOAD_CAPABILITY
             ])
         );
     }

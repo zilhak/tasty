@@ -12,6 +12,9 @@ use crate::runtime::terminal_store::TerminalStore;
 pub(crate) struct EngineRuntime {
     #[cfg(feature = "gui")]
     pub(crate) dag_reads: super::dag_query::DagReadQueue,
+    /// Actual registered native window/backend readiness; parked/headless engines cannot render HTTP.
+    #[cfg(feature = "gui")]
+    pub(crate) http_viewer_available: bool,
     pub(crate) settings: crate::settings::Settings,
     pub(crate) default_cols: usize,
     pub(crate) default_rows: usize,
@@ -93,6 +96,8 @@ impl EngineRuntime {
         Self {
             #[cfg(feature = "gui")]
             dag_reads: Default::default(),
+            #[cfg(feature = "gui")]
+            http_viewer_available: false,
             settings,
             default_cols: cols,
             default_rows: rows,

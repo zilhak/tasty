@@ -1347,25 +1347,16 @@ mod capture_result_tests {
 }
 
 fn descriptor_capabilities() -> Vec<&'static str> {
-    let capabilities = vec![
+    // These describe the server protocol, including headless hosts, not its local renderer.
+    vec![
         tasty_ipc::stream::RESIZE_ACK_CAPABILITY,
         tasty_ipc::stream::INPUT_ACK_CAPABILITY,
         tasty_ipc::explorer_op::CAPABILITY,
         tasty_ipc::html_transfer::CAPABILITY,
         tasty_ipc::html_transfer::VIEWER_CAPABILITY,
         tasty_ipc::html_transfer::RESOURCE_CAPABILITY,
-    ];
-    #[cfg(all(debug_assertions, feature = "gui", target_os = "linux"))]
-    let capabilities = if super::http_native_fixture::enabled() {
-        let mut capabilities = capabilities;
-        capabilities.extend([
-            tasty_ipc::html_http::CAPABILITY,
-            tasty_ipc::html_http::HTTPS_CAPABILITY,
-            tasty_ipc::html_http::RELOAD_CAPABILITY,
-        ]);
-        capabilities
-    } else {
-        capabilities
-    };
-    capabilities
+        tasty_ipc::html_http::CAPABILITY,
+        tasty_ipc::html_http::HTTPS_CAPABILITY,
+        tasty_ipc::html_http::RELOAD_CAPABILITY,
+    ]
 }
