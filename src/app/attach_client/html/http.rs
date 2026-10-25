@@ -34,17 +34,16 @@ pub(in crate::app::attach_client) fn source_changed(
     };
     // A source notification is not a native Reload continuation. Retire its receipt
     // before fetching new metadata, and let the old native allocation be destroyed.
+    session.cancel_retained();
     session.close();
-    if surface
-        .lock_html_mirror()
-        .is_some_and(|mut mirror| mirror.user_reload())
-    {
-        surface.with_html_script(|state| {
-            *state = tasty_model::html_script::HtmlScriptState::new(state.sandbox());
-            state.on_host_load_requested();
-            state.on_load_started();
-        });
+    if let Some(mut mirror) = surface.lock_html_mirror() {
+        mirror.user_reload();
     }
+    surface.with_html_script(|state| {
+        *state = tasty_model::html_script::HtmlScriptState::new(state.sandbox());
+        state.on_host_load_requested();
+        state.on_load_started();
+    });
 }
 pub(super) fn synchronize(sess: &mut AttachClientSession, engine: &mut EngineMut<'_>) -> bool {
     let settings_source =

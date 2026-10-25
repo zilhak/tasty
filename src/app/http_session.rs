@@ -344,6 +344,10 @@ impl HttpSession {
     pub(crate) fn request_retained(&self) {
         self.retaining.store(true, Ordering::Release);
     }
+    pub(crate) fn cancel_retained(&self) {
+        self.retaining.store(false, Ordering::Release);
+        self.close_reload();
+    }
     pub(crate) fn retaining(&self) -> bool {
         self.retaining.load(Ordering::Acquire)
     }

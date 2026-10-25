@@ -17,7 +17,10 @@ impl NativeDocument {
         self.session.borrow().clone()
     }
     pub(crate) fn retaining(&self) -> bool {
-        self.replacement.borrow().is_some()
+        self.replacement
+            .borrow()
+            .as_ref()
+            .is_some_and(|replacement| replacement.old.retaining())
     }
     pub(crate) fn request_reload(&self) -> Result<(), String> {
         if self.retaining() {
@@ -73,6 +76,13 @@ impl NativeDocument {
         wake: Arc<dyn Fn() + Send + Sync>,
     ) -> Result<Option<ReadyView>, String> {
         let mut pending = self.replacement.borrow_mut();
+        if pending
+            .as_ref()
+            .is_some_and(|replacement| !replacement.old.retaining())
+        {
+            pending.take();
+            return Ok(None);
+        }
         let Some(replacement) = pending.as_mut() else {
             return Ok(None);
         };
