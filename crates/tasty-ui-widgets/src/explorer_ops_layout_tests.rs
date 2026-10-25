@@ -222,3 +222,60 @@ fn a_host_budget_smaller_than_the_ellipsis_cannot_paint_into_its_neighbor() {
         );
     }
 }
+
+#[test]
+fn a_narrow_status_exposes_the_full_host_when_its_glyph_is_hovered() {
+    let ctx = egui::Context::default();
+    ctx.style_mut(|style| style.interaction.tooltip_delay = 0.0);
+    let theme = theme();
+    let name = "unabridged-remote-host.example:34567";
+    let rect = egui::Rect::from_min_size(
+        egui::pos2(100.0, 100.0),
+        egui::vec2(203.0, theme.item_height_interactive.value()),
+    );
+    let pointer = egui::pos2(
+        rect.left() + status_pad(&theme) + theme.workspace_mirror_icon_size().value() * 0.5,
+        rect.center().y,
+    );
+    let mut output = None;
+    for time in [0.0, 1.0, 2.0] {
+        output = Some(ctx.run(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(600.0, 400.0),
+                )),
+                time: Some(time),
+                events: vec![egui::Event::PointerMoved(pointer)],
+                ..Default::default()
+            },
+            |ctx| {
+                egui::CentralPanel::default()
+                    .frame(egui::Frame::NONE)
+                    .show(ctx, |ui| {
+                        op_status_line(
+                            ui,
+                            &theme,
+                            rect,
+                            &OpStatusProps {
+                                show_bar: true,
+                                fraction: Some(0.0),
+                                waiting: false,
+                                text: "Copying 1 of 1:",
+                                bytes: Some("0 B / 108.0 KB"),
+                                queued: Some("+1 queued"),
+                                show_label: "Show",
+                                cancel_tip: "Cancel",
+                                host: Some(HostMark {
+                                    name,
+                                    paint_glyph: &|_, _, _| {},
+                                }),
+                            },
+                            &|_, _, _| {},
+                        );
+                    });
+            },
+        ));
+    }
+    assert!(output.unwrap().shapes.iter().any(|s| matches!(&s.shape, egui::Shape::Text(t) if t.galley.job.text == name && !t.galley.elided)), "the hovered status glyph must expose the entire shortened name");
+}

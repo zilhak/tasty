@@ -153,7 +153,9 @@ fn bounded_host(
     );
     child.set_clip_rect(rect.intersect(ui.clip_rect()));
     child.spacing_mut().item_spacing.x = gap;
-    let (glyph, _) = child.allocate_exact_size(egui::vec2(size, size), egui::Sense::hover());
+    let (glyph, glyph_response) =
+        child.allocate_exact_size(egui::vec2(size, size), egui::Sense::hover());
+    glyph_response.on_hover_text(mark.name);
     (mark.paint_glyph)(&mut child, glyph, color);
     if width > size + gap {
         bounded_line(
@@ -168,7 +170,7 @@ fn bounded_host(
             egui::WidgetInfo::labeled(egui::WidgetType::Label, ui.is_enabled(), mark.name)
         });
     }
-    response.on_hover_text(mark.name)
+    response
 }
 
 // ── 진행 상태줄 ──────────────────────────────────────────
