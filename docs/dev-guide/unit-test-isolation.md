@@ -446,7 +446,10 @@ root 상한 8개와 readiness 이후 claim 기한은 그대로다.
 채워진 namespace의 Capacity는 terminal이며, 여덟 actual profile job의 잠금 대기가
 permit을 유지하고 아홉 번째 job을 거절하는 별도 제어 시험을 둔다.
 `preparation::admission_tests`는 세 실제 live root가 있는 namespace에서 sweep 및 create
-잠금을 각각 잡고 해제한 뒤 하나의 실제 profile이 준비되는지 검사한다. receipt Drop과
+잠금을 각각 잡고 해제한 뒤 하나의 실제 profile이 준비되는지 검사한다. 세 live root를
+만드는 양성 fixture 초기화와 제어용 잠금 획득은, 병렬 fork가 물려받은 setup 잠금의
+typed Busy만 최대 2초 재시도한다. 실제 held-lock 단계나 Capacity 거절 제어는 이 setup
+재시도로 감싸지 않는다. receipt Drop과
 current만 바뀐 취소도 잠금을 해제하기 전에 worker를 끝내며, poison·안전하지 않은 경로는
 복구하거나 chmod하지 않는다. 실제 WebKit 수명이나 과거 native 실패의 잠금 소유자를
 증명하는 시험은 아니다.

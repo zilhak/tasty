@@ -35,12 +35,33 @@ fn hold(parent: &std::path::Path) -> File {
         .write(true)
         .open(parent.join(".profile-lock"))
         .unwrap();
-    // SAFETY: the fixture owns this live descriptor; flock accesses no Rust memory.
-    assert_eq!(
-        unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) },
-        0
-    );
+    setup_positive(|| {
+        // SAFETY: the fixture owns this live descriptor; flock accesses no Rust memory.
+        if unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } == 0 {
+            return Ok(());
+        }
+        let error = std::io::Error::last_os_error();
+        Err(if error.kind() == std::io::ErrorKind::WouldBlock {
+            ProfileError::Busy
+        } else {
+            ProfileError::Io(error)
+        })
+    });
     lock
+}
+// Parallel owned fork fixtures can inherit an unrelated setup lock description. Retry
+// only typed Busy while seeding this positive fixture, never Capacity or a refusal control.
+fn setup_positive<T>(mut operation: impl FnMut() -> Result<T, ProfileError>) -> T {
+    let deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+        match operation() {
+            Ok(value) => return value,
+            Err(ProfileError::Busy) if Instant::now() < deadline => {
+                thread::sleep(Duration::from_millis(2));
+            }
+            Err(error) => panic!("positive admission fixture setup: {error}"),
+        }
+    }
 }
 impl HeldAdmission {
     fn start(phase: Phase, roots: usize, timeout: Duration) -> Self {
@@ -48,7 +69,7 @@ impl HeldAdmission {
         fs::set_permissions(home.path(), fs::Permissions::from_mode(0o700)).unwrap();
         let parent = namespace::prepare(home.path()).unwrap();
         for _ in 0..roots {
-            drop(PreparedProfile::create(&parent, 8).unwrap().into_native());
+            drop(setup_positive(|| PreparedProfile::create(&parent, 8)).into_native());
         }
         let lock = Arc::new(Mutex::new(if matches!(phase, Phase::Sweep) {
             Some(hold(&parent))

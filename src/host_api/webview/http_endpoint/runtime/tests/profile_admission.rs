@@ -23,8 +23,8 @@ fn busy_profile_work_retains_eight_job_permits_and_drop_returns_them() {
             .open(namespace.join(".profile-lock"))
             .unwrap();
         lock.write_all(b"tasty-private-profile-lock-v1\n").unwrap();
-        // SAFETY: fixture owns this descriptor through worker cancellation and permit return.
         assert_eq!(
+            // SAFETY: fixture owns this descriptor through worker cancellation and permit return.
             unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) },
             0
         );
@@ -57,10 +57,10 @@ fn busy_profile_work_retains_eight_job_permits_and_drop_returns_them() {
             runtime.current(),
             Arc::new(|| {}),
         );
-        let rejected = runtime
-            .spawn_profile(work)
-            .err()
-            .expect("ninth job must refuse");
+        let rejected = match runtime.spawn_profile(work) {
+            Err(work) => work,
+            Ok(()) => panic!("ninth job must refuse"),
+        };
         drop(rejected);
         drop(extra);
         assert!(receipts.iter().all(|receipt| receipt.poll().is_none()));
