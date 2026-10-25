@@ -8,19 +8,28 @@ const ENV: &str = "CLAUDE_CODE_PLUGIN_DIRS";
 const ASSETS: &[(&str, &str)] = &[
     (
         ".claude-plugin/plugin.json",
-        include_str!("../mod/.claude-plugin/plugin.json"),
+        include_str!("notify_mod/claude/.claude-plugin/plugin.json"),
     ),
-    ("hooks/hooks.json", include_str!("../mod/hooks/hooks.json")),
+    (
+        "hooks/hooks.json",
+        include_str!("notify_mod/claude/hooks/hooks.json"),
+    ),
     (
         "hooks/register.ts",
-        include_str!("../mod/hooks/register.ts"),
+        include_str!("notify_mod/claude/hooks/register.ts"),
     ),
-    ("hooks/reader.ts", include_str!("../mod/hooks/reader.ts")),
+    (
+        "hooks/reader.ts",
+        include_str!("notify_mod/claude/hooks/reader.ts"),
+    ),
     (
         "hooks/messages.ts",
-        include_str!("../mod/hooks/messages.ts"),
+        include_str!("notify_mod/claude/hooks/messages.ts"),
     ),
-    ("types/index.d.ts", include_str!("../mod/types/index.d.ts")),
+    (
+        "types/index.d.ts",
+        include_str!("notify_mod/claude/types/index.d.ts"),
+    ),
 ];
 
 pub(crate) fn directory(settings: &Path) -> Result<PathBuf> {
