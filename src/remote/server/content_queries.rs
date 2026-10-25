@@ -389,9 +389,9 @@ pub(crate) fn notify_markdown_changed(
     plugin_id: &str,
     surface_id: SurfaceId,
 ) -> usize {
-    if !is_attach_content_allowed(kind, plugin_id)
-        && !(kind == "html" && plugin_id == "com.tasty.html")
-    {
+    let allowed = is_attach_content_allowed(kind, plugin_id)
+        || (kind == "html" && plugin_id == "com.tasty.html");
+    if !allowed {
         return 0;
     }
     let Some(hub) = remote.notifier() else {
