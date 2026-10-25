@@ -578,18 +578,7 @@ async fn streams_and_stale_response_identity_fail_without_fallback() {
         })
     ));
     assert!(matches!(op.join().await, Err(Error::Invalid(_))));
-    let mut l = limits();
-    l.network_time = Duration::from_millis(40);
-    let timed = Backend::new(l, tokio::runtime::Handle::current()).unwrap();
-    let doc = timed.document(key(1), &s.url("/"), false).unwrap();
-    assert_eq!(
-        collect(fresh(
-            doc.open(request(&timed, &s, "/slow", 1, b"")).unwrap()
-        ))
-        .await
-        .unwrap_err(),
-        Error::Timeout
-    );
+    finite_network_timeout(&s).await;
     assert_eq!(s.count(), 3);
 }
 
@@ -617,16 +606,24 @@ async fn cancelled_join_future_cancels_instead_of_detaching_worker() {
 #[tokio::test]
 async fn consent_pause_is_not_network_timeout() {
     let s = Server::new();
-    let mut l = limits();
-    l.read_timeout = Duration::from_millis(50);
-    l.network_time = Duration::from_millis(100);
-    let b = Backend::new(l, tokio::runtime::Handle::current()).unwrap();
+    let configured = limits();
+    let outside_both = configured.network_time + configured.read_timeout + Duration::from_secs(1);
+    let b = Backend::new(configured, tokio::runtime::Handle::current()).unwrap();
     let d = b.document(key(1), &s.url("/"), false).unwrap();
     let mut op = fresh(d.open(request(&b, &s, "/status", 1, b"")).unwrap());
     let Event::Head(h) = op.events.recv().await.unwrap() else {
         panic!()
     };
-    tokio::time::sleep(Duration::from_millis(200)).await;
+    // The actual Head is established under the common fixture budgets. Keep the
+    // worker runnable while REAL elapsed consent time exceeds BOTH configured
+    // deadlines; this also covers the production std::Instant accounting clock.
+    let paused_at = Instant::now();
+    tokio::time::sleep(outside_both).await;
+    assert!(paused_at.elapsed() >= outside_both);
+    assert!(matches!(
+        op.events.try_recv(),
+        Err(tokio::sync::mpsc::error::TryRecvError::Empty)
+    ));
     op.credit(Credit {
         response: h.id,
         offset: 0,
@@ -734,4 +731,77 @@ async fn https_origin_policy_rejects_scheme_and_port_changes_before_network() {
             "URL userinfo; use native Authorization header"
         ))
     ));
+}
+
+// Current-thread runtime: once the receiver consumes this credit, its poll reaches
+// the held EOF read before this task runs again. A ready yield prevents idle clock
+// auto-advance; a broken credit consumer fails a finite check rather than hanging.
+async fn await_credit_consumed(op: &Operation) {
+    for _ in 0..10000 {
+        if op.credits.capacity() == op.credits.max_capacity() {
+            return;
+        }
+        tokio::task::yield_now().await;
+    }
+    panic!("exact EOF credit was not consumed");
+}
+
+async fn finite_network_timeout(s: &Server) {
+    let mut l = limits();
+    let network_budget = l.network_time;
+    // Separate the two timers. Virtual time, rather than scheduling before a 40ms Head,
+    // proves the finite cumulative network budget expires first.
+    l.read_timeout = network_budget * 2;
+    let timed = Backend::new(l, tokio::runtime::Handle::current()).unwrap();
+    let doc = timed.document(key(1), &s.url("/"), false).unwrap();
+    let mut op = fresh(doc.open(request(&timed, s, "/slow", 1, b"")).unwrap());
+    let Event::Head(head) = op.events.recv().await.unwrap() else {
+        panic!("actual loopback Head")
+    };
+    op.credit(Credit {
+        response: head.id,
+        offset: 0,
+        max_bytes: CHUNK_BYTES,
+        allow_large: false,
+    })
+    .unwrap();
+    let Event::Chunk { bytes, .. } = op.events.recv().await.unwrap() else {
+        panic!("actual loopback body")
+    };
+    assert_eq!(bytes, b"hello");
+    tokio::time::pause();
+    op.credit(Credit {
+        response: head.id,
+        offset: bytes.len() as u64,
+        max_bytes: CHUNK_BYTES,
+        allow_large: false,
+    })
+    .unwrap();
+    await_credit_consumed(&op).await;
+    let clock = tokio::time::Instant::now();
+    tokio::time::advance(network_budget + Duration::from_secs(1)).await;
+    assert!(
+        matches!(
+            ready_clock_event(&mut op).await,
+            Event::Failed {
+                error: Error::Timeout,
+                ..
+            }
+        ),
+        "network budget must expire before the longer read timer"
+    );
+    assert!(tokio::time::Instant::now().duration_since(clock) < network_budget * 2);
+    tokio::time::resume();
+    assert_eq!(op.join().await.unwrap_err(), Error::Timeout);
+}
+
+async fn ready_clock_event(op: &mut Operation) -> Event {
+    for _ in 0..10000 {
+        match op.events.try_recv() {
+            Ok(event) => return event,
+            Err(tokio::sync::mpsc::error::TryRecvError::Empty) => tokio::task::yield_now().await,
+            Err(error) => panic!("network timeout event channel: {error}"),
+        }
+    }
+    panic!("network budget produced no event at the explicitly advanced clock");
 }

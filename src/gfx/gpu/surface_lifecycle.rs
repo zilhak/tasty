@@ -147,6 +147,8 @@ mod tests {
         }
         let warnings = Arc::new(AtomicUsize::new(0));
         tracing::subscriber::with_default(Warnings(warnings.clone()), || {
+            // Other root tests register these callsites under different subscribers.
+            tracing::callsite::rebuild_interest_cache();
             let current = PhysicalSize::new(4096, 700);
             assert_eq!(configure_dimensions(current, current, 4096, false), None);
             assert_eq!(warnings.load(Ordering::Relaxed), 0);
