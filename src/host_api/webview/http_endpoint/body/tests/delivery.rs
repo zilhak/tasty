@@ -129,6 +129,8 @@ async fn deliveries(runtime: NativeRuntime) {
     assert!(matches!(retired.first.claim(), Err(EndpointError::Retired)));
     assert!(!retired.second.discard());
     source.retire();
+    reentrant_retirement(&bridge, &view, port).await;
+    reentrant_replay(&bridge, &view);
     scope_retirement(&bridge, &view, port).await;
     let direct_budget = replace_view(&bridge, &view, &mut mirror, port).await;
     bridge.close();
@@ -261,5 +263,111 @@ async fn late_failed_writer(source: &Arc<BodySource>, port: u16) {
     assert!(
         current.claim().is_ok(),
         "late old writer failure must not revoke its replacement"
+    );
+}
+
+struct ReentrantCurrent {
+    source: Mutex<std::sync::Weak<BodySource>>,
+    remaining: AtomicUsize,
+    blocked: AtomicBool,
+    retired: AtomicBool,
+}
+impl ReentrantCurrent {
+    fn check(&self) -> bool {
+        let Some(source) = self.source.lock().unwrap().upgrade() else {
+            return true;
+        };
+        if matches!(
+            source.delivery.try_lock(),
+            Err(std::sync::TryLockError::WouldBlock)
+        ) || matches!(
+            source.replay.try_lock(),
+            Err(std::sync::TryLockError::WouldBlock)
+        ) {
+            self.blocked.store(true, Ordering::Release);
+            return false;
+        }
+        if self
+            .remaining
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |n| n.checked_sub(1))
+            == Ok(1)
+        {
+            source.retire();
+            self.retired.store(true, Ordering::Release);
+        }
+        true
+    }
+}
+async fn reentrant_retirement(
+    bridge: &Arc<HttpBridge>,
+    view: &tasty_remote::html_mirror::HttpView,
+    port: u16,
+) {
+    let (source, probe) = reentrant_source(bridge, view, 4);
+    let (request, budget) = super::roundtrip::native_request(port, "POST", UPLOAD).await;
+    // Fourth currentness check is publication of the real verified NativeResponse. A blocked
+    // callback returns instead of hanging, so the old mutex boundary fails deterministically.
+    assert!(matches!(
+        (source.handler())(request).await,
+        Err(EndpointError::Retired)
+    ));
+    assert!(
+        !probe.blocked.load(Ordering::Acquire),
+        "currentness callback held delivery lock"
+    );
+    assert!(
+        probe.retired.load(Ordering::Acquire),
+        "callback must actually reenter retirement"
+    );
+    assert!(!source.current());
+    assert!(source.delivery.lock().unwrap().is_none());
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while budget.used() != 0 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+}
+
+fn reentrant_source(
+    bridge: &Arc<HttpBridge>,
+    view: &tasty_remote::html_mirror::HttpView,
+    remaining: usize,
+) -> (Arc<BodySource>, Arc<ReentrantCurrent>) {
+    let probe = Arc::new(ReentrantCurrent {
+        source: Mutex::new(std::sync::Weak::new()),
+        remaining: AtomicUsize::new(remaining),
+        blocked: AtomicBool::new(false),
+        retired: AtomicBool::new(false),
+    });
+    let callback = probe.clone();
+    let source = BodySource::new(
+        bridge.clone(),
+        view.clone(),
+        Arc::new(move || callback.check()),
+    );
+    *probe.source.lock().unwrap() = Arc::downgrade(&source);
+    (source, probe)
+}
+fn reentrant_replay(bridge: &Arc<HttpBridge>, view: &tasty_remote::html_mirror::HttpView) {
+    let document = bridge.document().unwrap();
+    let body = document
+        .with_current(|model| model.verified(document.entry()))
+        .flatten()
+        .unwrap();
+    let (source, probe) = reentrant_source(bridge, view, 2);
+    assert!(matches!(
+        source.replay_once(body.head().id),
+        Err(EndpointError::Retired)
+    ));
+    assert!(
+        !probe.blocked.load(Ordering::Acquire),
+        "replay predicate held a source mutex"
+    );
+    assert!(probe.retired.load(Ordering::Acquire));
+    assert!(
+        source.replay.lock().unwrap().is_none(),
+        "failed publication retained replay permission"
     );
 }

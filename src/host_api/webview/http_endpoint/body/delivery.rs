@@ -79,9 +79,11 @@ impl BodySource {
     fn delivery_lock(
         &self,
     ) -> Result<std::sync::MutexGuard<'_, Option<Arc<NativeResponse>>>, EndpointError> {
-        self.delivery.lock().map_err(|_| {
-            self.live.store(false, Ordering::Release);
-            self.stop.send_replace(true);
+        self.delivery.lock().map_err(|poison| {
+            drop(poison);
+            if self.live.swap(false, Ordering::AcqRel) {
+                self.stop.send_replace(true);
+            }
             tracing::error!("native response delivery state poisoned; claims refused");
             EndpointError::Worker
         })
@@ -104,10 +106,13 @@ impl BodySource {
         self: &Arc<Self>,
         response: NativeResponse,
     ) -> Result<Box<dyn ResponseOwner>, EndpointError> {
+        if !self.current() {
+            return Err(EndpointError::Retired);
+        }
         let response = Arc::new(response);
         let previous = {
             let mut pending = self.delivery_lock()?;
-            if !self.current() {
+            if !self.internally_current() {
                 return Err(EndpointError::Retired);
             }
             pending.replace(response.clone())

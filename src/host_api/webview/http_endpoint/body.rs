@@ -54,11 +54,15 @@ impl BodySource {
             stop,
         })
     }
+    fn internally_current(&self) -> bool {
+        self.live.load(Ordering::Acquire) && self.view.is_current()
+    }
     fn current(&self) -> bool {
-        self.live.load(Ordering::Acquire) && self.view.is_current() && (self.current)()
+        self.internally_current() && (self.current)() && self.internally_current()
     }
     fn lock(&self) -> Result<std::sync::MutexGuard<'_, Option<Replay>>, EndpointError> {
-        self.replay.lock().map_err(|_| {
+        self.replay.lock().map_err(|poison| {
+            drop(poison);
             self.retire();
             tracing::error!("native response replay state poisoned; delivery refused");
             EndpointError::Body
@@ -80,18 +84,35 @@ impl BodySource {
             })
             .filter(|body| body.head().id == response)
             .ok_or(EndpointError::Identity)?;
-        let mut replay = self.lock()?;
-        if replay.is_some() {
-            return Err(EndpointError::Capacity);
+        {
+            let mut replay = self.lock()?;
+            if replay.is_some() {
+                return Err(EndpointError::Capacity);
+            }
+            if !self.internally_current() {
+                return Err(EndpointError::Retired);
+            }
+            *replay = Some(Replay {
+                body: body.clone(),
+                used: false,
+                delivered: false,
+            });
         }
         if !self.current() {
+            let retired = {
+                let mut replay = self.lock()?;
+                if replay
+                    .as_ref()
+                    .is_some_and(|state| Arc::ptr_eq(&state.body, &body))
+                {
+                    replay.take()
+                } else {
+                    None
+                }
+            };
+            drop(retired);
             return Err(EndpointError::Retired);
         }
-        *replay = Some(Replay {
-            body,
-            used: false,
-            delivered: false,
-        });
         Ok(())
     }
     /// Clear only after the native main-response policy validated this exact delivered body.
@@ -174,9 +195,11 @@ impl BodySource {
         })
     }
     pub(crate) fn retire(&self) {
-        self.live.store(false, Ordering::Release);
-        self.stop.send_replace(true);
+        let notify = self.live.swap(false, Ordering::AcqRel);
         self.retire_delivery();
+        if notify {
+            self.stop.send_replace(true);
+        }
     }
 }
 fn error(error: BridgeError) -> EndpointError {
