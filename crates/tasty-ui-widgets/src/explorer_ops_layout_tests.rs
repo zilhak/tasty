@@ -1,4 +1,6 @@
 //! Render the production widgets with the actual narrow cell clip, not a resized preferred width.
+#[path = "explorer_ops_floor_tests.rs"]
+mod floor;
 use super::*;
 
 fn theme() -> Theme {
@@ -282,7 +284,7 @@ fn a_narrow_status_exposes_the_full_host_when_its_glyph_is_hovered() {
 
 #[test]
 fn tiny_queue_frames_and_actions_stay_in_their_owner() {
-    for width in [0.0, 1.0, 8.0, 24.0, 64.0, 203.0, 600.0] {
+    for width in [0.0, 0.25, 0.5, 1.0, 8.0, 24.0, 64.0, 203.0, 600.0] {
         for reserve_margin in [false, true] {
             for remote in [false, true] {
                 render(width, |ui, theme| {
@@ -360,7 +362,13 @@ fn a_tiny_queue_keeps_complete_cancel_and_remove_buttons_and_no_outside_hits() {
     for (width, click_row) in [
         (64.0, Some(0)),
         (64.0, Some(1)),
+        (203.0, Some(0)),
+        (203.0, Some(1)),
+        (600.0, Some(0)),
+        (600.0, Some(1)),
         (0.0, None),
+        (0.25, None),
+        (0.5, None),
         (1.0, None),
         (8.0, None),
         (24.0, None),

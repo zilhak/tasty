@@ -114,7 +114,7 @@ fn bounded_line(
 ) -> egui::Response {
     let width = limit.max(LogicalPx(0.0));
     let mut job = egui::text::LayoutJob::simple_singleline(text.to_owned(), font, color);
-    job.wrap = egui::text::TextWrapping::truncate_at_width(width.max(LogicalPx(1.0)).value());
+    job.wrap = egui::text::TextWrapping::truncate_at_width(width.value());
     let galley = ui.fonts(|f| f.layout_job(job));
     let (rect, response) = ui.allocate_exact_size(
         egui::vec2(
