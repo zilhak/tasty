@@ -544,7 +544,7 @@ view 는 `FilePickerProps` 만 받고 `FilePickerAction` 만 돌려주므로 상
   `deliver_result`, 소비는 `src/adapters/ipc/handler/markdown.rs`(`picked_by_user`).
 - 원격 요청: `src/core/mod.rs`의 요청 값 `PendingListDirForward`/`next_list_dir_request_id`,
   `src/app/engine_action.rs`의 원 projection에 묶인 `ListDirectory` → `src/remote/state.rs`의 pending list 큐.
-- 원격 전송(client): `src/app/attach_client/forward.rs`(조회 전달), `src/app/attach_client/wire/list_dir.rs`(`parse_list_dir_result`), `src/app/attach_client/output.rs`(`MirrorEvent::ListDirResult` 적용, 항목 변환은 `output/remote_entry.rs`).
+- 원격 전송(client): `src/app/attach_client/forward.rs`(조회 전달), `src/app/attach_client/wire/list_dir.rs`(`parse_list_dir_result`), `src/app/attach_client/output/apply_event.rs`(`MirrorEvent::ListDirResult` 적용, 항목 변환은 `output/remote_entry.rs`).
 - 원격 수신(server): `crates/tasty-ipc/src/stream_hub.rs`(`ListDirRequestMsg`, `pump_inbound`
   분류), `src/remote/server/content_queries.rs`(`handle_list_dir_request`, `list_dir_for_request`,
   `list_dir_entries_wire_capped`, 항목 하나는 `content_queries/list_dir_wire.rs` 의 `list_dir_entry_wire`/`LIST_DIR_ENTRIES_BYTE_BUDGET`). GUI

@@ -17,7 +17,7 @@ attach의 서버·클라이언트 처리와 연결·점유·복구 규칙을 설
 | `attempts.rs` | endpoint·connection 대기 target의 등록, 일회성 인수, 취소, 교체 |
 | `pending.rs` | 원 engine·View·선택·mapping·epoch 검증과 handshake/ID 예약 완료 대기 |
 | `connection.rs` | mirror 설치·재연결·정리 |
-| `output.rs` | 수신 순서와 epoch를 보존하며 창/parked engine에 출력 적용 |
+| `output.rs` / `output/apply_event.rs` | 수신 순서와 epoch를 보존하며 창/parked engine에 출력 적용 / 종류별 회신 분배 |
 | `projection.rs` | 예약한 논리 ID로 descriptor 트리 구성; Engine 대여 없음 |
 | `navigation.rs` | 살아남은 remote/local ID로 선택 위치 복원; 실행 자원 접근 없음 |
 | `survivors.rs` | 서버 descriptor와 기존 자원을 비교해 재사용·교체·회수 |
@@ -672,7 +672,7 @@ client 가 mirror 를 걷어내면 원격에 `Detach` 를 보내 원격 점유(h
   드라이브·UNC 접두에서 만든 값). 같은 서버에서 읽은 값끼리만 비교할 수 있고, 모르면 싣지 않는다.
 - **`git_query_request`/`git_query_result`**(docs/features/remote-attach/index.md) — 원격 저장소 status/log/diff/worktrees 조회
   (git-viewer). 응답의 **소비자가 host 가 아니라 별도 프로세스인 plugin** 이라는 점이 file picker와
-  다르다 — host(`src/app/attach_client/output.rs`)는 payload 를 해석하지 않고 그대로 `PluginManager::
+  다르다 — host(`src/app/attach_client/output/apply_event.rs`)는 payload 를 해석하지 않고 그대로 `PluginManager::
   emit_host_event_to_plugin`(Event Bus 의 owner-unicast 경로, 구독 등록 여부 무관 —
   `command.invoked` 와 동일 메커니즘)으로 `git_viewer.query_result` 이벤트를 plugin 에 전달만
   한다. 요청 트리거도 plugin→host `git_viewer.query` IPC(비동기 accept — `request_id` 만 즉시
