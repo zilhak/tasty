@@ -151,6 +151,16 @@ impl WebViewBounds {
     }
 }
 
+/// Check the actual window/backend before advertising the remote HTTP native renderer.
+#[cfg(target_os = "linux")]
+pub(crate) fn http_viewer_available(window: &winit::window::Window) -> bool {
+    linux::http_available(window)
+}
+#[cfg(not(target_os = "linux"))]
+pub(crate) fn http_viewer_available(_window: &winit::window::Window) -> bool {
+    false
+}
+
 #[cfg(test)]
 mod navigable_url_tests {
     use super::is_navigable_url;
@@ -424,14 +434,4 @@ mod settings_resolve_tests {
             }
         );
     }
-}
-
-/// Check the actual window/backend before advertising the remote HTTP native renderer.
-#[cfg(target_os = "linux")]
-pub(crate) fn http_viewer_available(window: &winit::window::Window) -> bool {
-    linux::http_available(window)
-}
-#[cfg(not(target_os = "linux"))]
-pub(crate) fn http_viewer_available(_window: &winit::window::Window) -> bool {
-    false
 }
