@@ -44,6 +44,11 @@ pub(crate) enum EndpointError {
 pub(crate) trait ResponseOwner: Send {
     fn body(&self) -> &Arc<VerifiedBody>;
     fn request(&self) -> &Arc<NativeRequest>;
+    /// Preserve the actual bridge response lease for trusted native main-response selection.
+    fn native_delivery(&self) -> Option<super::body::NativeDelivery> {
+        None
+    }
+    fn write_completed(&self, _success: bool) {}
 }
 pub(crate) type ResponseFuture =
     Pin<Box<dyn Future<Output = Result<Box<dyn ResponseOwner>, EndpointError>> + Send>>;

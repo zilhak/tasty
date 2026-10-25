@@ -58,81 +58,11 @@ async fn roundtrip(runtime: NativeRuntime) {
         url,
         stop.clone(),
     ));
-    let first = tokio::time::timeout(Duration::from_secs(5), post(&endpoint, port))
-        .await
-        .unwrap();
-    assert!(first.starts_with(b"HTTP/1.1 200 \r\n"));
-    assert!(first.ends_with(BODY));
-    assert_eq!(
-        first
-            .windows(12)
-            .filter(|s| s.eq_ignore_ascii_case(b"set-cookie: "))
-            .count(),
-        2
-    );
-    assert!(
-        !first
-            .windows(24)
-            .any(|s| s.eq_ignore_ascii_case(b"content-security-policy:"))
-    );
-    let document = bridge.document().unwrap();
-    let body = document
-        .with_current(|model| model.verified(document.entry()))
-        .flatten()
-        .unwrap();
-    assert_eq!(body.encoded(), BODY);
-    assert_eq!(body.head().logical_url, view.source().entry_url());
-    assert_eq!(counts.upstream.load(Ordering::Acquire), 1);
-    let mut wrong = body.head().id;
-    wrong.serial += 1;
-    assert_eq!(source.replay_once(wrong), Err(EndpointError::Identity));
-    source.replay_once(body.head().id).unwrap();
-    assert!(!source.finish_replay(&body));
-    let second = tokio::time::timeout(Duration::from_secs(5), post(&endpoint, port))
-        .await
-        .unwrap();
-    assert_eq!(counts.upstream.load(Ordering::Acquire), 1);
-    assert_eq!(second, first);
-    assert_eq!(counts.begins.load(Ordering::Acquire), 1);
-    assert_eq!(counts.commits.load(Ordering::Acquire), 1);
-    assert_eq!(counts.reuses.load(Ordering::Acquire), 1);
-    let reused = document
-        .with_current(|model| model.verified(document.entry()))
-        .flatten()
-        .unwrap();
-    assert!(Arc::ptr_eq(&body, &reused));
-    assert_eq!(
-        counts.transferred.load(Ordering::Acquire),
-        BODY.len() as u64
-    );
-    let duplicate = tokio::time::timeout(Duration::from_secs(5), post(&endpoint, port))
-        .await
-        .unwrap();
-    assert!(duplicate.is_empty());
-    assert_eq!(counts.upstream.load(Ordering::Acquire), 1);
-    assert_eq!(counts.begins.load(Ordering::Acquire), 1);
-    let different_owner = copied_body(&body);
-    assert!(!Arc::ptr_eq(&body, &different_owner));
-    assert!(!source.finish_replay(&different_owner));
-    assert!(source.finish_replay(&body));
-    assert!(!source.finish_replay(&body));
-    for (method, upload) in [("GET", UPLOAD), ("POST", b"bad".as_slice())] {
-        let protected = BodySource::new(bridge.clone(), view.clone(), Arc::new(|| true));
-        protected.replay_once(body.head().id).unwrap();
-        let handler = protected.handler();
-        for (method, upload) in [(method, upload), ("POST", UPLOAD)] {
-            let (request, request_budget) = native_request(port, method, upload).await;
-            assert!(matches!(
-                tokio::time::timeout(Duration::from_secs(2), handler(request))
-                    .await
-                    .unwrap(),
-                Err(EndpointError::Identity)
-            ));
-            assert_eq!(request_budget.used(), 0);
-        }
-        assert!(!protected.finish_replay(&body));
-        protected.retire();
-    }
+    let first = initial_bytes(&endpoint, port).await;
+    let body = arm_replay(&source, &bridge, &view, &counts);
+    confirm_reuse(&endpoint, port, &bridge, &counts, &body, &first).await;
+    refuse_duplicate(&endpoint, port, &source, &counts, &body).await;
+    refuse_identity(&bridge, &view, &body, port).await;
     assert_eq!(counts.upstream.load(Ordering::Acquire), 1);
     assert_eq!(counts.begins.load(Ordering::Acquire), 1);
     assert_eq!(counts.reuses.load(Ordering::Acquire), 1);
@@ -160,6 +90,118 @@ async fn roundtrip(runtime: NativeRuntime) {
     mirror.disconnect();
     drop(bridge);
     assert_eq!(native.used(), 0);
+}
+
+async fn initial_bytes(endpoint: &Endpoint, port: u16) -> Vec<u8> {
+    let first = tokio::time::timeout(Duration::from_secs(5), post(endpoint, port))
+        .await
+        .unwrap();
+    assert!(first.starts_with(b"HTTP/1.1 200 \r\n"));
+    assert!(first.ends_with(BODY));
+    assert_eq!(
+        first
+            .windows(12)
+            .filter(|s| s.eq_ignore_ascii_case(b"set-cookie: "))
+            .count(),
+        2
+    );
+    assert!(
+        !first
+            .windows(24)
+            .any(|s| s.eq_ignore_ascii_case(b"content-security-policy:"))
+    );
+    first
+}
+fn arm_replay(
+    source: &BodySource,
+    bridge: &HttpBridge,
+    view: &tasty_remote::html_mirror::HttpView,
+    counts: &Counts,
+) -> Arc<VerifiedBody> {
+    let document = bridge.document().unwrap();
+    let body = document
+        .with_current(|model| model.verified(document.entry()))
+        .flatten()
+        .unwrap();
+    assert_eq!(body.encoded(), BODY);
+    assert_eq!(body.head().logical_url, view.source().entry_url());
+    assert_eq!(counts.upstream.load(Ordering::Acquire), 1);
+    let mut wrong = body.head().id;
+    wrong.serial += 1;
+    assert_eq!(source.replay_once(wrong), Err(EndpointError::Identity));
+    source.replay_once(body.head().id).unwrap();
+    assert!(!source.finish_replay(&body));
+    body
+}
+async fn confirm_reuse(
+    endpoint: &Endpoint,
+    port: u16,
+    bridge: &HttpBridge,
+    counts: &Counts,
+    body: &Arc<VerifiedBody>,
+    first: &[u8],
+) {
+    let document = bridge.document().unwrap();
+    let second = tokio::time::timeout(Duration::from_secs(5), post(endpoint, port))
+        .await
+        .unwrap();
+    assert_eq!(counts.upstream.load(Ordering::Acquire), 1);
+    assert_eq!(second, first);
+    assert_eq!(counts.begins.load(Ordering::Acquire), 1);
+    assert_eq!(counts.commits.load(Ordering::Acquire), 1);
+    assert_eq!(counts.reuses.load(Ordering::Acquire), 1);
+    let reused = document
+        .with_current(|model| model.verified(document.entry()))
+        .flatten()
+        .unwrap();
+    assert!(Arc::ptr_eq(body, &reused));
+    assert_eq!(
+        counts.transferred.load(Ordering::Acquire),
+        BODY.len() as u64
+    );
+}
+async fn refuse_duplicate(
+    endpoint: &Endpoint,
+    port: u16,
+    source: &BodySource,
+    counts: &Counts,
+    body: &Arc<VerifiedBody>,
+) {
+    let duplicate = tokio::time::timeout(Duration::from_secs(5), post(endpoint, port))
+        .await
+        .unwrap();
+    assert!(duplicate.is_empty());
+    assert_eq!(counts.upstream.load(Ordering::Acquire), 1);
+    assert_eq!(counts.begins.load(Ordering::Acquire), 1);
+    let different_owner = copied_body(body);
+    assert!(!Arc::ptr_eq(body, &different_owner));
+    assert!(!source.finish_replay(&different_owner));
+    assert!(source.finish_replay(body));
+    assert!(!source.finish_replay(body));
+}
+async fn refuse_identity(
+    bridge: &Arc<HttpBridge>,
+    view: &tasty_remote::html_mirror::HttpView,
+    body: &Arc<VerifiedBody>,
+    port: u16,
+) {
+    for (method, upload) in [("GET", UPLOAD), ("POST", b"bad".as_slice())] {
+        let protected = BodySource::new(bridge.clone(), view.clone(), Arc::new(|| true));
+        protected.replay_once(body.head().id).unwrap();
+        let handler = protected.handler();
+        for (method, upload) in [(method, upload), ("POST", UPLOAD)] {
+            let (request, request_budget) = native_request(port, method, upload).await;
+            assert!(matches!(
+                tokio::time::timeout(Duration::from_secs(2), handler(request))
+                    .await
+                    .unwrap(),
+                Err(EndpointError::Identity)
+            ));
+            assert_eq!(request_budget.used(), 0);
+        }
+        assert!(!protected.finish_replay(body));
+        protected.retire();
+    }
 }
 
 fn copied_body(body: &Arc<VerifiedBody>) -> Arc<VerifiedBody> {
@@ -196,7 +238,7 @@ fn copied_body(body: &Arc<VerifiedBody>) -> Arc<VerifiedBody> {
     .unwrap_or_else(|_| panic!("same representation, different verified owner"))
 }
 
-async fn native_request(
+pub(super) async fn native_request(
     port: u16,
     method: &str,
     upload: &[u8],
@@ -205,7 +247,7 @@ async fn native_request(
     client
         .write_all(
             format!(
-                "{method} /post HTTP/1.1\r\nHost: localhost:{port}\r\nContent-Length: {}\r\n\r\n",
+                "{method} /post HTTP/1.1\r\nHost: localhost:{port}\r\nCookie: native=kept\r\nContent-Length: {}\r\n\r\n",
                 upload.len()
             )
             .as_bytes(),

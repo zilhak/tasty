@@ -1,8 +1,10 @@
 //! Actual endpoint requests await the shared verified-body bridge; replay is explicit and finite.
+mod delivery;
 use super::{
     io::Current,
     listener::{EndpointError, Handler, ResponseOwner},
 };
+pub(crate) use delivery::NativeDelivery;
 use std::sync::{
     Arc, Mutex,
     atomic::{AtomicBool, Ordering},
@@ -32,6 +34,7 @@ pub(crate) struct BodySource {
     current: Current,
     live: AtomicBool,
     replay: Mutex<Option<Replay>>,
+    delivery: Mutex<Option<Arc<NativeResponse>>>,
     stop: tokio::sync::watch::Sender<bool>,
 }
 impl BodySource {
@@ -47,6 +50,7 @@ impl BodySource {
             current,
             live: AtomicBool::new(true),
             replay: Mutex::new(None),
+            delivery: Mutex::new(None),
             stop,
         })
     }
@@ -165,13 +169,14 @@ impl BodySource {
                         return Err(EndpointError::Identity);
                     }
                 }
-                Ok(Box::new(response) as Box<dyn ResponseOwner>)
+                source.publish_delivery(response)
             })
         })
     }
     pub(crate) fn retire(&self) {
         self.live.store(false, Ordering::Release);
         self.stop.send_replace(true);
+        self.retire_delivery();
     }
 }
 fn error(error: BridgeError) -> EndpointError {

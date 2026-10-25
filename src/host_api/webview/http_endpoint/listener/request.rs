@@ -56,6 +56,7 @@ pub(super) async fn serve<S: AsyncRead + AsyncWrite + Unpin>(
     )
     .await
     .map_err(|_| EndpointError::Io);
+    response.write_completed(result.is_ok());
     drop(response);
     result
 }
