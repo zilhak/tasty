@@ -17,14 +17,18 @@ impl History {
     pub fn full(&self) -> bool {
         self.allowed.len() + self.reserved.len() >= LIMIT
     }
-    pub fn reserve(history: &Rc<RefCell<Self>>, leaf: [u8; 32]) -> Result<Permit, ContextError> {
-        let mut state = history.borrow_mut();
-        if state.allowed.contains(&leaf) || state.reserved.contains(&leaf) {
+    pub fn check(&self, leaf: [u8; 32]) -> Result<(), ContextError> {
+        if self.allowed.contains(&leaf) || self.reserved.contains(&leaf) {
             return Err(ContextError::Tls);
         }
-        if state.full() {
+        if self.full() {
             return Err(ContextError::Capacity);
         }
+        Ok(())
+    }
+    pub fn reserve(history: &Rc<RefCell<Self>>, leaf: [u8; 32]) -> Result<Permit, ContextError> {
+        let mut state = history.borrow_mut();
+        state.check(leaf)?;
         state.reserved.insert(leaf);
         Ok(Permit {
             history: history.clone(),

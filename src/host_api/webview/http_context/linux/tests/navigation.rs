@@ -1,5 +1,5 @@
 use super::*;
-fn post(view: &PreparedView) {
+pub(super) fn post(view: &PreparedView) {
     post_to(view, fixture_port("HTTPS"));
 }
 fn post_to(view: &PreparedView, port: u16) {

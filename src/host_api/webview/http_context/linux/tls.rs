@@ -29,11 +29,20 @@ impl Drop for Probe {
         }
     }
 }
-pub(super) fn install(state: &Rc<view::State>) {
+pub(super) fn install(state: &Rc<view::State>) -> Vec<glib::SignalHandlerId> {
+    let epoch = state.epoch.get();
     let weak = Rc::downgrade(state);
-    state
+    let navigation = state
         .webview
         .connect_decide_policy(move |_, decision, kind| {
+            let Some(state) = weak.upgrade() else {
+                decision.ignore();
+                return true;
+            };
+            if state.epoch.get() != epoch || !state.live() {
+                decision.ignore();
+                return true;
+            }
             if kind != PolicyDecisionType::NavigationAction {
                 return false;
             }
@@ -48,28 +57,48 @@ pub(super) fn install(state: &Rc<view::State>) {
             if !uri.to_ascii_lowercase().starts_with("https:") {
                 return false;
             }
-            let Some(state) = weak.upgrade() else {
-                decision.ignore();
-                return true;
-            };
             navigate(&state, decision, &uri)
         });
+    let failure = resource_failures(state, epoch);
+    // Native TLS still fails normally. Suppress its generic error page, without
+    // attributing an unidentifiable old load failure to the replacement document.
+    let suppress = state
+        .webview
+        .connect_load_failed_with_tls_errors(|_, _, _, _| true);
+    vec![navigation, failure, suppress]
+}
+fn resource_failures(state: &Rc<view::State>, epoch: u64) -> glib::SignalHandlerId {
     let weak = Rc::downgrade(state);
     state
         .webview
-        .connect_load_failed_with_tls_errors(move |_, _, _, _| {
-            if let Some(state) = weak.upgrade() {
-                state.failure.set(Some(ContextError::Tls));
-                state.webview.stop_loading();
+        .connect_resource_load_started(move |webview, resource, _| {
+            let Some(state) = weak
+                .upgrade()
+                .filter(|s| s.epoch.get() == epoch && s.live())
+            else {
+                return;
+            };
+            if webview.main_resource().as_ref() != Some(resource) {
+                return;
             }
-            true
-        });
+            let weak = Rc::downgrade(&state);
+            let profile = state.profile.clone();
+            resource.connect_failed_with_tls_errors(move |_, _, _| {
+                let _retained = &profile;
+                if let Some(state) = weak
+                    .upgrade()
+                    .filter(|s| s.epoch.get() == epoch && s.live())
+                {
+                    state.failure.set(Some(ContextError::Tls));
+                    state.webview.stop_loading();
+                }
+            });
+        })
 }
+
 fn navigate(state: &Rc<view::State>, decision: &PolicyDecision, uri: &str) -> bool {
     let authority = authority::https(uri);
-    let expected = authority
-        .as_ref()
-        .and_then(|a| authority::pin(&state.config, a));
+    let expected = authority.as_ref().and_then(|a| state.pin(a));
     if !state.live() || expected.is_none() {
         decision.ignore();
         state.failure.set(Some(ContextError::Tls));
@@ -169,7 +198,10 @@ fn start(
 fn callbacks(state: &Rc<view::State>, webview: &WebView, id: u64) {
     let weak = Rc::downgrade(state);
     webview.connect_load_failed_with_tls_errors(move |_, uri, certificate, flags| {
-        if let Some(state) = weak.upgrade() {
+        if let Some(state) = weak
+            .upgrade()
+            .filter(|s| s.pending.borrow().contains_key(&id))
+        {
             #[cfg(test)]
             {
                 state.observations.borrow_mut().push(flags.bits());
@@ -237,7 +269,7 @@ fn valid(
         return false;
     };
     actual == probe.authority
-        && authority::pin(&state.config, &actual) == Some(probe.expected)
+        && state.pin(&actual) == Some(probe.expected)
         && <[u8; 32]>::from(Sha256::digest(der.as_ref())) == probe.expected
 }
 fn finish(state: &Rc<view::State>, id: u64, accepted: bool) {

@@ -269,7 +269,7 @@ class Endpoint:
         body += exact(io, length - len(body))
         path = first.split()[1]
         self.requests.append({"line": first, "port": port, "leaf_sha256": self.certificate_hash if port == LOGICAL_PORTS["HTTPS"] else NEW_LEAF[2] if port == LOGICAL_PORTS["OTHER"] else None, "body_sha256": hashlib.sha256(body).hexdigest(), "binary_present": bytes([0,255,1,128,13,10,42]) in body, "cookie_kept": b"owned=kept" in fields.get(b"cookie", b""), "resumed": getattr(io, "session_reused", False)})
-        content, extra = response(path)
+        content, extra = response(path, self.case)
         io.sendall(b"HTTP/1.1 200 OK\r\nContent-Length: " + str(len(content)).encode() + b"\r\nConnection: close\r\n" + extra + b"\r\n" + content)
     def close(self):
         if self.closed:
@@ -288,13 +288,21 @@ class Endpoint:
             worker.join(5)
         assert not self.thread.is_alive() and all(not w.is_alive() for w in self.workers)
 
-def response(path):
+def response(path, case):
+    if path in ("/retained-seed", "/retained-held-seed"):
+        action = b"/held-post" if path == "/retained-held-seed" else b"/retained-post"
+        html = b'<form method="POST" action="/retained-post" enctype="multipart/form-data"><input type="file" name="payload"></form><script>const d=new DataTransfer();d.items.add(new File([new Uint8Array([0,255,1,128,13,10,42])],"owned.bin"));document.querySelector("input").files=d.files;document.forms[0].submit();</script>'
+        html = html.replace(b"/retained-post", action)
+        return html, b"Content-Type: text/html\r\nSet-Cookie: owned=kept; SameSite=Lax; Path=/\r\n"
+    if path == "/retained-post":
+        return response("/check" if case == "fresh-next" else "/install", case)
+
     if path == "/install":
         return b'''<!doctype html><title>install</title><script>(async()=>{document.cookie='owned=kept;path=/';localStorage.setItem('owned','kept');const db=await new Promise((resolve,reject)=>{const q=indexedDB.open('owned',1);q.onupgradeneeded=()=>q.result.createObjectStore('kv');q.onsuccess=()=>resolve(q.result);q.onerror=()=>reject(q.error);});await new Promise((resolve,reject)=>{const t=db.transaction('kv','readwrite');t.objectStore('kv').put('kept','owned');t.oncomplete=resolve;t.onerror=()=>reject(t.error);});db.close();await navigator.serviceWorker.register('/sw.js');await navigator.serviceWorker.ready;if(!navigator.serviceWorker.controller)await new Promise(r=>navigator.serviceWorker.addEventListener('controllerchange',r,{once:true}));if(await(await fetch('/sw-hit')).text()!=='SW OLD')throw Error('SW');const c=await caches.open('owned');await c.put('/stored',new Response('old'));await fetch('/asset');document.title='CACHE READY';})().catch(e=>document.title='FAIL '+e);</script>''', b"Content-Type: text/html\r\n"
     if path == "/check":
         return b'''<!doctype html><title>check</title><script>(async()=>{const db=await new Promise((resolve,reject)=>{const q=indexedDB.open('owned',1);q.onsuccess=()=>resolve(q.result);q.onerror=()=>reject(q.error);});const stored=await new Promise((resolve,reject)=>{const q=db.transaction('kv').objectStore('kv').get('owned');q.onsuccess=()=>resolve(q.result);q.onerror=()=>reject(q.error);});db.close();const local=localStorage.getItem('owned');const r=await navigator.serviceWorker.getRegistrations();const k=await caches.keys();const t=await(await fetch('/sw-hit')).text();await fetch('/asset');const controller=!!navigator.serviceWorker.controller;document.title=!r.length&&!controller&&!k.length&&t==='REMOTE'&&document.cookie.includes('owned=kept')&&local==='kept'&&stored==='kept'?'CACHE CLEARED COOKIE KEPT':'FAIL STATE '+JSON.stringify({regs:r.length,controller,keys:k,sw:t,cookie:document.cookie,local:local,indexed:stored});})().catch(e=>document.title='FAIL '+e);</script>''', b"Content-Type: text/html\r\n"
     if path == "/sw.js":
-        return b"self.addEventListener('install',e=>self.skipWaiting());self.addEventListener('activate',e=>e.waitUntil(clients.claim()));self.addEventListener('fetch',e=>{if(new URL(e.request.url).pathname==='/sw-hit')e.respondWith(new Response('SW OLD'));});", b"Content-Type: application/javascript\r\n"
+        return b"self.addEventListener('install',e=>self.skipWaiting());self.addEventListener('activate',e=>e.waitUntil(clients.claim()));self.addEventListener('fetch',e=>{if(new URL(e.request.url).pathname==='/sw-hit')e.respondWith(new Response('SW OLD'));if(new URL(e.request.url).pathname==='/retained-post')e.respondWith(new Response('<title>SW OLD</title>',{headers:{'Content-Type':'text/html'}}));});", b"Content-Type: application/javascript\r\n"
     if path == "/asset":
         return b"asset", b"Cache-Control: max-age=3600\r\n"
     if path == "/sw-hit":
@@ -321,11 +329,11 @@ def run_case(case, cert, expected, env):
             deadline = time.monotonic() + 28
             while child.poll() is None:
                 descendants()
-                if case.startswith("fresh") and following is None and (local / "retire-endpoint").exists():
+                if (case.startswith("fresh") or case in ("retained_post", "retained_https", "retained_held", "retained_epoch")) and following is None and (local / "retire-endpoint").exists():
                     endpoint.close()
-                    next_cert = NEW_LEAF if case.startswith("fresh_changed") else cert
+                    next_cert = NEW_LEAF if case.startswith("fresh_changed") or case in ("retained_post", "retained_https", "retained_held", "retained_epoch") else cert
                     following = Endpoint(next_cert, "fresh-next")
-                    next_expected = next_cert[2] if case == "fresh_changed_valid" else cert[2] if case == "fresh_changed_reject" else "07" * 32
+                    next_expected = next_cert[2] if case in ("fresh_changed_valid", "retained_post", "retained_https", "retained_held", "retained_epoch") else cert[2] if case == "fresh_changed_reject" else "07" * 32
                     (local / "next-expected").write_text(next_expected)
                     (local / "next-proxy").write_text(f"socks5://owned:next-fixture@127.0.0.1:{following.port}")
                 if time.monotonic() > deadline:
@@ -344,6 +352,38 @@ def run_case(case, cert, expected, env):
             assert sum(r["line"] == "GET /asset HTTP/1.1" for r in endpoint.requests) == 2, endpoint.requests
             assert sum(r["line"] == "GET /sw-hit HTTP/1.1" for r in endpoint.requests) == 1, endpoint.requests
             assert any(r["line"] == "GET /check HTTP/1.1" and r["cookie_kept"] for r in endpoint.requests), endpoint.requests
+        elif case == "retained_https":
+            assert following is not None
+            combined = endpoint.requests + following.requests
+            assert len(endpoint.requests) == len(following.requests) == 1
+            assert all(r["line"] == "POST /post HTTP/1.1" and r["binary_present"] for r in combined)
+            assert combined[0]["body_sha256"] == combined[1]["body_sha256"]
+        elif case in ("retained_held", "retained_held_cancel"):
+            assert len(endpoint.requests) == 1 and endpoint.requests[0]["line"] == "GET /retained-held-seed HTTP/1.1"
+            if case == "retained_held":
+                assert following is not None and len(following.requests) == 1
+                assert following.requests[0]["line"] == "POST /held-post HTTP/1.1"
+                assert following.requests[0]["binary_present"] and following.requests[0]["cookie_kept"]
+            else:
+                assert following is None
+        elif case == "retained_epoch":
+            assert following is not None
+            assert len(endpoint.requests) == len(following.requests) == 1
+            assert endpoint.requests[0]["line"] == following.requests[0]["line"] == "GET /base HTTP/1.1"
+        elif case == "retained_post":
+            assert following is not None
+            first = [r for r in endpoint.requests if r["line"] == "POST /retained-post HTTP/1.1"]
+            after = [r for r in following.requests if r["line"] == "POST /retained-post HTTP/1.1"]
+            assert len(first) == len(after) == 1, (first, after)
+            assert all(r["cookie_kept"] and r["binary_present"] for r in first + after)
+            assert first[0]["body_sha256"] == after[0]["body_sha256"]
+            assert sum(r["line"] == "GET /asset HTTP/1.1" for r in following.requests) == 1
+            assert sum(r["line"] == "GET /sw-hit HTTP/1.1" for r in following.requests) == 1
+        elif case == "retained_no_clear":
+            assert sum(r["line"] == "POST /retained-post HTTP/1.1" for r in endpoint.requests) == 1
+            assert following is None
+        elif case == "retained_lifecycle":
+            assert all(r["line"] == "GET /base HTTP/1.1" for r in endpoint.requests)
         else:
             assert not endpoint.requests, endpoint.requests
         return {"case": case, "rc": 0, "requests": endpoint.requests, "authenticated_connections": endpoint.auth, "tls_errors": endpoint.errors, "native_log": str(local / "native.log"), "native_log_sha256": hashlib.sha256((local / "native.log").read_bytes()).hexdigest()}

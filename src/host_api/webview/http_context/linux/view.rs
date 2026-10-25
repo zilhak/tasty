@@ -5,7 +5,11 @@ pub(super) struct State {
     pub webview: WebView,
     pub context: WebContext,
     pub profile: NativeProfileLease,
-    pub config: ContextConfig,
+    pub config: RefCell<ContextConfig>,
+    pub epoch: Cell<u64>,
+    pub blocked: Cell<bool>,
+    handlers: RefCell<Vec<glib::SignalHandlerId>>,
+    owner: Weak<store::State>,
     pub closed: Cell<bool>,
     pub pending: RefCell<BTreeMap<u64, tls::Probe>>,
     pub resuming: RefCell<BTreeMap<u64, tls::Resume>>,
@@ -24,6 +28,7 @@ impl State {
         config: ContextConfig,
         history: Rc<RefCell<allowance::History>>,
         profile: NativeProfileLease,
+        owner: Weak<store::State>,
     ) -> Rc<Self> {
         let webview = WebView::with_context(&context);
         store::retain_profile(&webview, &profile);
@@ -31,7 +36,11 @@ impl State {
             webview,
             context,
             profile,
-            config,
+            config: RefCell::new(config),
+            epoch: Cell::new(0),
+            blocked: Cell::new(false),
+            handlers: RefCell::new(Vec::new()),
+            owner,
             history,
             closed: Cell::new(false),
             pending: RefCell::new(BTreeMap::new()),
@@ -44,20 +53,55 @@ impl State {
             sequence: Cell::new(0),
             failure: Cell::new(None),
         });
-        tls::install(&state);
+        *state.handlers.borrow_mut() = tls::install(&state);
         state
     }
     pub fn live(&self) -> bool {
-        !self.closed.get() && (self.config.current)()
+        !self.closed.get() && !self.blocked.get() && self.current()
     }
-    pub fn close(&self) {
-        if self.closed.replace(true) {
-            return;
+    pub fn current(&self) -> bool {
+        let current = self.config.borrow().current.clone();
+        current()
+    }
+    pub fn pin(&self, authority: &authority::Authority) -> Option<[u8; 32]> {
+        if !self.current() {
+            return None;
+        }
+        let expected = self.config.borrow().expected_leaf.clone();
+        expected(&authority.host, authority.port)
+    }
+    pub fn revoke(self: &Rc<Self>) -> Result<(), ContextError> {
+        let epoch = self
+            .epoch
+            .get()
+            .checked_add(1)
+            .ok_or(ContextError::Capacity)?;
+        self.blocked.set(true);
+        self.epoch.set(epoch);
+        self.clear_callbacks();
+        self.trusted.borrow_mut().clear();
+        self.failure.set(None);
+        *self.handlers.borrow_mut() = tls::install(self);
+        Ok(())
+    }
+    fn clear_callbacks(&self) {
+        for handler in self.handlers.borrow_mut().drain(..) {
+            self.webview.disconnect(handler);
         }
         let probes = std::mem::take(&mut *self.pending.borrow_mut());
         drop(probes);
         let resuming = std::mem::take(&mut *self.resuming.borrow_mut());
         drop(resuming);
+    }
+    pub fn close(&self) {
+        if self.closed.replace(true) {
+            return;
+        }
+        self.blocked.set(true);
+        self.clear_callbacks();
+        if let Some(owner) = self.owner.upgrade() {
+            owner.cancel_view(self);
+        }
         self.webview.stop_loading();
         // SAFETY: this dedicated GTK widget is destroyed once on its owning native thread.
         unsafe {

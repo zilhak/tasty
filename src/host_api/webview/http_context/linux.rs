@@ -10,6 +10,12 @@ mod tls;
 #[path = "linux/view.rs"]
 mod view;
 
+#[path = "linux/continuation.rs"]
+mod continuation;
+#[path = "linux/replacement.rs"]
+mod replacement;
+pub(crate) use continuation::{NativeContinuation, ReadyView, RetiredView};
+
 use super::profile::{NativeProfileLease, PreparedProfile};
 use gtk::{gio, glib};
 use std::{
@@ -19,12 +25,13 @@ use std::{
 };
 use webkit2gtk::{
     NavigationPolicyDecisionExt, PolicyDecisionExt, SettingsExt as WebSettingsExt, URIRequestExt,
-    WebContextExt, WebViewExt, WebsiteDataManagerExt, WebsiteDataManagerExtManual,
+    WebContextExt, WebResourceExt, WebViewExt, WebsiteDataManagerExt, WebsiteDataManagerExtManual,
 };
 use webkit2gtk::{WebContext, WebView, WebsiteDataManager};
 
 type ExpectedLeaf = Arc<dyn Fn(&str, u16) -> Option<[u8; 32]> + Send + Sync>;
 
+#[derive(Clone)]
 pub(crate) struct ContextConfig {
     pub proxy_uri: String,
     pub current: Arc<dyn Fn() -> bool + Send + Sync>,
@@ -51,6 +58,13 @@ impl DataStore {
     pub(crate) fn prepare(&self, config: ContextConfig, done: Done) {
         self.0.prepare(config, done);
     }
+    pub(crate) fn retire_document(
+        &self,
+        view: &PreparedView,
+        action: NativeContinuation,
+    ) -> Result<RetiredView, ContextError> {
+        self.0.retire_document(&view.0, action)
+    }
     pub(crate) fn close(&self) {
         self.0.close();
     }
@@ -61,6 +75,16 @@ impl Drop for DataStore {
     }
 }
 impl PreparedView {
+    pub(crate) fn reload_continuation(&self) -> NativeContinuation {
+        NativeContinuation::reload(&self.0)
+    }
+    /// The caller must supply the navigation decision delivered for this view.
+    pub(crate) fn retain_navigation(
+        &self,
+        decision: &webkit2gtk::NavigationPolicyDecision,
+    ) -> NativeContinuation {
+        NativeContinuation::navigation(&self.0, decision)
+    }
     pub(crate) fn webview(&self) -> &WebView {
         &self.0.webview
     }

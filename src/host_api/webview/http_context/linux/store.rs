@@ -2,6 +2,7 @@ use super::*;
 use gtk::gio::prelude::*;
 use webkit2gtk::{NetworkProxyMode, NetworkProxySettings, TLSErrorsPolicy, WebsiteDataTypes};
 struct Pending {
+    id: u64,
     config: ContextConfig,
     done: Done,
     cancel: gio::Cancellable,
@@ -10,9 +11,11 @@ pub(super) struct State {
     pub manager: WebsiteDataManager,
     profile: NativeProfileLease,
     pub history: Rc<RefCell<allowance::History>>,
-    closed: Cell<bool>,
+    pub(super) closed: Cell<bool>,
+    sequence: Cell<u64>,
+    pub(super) replacement: RefCell<Option<replacement::Operation>>,
     pending: RefCell<Option<Pending>>,
-    active: RefCell<Weak<view::State>>,
+    pub(super) active: RefCell<Weak<view::State>>,
 }
 impl State {
     pub fn new(profile: PreparedProfile) -> Result<Self, ContextError> {
@@ -33,6 +36,8 @@ impl State {
             profile,
             history: Rc::new(RefCell::new(allowance::History::default())),
             closed: Cell::new(false),
+            sequence: Cell::new(0),
+            replacement: RefCell::new(None),
             pending: RefCell::new(None),
             active: RefCell::new(Weak::new()),
         })
@@ -42,8 +47,16 @@ impl State {
             done(Err(error));
             return;
         }
+        let id = match self.next_id() {
+            Ok(id) => id,
+            Err(error) => {
+                done(Err(error));
+                return;
+            }
+        };
         let cancel = gio::Cancellable::new();
         *self.pending.borrow_mut() = Some(Pending {
+            id,
             config,
             done,
             cancel: cancel.clone(),
@@ -57,7 +70,7 @@ impl State {
             move |result| {
                 let _retained_profile = profile;
                 if let Some(state) = weak.into_inner().upgrade() {
-                    state.finished(result.is_ok());
+                    state.finished_id(id, result.is_ok());
                 }
             },
         );
@@ -66,7 +79,8 @@ impl State {
         if self.closed.get() || !(config.current)() {
             return Some(ContextError::Retired);
         }
-        if self.pending.borrow().is_some()
+        if self.initial_pending()
+            || self.replacement.borrow().is_some()
             || self
                 .active
                 .borrow()
@@ -83,7 +97,29 @@ impl State {
         }
         None
     }
-    pub(super) fn finished(&self, success: bool) {
+    pub(super) fn initial_pending(&self) -> bool {
+        self.pending.borrow().is_some()
+    }
+    pub(super) fn next_id(&self) -> Result<u64, ContextError> {
+        let id = self
+            .sequence
+            .get()
+            .checked_add(1)
+            .ok_or(ContextError::Capacity)?;
+        self.sequence.set(id);
+        Ok(id)
+    }
+    #[cfg(test)]
+    pub(super) fn finished(self: &Rc<Self>, success: bool) {
+        let id = self.pending.borrow().as_ref().map(|p| p.id);
+        if let Some(id) = id {
+            self.finished_id(id, success);
+        }
+    }
+    fn finished_id(self: &Rc<Self>, id: u64, success: bool) {
+        if self.pending.borrow().as_ref().is_none_or(|p| p.id != id) {
+            return;
+        }
         let Some(pending) = self.pending.borrow_mut().take() else {
             return;
         };
@@ -96,7 +132,7 @@ impl State {
         };
         (pending.done)(result);
     }
-    fn create(&self, config: ContextConfig) -> Result<PreparedView, ContextError> {
+    fn create(self: &Rc<Self>, config: ContextConfig) -> Result<PreparedView, ContextError> {
         if !(config.current)() {
             return Err(ContextError::Retired);
         }
@@ -106,9 +142,14 @@ impl State {
             .set_network_proxy_settings(NetworkProxyMode::Custom, Some(&mut proxy));
         let context = WebContext::with_website_data_manager(&self.manager);
         retain_profile(&context, &self.profile);
-        let prepared =
-            view::State::new(context, config, self.history.clone(), self.profile.clone());
-        if !(prepared.config.current)() {
+        let prepared = view::State::new(
+            context,
+            config,
+            self.history.clone(),
+            self.profile.clone(),
+            Rc::downgrade(self),
+        );
+        if !prepared.current() {
             prepared.close();
             return Err(ContextError::Retired);
         }
@@ -119,6 +160,7 @@ impl State {
         if self.closed.replace(true) {
             return;
         }
+        self.cancel_retained();
         let pending = self.pending.borrow_mut().take();
         if let Some(pending) = pending {
             pending.cancel.cancel();

@@ -10,6 +10,8 @@ mod cache;
 mod lifecycle;
 #[path = "tests/navigation.rs"]
 mod navigation;
+#[path = "tests/retained.rs"]
+mod retained;
 
 #[test]
 fn proxy_requires_owned_authenticated_loopback_socks() {
@@ -191,6 +193,12 @@ fn native_suite() {
     let case = std::env::var("DE_CASE").unwrap();
     match case.as_str() {
         "lifecycle" => lifecycle::run(),
+        "retained_lifecycle" => retained::lifecycle(),
+        "retained_https" => retained::https(),
+        "retained_held" => retained::held(false),
+        "retained_held_cancel" => retained::held(true),
+        "retained_epoch" => retained::epoch(),
+        "retained_post" | "retained_no_clear" => retained::post_cookie(&case),
         "cache" | "cache_private" => cache::run(),
         _ => navigation::run(&case),
     }

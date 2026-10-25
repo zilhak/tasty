@@ -1,4 +1,3 @@
-use super::*;
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub(super) struct Authority {
     pub host: String,
@@ -30,10 +29,4 @@ pub(super) fn proxy(uri: &str) -> bool {
         && matches!(url.path(), "" | "/")
         && url.query().is_none()
         && url.fragment().is_none()
-}
-pub(super) fn pin(config: &ContextConfig, authority: &Authority) -> Option<[u8; 32]> {
-    if !(config.current)() {
-        return None;
-    }
-    (config.expected_leaf)(&authority.host, authority.port)
 }
