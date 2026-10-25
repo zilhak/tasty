@@ -66,5 +66,23 @@ thread, in an authorized Windows environment. It creates only a hidden window,
 uses local diagnostic SOCKS/target sentinels, disables scripts and bounds each
 callback wait at20seconds. It records actual API errors; an environment failure
 is a failed native test, never a successful transport observation. Preserve its
-profile while native descendants remain uncertain. Native process ownership
-and cleanup belong to the caller; no user desktop or input is required.
+profile while native descendants remain uncertain. The probe signals observer stop,
+joins both owned threads, propagates observer I/O failures and panics, and only
+then validates the final bounded observations and emits CONFIRMED. Late direct
+connections or changed authentication methods therefore refuse the receipt.
+Drop stops and joins on earlier failures; it cannot create a successful receipt.
+Nonblocking accept polling and interrupted accepts are retried under a finite
+deadline. Closed/reset sockets after the deliberate unsupported-method reply are
+expected refusal; EOF/reset/timeouts during signalled shutdown are recorded with
+that reason. Other observer errors fail the receipt, even after an earlier valid
+greeting. Read and write waits are bounded at two seconds.
+
+The actual observer/receipt module is portable and source-linked by its regression
+fixture. Controls exercise late observations, joined panic and error propagation,
+error-path cleanup, actual loopback greetings, empty/direct/method/overflow refusal
+and truncated-method I/O. These are observer correctness tests, not WebView2,
+certificate, HTTP or whole-App acceptance. Preserve the failed native controller
+case separately; passing portable receipts does not turn it into a feature PASS.
+
+Native process ownership and cleanup belong to the caller; no user desktop or input
+is required.

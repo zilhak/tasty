@@ -1,6 +1,9 @@
+#[path = "sentinel.rs"]
+mod sentinel;
 macro_rules! record {
     ($($arg:tt)*) => { super::record(format_args!($($arg)*)) };
 }
+use sentinel::Peers;
 use std::{
     path::PathBuf,
     sync::mpsc,
@@ -51,56 +54,7 @@ pub(super) fn run() -> std::result::Result<(), String> {
         "http://127.0.0.1:{}/native-control",
         target.local_addr().map_err(|e| e.to_string())?.port()
     );
-    socks.set_nonblocking(true).map_err(|e| e.to_string())?;
-    target.set_nonblocking(true).map_err(|e| e.to_string())?;
-    let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-    let peers = Peers {
-        stop: stop.clone(),
-        threads: Vec::new(),
-        observed: std::sync::Arc::new(std::sync::Mutex::new(Observed::default())),
-    };
-    let mut peers = peers;
-    let socks_stop = stop.clone();
-    let observed = peers.observed.clone();
-    peers.threads.push(std::thread::spawn(move || {
-        use std::io::{Read, Write};
-        let deadline = Instant::now() + Duration::from_secs(65);
-        while Instant::now() < deadline && !socks_stop.load(std::sync::atomic::Ordering::Acquire) {
-            if let Ok((mut socket, _)) = socks.accept() {
-                socket
-                    .set_read_timeout(Some(Duration::from_secs(2)))
-                    .unwrap();
-                let mut head = [0; 2];
-                if socket.read_exact(&mut head).is_ok() {
-                    let mut methods = vec![0; head[1] as usize];
-                    if socket.read_exact(&mut methods).is_ok() {
-                        record!("SOCKS_GREETING version={} methods={methods:?}", head[0]);
-                        let mut state = observed.lock().unwrap();
-                        if state.greetings.len() < 8 {
-                            state.greetings.push((head[0], methods));
-                        } else {
-                            state.overflow = true;
-                        }
-                    }
-                    socket.write_all(&[5, 2]).unwrap();
-                    let mut auth = [0; 2];
-                    record!("SOCKS_AUTH_RESPONSE {:?}", socket.read(&mut auth));
-                }
-            }
-            std::thread::sleep(Duration::from_millis(5));
-        }
-    }));
-    let observed = peers.observed.clone();
-    peers.threads.push(std::thread::spawn(move || {
-        let deadline = Instant::now() + Duration::from_secs(65);
-        while Instant::now() < deadline && !stop.load(std::sync::atomic::Ordering::Acquire) {
-            if target.accept().is_ok() {
-                observed.lock().unwrap().direct = true;
-                record!("DIRECT_TARGET_CONNECTION");
-            }
-            std::thread::sleep(Duration::from_millis(5));
-        }
-    }));
+    let peers = Peers::start(socks, target, super::record)?;
     let wide = |s: &str| s.encode_utf16().chain(Some(0)).collect::<Vec<_>>();
     let dir = wide(folder.to_str().ok_or("nonunicode profile")?);
     let flags = format!(
@@ -249,47 +203,7 @@ pub(super) fn run() -> std::result::Result<(), String> {
     // SAFETY: this isolated fixture owns the arguments and calls native APIs on its STA thread.
     unsafe { DestroyWindow(hwnd) }.map_err(|e| format!("destroy HWND: {e}"))?;
     result?;
-    peers.verify_observation()
-}
-
-#[derive(Default)]
-struct Observed {
-    greetings: Vec<(u8, Vec<u8>)>,
-    direct: bool,
-    overflow: bool,
-}
-
-struct Peers {
-    stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
-    threads: Vec<std::thread::JoinHandle<()>>,
-    observed: std::sync::Arc<std::sync::Mutex<Observed>>,
-}
-impl Peers {
-    fn verify_observation(&self) -> std::result::Result<(), String> {
-        let observed = self.observed.lock().map_err(|_| "sentinel poisoned")?;
-        if observed.direct || observed.overflow || observed.greetings.is_empty() {
-            return Err("missing bounded proxy observation or direct target connection".into());
-        }
-        if observed
-            .greetings
-            .iter()
-            .any(|(version, methods)| *version != 5 || methods != &[0])
-        {
-            return Err("native SOCKS method set changed; re-evaluate compatibility".into());
-        }
-        record!("CONFIRMED_NO_SOCKS_AUTH_AND_NO_DIRECT_TARGET");
-        Ok(())
-    }
-}
-impl Drop for Peers {
-    fn drop(&mut self) {
-        self.stop.store(true, std::sync::atomic::Ordering::Release);
-        for thread in self.threads.drain(..) {
-            if thread.join().is_err() {
-                record!("SENTINEL_PANICKED");
-            }
-        }
-    }
+    peers.finish()
 }
 
 struct Apartment;

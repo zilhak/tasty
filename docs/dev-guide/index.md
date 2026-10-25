@@ -101,4 +101,4 @@ DAG 화면의 읽기 요청과 App 워커 소유 경계는 [Model + Host View �
 
 - [HTTP transport bridge](html-http-bridge.md) — bounded encoded HTTP wire, engine executor admission/publication, client receive model, ordered session routing, command publication and lifecycle actions, worker verification, native byte boundaries, metadata/view fences, native request/body bridging, private native profiles, worker preparation, Linux retained-view barriers, document TLS ownership, authenticated endpoints, bounded runtime scheduling, explicit endpoint body replay ownership, pre-navigation pin preparation and completed-predecessor Reload authority bound to native HTTP request identity.
 
-- [Windows HTTP context](windows-http-context.md) — authenticated SOCKS compatibility refusal, native certificate-cause limits and hidden source-bound checks.
+- [Windows HTTP context](windows-http-context.md) — authenticated SOCKS compatibility refusal, native certificate-cause limits and joined observer receipts.
