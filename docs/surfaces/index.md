@@ -17,7 +17,7 @@ Surface 종류(kind)마다 명세를 한 곳에 둔다. host 내장인지 번들
 |---|---|---|---|
 | `terminal` | [terminal](terminal/index.md) | host 내장 | GPU 셀 그리드 (`host-egui` 로 등록, 콘텐츠는 GPU 셰이더) |
 | `empty` | [empty](empty/index.md) | host 내장 | `host-egui` |
-| `explorer` | [explorer](explorer/index.md) — 내부 탭별 선택·스크롤·Find·X11 이름 변경 IME, 미리보기 옆 목록 테두리, 원격 진행·호스트 툴팁·칸 안 대기열, 보이는 행 조회 | host 내장 | `host-egui` |
+| `explorer` | [explorer](explorer/index.md) — 내부 탭별 선택·스크롤·Find·X11 이름 변경 IME, 미리보기 옆 목록 테두리, 원격 진행·호스트 툴팁·칸 안 대기열, 보이는 행 조회, [OS별 확인 범위와 Wayland 한계](explorer/file-operations.md#확인된-linux-범위와-한계) | host 내장 | `host-egui` |
 | `dag_graph` | [dag-graph](dag-graph/index.md) | host 내장 | `host-egui` |
 | `markdown` | [markdown](markdown/index.md) | 번들 plugin `com.tasty.markdown` | `webview` |
 | `image` | [image](image/index.md) | 번들 plugin `com.tasty.image` | `egui-mesh` |

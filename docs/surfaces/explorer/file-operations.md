@@ -1,6 +1,6 @@
 # Explorer 파일 작업 — 대상과 결과의 계약
 
-- **Status**: Partial — 새 폴더·새 파일·이름 변경·복사·잘라내기·붙여넣기·휴지통 이동·드래그 놓기·충돌 선택·진행 취소·실행 취소·다시 실행은 구현돼 있다. 이름 변경 Enter 확정과 조합 중 키 전달에는 아래 Linux 한계가 남아 있다. 속성 조회·미리보기 패널·Grid 썸네일·찾기(거르기와 하위 폴더 검색)는 파일을 바꾸지 않는 읽기로 동작한다. 복사·잘라내기·붙여넣기는 OS 파일 클립보드와 이어진다(Linux 는 X11 선택, Wayland 세션은 XWayland 경유. Windows·macOS 는 실 기기 미측정). 원격(mirror) explorer 에서도 그 서버가 원격 쓰기를 알리면 새 폴더·새 파일·이름 변경·휴지통 이동·같은 연결 안의 붙여넣기·드래그 놓기·충돌 선택·진행 취소·결과 카드의 Retry·Undo 가 동작한다. 원격 작업의 실행 취소 이력과 이 컴퓨터와 원격 사이의 전송은 없다. 로컬 Explorer는 Windows OLE·macOS AppKit·Linux X11/Wayland에서 외부 앱으로 Copy 드래그를 시작한다. Windows·macOS는 크로스 타깃 컴파일 확인, 실 기기 동작 미측정이다.
+- **Status**: Partial — 새 폴더·새 파일·이름 변경·복사·잘라내기·붙여넣기·휴지통 이동·드래그 놓기·충돌 선택·진행 취소·실행 취소·다시 실행은 구현돼 있다. 네이티브 Wayland 메뉴와 조합 종료 키 전달에는 아래 Linux 한계가 남아 있다. 속성 조회·미리보기 패널·Grid 썸네일·찾기(거르기와 하위 폴더 검색)는 파일을 바꾸지 않는 읽기로 동작한다. 복사·잘라내기·붙여넣기는 OS 파일 클립보드와 이어진다(Linux 는 X11 선택, Wayland 세션은 XWayland 경유. Windows·macOS 는 실 기기 미측정). 원격(mirror) explorer 에서도 그 서버가 원격 쓰기를 알리면 새 폴더·새 파일·이름 변경·휴지통 이동·같은 연결 안의 붙여넣기·드래그 놓기·충돌 선택·진행 취소·결과 카드의 Retry·Undo 가 동작한다. 원격 작업의 실행 취소 이력과 이 컴퓨터와 원격 사이의 전송은 없다. 로컬 Explorer는 Windows OLE·macOS AppKit·Linux X11/Wayland에서 외부 앱으로 Copy 드래그를 시작한다. Windows·macOS는 크로스 타깃 컴파일 확인, 실 기기 동작 미측정이다.
 - **주체**: 로컬 사용자 ([주체](../../concepts/actors.md)). 에이전트(IPC/CLI)는 이 문서의 파일 작업을 호출하지 않는다.
 - **설계**: [원격 attach (Remote attach)](../../features/remote-attach/index.md) (mirror explorer 의 파일 작업은 원격 server 가 실행한다), 이 문서 (OS 파일 클립보드 공유와 나중 복사 우선)
 - **코드**: 메뉴 구성 `build_explorer_context_menu`·메뉴 핸들러 `explorer_menu_*` (`src/view/main/redraw.rs`), 단축키·Command Palette 진입 `handle_explorer_shortcut`·`run_explorer_action` (`src/adapters/ui/input/shortcuts/copy_paste.rs`), 실행 worker `src/app/explorer_files.rs`·`src/app/file_jobs/ops.rs`·작업 엔진 `src/app/file_jobs/job.rs`·화면 동기화 `src/app/explorer_files/ui_sync.rs`·원격 요청 `src/app/explorer_files/remote.rs`·원격 server 실행 `src/app/file_jobs/remote.rs`, 새 항목 입력 `src/adapters/ui/surface/explorer/create.rs`·툴바 More 메뉴 `src/view/main/explorer_create.rs`, 찾기 `src/adapters/ui/surface/explorer/find.rs`, 칸 표시 `src/adapters/ui/surface/explorer/view/ops.rs`·드래그 `src/adapters/ui/surface/explorer/view/drag.rs`·충돌 popup `src/adapters/ui/popup/explorer_conflict.rs`, OS 파일 드롭 `src/view/main/file_drop.rs`, OS 파일 클립보드 `src/clipboard/files.rs`·창 목록과의 조정 `src/state/explorer_os_clipboard.rs`
@@ -8,10 +8,18 @@
 
 ## 확인된 Linux 범위와 한계
 
-- 격리 X11과 rootful XWayland에서 네이티브 항목·빈 영역 메뉴, Undo 사유 툴팁·단축키, OS 파일 클립보드 왕복과 잘라내기 한 번 소비, 내부·외부 DnD, 링크 휴지통의 대상 보존, 복사 metadata, 작업 중 마지막 창 닫기와 앱 Quit를 확인했다. 추가 창만 닫고 작업을 계속하는 경로는 X11에서 확인했다. rootful XWayland 기록을 GNOME 통합 rootless XWayland나 네이티브 Wayland 전체 종단 검증으로 확대하지 않는다.
-- 네이티브 Wayland 검증 환경에서는 실제 한글 조합을 끝내는 Down·Delete·Enter·Esc가 같은 누름의 목록 동작으로 이어지고, Find의 Down·Esc도 항목 선택·검색어 지우기로 이어지는 결함이 남아 있다. X11의 물리 키 소유권 처리는 이 Wayland 경로에 적용되지 않는다.
-- 네이티브 Wayland와 rootful XWayland 검증 환경에서는 일반 이름 변경 팝업의 Enter가 확정하지 않는 경우가 있다. rootful XWayland에서는 Save 클릭으로 저장되는 것을 확인했다. 네이티브 Wayland의 Save 클릭과 메뉴·외부 드래그 전체 경로는 소유 compositor의 포인터 전달을 입증하지 못해 미측정이다. 입력 준비 실패를 제품 동작 실패로 세지 않는다.
-- 일반 로컬 외부 변경 표시와 Properties의 OS metadata 대조는 확인했다. 느린 매체의 외부 변경 지연, Windows·macOS의 실제 GUI와 입력기 경로는 미측정이다. 네이티브 Wayland에서 X 서버 없이 OS 파일 클립보드를 지원하지 않는 현재 계약은 아래 절과 같다.
+- 격리 X11과 rootful XWayland에서 네이티브 항목·빈 영역 메뉴, Undo 사유 툴팁·단축키, OS 파일 클립보드 왕복과 잘라내기 한 번 소비, 내부·외부 DnD, 링크 휴지통의 대상 보존, 복사 metadata, 작업 중 마지막 창 닫기와 앱 Quit를 확인했다. 작업 중 추가 창만 닫고 원래 창에서 복사를 계속하는 경로도 두 환경에서 확인했다.
+- 일반 이름 변경은 네이티브 Wayland에서 Enter 확정·Esc 취소, rootful XWayland와 X11에서 Enter·Save 확정·Esc 취소를 확인했다. 네이티브 Wayland의 Save도 실제 포인터 입력으로 확인했다. rootful XWayland의 실제 한글 조합에서는 조합을 끝내는 Enter가 팝업을 열어 둔 채 글자만 확정하고, 다음 별도 Enter·Save로 저장하거나 Esc로 취소하는 것을 확인했다.
+- X11과 rootful XWayland의 실제 IBus 한글 조합에서 목록 Down·Delete·Enter·Esc와 Find Down·Esc, 팝업의 Delete 우선 처리를 확인했다. 조합 종료 누름과 그다음 별도 누름을 구분한 범위이며, 다른 OS·입력기의 확인을 대신하지 않는다.
+- 네이티브 Wayland에서는 실제 포인터 전달, 새 폴더 Enter, 내부 DnD, 내부 클립보드의 copy/cut·Undo/Redo와 metadata, 링크 휴지통의 대상 보존, 일반 외부 변경 표시·Find·Properties, GTK 앱으로 내보내는 COPY를 확인했다. Properties는 별도로 지정한 단축키로 열었다. 내부 클립보드와 외부 COPY는 OS 파일 클립보드 왕복이나 외부 파일 가져오기의 확인이 아니다.
+- 네이티브 Wayland의 항목·빈 영역 컨텍스트 메뉴와 툴바 More 메뉴는 미지원이다. 포인터는 앱에 전달되지만 `crates/tasty-platform/src/native_menu/linux.rs`의 `show_context_menu`가 Xlib 윈도우만 받으므로, 메뉴 행·Undo 사유·단축키 열의 확인은 이 환경에서 완료되지 않았다.
+- 네이티브 Wayland에서는 실제 한글 조합을 끝내는 Down·Delete·Enter·Esc가 같은 누름의 목록 동작으로 이어지고, Find의 Down·Esc도 항목 선택·검색어 지우기로 이어지는 결함이 남아 있다. X11의 물리 키 소유권 처리는 이 Wayland 경로에 적용되지 않는다. 현재 text-input·keyboard 이벤트에는 조합 확정과 전달된 물리 누름을 연결하는 원인 식별자가 없어, 같은 이벤트 묶음이나 시간 간격만으로 다음 정상 키와 안전하게 구분할 수 없다.
+- GNOME 통합 rootless XWayland는 격리 세션의 DBus/systemd 활성화 준비가 막혀 앱 동작을 확인하지 못했다. rootful XWayland 결과를 이 환경이나 네이티브 Wayland 전체 종단 검증으로 확대하지 않는다.
+- 일반 로컬 외부 변경 표시와 Properties의 OS metadata 대조는 확인했다. 느린 매체의 외부 변경 지연과 네이티브 Wayland 대용량 작업 중 앱 종료는 미측정이다. 네이티브 Wayland에서 X 서버 없이 OS 파일 클립보드·외부 파일 가져오기를 지원하지 않는 현재 계약은 아래 절과 같다.
+
+### Windows·macOS 확인 범위
+
+Windows에서 파일 식별 유틸리티·IPC publication과 Explorer 선택·HTML root의 선택된 네이티브 시험을 확인했다. macOS에서도 선택된 Explorer 비입력 시험을 확인했다. 이 시험들은 실제 데스크톱 메뉴·DnD·클립보드·링크 휴지통·앱 종료·입력기 조합 경로를 확인하지 않는다. Windows 실제 한글 IME와 macOS 사용자 수동 입력을 포함한 GUI 확인은 남아 있다. Linux 결과와 과거 OS별 시험 결과를 현재 전체 OS acceptance 완료로 확대하지 않는다.
 
 ## 목적
 
