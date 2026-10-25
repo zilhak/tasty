@@ -70,6 +70,16 @@ Linux는 이 모드마다 별도 ephemeral `WebContext`에 `tasty-html-entry` sc
 
 현재 attach entry viewer capability는 Linux GUI client만 광고하며, 실제 App entry 표시와 격리 증거도 Linux 범위다. macOS의 nonpersistent `WKWebsiteDataStore`·`WKURLSchemeHandler`, Windows의 전용 user-data folder·InPrivate context·응답 interception 구현은 있다. 이 두 OS의 현재 wrapper/helper는 실제 body/provider와 함께 macOS ARM64·Windows x64 native compiler의 fixture에서 검사했다. host overlay enum과 공통 루트 일부를 대체한 범위이며 전체 App compile/link나 native 실행을 확인한 것은 아니다. 같은 root의 하위 파일 GET은 Linux App에 연결되어 있다. macOS handler는 main-thread task를 보유해 완료 wakeup에서 polling하고, stop에서 waiter를 제거한 뒤 후속 callback을 보내지 않는다. Windows는 apartment 안에 resource args·deferral·waiter를 보유하며 완료·실패·view close에서 응답을 결정하고 deferral을 끝낸다. 두 어댑터 모두 대기 요청을 256개로 제한하고 완료 직전 native owner를 재검사한다. main-frame 하위 문서 탐색은 cache 유무와 관계없이 새 전송·scan으로 넘긴다. Windows/macOS의 하위 파일 capability는 아직 광고하지 않으며 이 비동기 경로의 native 실행은 확인하지 않았다. HTTP(S) proxy도 이 모드의 지원 범위에 포함하지 않는다.
 
+## macOS HTTP 저장소 구성요소
+
+`http_context/macos`는 아직 App에 선언·연결하지 않은 native 구성요소다. 연결마다 새 비영속 `WKWebsiteDataStore`를 만들고, WebView 생성 전 configuration에 붙인다. 프록시 입력은 인증 정보가 있는 `127.0.0.1` SOCKS URI로 제한한다. Network 함수는 selector 확인 뒤 `dlopen`·`dlsym`으로 조회하므로 macOS 14 전용 심볼을 강하게 링크하지 않는다. 조회가 안 되면 `Unsupported`로 반환한다. macOS 11–13의 원격 HTTP placeholder와 앱 최소 OS는 바꾸지 않는다.
+
+`clear_selected`는 같은 view와 native request를 보존하며 disk/memory/fetch cache와 service-worker 등록만 삭제한다. callback이 끝날 때까지 새 configuration 적용을 거절하고, 닫힌 소유자의 늦은 callback은 `Retired`로 끝낸다. 쿠키·local storage·IndexedDB를 삭제 대상으로 넣지 않는다. 이 함수는 새 탐색이나 POST 재구성을 실행하지 않는다.
+
+인증 hook은 현재 소유자, 정규화한 host·port, 실제 DER SHA256을 사용한다. Security.framework의 최초 평가가 issuer 신뢰 실패이고, 같은 challenge의 정확한 leaf만 anchor로 삼은 재평가에서 원래 SSL 정책이 통과한 경우만 관측값을 만든다. 시스템 trust store는 변경하지 않는다. target 허용 기록은 한 문서당 최대 여덟 authority이며 같은 authority의 다른 leaf는 거절한다. 실제 endpoint의 opaque NativeTrust·고정 private probe pool·종료 확인·ACK와 이 hook을 연결하는 driver는 아직 없다. 따라서 이 구성요소만으로 target 허용이나 HTTP capability를 활성화하지 않는다.
+
+입력 없는 재현 fixture는 `tests/native_macos_http`다. 실제 macOS Security 평가는 유효한 issuer 신뢰 실패와 만료·미래 유효기간·hostname·usage 오류의 조합을 검사한다. 이는 WK TLS challenge나 실제 응답 재사용의 검증을 대신하지 않는다. 비-loopback 도메인의 native WK 요청은 인증 SOCKS로 전달됐고 cookie·바이너리 POST 본문 보존과 연결별 격리를 확인했다. 같은 환경에서 localhost WK 요청과 공개 NSURLSession의 127.0.0.1 요청은 failover를 꺼도 client의 소유 trap에 직접 도착했다. 명시적 loopback match domain도 이 우회를 막지 못했다. 따라서 현재 구성요소는 HTTP(S)를 서버로만 보내고 client loopback으로 직접 연결하지 않는 요구를 만족하지 않으며 App HTTP capability를 활성화할 수 없다. 모든 macOS 버전의 동일한 제한으로 일반화하지 않는다. 고정 probe pool·NativeTrust ACK, WebSocket 우회 차단, 실제 TLS challenge와 같은 응답을 쓰는 ScriptAllow 연결도 완료하지 않았다.
+
 ## 좌표 — 논리와 물리를 타입 이름에 남긴다
 
 `WebViewBounds`(논리) 와 `PhysicalWebViewBounds`(물리)는 `to_physical` / `from_physical`
