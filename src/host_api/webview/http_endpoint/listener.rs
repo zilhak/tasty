@@ -3,6 +3,7 @@ mod budget;
 mod policy;
 pub(crate) mod preparation;
 mod request;
+pub(crate) mod trust;
 use super::{
     certificates::{Authority, Certificates},
     io::{Current, CurrentConnection},
@@ -87,12 +88,13 @@ struct State {
     token: EndpointToken,
     certificates: Arc<Certificates>,
     budget: EndpointBudget,
+    trust: Option<Arc<trust::Gate>>,
 }
 pub(crate) struct Endpoint {
     state: Arc<State>,
     proxy_uri: String,
     stop: watch::Sender<bool>,
-    task: Option<JoinHandle<()>>,
+    task: Option<JoinHandle<Result<(), EndpointError>>>,
 }
 impl Endpoint {
     /// Schedule on the injected runtime, never poll socket setup on the native/engine loop.
@@ -100,6 +102,31 @@ impl Endpoint {
         runtime: Handle,
         config: EndpointConfig,
         budget: EndpointBudget,
+    ) -> Result<Self, EndpointError> {
+        Self::start_inner(runtime, config, budget, None).await
+    }
+    pub(crate) async fn start_with_native_trust(
+        runtime: Handle,
+        config: EndpointConfig,
+        budget: EndpointBudget,
+        trust: trust::TrustConfig,
+    ) -> Result<(Self, trust::NativeTrust), EndpointError> {
+        let endpoint = Self::start_inner(runtime, config, budget, Some(trust)).await?;
+        let native = trust::NativeTrust::new(
+            endpoint
+                .state
+                .trust
+                .as_ref()
+                .ok_or(EndpointError::Worker)?
+                .clone(),
+        );
+        Ok((endpoint, native))
+    }
+    async fn start_inner(
+        runtime: Handle,
+        config: EndpointConfig,
+        budget: EndpointBudget,
+        trust: Option<trust::TrustConfig>,
     ) -> Result<Self, EndpointError> {
         let identity = config.identity;
         if [
@@ -143,6 +170,11 @@ impl Endpoint {
         }
         let certificates =
             Certificates::new(current.clone(), budget.certificates(), runtime.clone());
+        let trust = trust
+            .map(|config| {
+                trust::Gate::new(runtime.clone(), current.clone(), budget.clone(), config)
+            })
+            .transpose()?;
         let state = Arc::new(State {
             config,
             policy,
@@ -151,6 +183,7 @@ impl Endpoint {
             token,
             certificates,
             budget,
+            trust,
         });
         let (stop, receiver) = watch::channel(false);
         let task = runtime.spawn(listen(state.clone(), listener, receiver, owner));
@@ -169,12 +202,15 @@ impl Endpoint {
     }
     pub(crate) fn close(&self) {
         self.state.stop.store(true, Ordering::Release);
+        if let Some(trust) = &self.state.trust {
+            trust.close();
+        }
         self.stop.send_replace(true);
     }
     pub(crate) async fn join(mut self) -> Result<(), EndpointError> {
         self.close();
         if let Some(task) = self.task.take() {
-            task.await.map_err(|_| EndpointError::Worker)?;
+            task.await.map_err(|_| EndpointError::Worker)??;
         }
         Ok(())
     }
@@ -189,7 +225,7 @@ async fn listen(
     listener: TcpListener,
     mut stop: watch::Receiver<bool>,
     _owner: budget::Owner,
-) {
+) -> Result<(), EndpointError> {
     let mut tasks = JoinSet::new();
     while (state.current)() {
         tokio::select! {
@@ -203,6 +239,9 @@ async fn listen(
     }
     drop(listener);
     state.certificates.retire();
+    if let Some(trust) = &state.trust {
+        trust.close();
+    }
     tasks.abort_all();
     while let Some(result) = tasks.join_next().await {
         if let Err(error) = result
@@ -211,7 +250,13 @@ async fn listen(
             tracing::warn!(%error,"native mirror connection retirement failed");
         }
     }
+    let result = if let Some(trust) = &state.trust {
+        trust.join().await
+    } else {
+        Ok(())
+    };
     state.certificates.settled().await;
+    result
 }
 async fn connection(state: Arc<State>, socket: TcpStream) -> Result<(), EndpointError> {
     let deadline = state.config.limits.io_timeout;
@@ -244,17 +289,33 @@ async fn connection(state: Arc<State>, socket: TcpStream) -> Result<(), Endpoint
             .certificate(authority.clone())
             .await
             .map_err(|_| EndpointError::Tls)?;
-        let io = certificate
-            .accept(io, deadline)
-            .await
-            .map_err(|_| EndpointError::Tls)?;
-        if !sni_matches(&authority, io.server_name()) {
-            return Err(EndpointError::Destination);
+        if let Some(trust) = &state.trust {
+            let io = trust::hello::capture(io, &authority, deadline).await?;
+            trust
+                .wait(&state, authority.clone(), certificate.clone())
+                .await?;
+            serve_tls(state, io, authority, certificate).await
+        } else {
+            serve_tls(state, io, authority, certificate).await
         }
-        request::serve(state, io, authority, scheme).await
     } else {
         request::serve(state, io, authority, scheme).await
     }
+}
+async fn serve_tls<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin>(
+    state: Arc<State>,
+    io: S,
+    authority: Authority,
+    certificate: Arc<super::certificates::AuthorityTls>,
+) -> Result<(), EndpointError> {
+    let io = certificate
+        .accept(io, state.config.limits.io_timeout)
+        .await
+        .map_err(|_| EndpointError::Tls)?;
+    if !sni_matches(&authority, io.server_name()) {
+        return Err(EndpointError::Destination);
+    }
+    request::serve(state, io, authority, "https").await
 }
 fn sni_matches(authority: &Authority, sni: Option<&str>) -> bool {
     match sni {

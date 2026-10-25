@@ -10,6 +10,8 @@ struct Resource {
     owners: AtomicUsize,
     sockets: Arc<Semaphore>,
     preparations: Arc<Semaphore>,
+    trust: Arc<Semaphore>,
+    probes: Arc<Semaphore>,
     certificates: CertificateBudget,
 }
 #[derive(Clone)]
@@ -20,6 +22,8 @@ impl EndpointBudget {
             owners: AtomicUsize::new(0),
             sockets: Arc::new(Semaphore::new(8)),
             preparations: Arc::new(Semaphore::new(8)),
+            trust: Arc::new(Semaphore::new(8)),
+            probes: Arc::new(Semaphore::new(8)),
             certificates: CertificateBudget::new(),
         }))
     }
@@ -48,6 +52,28 @@ impl EndpointBudget {
             .clone()
             .try_acquire_owned()
             .map_err(|_| EndpointError::Capacity)
+    }
+    pub(super) fn trust(&self) -> Result<OwnedSemaphorePermit, EndpointError> {
+        self.0
+            .trust
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| EndpointError::Capacity)
+    }
+    pub(super) fn probe(&self) -> Result<OwnedSemaphorePermit, EndpointError> {
+        self.0
+            .probes
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| EndpointError::Capacity)
+    }
+    #[cfg(test)]
+    pub(crate) fn active_trust(&self) -> usize {
+        8 - self.0.trust.available_permits()
+    }
+    #[cfg(test)]
+    pub(crate) fn active_probes(&self) -> usize {
+        8 - self.0.probes.available_permits()
     }
     #[cfg(test)]
     pub(crate) fn active_preparations(&self) -> usize {

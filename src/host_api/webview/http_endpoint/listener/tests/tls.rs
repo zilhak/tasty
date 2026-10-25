@@ -2,7 +2,7 @@
 use super::*;
 use tokio_rustls::{TlsConnector, rustls};
 #[derive(Debug)]
-struct Pinned([u8; 32]);
+pub(super) struct Pinned(pub(super) [u8; 32]);
 impl rustls::client::danger::ServerCertVerifier for Pinned {
     fn verify_server_cert(
         &self,
