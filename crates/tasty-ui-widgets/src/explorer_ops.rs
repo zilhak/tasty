@@ -323,52 +323,97 @@ pub fn op_queue_rows(
     paint_queued: IconPainter<'_>,
 ) -> Option<usize> {
     let mut removed = None;
-    let glyph = theme.icon_glyph_size_sm.value();
+    let glyph = theme.icon_glyph_size_sm;
+    let close = LogicalPx(ControlSize::Sm.height(theme));
+    let text_height = LogicalPx(
+        ui.fonts(|f| f.row_height(&body(theme)).ceil() + f.row_height(&caption(theme)).ceil()),
+    );
+    let height = text_height
+        .max(close)
+        .max(theme.menu_item_height() - theme.spacing_xs * 2.0);
     for (i, row) in rows.iter().enumerate() {
-        let frame = egui::Frame::new().inner_margin(egui::Margin::symmetric(
-            theme.spacing_sm.value() as i8,
-            theme.spacing_xs.value() as i8,
-        ));
-        frame.show(ui, |ui| {
-            ui.horizontal(|ui| {
-                ui.set_min_height(
-                    theme.menu_item_height().value() - theme.spacing_xs.value() * 2.0,
-                );
-                ui.spacing_mut().item_spacing = egui::vec2(theme.spacing_sm.value(), 0.0);
-                let muted = theme.text_muted().to_egui();
-                if row.running {
-                    Spinner::new().size(glyph).color(muted).show(ui, theme);
-                } else {
-                    let (rect, _) =
-                        ui.allocate_exact_size(egui::vec2(glyph, glyph), egui::Sense::hover());
-                    paint_queued(ui, rect, muted);
-                }
-                let close_w = ControlSize::Sm.height(theme);
-                let text_w = (ui.available_width() - close_w - theme.spacing_sm.value()).max(1.0);
-                ui.vertical(|ui| {
-                    ui.spacing_mut().item_spacing = egui::Vec2::ZERO;
-                    one_line(
-                        ui,
-                        row.title,
-                        body(theme),
-                        theme.text_primary().to_egui(),
-                        text_w,
-                    )
-                    .on_hover_text(row.title);
-                    one_line(ui, row.sub, caption(theme), muted, text_w).on_hover_text(row.sub);
-                });
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if IconButton::new()
-                        .size(ControlSize::Sm)
-                        .show(ui, theme, paint_close)
-                        .on_hover_text(row.remove_tip)
-                        .clicked()
-                    {
-                        removed = Some(i);
-                    }
-                });
-            });
-        });
+        let width = LogicalPx(ui.available_width()).max(LogicalPx(0.0));
+        let (rect, response) = ui.allocate_exact_size(
+            egui::vec2(width.value(), (height + theme.spacing_xs * 2.0).value()),
+            egui::Sense::hover(),
+        );
+        let pad = theme.spacing_sm.min(width * 0.5);
+        let inner = egui::Rect::from_min_max(
+            egui::pos2(
+                rect.left() + pad.value(),
+                rect.top() + theme.spacing_xs.value(),
+            ),
+            egui::pos2(
+                rect.right() - pad.value(),
+                rect.bottom() - theme.spacing_xs.value(),
+            ),
+        );
+        let mut right = LogicalPx(inner.right());
+        // Reserve a complete action first; never allocate a partial/out-of-cell button.
+        if LogicalPx(inner.width()) >= close {
+            let button = egui::Rect::from_center_size(
+                egui::pos2((right - close * 0.5).value(), inner.center().y),
+                egui::vec2(close.value(), close.value()),
+            );
+            let mut child = ui.new_child(egui::UiBuilder::new().max_rect(button));
+            child.set_clip_rect(button.intersect(ui.clip_rect()));
+            if IconButton::new()
+                .size(ControlSize::Sm)
+                .show(&mut child, theme, paint_close)
+                .on_hover_text(row.remove_tip)
+                .clicked()
+            {
+                removed = Some(i);
+            }
+            right = LogicalPx(button.left());
+            if right - LogicalPx(inner.left()) > theme.spacing_sm {
+                right -= theme.spacing_sm;
+            }
+        }
+        let mut left = LogicalPx(inner.left());
+        let muted = theme.text_muted().to_egui();
+        if right - left >= glyph + theme.spacing_sm {
+            let icon = egui::Rect::from_center_size(
+                egui::pos2((left + glyph * 0.5).value(), inner.center().y),
+                egui::vec2(glyph.value(), glyph.value()),
+            );
+            let mut child = ui.new_child(egui::UiBuilder::new().max_rect(icon));
+            child.set_clip_rect(icon.intersect(ui.clip_rect()));
+            if row.running {
+                Spinner::new()
+                    .size(glyph.value())
+                    .color(muted)
+                    .show(&mut child, theme);
+            } else {
+                paint_queued(&mut child, icon, muted);
+            }
+            left += glyph + theme.spacing_sm;
+        }
+        let text = egui::Rect::from_min_size(
+            egui::pos2(left.value(), inner.center().y - (text_height * 0.5).value()),
+            egui::vec2(
+                (right - left).max(LogicalPx(0.0)).value(),
+                text_height.value(),
+            ),
+        );
+        let mut child = ui.new_child(egui::UiBuilder::new().max_rect(text));
+        child.set_clip_rect(text.intersect(ui.clip_rect()));
+        child.spacing_mut().item_spacing = egui::Vec2::ZERO;
+        bounded_line(
+            &mut child,
+            row.title,
+            body(theme),
+            theme.text_primary().to_egui(),
+            LogicalPx(text.width()),
+        );
+        bounded_line(
+            &mut child,
+            row.sub,
+            caption(theme),
+            muted,
+            LogicalPx(text.width()),
+        );
+        response.on_hover_text(format!("{}\n{}", row.title, row.sub));
     }
     removed
 }
@@ -382,6 +427,12 @@ pub struct QueueHeader<'a> {
 }
 
 fn queue_header(ui: &mut egui::Ui, theme: &Theme, header: &QueueHeader<'_>) {
+    // The fixed header margins and inter-part gaps must fit before adding any children.
+    if LogicalPx(ui.available_width())
+        < theme.spacing_sm * 2.0 + theme.explorer_remote_queue_head_gap() * 2.0
+    {
+        return;
+    }
     egui::Frame::new()
         .inner_margin(egui::Margin::symmetric(
             theme.spacing_sm.value() as i8,
@@ -441,11 +492,20 @@ pub fn op_queue_popover(
     paint_queued: IconPainter<'_>,
 ) -> (egui::Rect, Option<usize>) {
     // The owning list cell may be narrower than the preferred menu width.
-    let width = op_queue_width(theme)
-        .min((LogicalPx(bottom_right.x) - LogicalPx(ui.clip_rect().left())).max(LogicalPx(0.0)));
+    let right = LogicalPx(bottom_right.x)
+        .max(LogicalPx(ui.clip_rect().left()))
+        .min(LogicalPx(ui.clip_rect().right()));
+    let width =
+        op_queue_width(theme).min((right - LogicalPx(ui.clip_rect().left())).max(LogicalPx(0.0)));
+    if width == LogicalPx(0.0) {
+        return (
+            egui::Rect::from_min_size(egui::pos2(right.value(), bottom_right.y), egui::Vec2::ZERO),
+            None,
+        );
+    }
     let w = width.value();
     let h = ui.ctx().data(|d| d.get_temp::<f32>(id)).unwrap_or(0.0);
-    let min = egui::pos2(bottom_right.x - w, bottom_right.y - h);
+    let min = egui::pos2((right - width).value(), bottom_right.y - h);
     let mut child = ui.new_child(
         egui::UiBuilder::new()
             .id_salt(id)
@@ -453,13 +513,18 @@ pub fn op_queue_popover(
             .layout(egui::Layout::top_down(egui::Align::Min)),
     );
     let mut removed = None;
-    let rect = op_queue_frame(theme)
+    let mut frame = op_queue_frame(theme);
+    let border = theme.border_width.min(width * 0.5);
+    let pad = theme
+        .spacing_xs
+        .min((width * 0.5 - border).max(LogicalPx(0.0)));
+    frame.stroke.width = border.value();
+    frame.inner_margin.left = pad.value() as i8;
+    frame.inner_margin.right = pad.value() as i8;
+    let content_width = (width - LogicalPx(frame.total_margin().sum().x)).max(LogicalPx(0.0));
+    let rect = frame
         .show(&mut child, |ui| {
-            ui.set_width(
-                (width - theme.spacing_xs * 2.0 - theme.border_width * 2.0)
-                    .max(LogicalPx(0.0))
-                    .value(),
-            );
+            ui.set_width(content_width.value());
             if let Some(header) = header {
                 queue_header(ui, theme, header);
             }

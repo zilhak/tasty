@@ -32,3 +32,69 @@ pub(super) fn split(
     };
     (column(ui, side), edge, column(ui, body))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn actual_explorer_column_popup_stays_within_narrow_split_cell() {
+        let theme = tasty_themes::mocha_fallback();
+        let ctx = egui::Context::default();
+        let mut observed = None;
+        drop(ctx.run(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(1000.0, 700.0),
+                )),
+                ..Default::default()
+            },
+            |ctx| {
+                egui::CentralPanel::default()
+                    .frame(egui::Frame::NONE)
+                    .show(ctx, |ui| {
+                        let outer = egui::Rect::from_min_size(
+                            egui::pos2(300.0, 80.0),
+                            egui::vec2(261.0, 500.0),
+                        );
+                        let mut surface = ui.new_child(egui::UiBuilder::new().max_rect(outer));
+                        surface.set_clip_rect(outer);
+                        let (_, _, mut body) =
+                            split(&mut surface, super::super::SIDEBAR_W, theme.border_width);
+                        let cell = body.clip_rect();
+                        assert!((cell.width() - 64.0).abs() < 0.01);
+                        let anchor = egui::pos2(cell.right() - theme.spacing_sm.value(), 450.0);
+                        let (popup, _) = tasty_ui_widgets::op_queue_popover(
+                            &mut body,
+                            &theme,
+                            egui::Id::new("real-columns"),
+                            anchor,
+                            &[tasty_ui_widgets::QueueRowProps {
+                                title: "Copy item",
+                                sub: "108.0 KB",
+                                running: true,
+                                remove_tip: "Cancel",
+                            }],
+                            Some(&tasty_ui_widgets::QueueHeader {
+                                before: "On ",
+                                host: tasty_ui_widgets::HostMark {
+                                    name: "host:34567",
+                                    paint_glyph: &|_, _, _| {},
+                                },
+                                after: " · one at a time",
+                            }),
+                            &|_, _, _| {},
+                            &|_, _, _| {},
+                        );
+                        observed = Some((cell, anchor, popup));
+                    });
+            },
+        ));
+        let (cell, anchor, popup) = observed.unwrap();
+        assert!(
+            popup.left() >= cell.left() && popup.right() <= anchor.x + 0.01,
+            "popup minimum child width defeats the selected owning-cell budget: {cell:?}, {anchor:?}, {popup:?}"
+        );
+    }
+}

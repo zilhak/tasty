@@ -279,3 +279,164 @@ fn a_narrow_status_exposes_the_full_host_when_its_glyph_is_hovered() {
     }
     assert!(output.unwrap().shapes.iter().any(|s| matches!(&s.shape, egui::Shape::Text(t) if t.galley.job.text == name && !t.galley.elided)), "the hovered status glyph must expose the entire shortened name");
 }
+
+#[test]
+fn tiny_queue_frames_and_actions_stay_in_their_owner() {
+    for width in [0.0, 1.0, 8.0, 24.0, 64.0, 203.0, 600.0] {
+        for reserve_margin in [false, true] {
+            for remote in [false, true] {
+                render(width, |ui, theme| {
+                    let owner = ui.clip_rect();
+                    let anchor = egui::pos2(
+                        owner.right()
+                            - if reserve_margin {
+                                theme.spacing_sm.value()
+                            } else {
+                                0.0
+                            },
+                        480.0,
+                    );
+                    let (rect, removed) = op_queue_popover(
+                        ui,
+                        theme,
+                        ui.id().with("tiny-queue"),
+                        anchor,
+                        &[
+                            QueueRowProps {
+                                title: "Copy 日本語-한글-folder",
+                                sub: "108.0 KB",
+                                running: true,
+                                remove_tip: "Cancel",
+                            },
+                            QueueRowProps {
+                                title: "Trash another item",
+                                sub: "Queued",
+                                running: false,
+                                remove_tip: "Remove",
+                            },
+                        ],
+                        remote.then_some(&QueueHeader {
+                            before: "On ",
+                            host: HostMark {
+                                name: "unabridged-host.example:34567",
+                                paint_glyph: &|_, _, _| {},
+                            },
+                            after: " · one at a time",
+                        }),
+                        &|ui, icon, _| {
+                            assert!(
+                                icon.left() >= owner.left() && icon.right() <= owner.right(),
+                                "action outside owner: {icon:?}, {owner:?}"
+                            );
+                            assert!(
+                                icon.left() >= ui.clip_rect().left()
+                                    && icon.right() <= ui.clip_rect().right(),
+                                "action glyph cannot be clipped"
+                            );
+                        },
+                        &|_, _, _| {},
+                    );
+                    assert!(
+                        rect.is_finite() && !rect.is_negative(),
+                        "width={width}: {rect:?}"
+                    );
+                    assert!(
+                        rect.left() >= owner.left() && rect.right() <= owner.right(),
+                        "frame itself must fit width={width}: {rect:?} vs {owner:?}"
+                    );
+                    assert!(
+                        (rect.right() - anchor.x.max(owner.left())).abs() < 0.01,
+                        "keep the anchor/right margin wherever it fits"
+                    );
+                    assert_eq!(removed, None);
+                });
+            }
+        }
+    }
+}
+
+#[test]
+fn a_tiny_queue_keeps_complete_cancel_and_remove_buttons_and_no_outside_hits() {
+    for (width, click_row) in [
+        (64.0, Some(0)),
+        (64.0, Some(1)),
+        (0.0, None),
+        (1.0, None),
+        (8.0, None),
+        (24.0, None),
+    ] {
+        let ctx = egui::Context::default();
+        let mut target = egui::pos2(378.0, 120.0);
+        let mut picked = None;
+        for pass in 0..4 {
+            let events = if pass >= 2 {
+                vec![
+                    egui::Event::PointerMoved(target),
+                    egui::Event::PointerButton {
+                        pos: target,
+                        button: egui::PointerButton::Primary,
+                        pressed: pass == 2,
+                        modifiers: egui::Modifiers::NONE,
+                    },
+                ]
+            } else {
+                Vec::new()
+            };
+            drop(ctx.run(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(1200.0, 600.0),
+                    )),
+                    events,
+                    ..Default::default()
+                },
+                |ctx| {
+                    egui::CentralPanel::default()
+                        .frame(egui::Frame::NONE)
+                        .show(ctx, |ui| {
+                            let owner = egui::Rect::from_min_size(
+                                egui::pos2(377.0, 100.0),
+                                egui::vec2(width, 400.0),
+                            );
+                            let mut child = ui.new_child(egui::UiBuilder::new().max_rect(owner));
+                            child.set_clip_rect(owner);
+                            let icons = std::cell::RefCell::new(Vec::new());
+                            let (_, removed) = op_queue_popover(
+                                &mut child,
+                                &theme(),
+                                ui.id().with("click-queue"),
+                                egui::pos2(owner.right() - 8.0, 480.0),
+                                &[
+                                    QueueRowProps {
+                                        title: "Copy long folder",
+                                        sub: "108 KB",
+                                        running: true,
+                                        remove_tip: "Cancel",
+                                    },
+                                    QueueRowProps {
+                                        title: "Trash queued item",
+                                        sub: "Queued",
+                                        running: false,
+                                        remove_tip: "Remove",
+                                    },
+                                ],
+                                None,
+                                &|_, icon, _| icons.borrow_mut().push(icon),
+                                &|_, _, _| {},
+                            );
+                            // Outside presses must never activate an invisible partial action.
+                            picked = picked.or(removed);
+                            if let Some(row) = click_row {
+                                assert_eq!(icons.borrow().len(), 2);
+                                target = icons.borrow()[row].center();
+                            } else {
+                                target = egui::pos2(owner.right() + 1.0, 470.0);
+                            }
+                        });
+                },
+            ));
+        }
+        assert_eq!(picked, click_row, "width={width}");
+    }
+}
