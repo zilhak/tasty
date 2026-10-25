@@ -1,7 +1,16 @@
 use super::*;
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn actual_endpoint_model_server_backend_retains_one_upstream_post_through_explicit_body_replay()
- {
+#[test]
+fn actual_endpoint_model_server_backend_retains_one_upstream_post_through_explicit_body_replay() {
+    with_runtime(|runtime| {
+        tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(roundtrip(runtime));
+    });
+}
+async fn roundtrip(runtime: NativeRuntime) {
     let counts = Arc::new(Counts::default());
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
@@ -12,7 +21,6 @@ async fn actual_endpoint_model_server_backend_retains_one_upstream_post_through_
     let (mut mirror, view) = mirror(&sender, &url);
     let bridge = bridge(sender, &view);
     let source = BodySource::new(bridge.clone(), view.clone(), Arc::new(|| true));
-    let runtime = runtime();
     let budget = runtime.endpoint_budget();
     let native = NativeBudget::new(4_000_000);
     let current_view = view.clone();

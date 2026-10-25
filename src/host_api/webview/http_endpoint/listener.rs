@@ -231,10 +231,10 @@ async fn listen(
         tokio::select! {
             _=stop.changed()=>break,
             result=listener.accept()=>match result {
-                Ok((socket,_))=>{if let Ok(permit)=state.budget.socket() {let state=state.clone();tasks.spawn(async move {let _permit=permit;if let Err(error)=connection(state,socket).await {tracing::debug!(?error,"native mirror connection ended");}});}else{drop(socket);}},
+                Ok((socket,_))=>spawn_connection(&state, &mut tasks, socket),
                 Err(error)=>{tracing::warn!(%error,"native mirror listener failed");break;}
             },
-            result=tasks.join_next(),if !tasks.is_empty()=>{if let Some(Err(error))=result {tracing::warn!(%error,"native mirror connection task failed");}}
+            result=tasks.join_next(),if !tasks.is_empty()=>connection_finished(result)
         }
     }
     drop(listener);
@@ -242,6 +242,34 @@ async fn listen(
     if let Some(trust) = &state.trust {
         trust.close();
     }
+    retire_connections(&mut tasks).await;
+    let result = if let Some(trust) = &state.trust {
+        trust.join().await
+    } else {
+        Ok(())
+    };
+    state.certificates.settled().await;
+    result
+}
+fn spawn_connection(state: &Arc<State>, tasks: &mut JoinSet<()>, socket: TcpStream) {
+    let Ok(permit) = state.budget.socket() else {
+        drop(socket);
+        return;
+    };
+    let state = state.clone();
+    tasks.spawn(async move {
+        let _permit = permit;
+        if let Err(error) = connection(state, socket).await {
+            tracing::debug!(?error, "native mirror connection ended");
+        }
+    });
+}
+fn connection_finished(result: Option<Result<(), tokio::task::JoinError>>) {
+    if let Some(Err(error)) = result {
+        tracing::warn!(%error, "native mirror connection task failed");
+    }
+}
+async fn retire_connections(tasks: &mut JoinSet<()>) {
     tasks.abort_all();
     while let Some(result) = tasks.join_next().await {
         if let Err(error) = result
@@ -250,13 +278,6 @@ async fn listen(
             tracing::warn!(%error,"native mirror connection retirement failed");
         }
     }
-    let result = if let Some(trust) = &state.trust {
-        trust.join().await
-    } else {
-        Ok(())
-    };
-    state.certificates.settled().await;
-    result
 }
 async fn connection(state: Arc<State>, socket: TcpStream) -> Result<(), EndpointError> {
     let deadline = state.config.limits.io_timeout;

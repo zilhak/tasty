@@ -28,6 +28,16 @@ pub(super) fn reaped() {
         retirement::owners() == 0
     });
 }
+/// All fixtures using the process-wide runtime owner budget share TEST through actual teardown.
+pub(in super::super) fn with_runtime(run: impl FnOnce(NativeRuntime)) {
+    let _serial = TEST.lock().unwrap();
+    reaped();
+    let mut setup =
+        Setup::start(Arc::new(|| true), Arc::new(|| {})).unwrap_or_else(|_| panic!("setup"));
+    run(ready(&mut setup));
+    drop(setup);
+    reaped();
+}
 #[test]
 fn setup_capacity_and_retired_workers_remain_charged_until_actual_job_termination() {
     let _serial = TEST.lock().unwrap();

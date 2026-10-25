@@ -23,15 +23,42 @@ pub(super) async fn listen(slot: Arc<Slot>, listener: TcpListener, budget: Endpo
     while slot.current() {
         tokio::select! {
             result=listener.accept()=>match result {
-                Ok((socket,_))=>if let Ok(permit)=budget.probe() { let slot=slot.clone(); tasks.spawn(async move { let _permit=permit; if let Err(error)=connection(slot,socket).await { tracing::debug!(?error,"native TLS-only probe ended"); } }); },
+                Ok((socket,_))=>spawn_connection(&slot, &budget, &mut tasks, socket),
                 Err(error)=>{tracing::warn!(%error,"native TLS-only listener failed");slot.cancel();break;}
             },
             _=slot.changed.notified()=>{},
             _=tokio::time::sleep(Duration::from_millis(10))=>{},
-            result=tasks.join_next(),if !tasks.is_empty()=>if let Some(Err(error))=result { tracing::warn!(%error,"native TLS-only socket task failed"); slot.cancel(); }
+            result=tasks.join_next(),if !tasks.is_empty()=>connection_finished(&slot, result)
         }
     }
     drop(listener);
+    retire_connections(&mut tasks).await;
+    stopped.clean = true;
+}
+fn spawn_connection(
+    slot: &Arc<Slot>,
+    budget: &EndpointBudget,
+    tasks: &mut JoinSet<()>,
+    socket: TcpStream,
+) {
+    let Ok(permit) = budget.probe() else {
+        return;
+    };
+    let slot = slot.clone();
+    tasks.spawn(async move {
+        let _permit = permit;
+        if let Err(error) = connection(slot, socket).await {
+            tracing::debug!(?error, "native TLS-only probe ended");
+        }
+    });
+}
+fn connection_finished(slot: &Slot, result: Option<Result<(), tokio::task::JoinError>>) {
+    if let Some(Err(error)) = result {
+        tracing::warn!(%error, "native TLS-only socket task failed");
+        slot.cancel();
+    }
+}
+async fn retire_connections(tasks: &mut JoinSet<()>) {
     tasks.abort_all();
     while let Some(result) = tasks.join_next().await {
         if let Err(error) = result
@@ -40,7 +67,6 @@ pub(super) async fn listen(slot: Arc<Slot>, listener: TcpListener, budget: Endpo
             tracing::warn!(%error,"native TLS-only socket retirement failed");
         }
     }
-    stopped.clean = true;
 }
 async fn connection(slot: Arc<Slot>, socket: TcpStream) -> Result<(), EndpointError> {
     let deadline = slot

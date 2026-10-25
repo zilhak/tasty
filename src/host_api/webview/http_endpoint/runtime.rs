@@ -75,41 +75,7 @@ impl Setup {
             .name("html-native-setup".into())
             .spawn(move || {
                 let _permit = permit;
-                let runtime = match tokio::runtime::Builder::new_multi_thread()
-                    .worker_threads(2)
-                    .max_blocking_threads(8)
-                    .enable_all()
-                    .build()
-                {
-                    Ok(runtime) => runtime,
-                    Err(error) => {
-                        tracing::warn!(%error,"native HTTP runtime setup failed");
-                        if tx.send(Err(RuntimeError::Worker)).is_err() {
-                            tracing::debug!("native runtime setup receiver retired");
-                        }
-                        wake();
-                        return;
-                    }
-                };
-                let parts = if worker.current() {
-                    Ok(Parts {
-                        handle: runtime.handle().clone(),
-                        jobs: Arc::new(Semaphore::new(8)),
-                        endpoints: EndpointBudget::new(),
-                    })
-                } else {
-                    Err(RuntimeError::Retired)
-                };
-                let success = parts.is_ok();
-                let delivered = tx.send(parts).is_ok();
-                wake();
-                if success && delivered && shutdown.recv().is_ok() {
-                    tracing::debug!("native runtime explicitly stopped");
-                }
-                worker.live.store(false, Ordering::Release);
-                // Runtime Drop may await actual blocking profile/verification work. This owned
-                // setup worker is the only place that waits; permits survive until termination.
-                drop(runtime);
+                setup_worker(worker, tx, shutdown, wake);
             })
             .map_err(|_| RuntimeError::Worker)?;
         Ok(Self {
@@ -136,6 +102,58 @@ impl Setup {
             Ok(_) => Err(RuntimeError::Retired),
             Err(error) => Err(error),
         })
+    }
+}
+fn setup_worker(
+    worker: Arc<State>,
+    tx: mpsc::SyncSender<Result<Parts, RuntimeError>>,
+    shutdown: mpsc::Receiver<()>,
+    wake: Arc<dyn Fn() + Send + Sync>,
+) {
+    let runtime = match tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .max_blocking_threads(8)
+        .enable_all()
+        .build()
+    {
+        Ok(runtime) => runtime,
+        Err(error) => {
+            setup_failed(error, tx, &wake);
+            return;
+        }
+    };
+    let parts = if worker.current() {
+        Ok(Parts {
+            handle: runtime.handle().clone(),
+            jobs: Arc::new(Semaphore::new(8)),
+            endpoints: EndpointBudget::new(),
+        })
+    } else {
+        Err(RuntimeError::Retired)
+    };
+    let success = parts.is_ok();
+    let delivered = tx.send(parts).is_ok();
+    wake();
+    wait_for_shutdown(success, delivered, shutdown);
+    worker.live.store(false, Ordering::Release);
+    // Runtime Drop may await actual blocking profile/verification work. This owned
+    // setup worker is the only place that waits; permits survive until termination.
+    drop(runtime);
+}
+fn setup_failed(
+    error: std::io::Error,
+    tx: mpsc::SyncSender<Result<Parts, RuntimeError>>,
+    wake: &Arc<dyn Fn() + Send + Sync>,
+) {
+    tracing::warn!(%error, "native HTTP runtime setup failed");
+    if tx.send(Err(RuntimeError::Worker)).is_err() {
+        tracing::debug!("native runtime setup receiver retired");
+    }
+    wake();
+}
+fn wait_for_shutdown(success: bool, delivered: bool, shutdown: mpsc::Receiver<()>) {
+    if success && delivered && shutdown.recv().is_ok() {
+        tracing::debug!("native runtime explicitly stopped");
     }
 }
 impl NativeRuntime {
@@ -175,7 +193,7 @@ impl NativeRuntime {
     }
 }
 #[cfg(test)]
-mod tests;
+pub(super) mod tests;
 
 #[cfg(test)]
 mod tests_verify;

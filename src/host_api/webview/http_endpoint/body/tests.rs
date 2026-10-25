@@ -1,7 +1,7 @@
 //! Real product endpoint/bridge/server/backend bytes; neither GTK nor actual App grant capture.
 use super::super::{
     listener::{DocumentIdentity, Endpoint, EndpointConfig},
-    runtime::{NativeRuntime, Setup},
+    runtime::{NativeRuntime, tests::with_runtime},
 };
 use super::*;
 use crate::remote::{
@@ -43,18 +43,6 @@ fn limits() -> core::Limits {
         connect_timeout: Duration::from_secs(2),
         read_timeout: Duration::from_secs(2),
         network_time: Duration::from_secs(2),
-    }
-}
-fn runtime() -> NativeRuntime {
-    let mut setup = Setup::start(Arc::new(|| true), Arc::new(|| {}))
-        .unwrap_or_else(|_| panic!("native runtime setup"));
-    let end = std::time::Instant::now() + Duration::from_secs(3);
-    loop {
-        if let Some(result) = setup.poll() {
-            return result.unwrap_or_else(|_| panic!("native runtime"));
-        }
-        assert!(std::time::Instant::now() < end);
-        std::thread::sleep(Duration::from_millis(1));
     }
 }
 fn mirror(
