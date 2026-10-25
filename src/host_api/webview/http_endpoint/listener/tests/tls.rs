@@ -50,19 +50,21 @@ impl rustls::client::danger::ServerCertVerifier for Pinned {
     }
 }
 async fn tls(endpoint: &Endpoint, sni: &'static str) -> tokio_rustls::client::TlsStream<TcpStream> {
+    let prepared = endpoint
+        .prepare_https("https://remote.example:8443/doc")
+        .unwrap()
+        .await
+        .unwrap_or_else(|_| panic!("prepared endpoint authority"));
+    assert!(prepared.is_current());
+    assert_eq!(prepared.host(), "remote.example");
+    assert_eq!(prepared.port(), 8443);
     let mut socket = authenticated(endpoint, None).await;
     assert_eq!(route(&mut socket, "remote.example", 8443).await[1], 0);
-    // The real endpoint map is populated by its actual certificate worker. The test verifier
-    // pins that exact leaf and checks handshake signatures, allowing a deliberately foreign SNI.
-    let cert = endpoint
-        .state
-        .certificates
-        .certificate(Authority::new("remote.example", 8443).unwrap())
-        .await
-        .unwrap_or_else(|_| panic!("mapped certificate"));
+    // Pin preparation precedes even SOCKS admission and performs no speculative HTTP request.
+    // The private verifier checks that prepared leaf and signatures, including foreign SNI.
     assert_eq!(
         endpoint.expected_leaf("remote.example", 8443),
-        Some(cert.leaf())
+        Some(prepared.leaf())
     );
     let config = rustls::ClientConfig::builder_with_provider(Arc::new(
         rustls::crypto::aws_lc_rs::default_provider(),
@@ -70,7 +72,7 @@ async fn tls(endpoint: &Endpoint, sni: &'static str) -> tokio_rustls::client::Tl
     .with_safe_default_protocol_versions()
     .unwrap()
     .dangerous()
-    .with_custom_certificate_verifier(Arc::new(Pinned(cert.leaf())))
+    .with_custom_certificate_verifier(Arc::new(Pinned(prepared.leaf())))
     .with_no_client_auth();
     TlsConnector::from(Arc::new(config))
         .connect(

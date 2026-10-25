@@ -1,6 +1,7 @@
 //! Response-aware loopback SOCKS endpoint. It never opens a connection to the logical target.
 mod budget;
 mod policy;
+pub(crate) mod preparation;
 mod request;
 use super::{
     certificates::{Authority, Certificates},

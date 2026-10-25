@@ -9,6 +9,7 @@ use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 struct Resource {
     owners: AtomicUsize,
     sockets: Arc<Semaphore>,
+    preparations: Arc<Semaphore>,
     certificates: CertificateBudget,
 }
 #[derive(Clone)]
@@ -18,6 +19,7 @@ impl EndpointBudget {
         Self(Arc::new(Resource {
             owners: AtomicUsize::new(0),
             sockets: Arc::new(Semaphore::new(8)),
+            preparations: Arc::new(Semaphore::new(8)),
             certificates: CertificateBudget::new(),
         }))
     }
@@ -39,6 +41,17 @@ impl EndpointBudget {
     }
     pub(super) fn certificates(&self) -> CertificateBudget {
         self.0.certificates.clone()
+    }
+    pub(super) fn preparation(&self) -> Result<OwnedSemaphorePermit, EndpointError> {
+        self.0
+            .preparations
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| EndpointError::Capacity)
+    }
+    #[cfg(test)]
+    pub(crate) fn active_preparations(&self) -> usize {
+        8 - self.0.preparations.available_permits()
     }
     pub(crate) fn active_connections(&self) -> usize {
         8 - self.0.sockets.available_permits()
