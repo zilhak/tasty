@@ -112,12 +112,15 @@ fn bounded_line(
     color: egui::Color32,
     limit: LogicalPx,
 ) -> egui::Response {
-    let width = limit.value().max(0.0);
+    let width = limit.max(LogicalPx(0.0));
     let mut job = egui::text::LayoutJob::simple_singleline(text.to_owned(), font, color);
-    job.wrap = egui::text::TextWrapping::truncate_at_width(width.max(1.0));
+    job.wrap = egui::text::TextWrapping::truncate_at_width(width.max(LogicalPx(1.0)).value());
     let galley = ui.fonts(|f| f.layout_job(job));
     let (rect, response) = ui.allocate_exact_size(
-        egui::vec2(galley.size().x.min(width), galley.size().y),
+        egui::vec2(
+            LogicalPx(galley.size().x).min(width).value(),
+            galley.size().y,
+        ),
         egui::Sense::hover(),
     );
     ui.painter()
@@ -134,15 +137,15 @@ fn bounded_host(
     mark: &HostMark<'_>,
     limit: LogicalPx,
 ) -> egui::Response {
-    let width = limit.value().max(0.0);
-    let size = theme.workspace_mirror_icon_size().value();
-    let gap = theme.workspace_mirror_gap().value();
+    let width = limit.max(LogicalPx(0.0));
+    let size = theme.workspace_mirror_icon_size();
+    let gap = theme.workspace_mirror_gap();
     let color = theme.workspace_mirror_fg().to_egui();
     let name = ui.fonts(|f| f.layout_no_wrap(mark.name.to_owned(), caption_mono(theme), color));
     let (rect, response) = ui.allocate_exact_size(
         egui::vec2(
-            (size + gap + name.size().x).min(width),
-            size.max(name.size().y),
+            (size + gap + LogicalPx(name.size().x)).min(width).value(),
+            size.max(LogicalPx(name.size().y)).value(),
         ),
         egui::Sense::hover(),
     );
@@ -152,9 +155,9 @@ fn bounded_host(
             .layout(egui::Layout::left_to_right(egui::Align::Center)),
     );
     child.set_clip_rect(rect.intersect(ui.clip_rect()));
-    child.spacing_mut().item_spacing.x = gap;
+    child.spacing_mut().item_spacing.x = gap.value();
     let (glyph, glyph_response) =
-        child.allocate_exact_size(egui::vec2(size, size), egui::Sense::hover());
+        child.allocate_exact_size(egui::vec2(size.value(), size.value()), egui::Sense::hover());
     glyph_response.on_hover_text(mark.name);
     (mark.paint_glyph)(&mut child, glyph, color);
     if width > size + gap {
@@ -163,7 +166,7 @@ fn bounded_host(
             mark.name,
             caption_mono(theme),
             color,
-            LogicalPx(width - size - gap),
+            width - size - gap,
         );
     } else {
         response.widget_info(|| {
@@ -257,10 +260,10 @@ pub fn op_status_line(
     }
     if let Some(bytes) = props.bytes {
         // Preserve the host glyph and fixed queue/cancel controls; bytes may ellipsize.
-        let host_space = props.host.as_ref().map_or(0.0, |_| {
-            theme.workspace_mirror_icon_size().value() + theme.spacing_sm.value()
+        let host_space = props.host.as_ref().map_or(LogicalPx(0.0), |_| {
+            theme.workspace_mirror_icon_size() + theme.spacing_sm
         });
-        let width = LogicalPx((child.available_width() - host_space).max(0.0));
+        let width = (LogicalPx(child.available_width()) - host_space).max(LogicalPx(0.0));
         bounded_line(
             &mut child,
             bytes,
@@ -286,7 +289,7 @@ pub fn op_status_line(
             host_mark(&mut left_ui, theme, mark);
         }
         let width = LogicalPx(left_ui.available_width());
-        if width.value() > 0.0 {
+        if width > LogicalPx(0.0) {
             let resp = bounded_line(
                 &mut left_ui,
                 props.text,
@@ -391,27 +394,29 @@ fn queue_header(ui: &mut egui::Ui, theme: &Theme, header: &QueueHeader<'_>) {
                     egui::vec2(theme.explorer_remote_queue_head_gap().value(), 0.0);
                 let muted = theme.text_muted().to_egui();
                 let after = header.after.trim();
-                let after_width = ui.fonts(|f| {
+                let after_width = LogicalPx(ui.fonts(|f| {
                     f.layout_no_wrap(after.to_owned(), caption(theme), muted)
                         .size()
                         .x
-                });
-                let gap = theme.explorer_remote_queue_head_gap().value();
+                }));
+                let gap = theme.explorer_remote_queue_head_gap();
                 let before = header.before.trim();
                 if !before.is_empty() {
-                    let width = LogicalPx(
-                        (ui.available_width()
-                            - after_width
-                            - gap * 2.0
-                            - theme.workspace_mirror_icon_size().value())
-                        .max(0.0),
-                    );
+                    let width = (LogicalPx(ui.available_width())
+                        - after_width
+                        - gap * 2.0
+                        - theme.workspace_mirror_icon_size())
+                    .max(LogicalPx(0.0));
                     bounded_line(ui, before, caption(theme), muted, width);
                 }
-                let host_width = LogicalPx(
-                    (ui.available_width() - after_width - if after.is_empty() { 0.0 } else { gap })
-                        .max(0.0),
-                );
+                let host_width = (LogicalPx(ui.available_width())
+                    - after_width
+                    - if after.is_empty() {
+                        LogicalPx(0.0)
+                    } else {
+                        gap
+                    })
+                .max(LogicalPx(0.0));
                 bounded_host(ui, theme, &header.host, host_width);
                 if !after.is_empty() {
                     let width = LogicalPx(ui.available_width());
@@ -436,9 +441,9 @@ pub fn op_queue_popover(
     paint_queued: IconPainter<'_>,
 ) -> (egui::Rect, Option<usize>) {
     // The owning list cell may be narrower than the preferred menu width.
-    let w = op_queue_width(theme)
-        .value()
-        .min((bottom_right.x - ui.clip_rect().left()).max(0.0));
+    let width = op_queue_width(theme)
+        .min((LogicalPx(bottom_right.x) - LogicalPx(ui.clip_rect().left())).max(LogicalPx(0.0)));
+    let w = width.value();
     let h = ui.ctx().data(|d| d.get_temp::<f32>(id)).unwrap_or(0.0);
     let min = egui::pos2(bottom_right.x - w, bottom_right.y - h);
     let mut child = ui.new_child(
@@ -451,7 +456,9 @@ pub fn op_queue_popover(
     let rect = op_queue_frame(theme)
         .show(&mut child, |ui| {
             ui.set_width(
-                (w - theme.spacing_xs.value() * 2.0 - theme.border_width.value() * 2.0).max(0.0),
+                (width - theme.spacing_xs * 2.0 - theme.border_width * 2.0)
+                    .max(LogicalPx(0.0))
+                    .value(),
             );
             if let Some(header) = header {
                 queue_header(ui, theme, header);
