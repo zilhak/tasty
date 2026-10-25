@@ -377,8 +377,8 @@ pub(crate) fn handle_markdown_content_request(
 #[cfg(feature = "gui")]
 const MARKDOWN_CHANGED_EVENT: &str = "markdown_changed";
 
-/// webview.set_url로 문서가 다시 그려졌을 때 모든 workspace holder에 통지를 시도한다.
-/// 파일 내용이 바뀌었다는 뜻은 아니며 client는 사용자 요청 후에 원문을 다시 읽는다.
+/// webview.set_url로 문서가 바뀌었을 때 workspace holder에 통지를 시도한다.
+/// Markdown은 사용자 요청으로 원문을 읽고 HTTP mirror는 새 메타데이터를 요청한다.
 /// notifier·점유가 없으면 생략한다. 반환값은 큐에 실린 client 수다.
 /// webview.set_url이 GUI 전용이므로 헤드리스에서는 이 통지를 보내지 않는다.
 #[cfg(feature = "gui")]
@@ -389,7 +389,9 @@ pub(crate) fn notify_markdown_changed(
     plugin_id: &str,
     surface_id: SurfaceId,
 ) -> usize {
-    if !is_attach_content_allowed(kind, plugin_id) {
+    if !is_attach_content_allowed(kind, plugin_id)
+        && !(kind == "html" && plugin_id == "com.tasty.html")
+    {
         return 0;
     }
     let Some(hub) = remote.notifier() else {
@@ -608,10 +610,19 @@ mod markdown_changed_tests {
             rx_bystander.try_recv().is_err(),
             "점유하지 않은 client 에는 가지 않는다"
         );
+        assert_eq!(
+            notify_markdown_changed(&reg, &remote, "html", "com.tasty.html", 11),
+            2
+        );
+        assert_eq!(changed_surface_id(&rx_a.try_recv().unwrap()), Some(11));
+        assert_eq!(changed_surface_id(&rx_b.try_recv().unwrap()), Some(11));
+        assert!(rx_a.try_recv().is_err());
+        assert!(rx_b.try_recv().is_err());
+        assert!(rx_bystander.try_recv().is_err());
     }
 
     #[test]
-    fn no_holder_or_non_content_kind_is_a_no_op() {
+    fn no_holder_or_untrusted_document_owner_is_a_no_op() {
         let hub = StreamHub::new();
         let a = hub.alloc_id();
         let rx = hub.register(a);
@@ -626,7 +637,7 @@ mod markdown_changed_tests {
 
         reg.acquire_workspace(100, &[10], &[10, 11], a).unwrap();
         assert_eq!(
-            notify_markdown_changed(&reg, &remote, "html", "com.tasty.html", 11),
+            notify_markdown_changed(&reg, &remote, "html", "com.thirdparty.html", 11),
             0
         );
         assert_eq!(
