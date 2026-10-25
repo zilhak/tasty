@@ -241,4 +241,6 @@ The existing receive widgets present HTTP model notices and distinct response Al
 
 The source server sends its existing document-change notification for the built-in HTML owner as well as Markdown. This does not grant HTML access through the Markdown content API. The HTTP App receiver invalidates only an actual mapped HTTP session, cancels any pending retained continuation and clears its script allowance even if a Reload metadata request is already pending; file mirrors keep their explicit Reload behavior.
 
+Native widget disposal explicitly drops the HTTP owner before destroying GTK or pumping its event loop. Endpoint, body and view authority are therefore already retired when destruction callbacks run, including window disposal while its engine remains parked. The endpoint still joins off the GTK thread.
+
 The debug route is an integration boundary, not a public Linux/Windows/macOS support claim. Actual App/native acceptance and source-linked component controls have distinct evidence. The endpoint pool's synthetic native actor does not prove GTK UNKNOWN_CA, actionable chrome, repeated native profile counts or retained native POST behavior.

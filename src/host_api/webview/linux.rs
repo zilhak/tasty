@@ -935,9 +935,15 @@ impl Drop for PlatformWebView {
         if let Some(d) = &trap {
             d.error_trap_push();
         }
-        // SAFETY: 생성 스레드 확인 뒤 이 객체가 소유한 WebView를 정리한다. Rc/raw pointer 필드로 Send를 구현하지 않는다.
-        unsafe {
-            self.webview.destroy();
+        if let Some(document) = self.http.take() {
+            // NativeDocument revokes endpoint/body/view authority before destroying GTK or
+            // letting the event pump run. Automatic field Drop would happen after this method.
+            drop(document);
+        } else {
+            // SAFETY: 생성 스레드 확인 뒤 이 객체가 소유한 WebView를 정리한다.
+            unsafe {
+                self.webview.destroy();
+            }
         }
         // X 창을 지우기 전에 GTK의 숨기기·닫기 요청을 처리한다.
         self.gtk_window.hide();
