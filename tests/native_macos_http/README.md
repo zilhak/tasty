@@ -2,6 +2,8 @@
 
 Run on macOS without input automation. The binary creates only a hidden owned NSWindow, requests no activation, and asserts Prohibited activation policy. It never uses the default WK store or changes system proxy/trust settings.
 
+This standalone package explicitly selects `driver.rs` as its binary and test-harness source. Keeping the driver in this directory under a non-`main.rs` name avoids root Cargo integration-test discovery. Use the fixture manifest below for native builds/tests; root all-target checks do not compile this private driver. Repository source guards still scan it normally.
+
 ```sh
 cargo test --manifest-path tests/native_macos_http/Cargo.toml --locked -- --nocapture
 cargo build --manifest-path tests/native_macos_http/Cargo.toml --locked

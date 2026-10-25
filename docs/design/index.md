@@ -27,7 +27,7 @@
 | [banner](systems/banner.md) | 스코프 상단의 지속·인터랙티브 안내+조치 오버레이(4번째 오버레이 개념) |
 | [modifier-hint](systems/modifier-hint.md) | modifier 홀드 동안 뜨는 단축키 목록 오버레이(5번째 오버레이 개념) |
 | [fullscreen-stage](systems/fullscreen-stage.md) | 창 전체를 독점하는 독립 표면 — 기존 트리 밖의 무대 (기능 명세 포함) |
-| [webview](systems/webview.md) | OS 자식 창의 API·`Drop`, 부모 핸들·좌표·스레드·수명·탐색·키보드 포커스와 macOS HTTP 저장소 구성요소 |
+| [webview](systems/webview.md) | OS 자식 창의 API·`Drop`, 부모 핸들·좌표·스레드·수명·탐색·키보드 포커스와 macOS HTTP 저장소 구성요소·독립 native fixture |
 | [memory](systems/memory.md) | 에이전트 메모리 `memory.db` 의 가시성·소유권 모델 |
 | [storage](systems/storage.md) | 영속 데이터의 텍스트(TOML/셸) ↔ SQLite 분할, 창 간 공유 최근 목록, 저장 기준선과 journal SQL 계측·테마 bootstrap·IPC 공개 barrier·세대별 정리 |
 | [storage-contract](systems/storage-contract.md) | 저장 경로별 접수·commit·표시·실행 시점, memory.db 소비자 계약, 저장 실행기(접수·묶음·예산·flush·종료), 설정 부팅 barrier·CLI 파일 참여자 경계·child 관계 receipt·예약 확정 뒤 자식 이름 결정·점유/입력 barrier·늦은 ACK 병합·삭제된 상태 metadata 회수와 비정규 파일 거절·journal 논리 cut·ACK와 writer 명부, 고정 크기 시간 분포·미완료 요청 나이, 설정·파일 snapshot과 state 최근 목록의 미확정 revision·연속 dirty age, 공용·비밀 파일 교체 계측·중립 파일 명령 port·웹훅 ordered receipt와 보관 예산 |
