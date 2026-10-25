@@ -155,7 +155,12 @@ impl Drop for InheritedLock {
 
 #[test]
 fn inherited_cloexec_lock_refuses_real_profile_work_until_owned_child_exits() {
-    with_runtime(|runtime| {
+    let _serial = TEST.lock().unwrap();
+    reaped();
+    let mut setup =
+        Setup::start(Arc::new(|| true), Arc::new(|| {})).unwrap_or_else(|_| panic!("setup"));
+    let runtime = ready(&mut setup);
+    {
         let home = private_home();
         let mut child = InheritedLock::hold(home.path());
         assert!(matches!(
@@ -192,13 +197,19 @@ fn inherited_cloexec_lock_refuses_real_profile_work_until_owned_child_exits() {
         assert!(profile.root().is_dir());
         drop(profile.into_native());
         drop(runtime);
+        drop(setup);
         reaped();
-    });
+    }
 }
 
 #[test]
 fn populated_namespace_capacity_is_not_retried_by_positive_fixture() {
-    with_runtime(|runtime| {
+    let _serial = TEST.lock().unwrap();
+    reaped();
+    let mut setup =
+        Setup::start(Arc::new(|| true), Arc::new(|| {})).unwrap_or_else(|_| panic!("setup"));
+    let runtime = ready(&mut setup);
+    {
         let home = private_home();
         let namespace = home.path().join("native-http-profiles");
         std::fs::create_dir(&namespace).unwrap();
@@ -214,6 +225,7 @@ fn populated_namespace_capacity_is_not_retried_by_positive_fixture() {
         assert_eq!(retries, 0);
         assert_eq!(std::fs::read_dir(namespace).unwrap().count(), 9);
         drop(runtime);
+        drop(setup);
         reaped();
-    });
+    }
 }
