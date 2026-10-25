@@ -16,6 +16,7 @@ pub(crate) enum ProfileError {
     Invalid,
     Ownership,
     Capacity,
+    Busy,
     Io(std::io::Error),
 }
 impl std::fmt::Display for ProfileError {
@@ -23,6 +24,7 @@ impl std::fmt::Display for ProfileError {
         match self {
             Self::Invalid => f.write_str("invalid private profile request"),
             Self::Ownership => f.write_str("private profile ownership could not be established"),
+            Self::Busy => f.write_str("private profile namespace lock busy"),
             Self::Capacity => f.write_str("private profile capacity unavailable"),
             Self::Io(e) => write!(f, "private profile filesystem operation failed: {e}"),
         }
@@ -72,7 +74,9 @@ impl PreparedProfile {
         }
         let namespace = fs::Namespace::open(parent)?;
         let _lock = namespace.lock()?;
-        if namespace.entries(max_roots)?.0.len() >= max_roots {
+        let count = namespace.entries(max_roots)?.0.len();
+        if count >= max_roots {
+            tracing::warn!(count, max_roots, "private profile root capacity exhausted");
             return Err(ProfileError::Capacity);
         }
         let owner = process::Identity::current()?;

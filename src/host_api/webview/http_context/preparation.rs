@@ -1,4 +1,5 @@
 //! Run profile I/O on the caller's bounded worker; native receipts and Drop only update memory.
+mod admission;
 mod namespace;
 use super::profile::{self, PreparedProfile, ProfileError};
 use std::{
@@ -15,6 +16,7 @@ pub(crate) enum PrepareError {
     Retired,
     Worker,
     Timeout,
+    AdmissionTimeout,
 }
 impl std::fmt::Display for PrepareError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -22,6 +24,7 @@ impl std::fmt::Display for PrepareError {
             Self::Storage(error) => write!(f, "private native profile preparation failed: {error}"),
             Self::Retired => f.write_str("native profile preparation retired"),
             Self::Worker => f.write_str("native profile worker unavailable"),
+            Self::AdmissionTimeout => f.write_str("native profile namespace admission timed out"),
             Self::Timeout => f.write_str("native profile claim timed out"),
         }
     }
@@ -128,6 +131,12 @@ impl ProfileWork {
     pub(crate) fn run(mut self) {
         let shared = self.shared.take().expect("unconsumed profile work");
         let result = self.prepare(&shared);
+        let result = if shared.active() {
+            result
+        } else {
+            discard(result);
+            Err(PrepareError::Retired)
+        };
         let needs_claim = result.is_ok();
         let Ok(mut state) = shared.state.lock() else {
             tracing::error!("private profile result poisoned");
@@ -186,8 +195,13 @@ impl ProfileWork {
         if !shared.active() {
             return Err(PrepareError::Retired);
         }
+        // Admission uses one finite budget across both lock acquisitions. Native claim gets
+        // its separate, unchanged deadline only after readiness has been published.
+        let deadline = Instant::now() + self.claim_timeout;
         let parent = namespace::prepare(&self.home).map_err(PrepareError::Storage)?;
-        let report = profile::reclaim_dead(&parent, self.roots).map_err(PrepareError::Storage)?;
+        let report = admission::run(shared, deadline, "sweep", || {
+            profile::reclaim_dead(&parent, self.roots)
+        })?;
         tracing::debug!(
             inspected = report.inspected,
             removed = report.removed,
@@ -200,7 +214,9 @@ impl ProfileWork {
         if !shared.active() {
             return Err(PrepareError::Retired);
         }
-        PreparedProfile::create(&parent, self.roots).map_err(PrepareError::Storage)
+        admission::run(shared, deadline, "create", || {
+            PreparedProfile::create(&parent, self.roots)
+        })
     }
 }
 impl Drop for ProfileWork {
@@ -228,3 +244,6 @@ fn discard(result: Result<PreparedProfile, PrepareError>) {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod admission_tests;

@@ -1,5 +1,7 @@
 //! Actual runtime/worker ownership, not GTK destruction or App publication evidence.
 #[cfg(target_os = "linux")]
+mod profile_admission;
+#[cfg(target_os = "linux")]
 mod profile_fixture;
 use super::*;
 #[cfg(target_os = "linux")]
@@ -143,7 +145,7 @@ fn actual_private_profile_work_runs_on_bounded_pool_and_receipt_claim_keeps_leas
     let endpoints = runtime.endpoint_budget();
     assert_eq!(endpoints.active_owners(), 0);
     drop(handle);
-    let profile = profile_fixture::positive(&runtime, home.path(), || {})
+    let profile = profile_fixture::attempt(&runtime, home.path())
         .unwrap_or_else(|error| panic!("private profile: {error}"));
     assert_eq!(
         std::fs::read_dir(home.path().join("native-http-profiles"))

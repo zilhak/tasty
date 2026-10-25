@@ -1,4 +1,4 @@
-//! Positive fixture admission and an actual inherited-flock counterexample.
+//! Actual bounded profile admission and an inherited-flock counterexample.
 use super::*;
 use crate::host_api::webview::http_context::{
     preparation::PrepareError,
@@ -17,7 +17,10 @@ use std::{
     path::Path,
 };
 
-fn attempt(runtime: &NativeRuntime, home: &Path) -> Result<PreparedProfile, PrepareError> {
+pub(super) fn attempt(
+    runtime: &NativeRuntime,
+    home: &Path,
+) -> Result<PreparedProfile, PrepareError> {
     let (receipt, work) = Preparation::new(
         home.into(),
         8,
@@ -32,32 +35,6 @@ fn attempt(runtime: &NativeRuntime, home: &Path) -> Result<PreparedProfile, Prep
         result.is_some()
     });
     result.unwrap()
-}
-
-// Only positive admission into this fixture's empty private namespace is retried. The
-// real worker and all production limits remain in force; populated namespaces fail immediately.
-pub(super) fn positive(
-    runtime: &NativeRuntime,
-    home: &Path,
-    mut on_contention: impl FnMut(),
-) -> Result<PreparedProfile, PrepareError> {
-    let deadline = Instant::now() + Duration::from_secs(2);
-    loop {
-        match attempt(runtime, home) {
-            Err(error @ PrepareError::Storage(ProfileError::Capacity)) => {
-                let namespace = home.join("native-http-profiles");
-                let empty = std::fs::read_dir(namespace)
-                    .unwrap()
-                    .all(|entry| entry.unwrap().file_name() == ".profile-lock");
-                if !empty || Instant::now() >= deadline {
-                    return Err(error);
-                }
-                on_contention();
-                std::thread::sleep(Duration::from_millis(2));
-            }
-            result => return result,
-        }
-    }
 }
 
 // The child uses only async-signal-safe syscalls after fork, never Rust unwinding or locks.
@@ -165,7 +142,7 @@ fn inherited_cloexec_lock_refuses_real_profile_work_until_owned_child_exits() {
         let mut child = InheritedLock::hold(home.path());
         assert!(matches!(
             attempt(&runtime, home.path()),
-            Err(PrepareError::Storage(ProfileError::Capacity))
+            Err(PrepareError::AdmissionTimeout)
         ));
         assert_eq!(
             std::fs::read_dir(home.path().join("native-http-profiles"))
@@ -173,21 +150,9 @@ fn inherited_cloexec_lock_refuses_real_profile_work_until_owned_child_exits() {
                 .count(),
             1
         );
-        let mut retries = 0;
-        let profile = positive(&runtime, home.path(), || {
-            retries += 1;
-            child.release();
-        })
-        .unwrap();
-        assert!(
-            retries >= 1,
-            "the inherited lock must exercise positive admission retry"
-        );
-        tracing::info!(
-            pid = child.pid,
-            retries,
-            "owned inherited-lock child reaped"
-        );
+        child.release();
+        let profile = attempt(&runtime, home.path()).unwrap();
+        tracing::info!(pid = child.pid, "owned inherited-lock child reaped");
         assert_eq!(
             std::fs::read_dir(home.path().join("native-http-profiles"))
                 .unwrap()
@@ -203,7 +168,7 @@ fn inherited_cloexec_lock_refuses_real_profile_work_until_owned_child_exits() {
 }
 
 #[test]
-fn populated_namespace_capacity_is_not_retried_by_positive_fixture() {
+fn populated_namespace_capacity_remains_terminal_in_real_worker() {
     let _serial = TEST.lock().unwrap();
     reaped();
     let mut setup =
@@ -217,12 +182,10 @@ fn populated_namespace_capacity_is_not_retried_by_positive_fixture() {
         for i in 0..8 {
             std::fs::create_dir(namespace.join(format!("unknown-{i}"))).unwrap();
         }
-        let mut retries = 0;
         assert!(matches!(
-            positive(&runtime, home.path(), || retries += 1),
+            attempt(&runtime, home.path()),
             Err(PrepareError::Storage(ProfileError::Capacity))
         ));
-        assert_eq!(retries, 0);
         assert_eq!(std::fs::read_dir(namespace).unwrap().count(), 9);
         drop(runtime);
         drop(setup);

@@ -241,7 +241,7 @@ impl Namespace {
         if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } < 0 {
             let e = std::io::Error::last_os_error();
             return Err(if e.kind() == std::io::ErrorKind::WouldBlock {
-                ProfileError::Capacity
+                ProfileError::Busy
             } else {
                 e.into()
             });
@@ -277,6 +277,7 @@ impl Namespace {
                 Err(e) => return Err(e),
             }
         }
+        tracing::warn!("private profile name creation exhausted after sixteen collisions");
         Err(ProfileError::Capacity)
     }
 }

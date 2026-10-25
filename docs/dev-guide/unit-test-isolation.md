@@ -432,20 +432,24 @@ inode 라 소용없다. 병렬 시험이 프로세스를 많이 띄울수록 자
 시험용 실행 파일은 `tasty_test_support::write_executable`(unix)로 쓴다. 이 도우미가 자식 셸
 방식이고, 같은 조건의 경합 시험을 함께 둔다.
 
-### 빈 private profile의 양성 admission
+### 실제 private profile의 잠금 admission
 
 Linux profile의 namespace lock도 fork 자식이 같은 open-file description을 물려받으면
 부모가 fd를 닫은 뒤까지 유지된다. `O_CLOEXEC`는 이 구간의 `LOCK_NB` 거절을 막지 못한다.
-실제 runtime fixture는 자기 임시 홈의 namespace가 lock 파일 외에는 비어 있을 때만
-`Storage(Capacity)` admission을 최대 2초 재시도한다. 실제 `ProfileWork`를 매번 실행하며
-root 상한 8개와 claim 기한 1초는 그대로다. 다른 오류나 하나라도 있는 namespace 항목은
-즉시 반환한다. 성공 후에는 lock 하나와 소유 root 하나만 있는지도 검사한다.
+namespace 잠금의 WouldBlock은 실제 용량 부족과 별개인 Busy로 분류한다.
+production `ProfileWork`가 기존 worker permit을 보유한 채 제한된 admission 기한 안에서만
+Busy를 기다리므로, runtime 양성 fixture는 terminal Capacity를 재시도하지 않는다.
+root 상한 8개와 readiness 이후 claim 기한은 그대로다.
 
-`runtime::tests::profile_fixture`는 CLOEXEC fd를 실제 fork 자식에 남겨 첫 worker의 거절을
-확인한 뒤, 재시도 중 그 정확한 자식을 해제·회수하고 실제 profile/lease를 받는다.
-채워진 namespace에서는 재시도 없이 Capacity가 유지되는 별도 제어 시험을 둔다.
-이 양성 fixture 조정은 production의 비차단 lock·용량·취소·소유권 거절을 바꾸지 않으며,
-공유 `TEST`의 poison도 복구하지 않는다. 실제 WebKit 수명이나 native 정리 증거는 아니다.
+`runtime::tests::profile_fixture`는 CLOEXEC fd를 실제 fork 자식에 남겨 admission 만료를
+확인한 뒤 그 정확한 자식을 해제·회수하고 실제 profile/lease를 받는다.
+채워진 namespace의 Capacity는 terminal이며, 여덟 actual profile job의 잠금 대기가
+permit을 유지하고 아홉 번째 job을 거절하는 별도 제어 시험을 둔다.
+`preparation::admission_tests`는 세 실제 live root가 있는 namespace에서 sweep 및 create
+잠금을 각각 잡고 해제한 뒤 하나의 실제 profile이 준비되는지 검사한다. receipt Drop과
+current만 바뀐 취소도 잠금을 해제하기 전에 worker를 끝내며, poison·안전하지 않은 경로는
+복구하거나 chmod하지 않는다. 실제 WebKit 수명이나 과거 native 실패의 잠금 소유자를
+증명하는 시험은 아니다.
 
 <a id="형태-판별식--증상-하나로는-안-갈린다"></a>
 

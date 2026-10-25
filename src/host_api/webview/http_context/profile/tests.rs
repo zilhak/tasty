@@ -551,7 +551,7 @@ fn reclaim_positive(parent: &Path, max: usize) -> CleanupReport {
     loop {
         match reclaim_dead(parent, max) {
             Ok(report) => return report,
-            Err(ProfileError::Capacity) if std::time::Instant::now() < deadline => {
+            Err(ProfileError::Busy) if std::time::Instant::now() < deadline => {
                 std::thread::sleep(std::time::Duration::from_millis(2))
             }
             Err(error) => panic!("positive private profile sweep: {error}"),
