@@ -648,7 +648,12 @@ pub(crate) fn frame(
 ) {
     let ctx = ui.ctx().clone();
     // 자세히 보기의 넓은 열이 본문 rect 를 칸 밖으로 넓힐 수 있다. 칸에서 보이는 부분만 대상이다.
-    let body = body.intersect(ui.clip_rect());
+    // Row geometry and list drop targets must exclude the adjacent preview panel.
+    let body = view
+        .list_rect
+        .unwrap_or(body)
+        .intersect(body)
+        .intersect(ui.clip_rect());
     let spots = ctx
         .data_mut(|d| d.remove_temp::<Spots>(spots_id()))
         .unwrap_or_default()
@@ -845,3 +850,7 @@ mod scroll_tests;
 #[cfg(test)]
 #[path = "drag_flow_tests.rs"]
 mod flow_tests;
+
+#[cfg(test)]
+#[path = "drag_preview_tests.rs"]
+mod preview_tests;
