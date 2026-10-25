@@ -33,7 +33,7 @@ enum FileIdentity {
     #[cfg(unix)]
     Unix(u64, u64),
     #[cfg(windows)]
-    Windows(u64, [u8; 16]),
+    Windows(tasty_utils::windows_file_identity::FileIdentity),
 }
 
 #[cfg(unix)]
@@ -44,39 +44,8 @@ fn identity(file: &File) -> io::Result<FileIdentity> {
 }
 
 #[cfg(windows)]
-#[allow(
-    unsafe_code,
-    reason = "the Windows stable std metadata API lacks file IDs; this bounded call compares retained open handles using the full 128-bit identity"
-)]
 fn identity(file: &File) -> io::Result<FileIdentity> {
-    use std::os::windows::io::AsRawHandle;
-    use windows_sys::Win32::Storage::FileSystem::{
-        FILE_ID_INFO, FileIdInfo, GetFileInformationByHandleEx,
-    };
-    let mut info = std::mem::MaybeUninit::<FILE_ID_INFO>::uninit();
-    // SAFETY: file owns the live handle; info points to one correctly sized output structure.
-    let ok = unsafe {
-        GetFileInformationByHandleEx(
-            file.as_raw_handle(),
-            FileIdInfo,
-            info.as_mut_ptr().cast(),
-            std::mem::size_of::<FILE_ID_INFO>() as u32,
-        )
-    };
-    if ok == 0 {
-        return Err(io::Error::last_os_error());
-    }
-    // SAFETY: the successful API call initialized the complete FILE_ID_INFO output.
-    let info = unsafe { info.assume_init() };
-    if info.FileId.Identifier == [0; 16] {
-        return Err(io::Error::other(
-            "filesystem did not supply a usable file ID",
-        ));
-    }
-    Ok(FileIdentity::Windows(
-        info.VolumeSerialNumber,
-        info.FileId.Identifier,
-    ))
+    tasty_utils::windows_file_identity::FileIdentity::of(file).map(FileIdentity::Windows)
 }
 
 #[cfg(not(any(unix, windows)))]

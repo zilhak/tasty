@@ -28,6 +28,22 @@ workspace는 본 바이너리(`src/`)와 `crates/*`로 구성한다. 전체 목�
 - 비공개 항목의 코드펜스는 rustdoc이 수집하지 않는다. `cargo test -p tasty --doc`가
   성공해도 실행된 예제가 있는지 확인한다. `doctest = false`로 전체를 끄지는 않는다.
 
+### Windows 파일 identity 경계
+
+`tasty-ipc`는 `forbid(unsafe_code)`를 유지한다. 포트 공개 세대의 Windows identity는
+`tasty-utils::windows_file_identity::FileIdentity::of(&File)`가 안전한 API로 조회한다.
+이 leaf 유틸리티는 기존 파일 보안 메타데이터 래퍼와 같이 OS 호출 경계를 소유한다.
+`GetFileInformationByHandleEx(FileIdInfo)`의 출력 버퍼는 호출 동안 살아 있고 크기·정렬이
+`FILE_ID_INFO`와 일치한다. 성공한 호출만 초기화된 결과로 읽으며 실패와 0 파일 ID는
+오류로 돌려준다. 비교에는 volume serial과 128비트 파일 ID 전체를 사용한다.
+
+IPC는 그 identity와 원래 열린 `File`을 함께 보관하여 파일 ID 재사용을 막는다. 기본
+Windows delete-share를 유지하므로 핀을 가진 채 교체·삭제할 수 있다. identity를 확인하지
+못하면 cleanup이 파일을 남긴다([포트 발견 계약](../design/systems/storage.md#ipc-포트-발견의-완료-경계)).
+Windows 유틸리티 시험은 전체 ID 비교·0 ID 거절·native 오류 전달·열린 핸들 유지 중
+교체와 삭제를 검사하며, IPC의 `port_file` 시험은 같은 포트 재공개 후 이전 세대가 새 파일을
+삭제하지 않는지 검사한다. Unix identity 조회는 IPC의 안전한 표준 메타데이터 API를 쓴다.
+
 ### type-\* layer 의존 규약 (필수)
 
 `tasty-type-*` 는 **primitive/schema 레이어**다.

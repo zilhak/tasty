@@ -19,3 +19,10 @@ pub mod poison;
 pub mod process;
 pub mod shell_family;
 pub mod target;
+/// Full Windows file identity captured from a borrowed live file handle.
+#[cfg(windows)]
+#[allow(
+    unsafe_code,
+    reason = "stable std lacks full Windows file IDs; this module bounds the native query behind a safe borrowed-file API"
+)]
+pub mod windows_file_identity;
