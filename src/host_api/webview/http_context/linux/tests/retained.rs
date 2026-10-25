@@ -56,8 +56,21 @@ pub(super) fn lifecycle() {
     // Clear-result injection, not an OS I/O error; old real completion stays queued.
     store.0.finish_retained(first_id, false);
     assert!(matches!(take(&failed), Err(ContextError::Cache)));
+    assert!(
+        matches!(
+            store.retire_document(&view, view.reload_continuation()),
+            Err(ContextError::Busy)
+        ),
+        "logical cancellation must not release the in-flight native clear owner"
+    );
+    wait(|| !store.0.native_busy());
     let (_, next) = start(&store, &view, config(live.clone()));
+    store.0.native_finished(first_id);
     store.0.finish_retained(first_id, true);
+    assert!(
+        store.0.native_busy(),
+        "old native completion cannot release the new clear owner"
+    );
     assert!(
         next.borrow().is_empty(),
         "old completion cannot consume new callback"
@@ -69,16 +82,40 @@ pub(super) fn lifecycle() {
     live.store(false, Ordering::Release);
     assert_eq!(ready.resume(), Err(ContextError::Retired));
     live.store(true, Ordering::Release);
-    let (_, closing) = start(&store, &view, config(live));
-    view.close();
-    assert!(matches!(take(&closing), Err(ContextError::Retired)));
-    store.0.finish_retained(first_id, true);
-    assert!(closing.borrow().is_empty());
+    close_during_clear(&store, &view, live);
     assert_eq!(view.webview().as_ptr(), original);
     destroy(&window);
     store.close();
     owner_bounds();
 }
+fn close_during_clear(store: &DataStore, view: &PreparedView, live: Arc<AtomicBool>) {
+    let (_, closing) = start(store, view, config(live.clone()));
+    view.close();
+    assert!(matches!(take(&closing), Err(ContextError::Retired)));
+    assert!(closing.borrow().is_empty());
+    assert!(store.0.native_busy());
+    let busy = Rc::new(Cell::new(false));
+    let out = busy.clone();
+    store.prepare(
+        config(live.clone()),
+        Box::new(move |r| {
+            assert!(matches!(r, Err(ContextError::Busy)));
+            out.set(true);
+        }),
+    );
+    assert!(
+        busy.get(),
+        "closed logical view cannot bypass an unfinished native clear"
+    );
+    wait(|| !store.0.native_busy());
+    assert!(
+        closing.borrow().is_empty(),
+        "actual late native callback must not reply twice"
+    );
+    let next_view = prepared(store, &live);
+    next_view.close();
+}
+
 fn owner_bounds() {
     let (store, view, window, live) = loaded();
     let other = data_store();

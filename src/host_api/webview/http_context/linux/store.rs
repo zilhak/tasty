@@ -13,6 +13,7 @@ pub(super) struct State {
     pub history: Rc<RefCell<allowance::History>>,
     pub(super) closed: Cell<bool>,
     sequence: Cell<u64>,
+    pub(super) native_clear: Cell<Option<u64>>,
     pub(super) replacement: RefCell<Option<replacement::Operation>>,
     pending: RefCell<Option<Pending>>,
     pub(super) active: RefCell<Weak<view::State>>,
@@ -37,6 +38,7 @@ impl State {
             history: Rc::new(RefCell::new(allowance::History::default())),
             closed: Cell::new(false),
             sequence: Cell::new(0),
+            native_clear: Cell::new(None),
             replacement: RefCell::new(None),
             pending: RefCell::new(None),
             active: RefCell::new(Weak::new()),
@@ -63,6 +65,7 @@ impl State {
         });
         let weak = glib::thread_guard::ThreadGuard::new(Rc::downgrade(self));
         let profile = self.profile.clone();
+        self.native_clear.set(Some(id));
         self.manager.clear(
             clear_types(),
             glib::TimeSpan::from_microseconds(0),
@@ -70,6 +73,7 @@ impl State {
             move |result| {
                 let _retained_profile = profile;
                 if let Some(state) = weak.into_inner().upgrade() {
+                    state.native_finished(id);
                     state.finished_id(id, result.is_ok());
                 }
             },
@@ -80,6 +84,7 @@ impl State {
             return Some(ContextError::Retired);
         }
         if self.initial_pending()
+            || self.native_busy()
             || self.replacement.borrow().is_some()
             || self
                 .active
@@ -99,6 +104,14 @@ impl State {
     }
     pub(super) fn initial_pending(&self) -> bool {
         self.pending.borrow().is_some()
+    }
+    pub(super) fn native_busy(&self) -> bool {
+        self.native_clear.get().is_some()
+    }
+    pub(super) fn native_finished(&self, id: u64) {
+        if self.native_clear.get() == Some(id) {
+            self.native_clear.set(None);
+        }
     }
     pub(super) fn next_id(&self) -> Result<u64, ContextError> {
         let id = self

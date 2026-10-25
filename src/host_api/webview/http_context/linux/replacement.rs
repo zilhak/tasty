@@ -28,7 +28,7 @@ impl store::State {
         if self.closed.get() || view.closed.get() {
             return Err(ContextError::Retired);
         }
-        if self.initial_pending() || self.replacement.borrow().is_some() {
+        if self.initial_pending() || self.native_busy() || self.replacement.borrow().is_some() {
             return Err(ContextError::Busy);
         }
         if !self
@@ -97,6 +97,7 @@ impl store::State {
         let retained = glib::thread_guard::ThreadGuard::new(
             self.replacement.borrow().as_ref().map(|op| op.view.clone()),
         );
+        self.native_clear.set(Some(id));
         self.manager.clear(
             store::clear_types(),
             glib::TimeSpan::from_microseconds(0),
@@ -104,6 +105,7 @@ impl store::State {
             move |result| {
                 let _retained = retained.into_inner();
                 if let Some(state) = weak.into_inner().upgrade() {
+                    state.native_finished(id);
                     state.finish_retained(id, result.is_ok());
                 }
             },
