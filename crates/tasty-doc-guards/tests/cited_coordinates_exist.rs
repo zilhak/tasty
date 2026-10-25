@@ -227,7 +227,7 @@ fn comment_prefixes(rel: &str) -> Option<&'static [&'static str]> {
         .rsplit_once('.')
         .map(|(_, e)| e);
     match ext {
-        Some("rs" | "mjs" | "jsx" | "ts" | "tsx" | "astro") => Some(&["//"]),
+        Some("rs" | "m" | "mjs" | "jsx" | "ts" | "tsx" | "astro") => Some(&["//"]),
         Some("toml" | "sh" | "bash" | "yml" | "yaml" | "py" | "just" | "ps1") => Some(&["#"]),
         Some("lua") => Some(&["--"]),
         None if matches!(
@@ -772,6 +772,27 @@ fn only_comment_lines_of_a_source_file_are_read_as_citations() {
     assert!(picked.iter().all(|l| l.trim_start().starts_with("//")));
 
     assert_eq!(citation_lines("docs/x.md", src).len(), 3);
+}
+
+#[test]
+fn objective_c_line_comments_are_checked_without_treating_code_as_citations() {
+    let root = tasty_doc_guards::repo_root();
+    let present = "docs/dev-guide/guard-population.md";
+    let missing = format!("src/{}{}", "objective_c_absent_citation", ".rs");
+    let source = format!(
+        "// {present}\n  // {missing}\n#import <Foundation/Foundation.h>\n\
+         NSString *path = @\"src/string_literal.rs\";\n/* src/block_comment.rs */\n"
+    );
+    assert!(is_scan_target("control.m"));
+    let lines = citation_lines("tests/control.m", &source);
+    assert_eq!(lines.iter().map(|(n, _)| *n).collect::<Vec<_>>(), [1, 2]);
+    let paths: Vec<_> = lines
+        .iter()
+        .flat_map(|(_, line)| scan_paths(line))
+        .collect();
+    assert_eq!(paths, [present.to_string(), missing.clone()]);
+    assert!(resolve(&root, "tests/control.m", present).is_some());
+    assert!(resolve(&root, "tests/control.m", &missing).is_none());
 }
 
 #[test]
