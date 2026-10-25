@@ -152,14 +152,15 @@ impl HttpBridge {
             }
             return;
         }
+        let native_http: &NativeRequest = &slot.request;
         if self.document().is_none()
             && !self.reload.as_ref().map_or_else(
-                || slot.request.logical_url == self.config.scope.entry_url,
+                || native_http.logical_url == self.config.scope.entry_url,
                 |r| {
                     r.valid()
-                        && slot.request.logical_url == r.request.logical_url
-                        && slot.request.method == r.request.method
-                        && slot.request.identity == r.request.identity
+                        && native_http.logical_url == r.request.logical_url
+                        && native_http.method == r.request.method
+                        && native_http.identity == r.request.identity
                 },
             )
         {
