@@ -34,6 +34,8 @@ pub struct ScriptGate {
     state: Arc<Mutex<HtmlScriptState>>,
     notify: Option<ScanNotify>,
     received: Option<EntryResponseSource>,
+    #[cfg(target_os = "linux")]
+    http: Option<Arc<crate::app::http_session::HttpSession>>,
 }
 
 /// main frame 응답의 JS 결정.
@@ -148,6 +150,8 @@ impl ScriptGate {
             state,
             notify: None,
             received: None,
+            #[cfg(target_os = "linux")]
+            http: None,
         }
     }
 
@@ -162,7 +166,21 @@ impl ScriptGate {
         self
     }
 
+    #[cfg(target_os = "linux")]
+    pub(crate) fn with_http_session(
+        mut self,
+        session: Arc<crate::app::http_session::HttpSession>,
+    ) -> Self {
+        self.http = Some(session);
+        self
+    }
+
     fn received_current(&self) -> bool {
+        #[cfg(target_os = "linux")]
+        if let Some(session) = &self.http {
+            return session.is_current();
+        }
+
         self.received
             .as_ref()
             .is_none_or(EntryResponseSource::is_current)
@@ -268,6 +286,10 @@ impl ScriptGate {
     }
 
     fn respond(&self, url: &str) -> Response {
+        #[cfg(target_os = "linux")]
+        if self.http.is_some() {
+            return Response::Decided(false);
+        }
         if let Some(source) = &self.received {
             // Never reinterpret remote file provenance as a client filesystem read.
             return Response::Decided(source.entry(url).is_some_and(|entry| {

@@ -12,6 +12,8 @@ pub(crate) struct NativeWebviewBinding {
     source: Weak<Mutex<Option<String>>>,
     mirror: Option<Weak<Mutex<tasty_remote::html_mirror::HtmlMirror>>>,
     document: Option<tasty_remote::html_body::NativeViewBinding>,
+    #[cfg(target_os = "linux")]
+    http: Option<Weak<crate::app::http_session::HttpSession>>,
 }
 impl NativeWebviewBinding {
     pub(crate) fn capture(engine: &EngineRef<'_>, surface: u32) -> Option<Self> {
@@ -21,6 +23,8 @@ impl NativeWebviewBinding {
             .downcast_ref::<RemoteSurface>()?;
         Some(Self {
             target: SurfaceBinding::capture(&engine.read(), surface)?,
+            #[cfg(target_os = "linux")]
+            http: remote.http_session.as_ref().map(Arc::downgrade),
             surface,
             source: Arc::downgrade(&remote.webview_url),
             mirror: remote.html_mirror.as_ref().map(Arc::downgrade),
@@ -30,6 +34,39 @@ impl NativeWebviewBinding {
         })
     }
     pub(crate) fn current(&self, engine: &crate::runtime::engine_access::EngineRef<'_>) -> bool {
+        #[cfg(target_os = "linux")]
+        if let Some(owner) = &self.http {
+            let Some(session) = owner.upgrade() else {
+                return false;
+            };
+            if !session.is_current() {
+                let frozen = engine
+                    .runtime
+                    .surfaces
+                    .get(&self.surface)
+                    .and_then(|surface| surface.as_any().downcast_ref::<RemoteSurface>())
+                    .is_some_and(|remote| {
+                        remote
+                            .http_session
+                            .as_ref()
+                            .is_some_and(|current| Arc::ptr_eq(current, &session))
+                            && (session.failed()
+                                || (session.entry_body().is_some()
+                                    && remote
+                                        .lock_html_mirror()
+                                        .is_some_and(|mirror| !mirror.connected)))
+                    });
+                if !frozen {
+                    return false;
+                }
+            }
+        }
+        self.current_surface(engine)
+    }
+    pub(crate) fn current_surface(
+        &self,
+        engine: &crate::runtime::engine_access::EngineRef<'_>,
+    ) -> bool {
         self.target.current(engine)
             && engine
                 .runtime

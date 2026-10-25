@@ -54,6 +54,10 @@ pub struct RemoteSurface {
     /// Requested HTML source, shared across GUI/headless and never written by native commit callbacks.
     pub html_mirror: Option<Arc<Mutex<tasty_remote::html_mirror::HtmlMirror>>>,
     pub html_source: Arc<Mutex<tasty_remote::html_source::HtmlSourceState>>,
+    #[cfg(all(feature = "gui", target_os = "linux"))]
+    pub(crate) http_session: Option<Arc<crate::app::http_session::HttpSession>>,
+    #[cfg(all(feature = "gui", target_os = "linux"))]
+    pub(crate) http_native_store: Arc<AtomicBool>,
 }
 
 // 필드별로 poison을 처음 한 번 기록한다. 값 하나를 교체하는 락이므로 기존 값을 복구한다.
@@ -115,6 +119,10 @@ impl RemoteSurface {
             initial_file: None,
             html_source: Arc::default(),
             html_mirror: None,
+            #[cfg(all(feature = "gui", target_os = "linux"))]
+            http_session: None,
+            #[cfg(all(feature = "gui", target_os = "linux"))]
+            http_native_store: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -322,6 +330,15 @@ impl Surface for RemoteSurface {
     }
 
     fn webview_url(&self) -> Option<String> {
+        #[cfg(all(feature = "gui", target_os = "linux"))]
+        if let Some(session) = &self.http_session {
+            return (session.is_current()
+                || session.entry_body().is_some()
+                || session
+                    .native_store
+                    .load(std::sync::atomic::Ordering::Acquire))
+            .then(|| session.source.address().to_owned());
+        }
         if let Some(mirror) = &self.html_mirror {
             return crate::poison::recover_mutex(
                 mirror.lock(),

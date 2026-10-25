@@ -96,6 +96,9 @@ pub struct MainView {
     pub(crate) double_tap: crate::double_tap::DoubleTapDetector,
     /// Native WebView instances keyed by surface ID.
     pub(crate) webviews: std::collections::HashMap<u32, crate::webview::PlatformWebView>,
+    #[cfg(target_os = "linux")]
+    pub(crate) http_preparing:
+        std::collections::HashMap<u32, crate::webview::http_native::PendingNative>,
     pub(crate) webview_runtime:
         std::collections::HashMap<u32, crate::app::html_runtime::NativeWebviewBinding>,
     /// surface 별 마지막으로 webview 에 적용한 HTML 설정 — 변경 시에만 재적용(매 프레임 호출 회피).
@@ -237,6 +240,8 @@ impl MainView {
             ime_advance_base: (0, 0),
             double_tap: crate::double_tap::DoubleTapDetector::new(),
             webviews: std::collections::HashMap::new(),
+            #[cfg(target_os = "linux")]
+            http_preparing: std::collections::HashMap::new(),
             webview_runtime: std::collections::HashMap::new(),
             webview_applied_settings: std::collections::HashMap::new(),
             webview_loaded_urls: std::collections::HashMap::new(),

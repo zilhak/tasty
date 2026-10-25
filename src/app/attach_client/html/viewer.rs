@@ -58,20 +58,8 @@ pub(in crate::app::attach_client) fn synchronize(
             .remove(&sess.state.local_workspace);
     }
     if available && !sess.transport.html.viewer_declared {
-        if !send(
-            sess,
-            HtmlRequest::HtmlCapabilities {
-                capabilities: if sess.transport.html.server_resources {
-                    vec![
-                        CAPABILITY.into(),
-                        VIEWER_CAPABILITY.into(),
-                        tasty_ipc::html_transfer::RESOURCE_CAPABILITY.into(),
-                    ]
-                } else {
-                    vec![CAPABILITY.into(), VIEWER_CAPABILITY.into()]
-                },
-            },
-        ) {
+        let capabilities = viewer_capabilities(sess);
+        if !send(sess, HtmlRequest::HtmlCapabilities { capabilities }) {
             return false;
         }
         sess.transport.html.viewer_declared = true;
@@ -101,6 +89,20 @@ pub(in crate::app::attach_client) fn synchronize(
                 changed = true;
             }
             continue;
+        }
+        #[cfg(all(feature = "gui", windows))]
+        if mirror.metadata.as_ref().is_some_and(|metadata| {
+            matches!(
+                &metadata.source,
+                tasty_ipc::html_transfer::HtmlSource::Http { .. }
+            )
+        }) {
+            // Mandatory transport compatibility is checked before any native preparation.
+            // The uninhabited factory keeps the existing unsupported mirror presentation.
+            match crate::webview::http_context::windows::DataStore::new() {
+                Err(crate::webview::http_context::windows::ContextError::AuthenticatedSocksUnavailable)=>{},
+                Ok(_)=>continue,
+            }
         }
         mirror.enable_resources(sess.transport.html.server_resources && super::viewer_available());
         changed |= mirror.poll_navigation();
@@ -173,8 +175,19 @@ pub(in crate::app::attach_client) fn synchronize(
                 .and_then(|local| engine.runtime.surfaces.get(local))
                 .and_then(|surface| surface.as_any().downcast_ref::<RemoteSurface>())
         {
+            // HTTP presentation belongs to its actual native/model session. The legacy file
+            // metadata receiver deliberately cannot transfer HTTP bodies; its terminal state
+            // must not erase the current HTTP document's actionable script banner.
+            #[cfg(target_os = "linux")]
+            if surface.http_session.is_some() {
+                continue;
+            }
             surface.with_html_script(|state| state.on_load_failed());
         }
+    }
+    #[cfg(all(feature = "gui", target_os = "linux"))]
+    {
+        changed |= super::http::synchronize(sess, engine);
     }
     changed
 }
@@ -242,3 +255,31 @@ fn bind_mirrors(
 
 #[cfg(test)]
 mod tests;
+
+fn viewer_capabilities(sess: &AttachClientSession) -> Vec<String> {
+    let capabilities = if sess.transport.html.server_resources {
+        vec![
+            CAPABILITY.into(),
+            VIEWER_CAPABILITY.into(),
+            tasty_ipc::html_transfer::RESOURCE_CAPABILITY.into(),
+        ]
+    } else {
+        vec![CAPABILITY.into(), VIEWER_CAPABILITY.into()]
+    };
+    #[cfg(all(debug_assertions, feature = "gui", target_os = "linux"))]
+    let capabilities =
+        if crate::remote::http_native_fixture::enabled() && sess.transport.html.server_http {
+            let mut capabilities = capabilities;
+            capabilities.push(tasty_ipc::html_http::CAPABILITY.into());
+            if sess.transport.html.server_http_reload {
+                capabilities.push(tasty_ipc::html_http::RELOAD_CAPABILITY.into());
+            }
+            if sess.transport.html.server_https {
+                capabilities.push(tasty_ipc::html_http::HTTPS_CAPABILITY.into());
+            }
+            capabilities
+        } else {
+            capabilities
+        };
+    capabilities
+}

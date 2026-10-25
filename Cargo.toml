@@ -177,6 +177,9 @@ path = "src/main.rs"
 
 [dependencies]
 sha2 = "0.10"
+rcgen = { version = "=0.14.8", default-features = false, features = ["aws_lc_rs"] }
+tokio-rustls = "=0.26.6"
+url = "2"
 reqwest = { version = "=0.13.4", default-features = false, features = ["rustls"] }
 tokio = { version = "=1.50.0", features = ["rt-multi-thread", "macros", "sync", "time", "io-util", "net"] }
 flate2 = "=1.1.9"

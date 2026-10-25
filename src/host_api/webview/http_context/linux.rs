@@ -29,6 +29,13 @@ use webkit2gtk::{
 };
 use webkit2gtk::{WebContext, WebView, WebsiteDataManager};
 
+#[path = "linux/native_probe.rs"]
+mod native_probe;
+#[path = "linux/native_trust.rs"]
+mod native_trust;
+pub(crate) use native_probe::{NativeProbeEvidence, NativeProbeStore};
+pub(crate) use native_trust::NativeTrustTarget;
+
 type ExpectedLeaf = Arc<dyn Fn(&str, u16) -> Option<[u8; 32]> + Send + Sync>;
 
 #[derive(Clone)]
@@ -75,10 +82,17 @@ impl Drop for DataStore {
     }
 }
 impl PreparedView {
+    pub(crate) fn initial_get_continuation(
+        &self,
+        url: &str,
+    ) -> Result<NativeContinuation, ContextError> {
+        NativeContinuation::initial_get(&self.0, url)
+    }
     pub(crate) fn reload_continuation(&self) -> NativeContinuation {
         NativeContinuation::reload(&self.0)
     }
     /// The caller must supply the navigation decision delivered for this view.
+    #[cfg(test)]
     pub(crate) fn retain_navigation(
         &self,
         decision: &webkit2gtk::NavigationPolicyDecision,

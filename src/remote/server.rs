@@ -546,13 +546,14 @@ impl EngineRef<'_> {
         class: &AttachSurfaceClass,
     ) -> serde_json::Value {
         let (tree, surfaces) = self.build_workspace_tree_surfaces(idx, class);
+        let capabilities = descriptor_capabilities();
         serde_json::json!({
             "event": "attached_workspace",
             "workspace_id": workspace_id,
             "name": self.core.workspace_at(idx).expect("workspace index is valid").name,
             "tree": tree,
             "surfaces": surfaces,
-            (tasty_ipc::stream::DESCRIPTOR_CAPABILITIES): [tasty_ipc::stream::RESIZE_ACK_CAPABILITY, tasty_ipc::stream::INPUT_ACK_CAPABILITY, tasty_ipc::explorer_op::CAPABILITY, tasty_ipc::html_transfer::CAPABILITY, tasty_ipc::html_transfer::VIEWER_CAPABILITY, tasty_ipc::html_transfer::RESOURCE_CAPABILITY],
+            (tasty_ipc::stream::DESCRIPTOR_CAPABILITIES): capabilities,
         })
     }
 
@@ -1343,4 +1344,28 @@ mod capture_result_tests {
         assert_eq!(rejected["ok"], false);
         assert!(rejected.get("path").is_none());
     }
+}
+
+fn descriptor_capabilities() -> Vec<&'static str> {
+    let capabilities = vec![
+        tasty_ipc::stream::RESIZE_ACK_CAPABILITY,
+        tasty_ipc::stream::INPUT_ACK_CAPABILITY,
+        tasty_ipc::explorer_op::CAPABILITY,
+        tasty_ipc::html_transfer::CAPABILITY,
+        tasty_ipc::html_transfer::VIEWER_CAPABILITY,
+        tasty_ipc::html_transfer::RESOURCE_CAPABILITY,
+    ];
+    #[cfg(all(debug_assertions, feature = "gui", target_os = "linux"))]
+    let capabilities = if super::http_native_fixture::enabled() {
+        let mut capabilities = capabilities;
+        capabilities.extend([
+            tasty_ipc::html_http::CAPABILITY,
+            tasty_ipc::html_http::HTTPS_CAPABILITY,
+            tasty_ipc::html_http::RELOAD_CAPABILITY,
+        ]);
+        capabilities
+    } else {
+        capabilities
+    };
+    capabilities
 }

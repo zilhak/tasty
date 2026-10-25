@@ -31,6 +31,12 @@ pub(super) fn attach_script_gate(
     } else {
         gate
     };
+    #[cfg(target_os = "linux")]
+    let gate = if let Some(session) = &rs.http_session {
+        gate.with_http_session(session.clone())
+    } else {
+        gate
+    };
     gate.set_sandbox(!settings.javascript_enabled);
     wv.attach_script_gate(gate);
 }

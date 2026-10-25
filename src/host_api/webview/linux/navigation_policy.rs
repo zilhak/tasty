@@ -4,6 +4,7 @@ use super::*;
 pub(super) fn install(
     webview: &WebView,
     entry_source: &Option<EntryResponseSource>,
+    http: Option<Rc<RefCell<std::sync::Arc<crate::app::http_session::HttpSession>>>>,
     block_remote: &Rc<Cell<bool>>,
     pending_navigations: &Rc<RefCell<Vec<PendingNavigation>>>,
     script_gate: &Rc<RefCell<Option<ScriptGate>>>,
@@ -38,6 +39,7 @@ pub(super) fn install(
                 decision.ignore();
                 return true;
             }
+            discard_nonmain(decision, decision_type, uri.as_deref(), http.as_ref());
             // navigation action에는 frame 정보가 없어 main frame 응답에서만 문서 JS를 정한다(docs/surfaces/html/index.md).
             if matches!(decision_type, PolicyDecisionType::Response)
                 && let Some(gate) = gate.borrow().as_ref()
@@ -45,17 +47,11 @@ pub(super) fn install(
                     .downcast_ref::<ResponsePolicyDecision>()
                     .is_some_and(|d| d.is_main_frame_main_resource())
                 && let Some(uri) = &uri
+                && decide_main(wv, decision, uri.as_str(), gate, http.as_ref(), surface_id)
             {
-                match gate.main_response(uri.as_str()) {
-                    Response::Decided(js) => set_js(wv, js),
-                    Response::Deferred(scan) => {
-                        // 스캔이 JS 값을 정하는 응답(허용한 문서의 재로드)은 결정을 보류하고
-                        // 작업 스레드에서 읽는다. GTK 루프는 그동안 다른 이벤트를 처리한다.
-                        defer_response(wv.clone(), decision.clone(), scan, surface_id);
-                        return true;
-                    }
-                }
+                return true;
             }
+
             if let Some(uri) = &uri
                 && !matches!(decision_type, PolicyDecisionType::Response)
             {
@@ -79,7 +75,7 @@ pub(super) fn install(
                     user_gesture,
                 });
             }
-            if !block.get() {
+            if http.is_some() || !block.get() {
                 return false;
             }
             if let Some(uri) = &uri {
@@ -91,5 +87,70 @@ pub(super) fn install(
             }
             false
         });
+    }
+}
+
+type NativeSessionSlot = Rc<RefCell<std::sync::Arc<crate::app::http_session::HttpSession>>>;
+fn decide_main(
+    wv: &WebView,
+    decision: &webkit2gtk::PolicyDecision,
+    uri: &str,
+    gate: &ScriptGate,
+    http: Option<&NativeSessionSlot>,
+    surface_id: u32,
+) -> bool {
+    let response = if let Some(http) = http {
+        let session = http.borrow().clone();
+        let method = decision
+            .downcast_ref::<ResponsePolicyDecision>()
+            .and_then(|d| d.request())
+            .and_then(|r| r.http_method());
+        let body = method
+            .as_ref()
+            .ok_or_else(|| "native main response method unavailable".to_owned())
+            .and_then(|method| session.claim_main_response(uri, method.as_str()));
+        match body {
+            Ok(body) => {
+                let js = gate.main_response_scanned(uri, Some(body.scan()));
+                session.bodies.finish_replay(&body);
+                Response::Decided(js)
+            }
+            Err(error) => {
+                tracing::warn!(%error,"native HTTP main response refused");
+                session.fail();
+                decision.ignore();
+                return true;
+            }
+        }
+    } else {
+        gate.main_response(uri)
+    };
+    match response {
+        Response::Decided(js) => set_js(wv, js),
+        Response::Deferred(scan) => {
+            // 스캔이 JS 값을 정하는 응답(허용한 문서의 재로드)은 결정을 보류하고
+            // 작업 스레드에서 읽는다. GTK 루프는 그동안 다른 이벤트를 처리한다.
+            defer_response(wv.clone(), decision.clone(), scan, surface_id);
+            return true;
+        }
+    }
+    false
+}
+
+fn discard_nonmain(
+    decision: &webkit2gtk::PolicyDecision,
+    kind: PolicyDecisionType,
+    uri: Option<&str>,
+    http: Option<&NativeSessionSlot>,
+) {
+    if matches!(kind, PolicyDecisionType::Response)
+        && let Some(http) = http
+        && let Some(response) = decision.downcast_ref::<ResponsePolicyDecision>()
+        && !response.is_main_frame_main_resource()
+        && let Some(uri) = uri
+        && let Some(method) = response.request().and_then(|request| request.http_method())
+    {
+        // Discard every ambiguous candidate; a nonmain policy cannot mint authority.
+        http.borrow().discard_nonmain_response(uri, method.as_str());
     }
 }

@@ -61,7 +61,9 @@ struct Paths {
 pub(crate) struct PreparedProfile(Arc<Paths>);
 /// Retain through every native store/view/probe/callback. Last Drop only frees memory.
 #[derive(Clone)]
-pub(crate) struct NativeProfileLease(Arc<Paths>);
+pub(crate) struct NativeProfileLease {
+    _paths: Arc<Paths>,
+}
 impl PreparedProfile {
     /// Worker only. The caller prepares an absolute private namespace; never uses a fallback.
     pub(crate) fn create(parent: &Path, max_roots: usize) -> Result<Self, ProfileError> {
@@ -111,7 +113,7 @@ impl PreparedProfile {
     }
     /// Memory-only move. Exposed ownership cannot return to unpublished deletion.
     pub(crate) fn into_native(self) -> NativeProfileLease {
-        NativeProfileLease(self.0)
+        NativeProfileLease { _paths: self.0 }
     }
     /// Worker only. No native manager may have consumed this unpublished ownership.
     pub(crate) fn discard_unpublished(self) -> Result<(), ProfileError> {
@@ -131,15 +133,16 @@ impl PreparedProfile {
         reclaim::remove_unpublished(&namespace, name, &dir, &self.0.record)
     }
 }
+#[cfg(test)]
 impl NativeProfileLease {
     pub(crate) fn data_dir(&self) -> &Path {
-        &self.0.data
+        &self._paths.data
     }
     pub(crate) fn cache_dir(&self) -> &Path {
-        &self.0.cache
+        &self._paths.cache
     }
     pub(crate) fn root(&self) -> &Path {
-        &self.0.root
+        &self._paths.root
     }
 }
 /// Worker only; permission-denied or incomplete process observations retain the root.

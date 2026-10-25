@@ -1,0 +1,231 @@
+//! Register actual App documents with the connection table only after the browser's first Begin.
+use super::*;
+use crate::plugin_bridge::remote_surface::RemoteSurface;
+use crate::{app::http_session::HttpSession, runtime::engine_access::EngineMut};
+use std::sync::Arc;
+use tasty_remote::client_session::AttachClientSession;
+
+fn enabled() -> bool {
+    #[cfg(debug_assertions)]
+    {
+        crate::remote::http_native_fixture::enabled()
+    }
+    #[cfg(not(debug_assertions))]
+    {
+        false
+    }
+}
+pub(super) fn synchronize(sess: &mut AttachClientSession, engine: &mut EngineMut<'_>) -> bool {
+    let settings_source =
+        crate::runtime::surface_registry::webview_kind::webview_settings_source("html");
+    let settings = crate::webview::HtmlWebViewSettings::resolve(
+        settings_source.as_ref(),
+        &engine.runtime.settings,
+    );
+    let available = enabled()
+        && sess.state.resync_pending.is_none()
+        && !sess
+            .transport
+            .disconnected
+            .load(std::sync::atomic::Ordering::Acquire)
+        && sess.transport.frame_tx.epoch().is_active()
+        && sess.transport.html.server_http;
+    let projection = engine
+        .read()
+        .mirror_projection_token(sess.state.local_workspace);
+    let mut sessions = Vec::new();
+    for (&remote, &local) in &sess.state.remote_to_local {
+        let Some(surface) = engine
+            .runtime
+            .surfaces
+            .get_mut(&local)
+            .and_then(|s| s.as_any_mut().downcast_mut::<RemoteSurface>())
+        else {
+            continue;
+        };
+        if let Some(session) = refresh(
+            surface,
+            sess,
+            available,
+            settings.allow_remote_content,
+            engine.runtime.waker.clone(),
+            projection.clone().unwrap_or_default(),
+        ) {
+            sessions.push((remote, session));
+        }
+    }
+    drive_sessions(sess, engine, sessions, settings.allow_remote_content)
+}
+fn drive_sessions(
+    sess: &mut AttachClientSession,
+    engine: &mut EngineMut<'_>,
+    sessions: Vec<(u32, Arc<HttpSession>)>,
+    allow_remote_content: bool,
+) -> bool {
+    let mut changed = false;
+    for (remote, session) in sessions {
+        if session.failed() {
+            continue;
+        }
+        if let Err(error) = session.poll(engine.runtime.waker.clone(), allow_remote_content) {
+            tracing::warn!(%error,"remote HTTP App preparation failed");
+            session.fail();
+            changed = true;
+            continue;
+        }
+        let id = session.source.metadata_id();
+        changed |= session.drive(|| {
+            sess.transport
+                .html
+                .entry_id(remote, id.binding, id.document)
+        });
+        if let Some(document) = session.bridge.document()
+            && let Err(error) = sess.transport.html.http_documents.insert(document)
+        {
+            tracing::warn!(?error, "remote HTTP document registration refused");
+            session.close();
+            changed = true;
+        }
+    }
+    changed
+}
+
+fn retire_unavailable(surface: &mut RemoteSurface) {
+    let connected = surface
+        .html_mirror
+        .as_ref()
+        .is_some_and(|mirror| lock_mirror(mirror).connected);
+    if connected
+        && surface
+            .http_session
+            .as_ref()
+            .is_some_and(|session| session.retaining())
+    {
+        return;
+    }
+    if let Some(session) = &surface.http_session {
+        session.close();
+        if !connected && session.entry_body().is_some() {
+            return;
+        }
+    }
+    surface.http_session.take();
+}
+fn refresh(
+    surface: &mut RemoteSurface,
+    sess: &AttachClientSession,
+    available: bool,
+    allow_remote_content: bool,
+    wake: Arc<dyn Fn() + Send + Sync>,
+    projection: std::sync::Weak<()>,
+) -> Option<Arc<HttpSession>> {
+    let source = surface
+        .html_mirror
+        .as_ref()
+        .and_then(|mirror| lock_mirror(mirror).http_source());
+    let available = available
+        && source.as_ref().is_some_and(|source| {
+            source.is_current()
+                && (!source.entry_url().starts_with("https:") || sess.transport.html.server_https)
+        });
+    if !available {
+        retire_unavailable(surface);
+        return None;
+    }
+    let mut predecessor = None;
+    if surface.http_session.as_ref().is_some_and(|session| {
+        source.as_ref().is_none_or(|source| {
+            source.metadata_id() != session.source.metadata_id()
+                || source.source_generation() != session.source.source_generation()
+                || source.entry_url() != session.source.entry_url()
+        })
+    }) && let Some(session) = surface.http_session.take()
+    {
+        predecessor = match session.take_successor() {
+            Ok(receipt) => receipt,
+            Err(error) => {
+                tracing::warn!(%error,"native HTTP successor refused");
+                return None;
+            }
+        };
+        session.close();
+    }
+    if surface.http_session.is_none() {
+        let source = source?;
+        let authority = reload_authority(
+            surface,
+            &source,
+            sess.transport.frame_tx.epoch(),
+            projection,
+        );
+        match HttpSession::new(
+            source,
+            sess.transport.frame_tx.clone(),
+            allow_remote_content,
+            sess.transport.html.server_https,
+            surface.http_native_store.clone(),
+            wake,
+            crate::app::http_session::ReloadSetup {
+                authority,
+                negotiated: sess.transport.html.server_http_reload,
+                predecessor,
+            },
+        ) {
+            Ok(session) => surface.http_session = Some(session),
+            Err(error) => {
+                tracing::warn!(%error,"remote HTTP App session refused");
+                return None;
+            }
+        }
+    }
+    surface.http_session.clone()
+}
+
+pub(in crate::app::attach_client) fn receive(
+    sess: &mut AttachClientSession,
+    engine: &mut EngineMut<'_>,
+    reply: tasty_ipc::html_http::HttpReply,
+) {
+    let remote = reply.id().surface_id;
+    let observation = crate::app::http_session::Observation::capture(&reply);
+    if !sess.transport.html.http_documents.receive(reply) {
+        return;
+    }
+    if let Some(observation) = observation
+        && let Some(local) = sess.state.remote_to_local.get(&remote)
+        && let Some(surface) = engine.runtime.surfaces.get(local).and_then(|s| {
+            s.as_any()
+                .downcast_ref::<crate::plugin_bridge::remote_surface::RemoteSurface>()
+        })
+        && let Some(session) = &surface.http_session
+    {
+        session.observe(observation);
+    }
+}
+
+fn reload_authority(
+    surface: &RemoteSurface,
+    source: &tasty_remote::html_mirror::HttpSource,
+    epoch: tasty_remote::connection::ConnectionEpoch,
+    projection: std::sync::Weak<()>,
+) -> Arc<dyn Fn() -> bool + Send + Sync> {
+    let mirror = surface.html_mirror.as_ref().map(Arc::downgrade);
+    let id = source.metadata_id();
+    let generation = source.source_generation();
+    let address = source.address().to_owned();
+    Arc::new(move || {
+        if projection.strong_count() == 0 || !epoch.is_active() {
+            return false;
+        }
+        mirror.as_ref().and_then(|owner| owner.upgrade()).is_some_and(|owner| {
+            owner.lock().ok().is_some_and(|mirror| {
+                mirror.connected && mirror.connection.same(&epoch)
+                    && mirror.binding == id.binding && mirror.remote_surface == id.surface_id
+                    && mirror.metadata.as_ref().is_some_and(|metadata| {
+                        metadata.source_generation == generation
+                            && matches!(&metadata.source, tasty_ipc::html_transfer::HtmlSource::Http { url } if url == &address)
+                    })
+            })
+        })
+    })
+}

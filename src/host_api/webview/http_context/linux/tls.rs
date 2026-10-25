@@ -43,7 +43,7 @@ pub(super) fn install(state: &Rc<view::State>) -> Vec<glib::SignalHandlerId> {
                 decision.ignore();
                 return true;
             }
-            if kind != PolicyDecisionType::NavigationAction {
+            if state.endpoint_trust.get() || kind != PolicyDecisionType::NavigationAction {
                 return false;
             }
             let uri = decision

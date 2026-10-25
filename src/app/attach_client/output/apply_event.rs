@@ -10,6 +10,9 @@ pub(super) fn apply_one_mirror_event(
     match ev {
         MirrorEvent::Html(reply) => super::super::html::receive(sess, reply),
         MirrorEvent::Http(reply) => {
+            #[cfg(all(feature = "gui", target_os = "linux"))]
+            super::super::html::http::receive(sess, host.engine, reply);
+            #[cfg(not(all(feature = "gui", target_os = "linux")))]
             sess.transport.html.http_documents.receive(reply);
         }
         MirrorEvent::Desynced { frames } => {

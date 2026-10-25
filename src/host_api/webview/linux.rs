@@ -32,6 +32,7 @@ use content_filter::{ContentFilter, REMOTE_BLOCK_FILTER_ID, compile_remote_block
 
 pub struct PlatformWebView {
     entry_source: Option<EntryResponseSource>,
+    http: Option<super::http_native::NativeDocument>,
     webview: WebView,
     gtk_window: gtk::Window,
     x11_window: std::os::raw::c_ulong,
@@ -118,6 +119,45 @@ impl PlatformWebView {
         surface_id: u32,
         key_bridge: Rc<dyn WebViewKeySink>,
         entry_source: Option<EntryResponseSource>,
+    ) -> Result<Self, super::WebViewCreateError> {
+        Self::new_inner(
+            window,
+            bounds,
+            scale_factor,
+            surface_id,
+            key_bridge,
+            entry_source,
+            None,
+        )
+    }
+
+    pub(crate) fn new_http(
+        window: &(impl HasWindowHandle + HasDisplayHandle),
+        bounds: WebViewBounds,
+        scale_factor: f64,
+        surface_id: u32,
+        key_bridge: Rc<dyn WebViewKeySink>,
+        document: super::http_native::NativeDocument,
+    ) -> Result<Self, super::WebViewCreateError> {
+        Self::new_inner(
+            window,
+            bounds,
+            scale_factor,
+            surface_id,
+            key_bridge,
+            None,
+            Some(document),
+        )
+    }
+
+    fn new_inner(
+        window: &(impl HasWindowHandle + HasDisplayHandle),
+        bounds: WebViewBounds,
+        scale_factor: f64,
+        surface_id: u32,
+        key_bridge: Rc<dyn WebViewKeySink>,
+        entry_source: Option<EntryResponseSource>,
+        http: Option<super::http_native::NativeDocument>,
     ) -> Result<Self, super::WebViewCreateError> {
         let parent_xid = match window.window_handle().map_err(perm)?.as_raw() {
             RawWindowHandle::Xlib(w) => w.window,
@@ -214,18 +254,23 @@ impl PlatformWebView {
         let vbox = gtk::Box::new(gtk::Orientation::Vertical, 0);
         gtk_window.add(&vbox);
 
-        let webview = entry_source.as_ref().map_or_else(WebView::new, |source| {
-            super::entry_response::linux::webview(source.clone())
-        });
+        let webview = if let Some(document) = &http {
+            document.view.webview().clone()
+        } else {
+            entry_source.as_ref().map_or_else(WebView::new, |source| {
+                super::entry_response::linux::webview(source.clone())
+            })
+        };
         vbox.pack_start(&webview, true, true, 0);
 
         // 탐색 정책만으로 서브리소스를 막을 수 없어 content filter도 별도로 설치한다.
-        let block_remote = Rc::new(Cell::new(true));
+        let block_remote = Rc::new(Cell::new(http.is_none()));
         let pending_navigations = Rc::new(RefCell::new(Vec::new()));
         let script_gate: Rc<RefCell<Option<ScriptGate>>> = Rc::new(RefCell::new(None));
         navigation_policy::install(
             &webview,
             &entry_source,
+            http.as_ref().map(|document| document.session_slot()),
             &block_remote,
             &pending_navigations,
             &script_gate,
@@ -295,6 +340,7 @@ impl PlatformWebView {
             let nav = nav_state.clone();
             let loads = loads.clone();
             let gate = script_gate.clone();
+            let http_session = http.as_ref().map(|document| document.session_slot());
             webview.connect_load_failed(move |_wv, _event, failing_uri, error| {
                 tracing::warn!(
                     "WebView surface {surface_id}: WebKitGTK load-failed \
@@ -305,6 +351,11 @@ impl PlatformWebView {
                 }
                 if let Some(gate) = gate.borrow().as_ref() {
                     gate.failed();
+                }
+                if let Some(slot) = &http_session {
+                    let session = slot.borrow().clone();
+                    let intentional=session.bridge.document().is_some_and(|document|document.with_current(|model|matches!(model.state(document.entry()),Some(tasty_remote::html_http_client::ReceiveState::Skipped|tasty_remote::html_http_client::ReceiveState::Cancelled))).unwrap_or(false));
+                    if session.is_current() && !intentional {session.fail();}
                 }
                 true // 기본 에러 페이지 억제(host error chrome 사용)
             });
@@ -363,6 +414,7 @@ impl PlatformWebView {
 
         Ok(Self {
             entry_source,
+            http,
             webview,
             gtk_window,
             x11_window,
@@ -757,6 +809,56 @@ impl PlatformWebView {
         *self.script_gate.borrow_mut() = Some(gate);
     }
 
+    pub(crate) fn retaining_http(&self) -> bool {
+        self.http
+            .as_ref()
+            .is_some_and(|document| document.retaining())
+    }
+    pub(crate) fn request_http_reload(&self) -> Result<bool, String> {
+        let Some(document) = &self.http else {
+            return Ok(false);
+        };
+        document.request_reload()?;
+        Ok(true)
+    }
+    pub(crate) fn poll_http_reload(
+        &self,
+        session: std::sync::Arc<crate::app::http_session::HttpSession>,
+        wake: std::sync::Arc<dyn Fn() + Send + Sync>,
+    ) -> Result<bool, String> {
+        let Some(document) = &self.http else {
+            return Ok(false);
+        };
+        if !session.is_current() && !document.retaining() {
+            self.set_javascript_enabled(false);
+        }
+        document.poll_trust(wake.clone())?;
+        let Some(ready) = document.poll_reload(session.clone(), wake)? else {
+            return Ok(false);
+        };
+        if let Some(gate) = self.script_gate.borrow_mut().as_mut() {
+            *gate = gate.clone().with_http_session(session);
+        }
+        ready
+            .resume()
+            .map_err(|error| format!("retained HTTP native continuation: {error:?}"))?;
+        Ok(true)
+    }
+
+    pub(crate) fn reload_after_script_allow(&self) {
+        if let Some(document) = &self.http {
+            let Some(body) = document.session().entry_body() else {
+                return;
+            };
+            match document.session().bodies.replay_once(body.head().id) {
+                Ok(()) => self.webview.reload_bypass_cache(),
+                Err(error) => tracing::warn!(?error, "native HTTP script response replay refused"),
+            }
+        } else {
+            self.reload();
+        }
+    }
+
     pub fn reload(&self) {
         self.webview.reload();
     }
@@ -796,7 +898,7 @@ impl PlatformWebView {
     /// 탐색 정책과 content filter에 차단 상태를 적용한다. 필터 준비 전·준비 실패 시 적용 범위가 다르다.
     pub fn set_remote_content_allowed(&self, allowed: bool) {
         self.block_remote
-            .set(self.entry_source.is_some() || !allowed);
+            .set(self.http.is_none() && (self.entry_source.is_some() || !allowed));
         self.apply_remote_block_filter();
         tracing::debug!("Linux WebKitGTK set_remote_content_allowed({allowed})");
     }

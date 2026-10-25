@@ -25,6 +25,8 @@ pub(crate) struct ReceiveAction {
     id: TransferId,
     kind: ReceiveActionKind,
     consumed: Arc<AtomicBool>,
+    #[cfg(target_os = "linux")]
+    http: Option<Weak<crate::app::http_session::HttpSession>>,
 }
 impl std::fmt::Debug for ReceiveAction {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -59,6 +61,10 @@ impl ReceiveSnapshot {
     }
 }
 pub(crate) fn snapshot(remote: &RemoteSurface, target: SurfaceBinding) -> Option<ReceiveSnapshot> {
+    #[cfg(target_os = "linux")]
+    if let Some(session) = &remote.http_session {
+        return http_snapshot(remote, target, session);
+    }
     let mirror = remote.lock_html_mirror()?;
     let metadata = mirror.metadata.as_ref();
     let address = source_address(metadata.map(|m| &m.source));
@@ -98,6 +104,8 @@ pub(crate) fn snapshot(remote: &RemoteSurface, target: SurfaceBinding) -> Option
             id,
             kind: ReceiveActionKind::Decline,
             consumed: Arc::new(AtomicBool::new(false)),
+            #[cfg(target_os = "linux")]
+            http: None,
         }),
     })
 }
@@ -125,6 +133,34 @@ impl ReceiveAction {
         {
             return;
         }
+        #[cfg(target_os = "linux")]
+        if let Some(owner) = &self.http {
+            let Some(session) = owner.upgrade().filter(|session| session.is_current()) else {
+                return;
+            };
+            if remote
+                .http_session
+                .as_ref()
+                .is_none_or(|current| !Arc::ptr_eq(current, &session))
+            {
+                return;
+            }
+            match self.kind {
+                ReceiveActionKind::Allow => {
+                    session.bridge.allow(self.id);
+                }
+                ReceiveActionKind::Decline => {
+                    session.bridge.decline(self.id);
+                }
+                ReceiveActionKind::Continue => {
+                    session.bridge.continue_receiving();
+                }
+                ReceiveActionKind::Stop => {
+                    session.bridge.stop();
+                }
+            }
+            return;
+        }
         let Some(mut mirror) = remote.lock_html_mirror() else {
             return;
         };
@@ -147,4 +183,60 @@ fn source_address(source: Option<&HtmlSource>) -> String {
         Some(HtmlSource::Http { url }) => url.clone(),
         _ => String::new(),
     }
+}
+
+#[cfg(target_os = "linux")]
+fn http_snapshot(
+    remote: &RemoteSurface,
+    target: SurfaceBinding,
+    session: &Arc<crate::app::http_session::HttpSession>,
+) -> Option<ReceiveSnapshot> {
+    // A successor's authority predicate rechecks this mirror. Release its guard
+    // before entering any bridge/model method, including a read-only snapshot.
+    let connected = {
+        let mirror = remote.lock_html_mirror()?;
+        mirror.connected && mirror.connection.is_active()
+    };
+    let state = session.bridge.snapshot();
+    let first = state.notices.first().copied();
+    let notice = first.and_then(|id| session.notice(id));
+    let ready = session.entry_body().is_some();
+    let failed = session.failed()
+        || session.bridge.document().is_some_and(|document| {
+            document
+                .with_current(|model| {
+                    matches!(
+                        model.state(document.entry()),
+                        Some(
+                            tasty_remote::html_http_client::ReceiveState::Failed
+                                | tasty_remote::html_http_client::ReceiveState::Cancelled
+                        )
+                    )
+                })
+                .unwrap_or(false)
+        });
+    let pending = session.bridge.document().is_none() && session.is_current();
+    let id = first.unwrap_or(session.source.metadata_id());
+    Some(ReceiveSnapshot {
+        address: session.source.address().into(),
+        notice_path: notice.as_ref().map_or_else(String::new, |n| n.0.clone()),
+        files: session.responses(),
+        connected,
+        received: state.received,
+        skipped: state.skipped,
+        size_notice: notice.map(|n| n.1),
+        waiting: state.notices.len().saturating_sub(1),
+        paused: state.paused,
+        receiving: state.receiving || pending,
+        ready,
+        failed,
+        request: Some(ReceiveAction {
+            target,
+            owner: Arc::downgrade(remote.html_mirror.as_ref()?),
+            id,
+            kind: ReceiveActionKind::Decline,
+            consumed: Arc::new(AtomicBool::new(false)),
+            http: Some(Arc::downgrade(session)),
+        }),
+    })
 }

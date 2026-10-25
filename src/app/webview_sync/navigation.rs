@@ -5,6 +5,45 @@ fn reload_received_entry(
     remote: &RemoteSurface,
     mark_origin: fn(&mut tasty_model::html_script::HtmlScriptState),
 ) {
+    perform_received_reload(remote, mark_origin);
+}
+
+fn reload_with_native(
+    remote: &RemoteSurface,
+    view: &MainView,
+    sid: u32,
+    mark_origin: fn(&mut tasty_model::html_script::HtmlScriptState),
+) {
+    #[cfg(target_os = "linux")]
+    if remote.http_session.is_some() {
+        if !remote
+            .lock_html_mirror()
+            .is_some_and(|mirror| mirror.connected && mirror.connection.is_active())
+        {
+            return;
+        }
+        let Some(wv) = view.webviews.get(&sid) else {
+            reload_received_entry(remote, mark_origin);
+            return;
+        };
+        match wv.request_http_reload() {
+            Ok(true) => {}
+            Ok(false) => return,
+            Err(error) => {
+                tracing::warn!(%error,"native HTTP Reload refused");
+                return;
+            }
+        }
+    }
+    // Only the Linux adapter currently captures a retained HTTP native continuation.
+    #[cfg(not(target_os = "linux"))]
+    let _ = (view, sid);
+    reload_received_entry(remote, mark_origin);
+}
+fn perform_received_reload(
+    remote: &RemoteSurface,
+    mark_origin: fn(&mut tasty_model::html_script::HtmlScriptState),
+) {
     if remote
         .lock_html_mirror()
         .is_some_and(|mut mirror| mirror.user_reload())
@@ -28,8 +67,10 @@ pub(super) fn apply_user_nav(
         && rs.html_mirror.is_some()
     {
         if matches!(nav, WebViewUserNav::Reload) {
-            reload_received_entry(
+            reload_with_native(
                 rs,
+                view,
+                sid,
                 tasty_model::html_script::HtmlScriptState::on_user_load_requested,
             );
         }
@@ -69,8 +110,10 @@ pub(super) fn apply_agent_history_step(
         && rs.html_mirror.is_some()
     {
         if step == WebViewHistoryStep::Reload {
-            reload_received_entry(
+            reload_with_native(
                 rs,
+                view,
+                sid,
                 tasty_model::html_script::HtmlScriptState::on_host_load_requested,
             );
         }

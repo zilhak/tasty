@@ -1,6 +1,8 @@
 //! App synchronizes native WebView effects against the originating runtime resources.
 //! Native windows, geometry caches and input handles remain owned by MainView.
+mod construction;
 mod navigation;
+use construction::create_missing_webviews;
 use navigation::{apply_agent_history_step, apply_user_nav};
 
 use crate::plugin::PluginManager;
@@ -29,15 +31,47 @@ pub(crate) fn synchronize(
     plugins: Option<&PluginManager>,
     proofs: &super::html_runtime::NavigationProofs,
 ) {
+    #[cfg(target_os = "linux")]
+    {
+        let mut replaced = Vec::new();
+        for (sid, wv) in &view.webviews {
+            if let Some(session) = find_remote_surface(view, &engine.as_ref(), *sid)
+                .and_then(|remote| remote.http_session.clone())
+            {
+                match wv.poll_http_reload(session.clone(), engine.runtime.waker.clone()) {
+                    Ok(true) => replaced.push(*sid),
+                    Ok(false) => {}
+                    Err(error) => {
+                        tracing::warn!(%error,"native HTTP replacement failed");
+                        session.fail();
+                    }
+                }
+            }
+        }
+        for sid in replaced {
+            if let Some(binding) =
+                super::html_runtime::NativeWebviewBinding::capture(&engine.as_ref(), sid)
+            {
+                view.webview_runtime.insert(sid, binding);
+            }
+        }
+    }
     let stale: Vec<_> = view
         .webviews
         .keys()
         .copied()
         .filter(|surface| {
-            !view
-                .webview_runtime
-                .get(surface)
-                .is_some_and(|binding| binding.current(&engine.as_ref()))
+            !view.webview_runtime.get(surface).is_some_and(|binding| {
+                #[cfg(target_os = "linux")]
+                if view
+                    .webviews
+                    .get(surface)
+                    .is_some_and(|wv| wv.retaining_http())
+                {
+                    return binding.current_surface(&engine.as_ref());
+                }
+                binding.current(&engine.as_ref())
+            })
         })
         .collect();
     for surface in stale {
@@ -48,6 +82,8 @@ pub(crate) fn synchronize(
         view.webview_create_attempts.remove(&surface);
         proofs.invalidate(&view.state.webview_identity, surface);
     }
+    #[cfg(target_os = "linux")]
+    view.http_preparing.retain(|_, pending| pending.current());
     sync_webviews(view, &engine.as_ref(), plugins, proofs);
     if view.base.state.dirty && view.base.surface_ready() {
         view.base.winit.request_redraw();
@@ -99,10 +135,18 @@ struct HtmlSurfaces {
 /// native WebView를 둘 surface인지. 호스트 주소가 있는 surface와, 주소 띠로 문서를 연 빈 html
 /// surface다. 빈 html 탭은 사용자가 처음 주소를 열 때(사용자 탐색 큐에 들어올 때) 만들고 그 뒤로 둔다.
 fn hosts_webview(view: &MainView, surface: &dyn crate::model::Surface, sid: u32) -> bool {
-    if let Some(remote) = surface.as_any().downcast_ref::<RemoteSurface>()
-        && let Some(mirror) = remote.lock_html_mirror()
-    {
-        return mirror.body_store().current().is_some();
+    if let Some(remote) = surface.as_any().downcast_ref::<RemoteSurface>() {
+        #[cfg(target_os = "linux")]
+        if remote
+            .http_session
+            .as_ref()
+            .is_some_and(|session| session.is_current() || session.entry_body().is_some())
+        {
+            return true;
+        }
+        return remote
+            .lock_html_mirror()
+            .is_some_and(|mirror| mirror.body_store().current().is_some());
     }
     surface.webview_url().is_some()
         || (surface.kind() == "html"
@@ -284,79 +328,6 @@ fn collect_html_surfaces(
 }
 
 /// 필요한 설정을 읽은 뒤 HTML surface의 native WebView를 만들고 페이지를 연다.
-fn create_missing_webviews(
-    view: &mut MainView,
-    engine: &crate::runtime::engine_access::EngineRef<'_>,
-    all_html_ids: &[u32],
-    active_html: &std::collections::HashMap<u32, crate::webview::WebViewBounds>,
-    scale_factor: f64,
-) {
-    // Create new webviews for Html panels that don't have one yet
-    for &sid in all_html_ids {
-        if !view.webviews.contains_key(&sid) {
-            // 재시도 상한에 도달한 surface는 다시 만들지 않는다.
-            let attempts = view.webview_create_attempts.get(&sid).copied().unwrap_or(0);
-            if !should_attempt_webview(attempts) {
-                continue;
-            }
-            // Find the URL for this surface
-            let url = find_webview_url(view, engine, sid);
-            // 생성 시 적용할 plugin 설정(부재 시 default) 을 미리 해석한다.
-            let settings = resolve_webview_settings(view, engine, sid);
-            match crate::webview::PlatformWebView::new(
-                view.base.winit.as_ref(),
-                active_html
-                    .get(&sid)
-                    .copied()
-                    .unwrap_or(crate::webview::WebViewBounds {
-                        x: 0.0,
-                        y: 0.0,
-                        width: 1.0,
-                        height: 1.0,
-                    }),
-                scale_factor,
-                sid,
-                view.webview_key_bridge.clone(),
-                find_remote_surface(view, engine, sid)
-                    .and_then(|rs| rs.lock_html_mirror())
-                    .map(|mirror| {
-                        crate::webview::entry_response::EntryResponseSource::new(&mirror.bodies)
-                            .with_notify(std::sync::Arc::clone(&engine.runtime.waker))
-                    }),
-            ) {
-                Ok(wv) => {
-                    let Some(binding) =
-                        super::html_runtime::NativeWebviewBinding::capture(engine, sid)
-                    else {
-                        continue;
-                    };
-                    let bounds = active_html.get(&sid);
-                    tracing::debug!(
-                        "WebView surface {sid}: created (visible={}, bounds={:?}, url={})",
-                        bounds.is_some(),
-                        bounds,
-                        describe_webview_url(url.as_ref())
-                    );
-                    attach_script_gate(view, engine, sid, &wv, &settings);
-                    load_initial_url(view, engine, sid, &wv, url.as_ref());
-                    // 생성 직후 HTML viewer 설정(zoom/JS/scheme/remote) 적용 + 기록.
-                    tracing::debug!("WebView surface {sid}: requesting settings {settings:?}");
-                    settings.apply(&wv);
-                    // Start hidden if not active
-                    if !active_html.contains_key(&sid) {
-                        wv.set_visible(false);
-                    }
-                    view.webviews.insert(sid, wv);
-                    view.webview_runtime.insert(sid, binding);
-                    view.webview_applied_settings.insert(sid, settings);
-                    view.webview_create_attempts.remove(&sid);
-                }
-                Err(e) => record_webview_failure(view, sid, attempts, &e),
-            }
-        }
-    }
-}
-
 /// 허용 직후의 재로드, 사용자 탐색, 에이전트 히스토리 이동, debug 로드 중지를 native webview에 전달한다.
 fn apply_webview_requests(
     view: &mut MainView,
@@ -367,6 +338,9 @@ fn apply_webview_requests(
             .is_some_and(|rs| rs.with_html_script(|st| st.take_reload_request()));
         if reload {
             tracing::debug!("WebView surface {sid}: reloading after the script allowance");
+            #[cfg(target_os = "linux")]
+            wv.reload_after_script_allow();
+            #[cfg(not(target_os = "linux"))]
             wv.reload();
         }
     }

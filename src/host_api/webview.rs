@@ -3,6 +3,12 @@
 
 pub(crate) mod entry_response;
 mod file_stamp;
+#[cfg(any(target_os = "linux", windows))]
+pub(crate) mod http_context;
+#[cfg(target_os = "linux")]
+pub(crate) mod http_endpoint;
+#[cfg(target_os = "linux")]
+pub(crate) mod http_native;
 pub mod keys;
 mod load_generation;
 pub mod overlay;

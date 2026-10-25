@@ -36,6 +36,14 @@ struct Serialized {
 
 const SERIALIZED: &[Serialized] = &[
     Serialized {
+        file: "src/host_api/webview/http_endpoint/runtime/tests.rs",
+        lock: "TEST",
+        acquire: &["TEST"],
+        guarded: &["retirement::owners()", "reaped()"],
+        scope: Scope::Crate,
+        why: "Runtime ownership/count controls share the process-wide retired runtime registry and eight setup permits across test modules.",
+    },
+    Serialized {
         file: "src/runtime/surface_registry/webview_kind.rs",
         lock: "WEBVIEW_KIND_TEST_LOCK",
         acquire: &["WEBVIEW_KIND_TEST_LOCK"],

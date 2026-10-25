@@ -29,3 +29,6 @@ mod html_descriptor;
 pub(crate) mod html_http;
 pub(crate) mod html_http_host;
 pub(crate) mod html_http_server;
+
+#[cfg(all(debug_assertions, feature = "gui", target_os = "linux"))]
+pub(crate) mod http_native_fixture;

@@ -1,11 +1,17 @@
 //! One-shot ownership of an existing native request; no reconstructed uploads.
 use super::*;
 
+#[cfg(test)]
 use webkit2gtk::NavigationPolicyDecision;
 
 enum Action {
+    #[cfg(test)]
     Navigation(NavigationPolicyDecision),
     Reload,
+    InitialGet {
+        uri: String,
+        provisional: Option<String>,
+    },
 }
 pub(crate) struct NativeContinuation {
     view: Weak<view::State>,
@@ -22,6 +28,31 @@ impl NativeContinuation {
             action: Some(Action::Reload),
         }
     }
+    // Caller attests the actual initial native request was an empty GET for this source,
+    // with no committed response. A failed provisional load can leave WebKit URI unset or empty.
+    pub(super) fn initial_get(view: &Rc<view::State>, url: &str) -> Result<Self, ContextError> {
+        let target = url::Url::parse(url).map_err(|_| ContextError::Policy)?;
+        let provisional = view.webview.uri().map(|uri| uri.to_string());
+        if !view.live()
+            || provisional.as_ref().is_some_and(|uri| !uri.is_empty())
+            || !matches!(target.scheme(), "http" | "https")
+            || target.host().is_none()
+            || !target.username().is_empty()
+            || target.password().is_some()
+        {
+            return Err(ContextError::Policy);
+        }
+        Ok(Self {
+            view: Rc::downgrade(view),
+            epoch: view.epoch.get(),
+            target: Some(url.into()),
+            action: Some(Action::InitialGet {
+                uri: url.into(),
+                provisional,
+            }),
+        })
+    }
+    #[cfg(test)]
     pub(super) fn navigation(view: &Rc<view::State>, decision: &NavigationPolicyDecision) -> Self {
         Self {
             view: Rc::downgrade(view),
@@ -41,15 +72,23 @@ impl NativeContinuation {
         self.epoch == view.epoch.get() && self.view.upgrade().is_some_and(|v| Rc::ptr_eq(&v, view))
     }
     pub(super) fn still_matches(&self, webview: &WebView) -> bool {
-        !self.is_reload() || webview.uri().as_deref() == self.target.as_deref()
+        match &self.action {
+            Some(Action::InitialGet { provisional, .. }) => {
+                webview.uri().as_deref() == provisional.as_deref()
+            }
+            _ => !self.is_reload() || webview.uri().as_deref() == self.target.as_deref(),
+        }
     }
     pub(super) fn resume(mut self, webview: &WebView) {
         match self.action.take().expect("one-shot native action") {
+            #[cfg(test)]
             Action::Navigation(decision) => decision.use_(),
             Action::Reload => webview.reload_bypass_cache(),
+            Action::InitialGet { uri, .. } => webview.load_uri(&uri),
         }
     }
 }
+#[cfg(test)]
 impl Drop for NativeContinuation {
     fn drop(&mut self) {
         if let Some(Action::Navigation(decision)) = self.action.take() {
