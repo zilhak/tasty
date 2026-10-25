@@ -1,0 +1,225 @@
+//! Run profile I/O on the caller's bounded worker; native receipts and Drop only update memory.
+mod namespace;
+use super::profile::{self, PreparedProfile, ProfileError};
+use std::{
+    path::PathBuf,
+    sync::{
+        Arc, Condvar, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::{Duration, Instant},
+};
+#[derive(Debug)]
+pub(crate) enum PrepareError {
+    Storage(ProfileError),
+    Retired,
+    Worker,
+    Timeout,
+}
+impl std::fmt::Display for PrepareError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Storage(error) => write!(f, "private native profile preparation failed: {error}"),
+            Self::Retired => f.write_str("native profile preparation retired"),
+            Self::Worker => f.write_str("native profile worker unavailable"),
+            Self::Timeout => f.write_str("native profile claim timed out"),
+        }
+    }
+}
+const MAX_CLAIM_WAIT: Duration = Duration::from_secs(30);
+enum State {
+    Pending,
+    Ready(Result<PreparedProfile, PrepareError>),
+    Taken,
+    Cancelled,
+}
+struct Shared {
+    state: Mutex<State>,
+    ready: Condvar,
+    current: Arc<dyn Fn() -> bool + Send + Sync>,
+    wake: Arc<dyn Fn() + Send + Sync>,
+    cancelled: AtomicBool,
+}
+impl Shared {
+    fn active(&self) -> bool {
+        !self.cancelled.load(Ordering::Acquire) && (self.current)()
+    }
+    fn cancel(&self) {
+        self.cancelled.store(true, Ordering::Release);
+        self.ready.notify_all();
+        (self.wake)();
+    }
+}
+pub(crate) struct Preparation {
+    shared: Arc<Shared>,
+}
+pub(crate) struct ProfileWork {
+    shared: Option<Arc<Shared>>,
+    home: PathBuf,
+    roots: usize,
+    claim_timeout: Duration,
+}
+impl Preparation {
+    pub(crate) fn new(
+        home: PathBuf,
+        roots: usize,
+        claim_timeout: Duration,
+        current: Arc<dyn Fn() -> bool + Send + Sync>,
+        wake: Arc<dyn Fn() + Send + Sync>,
+    ) -> (Self, ProfileWork) {
+        let shared = Arc::new(Shared {
+            state: Mutex::new(State::Pending),
+            ready: Condvar::new(),
+            current,
+            wake,
+            cancelled: AtomicBool::new(false),
+        });
+        (
+            Self {
+                shared: shared.clone(),
+            },
+            ProfileWork {
+                shared: Some(shared),
+                home,
+                roots,
+                claim_timeout,
+            },
+        )
+    }
+    pub(crate) fn poll(&self) -> Option<Result<PreparedProfile, PrepareError>> {
+        let Ok(mut state) = self.shared.state.lock() else {
+            tracing::error!("private profile preparation poisoned; ownership retained");
+            return Some(Err(PrepareError::Worker));
+        };
+        if !self.shared.active() && !matches!(*state, State::Taken) {
+            // Keep the profile in the slot: only the worker may dispose it.
+            drop(state);
+            self.shared.cancel();
+            return Some(Err(PrepareError::Retired));
+        }
+        if matches!(*state, State::Pending) {
+            return None;
+        }
+        match std::mem::replace(&mut *state, State::Taken) {
+            State::Ready(result) => {
+                self.shared.ready.notify_all();
+                Some(result)
+            }
+            State::Cancelled => Some(Err(PrepareError::Retired)),
+            State::Taken => None,
+            State::Pending => unreachable!("pending handled before state move"),
+        }
+    }
+}
+impl Drop for Preparation {
+    fn drop(&mut self) {
+        let Ok(state) = self.shared.state.lock() else {
+            tracing::error!("private profile cancellation poisoned; ownership retained");
+            return;
+        };
+        if !matches!(*state, State::Taken) {
+            self.shared.cancelled.store(true, Ordering::Release);
+            self.shared.ready.notify_all();
+        }
+    }
+}
+impl ProfileWork {
+    /// Consumes one slot in an existing bounded worker until native claim/cancellation settles.
+    pub(crate) fn run(mut self) {
+        let shared = self.shared.take().expect("unconsumed profile work");
+        let result = self.prepare(&shared);
+        let needs_claim = result.is_ok();
+        let Ok(mut state) = shared.state.lock() else {
+            tracing::error!("private profile result poisoned");
+            discard(result);
+            return;
+        };
+        *state = State::Ready(result);
+        drop(state);
+        (shared.wake)();
+        if !needs_claim {
+            return;
+        }
+        let Ok(mut state) = shared.state.lock() else {
+            tracing::error!("private profile claim state poisoned; ownership retained");
+            return;
+        };
+        let deadline = Instant::now() + self.claim_timeout.min(MAX_CLAIM_WAIT);
+        loop {
+            if matches!(*state, State::Taken) {
+                return;
+            }
+            if Arc::strong_count(&shared) == 1 || !shared.active() || Instant::now() >= deadline {
+                let expired = Instant::now() >= deadline;
+                let next = if expired {
+                    State::Ready(Err(PrepareError::Timeout))
+                } else {
+                    State::Cancelled
+                };
+                let State::Ready(result) = std::mem::replace(&mut *state, next) else {
+                    return;
+                };
+                drop(state);
+                discard(result);
+                (shared.wake)();
+                return;
+            }
+            let wait = deadline
+                .saturating_duration_since(Instant::now())
+                .min(Duration::from_millis(50));
+            match shared.ready.wait_timeout(state, wait) {
+                Ok((next, _)) => state = next,
+                Err(_) => {
+                    tracing::error!("private profile claim wait poisoned; ownership retained");
+                    return;
+                }
+            }
+        }
+    }
+    fn prepare(&self, shared: &Shared) -> Result<PreparedProfile, PrepareError> {
+        if self.roots == 0 || self.claim_timeout.is_zero() || self.claim_timeout > MAX_CLAIM_WAIT {
+            return Err(PrepareError::Storage(ProfileError::Invalid));
+        }
+        if !shared.active() {
+            return Err(PrepareError::Retired);
+        }
+        let parent = namespace::prepare(&self.home).map_err(PrepareError::Storage)?;
+        let report = profile::reclaim_dead(&parent, self.roots).map_err(PrepareError::Storage)?;
+        tracing::debug!(
+            inspected = report.inspected,
+            removed = report.removed,
+            live = report.kept_live,
+            uncertain = report.kept_uncertain,
+            failed = report.failed,
+            limit = report.limit_reached,
+            "private native profile sweep completed"
+        );
+        if !shared.active() {
+            return Err(PrepareError::Retired);
+        }
+        PreparedProfile::create(&parent, self.roots).map_err(PrepareError::Storage)
+    }
+}
+impl Drop for ProfileWork {
+    fn drop(&mut self) {
+        if let Some(shared) = self.shared.take() {
+            if let Ok(mut state) = shared.state.lock() {
+                *state = State::Ready(Err(PrepareError::Worker));
+            } else {
+                tracing::error!("unrun profile work poisoned");
+            }
+            (shared.wake)();
+        }
+    }
+}
+fn discard(result: Result<PreparedProfile, PrepareError>) {
+    if let Ok(profile) = result {
+        let root = profile.root().to_owned();
+        if let Err(error) = profile.discard_unpublished() {
+            tracing::warn!(%error,?root,"cancelled unpublished private profile cleanup failed; owned root retained");
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests;
