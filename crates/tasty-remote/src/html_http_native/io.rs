@@ -7,12 +7,14 @@ use std::{
 };
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 type Current<'a> = dyn Fn() -> bool + Send + Sync + 'a;
-pub(super) struct CurrentIo<'a, S> {
+/// Borrowed guard for each underlying poll, including owned native TLS adapters.
+pub struct CurrentIo<'a, S> {
     inner: &'a mut S,
     current: &'a Current<'a>,
 }
 impl<'a, S> CurrentIo<'a, S> {
-    pub(super) fn new(inner: &'a mut S, current: &'a Current<'a>) -> Self {
+    /// The predicate must be pure and must not reenter the guarded I/O.
+    pub fn new(inner: &'a mut S, current: &'a Current<'a>) -> Self {
         Self { inner, current }
     }
 }

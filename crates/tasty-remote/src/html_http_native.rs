@@ -4,6 +4,7 @@ mod io;
 mod request;
 mod response;
 pub use budget::NativeBudget;
+pub use io::CurrentIo;
 pub use request::{Destination, NativeRequest, read_request};
 pub use response::write_response;
 
