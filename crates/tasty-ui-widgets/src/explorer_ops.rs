@@ -13,7 +13,7 @@ use crate::spinner::Spinner;
 use crate::tokens::{STRUCT_GAP_2, TOAST_PADDING_X, TOAST_PADDING_Y};
 use tasty_type_appearance::toast_kind::ToastKind;
 
-/// 대기열 팝오버 폭. 디자인 `explorer-ops.jsx` 의 `--tasty-size-288` 이며 역할 토큰이 없다.
+/// 대기열 팝오버의 선호 폭. 디자인 `explorer-ops.jsx` 의 `--tasty-size-288` 이며 역할 토큰이 없다.
 pub fn op_queue_width(theme: &Theme) -> LogicalPx {
     LogicalPx((288.0 * theme.ui_zoom).round())
 }
@@ -101,19 +101,74 @@ pub struct HostMark<'a> {
 
 /// 호스트 표시를 그린다. 글리프와 이름 사이는 workspace-mirror-gap, 색은 workspace-mirror-fg 다.
 pub fn host_mark(ui: &mut egui::Ui, theme: &Theme, mark: &HostMark<'_>) -> egui::Response {
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing = egui::vec2(theme.workspace_mirror_gap().value(), 0.0);
-        let color = theme.workspace_mirror_fg().to_egui();
-        let size = theme.workspace_mirror_icon_size().value();
-        let (rect, _) = ui.allocate_exact_size(egui::vec2(size, size), egui::Sense::hover());
-        (mark.paint_glyph)(ui, rect, color);
-        ui.label(
-            egui::RichText::new(mark.name)
-                .font(caption_mono(theme))
-                .color(color),
+    bounded_host(ui, theme, mark, LogicalPx(ui.available_width()))
+}
+
+/// Keep allocation and paint inside the same budget, even when the ellipsis is wider than it.
+fn bounded_line(
+    ui: &mut egui::Ui,
+    text: &str,
+    font: egui::FontId,
+    color: egui::Color32,
+    limit: LogicalPx,
+) -> egui::Response {
+    let width = limit.value().max(0.0);
+    let mut job = egui::text::LayoutJob::simple_singleline(text.to_owned(), font, color);
+    job.wrap = egui::text::TextWrapping::truncate_at_width(width.max(1.0));
+    let galley = ui.fonts(|f| f.layout_job(job));
+    let (rect, response) = ui.allocate_exact_size(
+        egui::vec2(galley.size().x.min(width), galley.size().y),
+        egui::Sense::hover(),
+    );
+    ui.painter()
+        .with_clip_rect(rect.intersect(ui.clip_rect()))
+        .galley(rect.min, galley, color);
+    response
+        .widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Label, ui.is_enabled(), text));
+    response.on_hover_text(text)
+}
+
+fn bounded_host(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    mark: &HostMark<'_>,
+    limit: LogicalPx,
+) -> egui::Response {
+    let width = limit.value().max(0.0);
+    let size = theme.workspace_mirror_icon_size().value();
+    let gap = theme.workspace_mirror_gap().value();
+    let color = theme.workspace_mirror_fg().to_egui();
+    let name = ui.fonts(|f| f.layout_no_wrap(mark.name.to_owned(), caption_mono(theme), color));
+    let (rect, response) = ui.allocate_exact_size(
+        egui::vec2(
+            (size + gap + name.size().x).min(width),
+            size.max(name.size().y),
+        ),
+        egui::Sense::hover(),
+    );
+    let mut child = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(rect)
+            .layout(egui::Layout::left_to_right(egui::Align::Center)),
+    );
+    child.set_clip_rect(rect.intersect(ui.clip_rect()));
+    child.spacing_mut().item_spacing.x = gap;
+    let (glyph, _) = child.allocate_exact_size(egui::vec2(size, size), egui::Sense::hover());
+    (mark.paint_glyph)(&mut child, glyph, color);
+    if width > size + gap {
+        bounded_line(
+            &mut child,
+            mark.name,
+            caption_mono(theme),
+            color,
+            LogicalPx(width - size - gap),
         );
-    })
-    .response
+    } else {
+        response.widget_info(|| {
+            egui::WidgetInfo::labeled(egui::WidgetType::Label, ui.is_enabled(), mark.name)
+        });
+    }
+    response.on_hover_text(mark.name)
 }
 
 // ── 진행 상태줄 ──────────────────────────────────────────
@@ -178,6 +233,7 @@ pub fn op_status_line(
             .max_rect(inner)
             .layout(egui::Layout::right_to_left(egui::Align::Center)),
     );
+    child.set_clip_rect(inner.intersect(ui.clip_rect()));
     child.spacing_mut().item_spacing = egui::vec2(theme.spacing_sm.value(), 0.0);
     if props.waiting {
         out.show = Button::new(props.show_label)
@@ -198,10 +254,17 @@ pub fn op_status_line(
         out.open_queue |= resp.clicked();
     }
     if let Some(bytes) = props.bytes {
-        child.label(
-            egui::RichText::new(bytes)
-                .font(caption_mono(theme))
-                .color(theme.text_muted().to_egui()),
+        // Preserve the host glyph and fixed queue/cancel controls; bytes may ellipsize.
+        let host_space = props.host.as_ref().map_or(0.0, |_| {
+            theme.workspace_mirror_icon_size().value() + theme.spacing_sm.value()
+        });
+        let width = LogicalPx((child.available_width() - host_space).max(0.0));
+        bounded_line(
+            &mut child,
+            bytes,
+            caption_mono(theme),
+            theme.text_muted().to_egui(),
+            width,
         );
     }
     let color = if props.waiting {
@@ -209,15 +272,30 @@ pub fn op_status_line(
     } else {
         theme.text_secondary()
     };
-    child.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+    let left = child.available_rect_before_wrap().intersect(inner);
+    if left.is_positive() {
+        let mut left_ui = child.new_child(
+            egui::UiBuilder::new()
+                .max_rect(left)
+                .layout(egui::Layout::left_to_right(egui::Align::Center)),
+        );
+        left_ui.set_clip_rect(left.intersect(ui.clip_rect()));
         if let Some(mark) = &props.host {
-            host_mark(ui, theme, mark);
+            host_mark(&mut left_ui, theme, mark);
         }
-        let left_w = ui.available_width();
-        let resp = one_line(ui, props.text, caption(theme), color.to_egui(), left_w)
+        let width = LogicalPx(left_ui.available_width());
+        if width.value() > 0.0 {
+            let resp = bounded_line(
+                &mut left_ui,
+                props.text,
+                caption(theme),
+                color.to_egui(),
+                width,
+            )
             .interact(egui::Sense::click());
-        out.open_queue |= resp.clicked();
-    });
+            out.open_queue |= resp.clicked();
+        }
+    }
     out
 }
 
@@ -270,8 +348,9 @@ pub fn op_queue_rows(
                         body(theme),
                         theme.text_primary().to_egui(),
                         text_w,
-                    );
-                    one_line(ui, row.sub, caption(theme), muted, text_w);
+                    )
+                    .on_hover_text(row.title);
+                    one_line(ui, row.sub, caption(theme), muted, text_w).on_hover_text(row.sub);
                 });
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if IconButton::new()
@@ -309,14 +388,32 @@ fn queue_header(ui: &mut egui::Ui, theme: &Theme, header: &QueueHeader<'_>) {
                 ui.spacing_mut().item_spacing =
                     egui::vec2(theme.explorer_remote_queue_head_gap().value(), 0.0);
                 let muted = theme.text_muted().to_egui();
-                for (i, part) in [header.before, header.after].into_iter().enumerate() {
-                    if i == 1 {
-                        host_mark(ui, theme, &header.host);
-                    }
-                    let part = part.trim();
-                    if !part.is_empty() {
-                        ui.label(egui::RichText::new(part).font(caption(theme)).color(muted));
-                    }
+                let after = header.after.trim();
+                let after_width = ui.fonts(|f| {
+                    f.layout_no_wrap(after.to_owned(), caption(theme), muted)
+                        .size()
+                        .x
+                });
+                let gap = theme.explorer_remote_queue_head_gap().value();
+                let before = header.before.trim();
+                if !before.is_empty() {
+                    let width = LogicalPx(
+                        (ui.available_width()
+                            - after_width
+                            - gap * 2.0
+                            - theme.workspace_mirror_icon_size().value())
+                        .max(0.0),
+                    );
+                    bounded_line(ui, before, caption(theme), muted, width);
+                }
+                let host_width = LogicalPx(
+                    (ui.available_width() - after_width - if after.is_empty() { 0.0 } else { gap })
+                        .max(0.0),
+                );
+                bounded_host(ui, theme, &header.host, host_width);
+                if !after.is_empty() {
+                    let width = LogicalPx(ui.available_width());
+                    bounded_line(ui, after, caption(theme), muted, width);
                 }
             });
         });
@@ -324,7 +421,7 @@ fn queue_header(ui: &mut egui::Ui, theme: &Theme, header: &QueueHeader<'_>) {
 
 /// 대기열 팝오버를 `bottom_right` 모서리에 붙여 그린다. 높이는 직전 프레임에 잰 값으로 위치를 정한다.
 /// 같은 프레임의 다른 위젯보다 뒤에 불러야 위에 그려지고 클릭을 받는다. 누른 × 의 행 번호를 돌려준다.
-/// 원격 대기열이면 `header` 로 호스트 줄을 행 위에 둔다.
+/// 원격 대기열이면 `header` 로 호스트 줄을 행 위에 둔다. 폭은 모서리 왼쪽의 clip 안에 맞춘다.
 #[allow(clippy::too_many_arguments)] // reason: 팝오버 위치·행·글리프 둘·머리 줄은 호출자마다 다른 독립 입력이다
 pub fn op_queue_popover(
     ui: &mut egui::Ui,
@@ -336,7 +433,10 @@ pub fn op_queue_popover(
     paint_close: IconPainter<'_>,
     paint_queued: IconPainter<'_>,
 ) -> (egui::Rect, Option<usize>) {
-    let w = op_queue_width(theme).value();
+    // The owning list cell may be narrower than the preferred menu width.
+    let w = op_queue_width(theme)
+        .value()
+        .min((bottom_right.x - ui.clip_rect().left()).max(0.0));
     let h = ui.ctx().data(|d| d.get_temp::<f32>(id)).unwrap_or(0.0);
     let min = egui::pos2(bottom_right.x - w, bottom_right.y - h);
     let mut child = ui.new_child(
@@ -348,7 +448,9 @@ pub fn op_queue_popover(
     let mut removed = None;
     let rect = op_queue_frame(theme)
         .show(&mut child, |ui| {
-            ui.set_width(w - theme.spacing_xs.value() * 2.0 - theme.border_width.value() * 2.0);
+            ui.set_width(
+                (w - theme.spacing_xs.value() * 2.0 - theme.border_width.value() * 2.0).max(0.0),
+            );
             if let Some(header) = header {
                 queue_header(ui, theme, header);
             }
@@ -815,3 +917,7 @@ pub fn paint_drop_target(painter: &egui::Painter, theme: &Theme, rect: egui::Rec
         egui::StrokeKind::Inside,
     );
 }
+
+#[cfg(test)]
+#[path = "explorer_ops_layout_tests.rs"]
+mod layout_tests;
