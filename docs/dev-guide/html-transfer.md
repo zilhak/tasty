@@ -46,6 +46,8 @@ completed body만 `Resource::body`로 제공한다. 완료 시 수신 buffer의 
 
 ## 검증 경계
 
+`Entry`와 resource는 최초에 연 root를 `Arc<Root>`로 공유한다. 수동으로 `Entry`를 만드는 Windows root 교체 fixture도 이미 연 root를 `Arc`에 넣으며 경로에서 다시 열지 않는다. `remote::html_files::windows_root::tests`는 junction·ancestor 교체, 상대 경로 탈출 거절과 일반 디렉터리 교체 후 원래 핸들의 읽기를 검사한다. 이 Windows 전용 시험은 Linux 실행으로 검증되지 않으므로 네이티브 Windows lib 시험의 실제 실행 이름과 건수를 확인한다.
+
 순수 모델 시험은 identity·size boundary·누적 credit 예약·취소·재사용을 검사한다. 실제 파일 worker 시험은 1.5MB exact hash, metadata-only 대기, 종류·symlink·교체·취소·timeout을 검사한다. `tests/attach_html_transfer_loopback.rs`는 실제 서버와 raw peer 사이의 왕복을 GUI/headless 각각 실행할 수 있다. native HTML viewer 렌더, 스크립트 banner, 하위 resource와 HTTP(S) 프록시는 이 전송 시험으로 검증하지 않는다.
 
 2026-10-23 Linux WebKitGTK 2.50.4의 별도 context probe에서는 custom scheme 요청이 65초 관측 동안 load 미완료였고 이후 비동기 finish로 완료됐다. 자체 timeout은 그 구간에서 관측하지 못했으므로 무제한 대기가 보장된다는 뜻은 아니다. http/https scheme 등록은 실제 warning으로 거절됐고 HTTP custom callback은 0회였다. 두 proxy context의 loopback 요청은 각 proxy에만 도착했으며 direct context·다른 context의 cookie와 분리됐다. 이는 Linux API 선행 실측이며 제품 proxy나 다른 OS의 실행 검증이 아니다.

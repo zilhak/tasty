@@ -121,7 +121,7 @@ fn ordinary_root_replacement_does_not_reauthorize_a_new_identity() {
         stamp,
         root: canonical,
         source: source.clone(),
-        authorized_root: root,
+        authorized_root: std::sync::Arc::new(root),
     };
     assert!(!entry.authorized_root.is_current(&entry.root).unwrap());
     assert!(!entry.unchanged());
