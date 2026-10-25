@@ -260,6 +260,7 @@ impl HttpSession {
         Ok(())
     }
     pub(crate) fn with_native_trust<T>(&self, f: impl FnOnce(&NativeTrust) -> T) -> Option<T> {
+        // reason: no trust capability may escape poisoned setup; the owning poll reports and retires it.
         let state = self.state.lock().ok()?;
         state.trust.as_ref().map(f)
     }
@@ -311,6 +312,7 @@ impl HttpSession {
         Ok(rx)
     }
     pub(crate) fn entry_body(&self) -> Option<Arc<tasty_remote::html_http_body::VerifiedBody>> {
+        // reason: poisoned final preview storage is unavailable; it cannot authorize native delivery.
         self.deliveries.main().or_else(|| {
             self.bridge
                 .document()
@@ -323,9 +325,11 @@ impl HttpSession {
         })
     }
     pub(crate) fn profile(&self) -> Option<Result<PreparedProfile, PrepareError>> {
+        // reason: poisoned setup cannot yield a native profile; the owning poll reports and retires it.
         self.state.lock().ok()?.preparation.as_ref()?.poll()
     }
     pub(crate) fn endpoint(&self) -> Option<Arc<Endpoint>> {
+        // reason: poisoned setup cannot yield an endpoint; the owning poll reports and retires it.
         self.state.lock().ok()?.endpoint.clone()
     }
     pub(crate) fn drive(

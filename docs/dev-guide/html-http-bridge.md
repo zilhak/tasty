@@ -243,4 +243,6 @@ The source server sends its existing document-change notification for the built-
 
 Native widget disposal explicitly drops the HTTP owner before destroying GTK or pumping its event loop. Endpoint, body and view authority are therefore already retired when destruction callbacks run, including window disposal while its engine remains parked. The endpoint still joins off the GTK thread.
 
+Poisoned ownership is never recovered for trust, request admission or Reload. Optional readers refuse unavailable state under their local retirement policy. Initial empty-GET recovery additionally requires a healthy selected-main lock proving that no main response was published; an unavailable main owner cannot stand in for that proof.
+
 The debug route is an integration boundary, not a public Linux/Windows/macOS support claim. Actual App/native acceptance and source-linked component controls have distinct evidence. The endpoint pool's synthetic native actor does not prove GTK UNKNOWN_CA, actionable chrome, repeated native profile counts or retained native POST behavior.

@@ -234,8 +234,10 @@ impl Certificates {
     }
     pub(crate) fn retire(&self) {
         self.live.store(false, Ordering::Release);
+        // reason: liveness is already revoked; a poisoned map is reported below, never recovered.
         if let Ok(slots) = self.slots.lock() {
             for slot in slots.values() {
+                // reason: poisoned certificate output is not rewritten; the error branch reports it.
                 if let Ok(mut state) = slot.state.lock() {
                     *state = State::Failed(CertificateError::Retired);
                 } else {
@@ -260,6 +262,7 @@ impl Generate {
     fn run(mut self) {
         let result = self.generate();
         let current = self.map.upgrade().is_some_and(|map| map.current());
+        // reason: never publish into poisoned output; the error branch logs and completion still wakes waiters.
         if let Ok(mut state) = self
             .slot
             .as_ref()
@@ -316,6 +319,7 @@ impl Drop for Generate {
     fn drop(&mut self) {
         if let Some(slot) = self.slot.take() {
             if !self.done {
+                // reason: poisoned cancellation state is reported below; no certificate can be published from it.
                 if let Ok(mut state) = slot.state.lock() {
                     *state = State::Failed(CertificateError::Worker);
                 } else {

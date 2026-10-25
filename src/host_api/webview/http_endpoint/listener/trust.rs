@@ -37,6 +37,7 @@ impl NativeTrust {
                 self.0.close();
                 return None;
             }
+            // reason: lock() logs poison and closes the gate; None cannot issue a trust capability.
             let request = self.0.lock().ok()?.queue.pop_front()?;
             if request.is_current() {
                 return Some(request);
@@ -150,6 +151,7 @@ impl Gate {
         if self.closed.swap(true, Ordering::AcqRel) {
             return;
         }
+        // reason: lock() already logs poison and refuses trust; do not recover uncertain queue ownership.
         let pending = self.lock().ok().map(|mut inner| {
             for slot in inner.slots.iter().filter_map(std::sync::Weak::upgrade) {
                 slot.cancel();

@@ -234,6 +234,7 @@ impl HttpBridge {
         )
         .ok()?;
         {
+            // reason: lock() reports poison and revokes the bridge; this new document is not published.
             let mut inner = self.lock().ok()?;
             if !self.current() {
                 document.retire();

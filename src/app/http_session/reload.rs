@@ -126,6 +126,8 @@ impl HttpSession {
         Ok(())
     }
     pub(super) fn close_reload(&self) {
+        // reason: never recover a partially mutated receipt; closed source fences revoke it,
+        // and any inaccessible bounded reservation stays owned until this session is dropped.
         let captured = self
             .reload
             .captured
@@ -134,6 +136,7 @@ impl HttpSession {
             .and_then(|mut slot| slot.take());
         drop(captured);
         if !self.retaining() {
+            // reason: a poisoned successor cannot be reused; final session Drop releases its owner.
             let successor = self
                 .reload
                 .successor

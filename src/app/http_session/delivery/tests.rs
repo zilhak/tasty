@@ -139,3 +139,25 @@ fn provisional_get_recovery_requires_actual_empty_get_and_no_published_main_body
     *deliveries.main.lock().unwrap() = Some(response(1, "GET", b"", b"<p>committed</p>"));
     assert!(!deliveries.initial_get(url));
 }
+
+#[test]
+fn provisional_get_recovery_refuses_poisoned_main_ownership() {
+    let deliveries = Arc::new(Deliveries::default());
+    let url = "http://example.test/post";
+    *deliveries.first.lock().unwrap() = Some(InitialRequest {
+        method: "GET".into(),
+        url: url.into(),
+        upload: identity(b""),
+    });
+    *deliveries.main.lock().unwrap() = Some(response(2, "POST", b"upload", b"<p>posted</p>"));
+    let held = deliveries.clone();
+    assert!(
+        std::thread::spawn(move || {
+            let _main = held.main.lock().unwrap();
+            panic!("poison the actual selected-main owner");
+        })
+        .join()
+        .is_err()
+    );
+    assert!(!deliveries.initial_get(url));
+}

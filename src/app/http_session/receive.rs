@@ -54,6 +54,7 @@ impl HttpSession {
         }
     }
     pub(crate) fn notice(&self, id: TransferId) -> Option<(String, u64)> {
+        // reason: poisoned notice metadata cannot authorize Allow or additional body credit.
         let notices = self.notices.lock().ok()?;
         let (url, size, received) = notices.get(&id)?;
         Some((url.clone(), size.unwrap_or(*received)))

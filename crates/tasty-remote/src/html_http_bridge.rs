@@ -187,6 +187,7 @@ impl HttpBridge {
         if !self.current() {
             return None;
         }
+        // reason: lock() already logs poison and revokes bridge liveness; no document may escape.
         self.lock().ok()?.document.clone()
     }
     pub fn receive(&self, reply: HttpReply) -> bool {
@@ -267,6 +268,8 @@ impl HttpBridge {
         self.retire_contents(true);
     }
     fn retire_contents(&self, publish_close: bool) {
+        // reason: lock() already reports poison; do not drain uncertain ownership or recover it.
+        // The refusal path below still revokes liveness and abandons any Reload reservation.
         let retired = self.lock().ok().map(|mut inner| {
             (
                 inner.document.take(),

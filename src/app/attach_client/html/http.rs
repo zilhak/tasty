@@ -243,6 +243,7 @@ fn reload_authority(
     let id = source.metadata_id();
     let generation = source.source_generation();
     let address = source.address().to_owned();
+    // reason: poisoned mirror authority is unprovable; refuse its receipt without recovery.
     Arc::new(move || {
         if projection.strong_count() == 0 || !epoch.is_active() {
             return false;

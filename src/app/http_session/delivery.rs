@@ -57,14 +57,26 @@ impl Deliveries {
         })
     }
     pub(super) fn initial_get(&self, url: &str) -> bool {
-        self.main().is_none()
-            && self.first.lock().ok().is_some_and(|first| {
-                first.as_ref().is_some_and(|initial| {
-                    initial.method == "GET" && initial.url == url && initial.upload.bytes == 0
-                })
+        let has_main = match self.main.lock() {
+            Ok(main) => main.is_some(),
+            Err(error) => {
+                drop(error);
+                tracing::error!("selected native main poisoned; initial GET recovery refused");
+                return false;
+            }
+        };
+        if has_main {
+            return false;
+        }
+        // reason: poisoned first-request identity cannot attest an original empty GET.
+        self.first.lock().ok().is_some_and(|first| {
+            first.as_ref().is_some_and(|initial| {
+                initial.method == "GET" && initial.url == url && initial.upload.bytes == 0
             })
+        })
     }
     pub(super) fn main(&self) -> Option<Arc<VerifiedBody>> {
+        // reason: poisoned selected-main storage cannot supply a body or mint native authority.
         self.main.lock().ok()?.clone()
     }
     fn select(&self, url: &str, http_method: &str) -> Result<Delivery, String> {

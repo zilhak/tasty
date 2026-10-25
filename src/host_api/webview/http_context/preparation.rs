@@ -206,6 +206,8 @@ impl ProfileWork {
 impl Drop for ProfileWork {
     fn drop(&mut self) {
         if let Some(shared) = self.shared.take() {
+            // reason: uncertain work state is not recovered; the error branch reports poison,
+            // and the receipt is still woken after this lock attempt ends.
             if let Ok(mut state) = shared.state.lock() {
                 *state = State::Ready(Err(PrepareError::Worker));
             } else {
