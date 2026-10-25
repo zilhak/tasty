@@ -483,3 +483,5 @@ async fn bounded_client_hello_recording_refuses_more_than_64k_without_server_byt
     client.read_to_end(&mut reply).await.unwrap();
     assert!(reply.is_empty());
 }
+
+mod pool;

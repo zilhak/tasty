@@ -1,5 +1,6 @@
 //! Opaque native capabilities gate original TLS; private probes never enter HTTP dispatch.
 pub(super) mod hello;
+pub(crate) mod pool;
 mod probe;
 mod slot;
 use super::super::certificates::AuthorityTls;

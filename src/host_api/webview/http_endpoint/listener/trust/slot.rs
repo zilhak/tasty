@@ -69,7 +69,7 @@ impl Slot {
         self.live.store(false, Ordering::Release);
         self.changed.notify_waiters();
     }
-    fn verdict(&self) -> Option<bool> {
+    pub(super) fn verdict(&self) -> Option<bool> {
         match self.verdict.lock() {
             Ok(value) => *value,
             Err(_) => {
@@ -115,7 +115,7 @@ impl Drop for Attempt {
     }
 }
 /// Only the native inbox can mint this capability; it has no wire/page representation.
-pub(crate) struct TrustRequest(Arc<Slot>);
+pub(crate) struct TrustRequest(pub(super) Arc<Slot>);
 impl TrustRequest {
     pub(super) fn new(slot: Arc<Slot>) -> Self {
         Self(slot)
