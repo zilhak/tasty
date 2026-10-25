@@ -1,4 +1,6 @@
 mod aggregate;
+#[cfg(all(unix, feature = "gui", target_os = "linux"))]
+mod capture_cost;
 mod commit_knowledge;
 mod group;
 mod observability;

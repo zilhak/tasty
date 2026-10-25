@@ -232,6 +232,7 @@ ports-and-adapters 배치:
 | [close-sequence](close-sequence.md) | 확정 닫기 · 원 자원 retirement receipt · 불명 결과와 명령 완료 · engine/슬롯 해제 |
 | [event-store](event-store.md) | 구조 journal 저장 계약의 수치·보조 규칙 — 요청별 savepoint·물리 transaction 공유·private SQL 조회 실패의 전체 rollback·batch별 ACK·최초 엔진 binding의 고정 metadata 제출, 실제 SQL commit·worker 구간 계측, import 전송 identity, 잠금 없는 쓰기, ID 예약 경계, 로그 보존, projection 출력, 신규 admission 예산·쓰기 크기 상한, 구조 journal의 App 연결 |
 | [journal-metrics](journal-metrics.md) | GUI/headless system.pressure journal cache: Work/queue/bytes estimates, actual SQL COMMIT counters, fixed histograms and pending/publication ages |
+| [surface-capture-cost](surface-capture-cost.md) | Full immutable terminal capture: parser-lock copies, serialization, worker writes/maintenance, bounds and an isolated production-path measurement |
 | [multi-window](multi-window.md) | AppServices·EngineSession·ViewRegistry 소유, parked/pending/retiring, 모달과 읽기 대여 |
 | [input-layer](input-layer.md) | X11 조합 종료 키와 마우스 입력 z-order 계층 — 소비/버블링 + 커서 결정 |
 | [data-flows](data-flows.md) | 주요 데이터 흐름 (파일+함수 기준), 설정 저장 receipt와 부팅 순서 |

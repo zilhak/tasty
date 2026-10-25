@@ -164,6 +164,7 @@ Parked engine은 슬롯을 점유하지만 윈도우 ID가 없어 `window.list`�
 ### Surface 내용 복원 (현재: 터미널 scrollback)
 
 `general.restore_surface_content`(기본 on)가 켜져 있으면 터미널 capture가 scrollback과 화면 라인을 journal의 불변 surface payload에 담는다. payload는 cwd·`restore.command`와 함께 직렬화한 scrollback 바이트(`TSSB` 형식)를 가지며, 저장할 때마다 새 payload를 만들고 기존 payload를 고쳐 쓰지 않는다.
+전체 capture의 복사·직렬화·worker 쓰기 비용과 격리 측정 방법은 [capture 비용](../../architecture/surface-capture-cost.md)에 있다.
 전체 capture를 저장하는 코덱은 유지한다. 부분 scrollback delta로 바꾸면 복원·undo·pin 계약을
 함께 바꿔야 하므로 현재 압축과는 별도 최적화 영역이다. 정상 압축은 최근 유효 snapshot 두 개와
 그 사이 tail, 현재 holder의 참조만 남기며 단일 capture의 64 MiB 요청 한도는 그대로 적용한다. 복원 시 이전 scrollback과 화면 내용을 새 터미널의 출력 앞에 넣는다. legacy `~/.tasty/scrollback/<persist_id>.bin`은 최초 이관 때 슬롯 JSON의 `scrollback_ref`로 읽어 payload에 복사하는 입력이며, 현재 capture가 쓰는 곳이 아니다.
