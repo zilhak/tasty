@@ -11,6 +11,16 @@ struct Recording<S> {
     io: S,
     bytes: Vec<u8>,
 }
+impl<S> Recording<S> {
+    fn new(io: S) -> Self {
+        Self {
+            io,
+            // Reads stop at MAX_HELLO. Reserve that exact buffer once so fragmented input
+            // cannot trigger geometric Vec growth beyond the per-socket allocation bound.
+            bytes: Vec::with_capacity(MAX_HELLO),
+        }
+    }
+}
 pub(in super::super) struct Replay<S> {
     io: S,
     bytes: std::io::Cursor<Vec<u8>>,
@@ -21,10 +31,7 @@ pub(in super::super) async fn capture<S: AsyncRead + AsyncWrite + Unpin>(
     authority: &Authority,
     deadline: Duration,
 ) -> Result<Replay<S>, EndpointError> {
-    let recording = Recording {
-        io,
-        bytes: Vec::new(),
-    };
+    let recording = Recording::new(io);
     let accepted = tokio::time::timeout(
         deadline,
         tokio_rustls::LazyConfigAcceptor::new(
@@ -128,3 +135,6 @@ impl<S: AsyncWrite + Unpin> AsyncWrite for Replay<S> {
         Pin::new(&mut self.get_mut().io).poll_shutdown(cx)
     }
 }
+
+#[cfg(test)]
+mod tests;
