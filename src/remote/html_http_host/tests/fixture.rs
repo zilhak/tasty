@@ -12,11 +12,18 @@ pub(super) struct Fixture {
     count: Arc<AtomicUsize>,
     upload: Arc<Mutex<Vec<u8>>>,
     release: Arc<AtomicBool>,
+    requests: Arc<Mutex<Vec<(String, Vec<u8>)>>>,
     stop: Arc<AtomicBool>,
     join: Option<std::thread::JoinHandle<()>>,
 }
 impl Fixture {
     pub(super) fn new() -> Self {
+        Self::with_navigation(false)
+    }
+    pub(super) fn navigating() -> Self {
+        Self::with_navigation(true)
+    }
+    fn with_navigation(allow_final: bool) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         listener.set_nonblocking(true).unwrap();
         let url = format!("http://{}/", listener.local_addr().unwrap());
@@ -24,6 +31,8 @@ impl Fixture {
         let upload = Arc::new(Mutex::new(vec![]));
         let release = Arc::new(AtomicBool::new(false));
         let stop = Arc::new(AtomicBool::new(false));
+        let requests = Arc::new(Mutex::new(Vec::new()));
+        let captured = requests.clone();
         let (c, u, r, s) = (count.clone(), upload.clone(), release.clone(), stop.clone());
         let join = std::thread::spawn(move || {
             while !s.load(Ordering::Acquire) {
@@ -53,7 +62,11 @@ impl Fixture {
                     assert!(data.len() < 65536);
                 };
                 let headers = String::from_utf8_lossy(&data[..end]);
-                assert!(headers.starts_with("POST / HTTP/1.1\r\n"));
+                assert!(
+                    headers.starts_with("POST / HTTP/1.1\r\n")
+                        || (allow_final && headers.starts_with("POST /final HTTP/1.1\r\n"))
+                );
+                let head = headers.to_string();
                 let length = headers
                     .lines()
                     .find_map(|line| {
@@ -68,6 +81,10 @@ impl Fixture {
                     data.extend_from_slice(&chunk[..n]);
                 }
                 *u.lock().unwrap() = data[end..end + length].to_vec();
+                captured
+                    .lock()
+                    .unwrap()
+                    .push((head, data[end..end + length].to_vec()));
                 c.fetch_add(1, Ordering::AcqRel);
                 if stream.write_all(b"HTTP/1.1 201 Created\r\nContent-Length: 10\r\nContent-Type: text/html\r\nConnection: close\r\n\r\n").is_err(){continue;}
                 while !r.load(Ordering::Acquire) && !s.load(Ordering::Acquire) {
@@ -89,9 +106,13 @@ impl Fixture {
             count,
             upload,
             release,
+            requests,
             stop,
             join: Some(join),
         }
+    }
+    pub(super) fn requests(&self) -> Vec<(String, Vec<u8>)> {
+        self.requests.lock().unwrap().clone()
     }
     pub(super) fn url(&self) -> String {
         self.url.clone()

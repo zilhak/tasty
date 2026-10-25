@@ -155,6 +155,44 @@ impl Server {
             }
         }
     }
+    /// Only an exact completed response can authorize a fresh execution of its native request.
+    /// Headers are freshly captured by the browser (including updated cookies), not replayed.
+    pub fn permits_reload(
+        &self,
+        token: &OwnerToken,
+        previous: wire::ResponseId,
+        begin: &wire::HttpRequest,
+    ) -> core::Result<()> {
+        let owner = &self.documents[self.index(token)?];
+        let slot = owner
+            .requests
+            .get(&previous.request)
+            .ok_or(core::Error::Stale)?;
+        if !matches!(slot.state, State::Complete(r) if r == previous) {
+            return Err(core::Error::Stale);
+        }
+        let (
+            wire::HttpRequest::Begin {
+                method: a,
+                logical_url: b,
+                upload: c,
+                ..
+            },
+            wire::HttpRequest::Begin {
+                method: x,
+                logical_url: y,
+                upload: z,
+                ..
+            },
+        ) = (&slot.begin, begin)
+        else {
+            return Err(core::Error::Stale);
+        };
+        if (a, b, c) != (x, y, z) {
+            return Err(core::Error::Stale);
+        }
+        Ok(())
+    }
     pub fn transferred_bytes(&self, token: &OwnerToken) -> core::Result<u64> {
         Ok(self.documents[self.index(token)?].transferred)
     }

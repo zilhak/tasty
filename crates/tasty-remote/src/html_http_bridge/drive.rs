@@ -152,7 +152,17 @@ impl HttpBridge {
             }
             return;
         }
-        if self.document().is_none() && slot.request.logical_url != self.config.scope.entry_url {
+        if self.document().is_none()
+            && !self.reload.as_ref().map_or_else(
+                || slot.request.logical_url == self.config.scope.entry_url,
+                |r| {
+                    r.valid()
+                        && slot.request.logical_url == r.request.logical_url
+                        && slot.request.method == r.request.method
+                        && slot.request.identity == r.request.identity
+                },
+            )
+        {
             slot.assign(None);
             slot.finish(Err(BridgeError::Invalid));
             return;
@@ -172,6 +182,7 @@ impl HttpBridge {
             return;
         };
         slot.assign(Some(id));
+        let first = document.entry() == id;
         let begin = HttpRequest::Begin {
             id,
             source_generation: self.config.scope.source_generation,
@@ -180,6 +191,17 @@ impl HttpBridge {
             headers: slot.request.headers.clone(),
             upload: slot.request.identity,
             allow_remote_content: self.config.scope.allow_remote_content,
+        };
+        let begin = if first && let Some(reload) = &self.reload {
+            match begin.with_predecessor(reload.previous) {
+                Ok(begin) => begin,
+                Err(_) => {
+                    slot.finish(Err(BridgeError::Invalid));
+                    return;
+                }
+            }
+        } else {
+            begin
         };
         if document
             .admit_and_send(&self.sender, begin, slot.request.upload.clone())
@@ -196,7 +218,10 @@ impl HttpBridge {
             DocumentKey {
                 entry: id,
                 source_generation: scope.source_generation,
-                entry_url: scope.entry_url.clone(),
+                entry_url: self.reload.as_ref().map_or_else(
+                    || scope.entry_url.clone(),
+                    |r| r.request.logical_url.clone(),
+                ),
                 allow_remote_content: scope.allow_remote_content,
             },
             self.sender.epoch(),

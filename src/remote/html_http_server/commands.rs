@@ -17,6 +17,7 @@ impl Server {
             return Err(core::Error::Stale);
         }
         match request {
+            wire::HttpRequest::Reload { .. } => Err(core::Error::Stale),
             begin @ wire::HttpRequest::Begin { .. } => begin_request(
                 owner,
                 &self.backend,

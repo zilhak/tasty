@@ -30,6 +30,7 @@ struct Document {
     fence: PublicationFence,
     transferred: u64,
     stopped: bool,
+    previous: Option<wire::ResponseId>,
 }
 #[derive(Default)]
 pub(crate) struct HttpHost {
@@ -150,6 +151,28 @@ impl HttpHost {
         let Some(binding) = hub.client_binding(client) else {
             return;
         };
+        // Successor is a distinct negotiated command, never an ignored optional Begin field.
+        if matches!(request, HttpRequest::Reload { .. }) && !hub.html_http_reload_enabled(client) {
+            Self::reject(
+                hub,
+                client,
+                &binding,
+                &request,
+                &core::Error::UnsupportedScheme,
+            );
+            return;
+        }
+        if request.validate().is_err() {
+            Self::reject(
+                hub,
+                client,
+                &binding,
+                &request,
+                &core::Error::Invalid("HTTP command"),
+            );
+            return;
+        }
+        let (request, previous) = request.into_initial();
         let id = request.id();
         let key = key(client, id);
         if let Some(document) = self.documents.get(&key)
@@ -169,7 +192,7 @@ impl HttpHost {
         }
         let new_document = !self.documents.contains_key(&key);
         if matches!(request, HttpRequest::Begin { .. }) {
-            if let Err(error) = self.begin(engine, hub, client, &binding, &request) {
+            if let Err(error) = self.begin(engine, hub, client, &binding, &request, previous) {
                 if let Some(document) = self.documents.get(&key) {
                     Self::reject_current(hub, client, document, &request, &error);
                 } else {
@@ -224,11 +247,18 @@ impl HttpHost {
         client: u32,
         binding: &Weak<()>,
         request: &HttpRequest,
+        previous: Option<wire::ResponseId>,
     ) -> core::Result<()> {
         let id = request.id();
         let key = key(client, id);
         let fingerprint = bridge::begin_fingerprint(request, wire::HEADER_BYTES)?;
         if let Some(document) = self.documents.get(&key) {
+            if previous.is_some()
+                && (document.previous != previous
+                    || document.authority.bridge_capture().entry != id)
+            {
+                return Err(core::Error::Stale);
+            }
             document.authority.permits(request, hub, client)?;
             if let Some(prior) = document.requests.get(&id) {
                 if self.server.is_none() {
@@ -251,7 +281,27 @@ impl HttpHost {
                 return Err(core::Error::Capacity);
             }
         } else {
-            let authority = Authority::capture(engine, hub, client, request)?;
+            let authority = if let Some(previous) = previous {
+                let old = self
+                    .documents
+                    .get(&(
+                        client,
+                        previous.request.epoch,
+                        previous.request.surface_id,
+                        previous.request.binding,
+                        previous.request.document,
+                    ))
+                    .ok_or(core::Error::Stale)?;
+                let server = self.server.as_ref().ok_or(core::Error::Stale)?;
+                server.permits_reload(
+                    old.token.as_ref().ok_or(core::Error::Stale)?,
+                    previous,
+                    request,
+                )?;
+                old.authority.successor(engine, hub, client, request)?
+            } else {
+                Authority::capture(engine, hub, client, request)?
+            };
             authority.permits(request, hub, client)?;
             let old: Vec<_> = self
                 .documents
@@ -283,6 +333,7 @@ impl HttpHost {
                     fence: PublicationFence::default(),
                     transferred: 0,
                     stopped: false,
+                    previous,
                 },
             );
             return Ok(());

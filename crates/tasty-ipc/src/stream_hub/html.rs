@@ -8,6 +8,11 @@ pub enum HtmlControl {
     Http(HttpRequest),
 }
 impl StreamHub {
+    pub fn html_http_reload_enabled(&self, client: StreamClientId) -> bool {
+        tasty_utils::poison::recover_mutex(self.sinks.lock(), SINKS_WHAT, &SINKS_POISONED)
+            .get(&client)
+            .is_some_and(|s| s.html_transfer && s.html_viewer && s.html_http && s.html_http_reload)
+    }
     /// The peer must declare both HTTP transport and its native HTML viewer; HTTPS is separate.
     pub fn html_http_enabled(&self, client: StreamClientId, secure: bool) -> bool {
         tasty_utils::poison::recover_mutex(self.sinks.lock(), SINKS_WHAT, &SINKS_POISONED)

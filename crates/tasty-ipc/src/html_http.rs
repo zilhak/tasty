@@ -8,6 +8,7 @@ mod validation;
 pub use validation::decode_chunk;
 
 pub const CAPABILITY: &str = "ipc.stream.html-http-v1";
+pub const RELOAD_CAPABILITY: &str = "ipc.stream.html-http-reload-v1";
 pub const HTTPS_CAPABILITY: &str = "ipc.stream.html-https-v1";
 pub use crate::html_transfer::{AUTO_BYTES, CHUNK_BYTES, DOCUMENT_BYTES};
 pub const HEADER_BYTES: usize = 65_536;
@@ -81,9 +82,26 @@ pub enum CommandKind {
     Stop,
     Close,
 }
+/// A finite successor Begin; the completed predecessor is independently checked by the host.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReloadBegin {
+    pub id: TransferId,
+    pub source_generation: u64,
+    pub method: String,
+    pub logical_url: String,
+    pub headers: Vec<Header>,
+    pub upload: BodyIdentity,
+    pub allow_remote_content: bool,
+}
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "event")]
 pub enum HttpRequest {
+    #[serde(rename = "html_http_reload")]
+    Reload {
+        previous: ResponseId,
+        #[serde(flatten)]
+        begin: ReloadBegin,
+    },
     #[serde(rename = "html_http_begin")]
     Begin {
         id: TransferId,
@@ -196,9 +214,54 @@ fn frame<T: Serialize>(value: &T) -> Result<StreamFrame> {
     Ok(StreamFrame::new(StreamTag::Control, payload))
 }
 impl HttpRequest {
+    /// Normalize only the explicit successor envelope; no permission is implied by this operation.
+    pub fn into_initial(self) -> (Self, Option<ResponseId>) {
+        match self {
+            Self::Reload { previous, begin: b } => (
+                Self::Begin {
+                    id: b.id,
+                    source_generation: b.source_generation,
+                    method: b.method,
+                    logical_url: b.logical_url,
+                    headers: b.headers,
+                    upload: b.upload,
+                    allow_remote_content: b.allow_remote_content,
+                },
+                Some(previous),
+            ),
+            other => (other, None),
+        }
+    }
+    pub fn with_predecessor(self, previous: ResponseId) -> Result<Self> {
+        let Self::Begin {
+            id,
+            source_generation,
+            method,
+            logical_url,
+            headers,
+            upload,
+            allow_remote_content,
+        } = self
+        else {
+            return Err("successor must be Begin");
+        };
+        Ok(Self::Reload {
+            previous,
+            begin: ReloadBegin {
+                id,
+                source_generation,
+                method,
+                logical_url,
+                headers,
+                upload,
+                allow_remote_content,
+            },
+        })
+    }
+
     pub fn command_kind(&self) -> CommandKind {
         match self {
-            Self::Begin { .. } => CommandKind::Begin,
+            Self::Begin { .. } | Self::Reload { .. } => CommandKind::Begin,
             Self::Upload { .. } => CommandKind::Upload,
             Self::Commit { .. } => CommandKind::Commit,
             Self::Credit { .. } => CommandKind::Credit,
@@ -211,6 +274,7 @@ impl HttpRequest {
     }
     pub fn id(&self) -> TransferId {
         match self {
+            Self::Reload { begin, .. } => begin.id,
             Self::Begin { id, .. }
             | Self::Upload { id, .. }
             | Self::Commit { id, .. }
@@ -223,6 +287,7 @@ impl HttpRequest {
     }
     pub fn source_generation(&self) -> u64 {
         match self {
+            Self::Reload { begin, .. } => begin.source_generation,
             Self::Begin {
                 source_generation, ..
             }

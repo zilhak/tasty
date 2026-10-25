@@ -142,3 +142,15 @@ impl Future for NativeWait {
         }))
     }
 }
+
+impl NativeResponse {
+    pub(super) fn belongs_to(&self, slots: &[Arc<Slot>]) -> bool {
+        slots.iter().any(|s| {
+            Arc::ptr_eq(s, &self._lease.0)
+                && Arc::ptr_eq(&s.request, &self.request)
+                && s.assignment()
+                    .is_some_and(|(id, started)| started && id == Some(self.body.head().id.request))
+                && !s.abandoned.load(Ordering::Acquire)
+        })
+    }
+}

@@ -109,9 +109,42 @@ fn chunk(offset: u64, data: &str) -> Result<()> {
     usize::try_from(end).map_err(|_| "HTTP chunk address space")?;
     Ok(())
 }
+fn begin_values(
+    method: &str,
+    logical_url: &str,
+    hs: &[Header],
+    upload: BodyIdentity,
+) -> Result<()> {
+    if method.len() > METHOD_BYTES || !token(method.as_bytes()) {
+        return Err("HTTP method bounds or syntax");
+    }
+    url(logical_url)?;
+    headers(hs)?;
+    upload.checked_len()?;
+    Ok(())
+}
 impl HttpRequest {
     pub fn validate(&self) -> Result<()> {
         match self {
+            Self::Reload { previous, begin } => {
+                response(*previous)?;
+                let a = previous.request;
+                let b = begin.id;
+                if (a.epoch, a.surface_id, a.binding, previous.source_generation)
+                    != (b.epoch, b.surface_id, b.binding, begin.source_generation)
+                    || a.document >= b.document
+                    || a.request >= b.request
+                    || a.transfer >= b.transfer
+                {
+                    return Err("successor scope or order");
+                }
+                begin_values(
+                    &begin.method,
+                    &begin.logical_url,
+                    &begin.headers,
+                    begin.upload,
+                )?;
+            }
             Self::Begin {
                 method,
                 logical_url,
@@ -119,12 +152,7 @@ impl HttpRequest {
                 upload,
                 ..
             } => {
-                if method.len() > METHOD_BYTES || !token(method.as_bytes()) {
-                    return Err("HTTP method bounds or syntax");
-                }
-                url(logical_url)?;
-                headers(hs)?;
-                upload.checked_len()?;
+                begin_values(method, logical_url, hs, *upload)?;
             }
             Self::Upload {
                 offset, data_b64, ..

@@ -244,6 +244,10 @@ impl ClientDocument {
             return Err(ClientError::Closed);
         }
         begin.validate().map_err(|_| ClientError::Invalid)?;
+        let (begin, previous) = begin.into_initial();
+        if previous.is_some() && !self.attempts.is_empty() {
+            return Err(ClientError::Invalid);
+        }
         let HttpRequest::Begin {
             id,
             source_generation,
@@ -333,7 +337,12 @@ impl ClientDocument {
             job: None,
             result: None,
         });
-        Ok(begin)
+        match previous {
+            Some(previous) => begin
+                .with_predecessor(previous)
+                .map_err(|_| ClientError::Invalid),
+            None => Ok(begin),
+        }
     }
     pub fn receive(&mut self, reply: HttpReply) -> bool {
         self.receive_inner(reply)

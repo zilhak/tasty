@@ -271,3 +271,42 @@ fn http_and_https_require_the_current_peer_native_declarations() {
     assert!(!hub.html_http_enabled(5, false));
     assert!(!hub.html_http_enabled(5, true));
 }
+
+#[test]
+fn successor_requires_explicit_declaration_and_native_http_viewer() {
+    let hub = StreamHub::new();
+    let _sink = hub.register(5);
+    let (tx, rx) = mpsc::channel();
+    for (caps, enabled) in [
+        (vec![html_http::RELOAD_CAPABILITY], false),
+        (
+            vec![
+                html_transfer::CAPABILITY,
+                html_transfer::VIEWER_CAPABILITY,
+                html_http::CAPABILITY,
+            ],
+            false,
+        ),
+        (
+            vec![
+                html_transfer::CAPABILITY,
+                html_transfer::VIEWER_CAPABILITY,
+                html_http::CAPABILITY,
+                html_http::RELOAD_CAPABILITY,
+            ],
+            true,
+        ),
+        (
+            vec![
+                html_transfer::CAPABILITY,
+                html_transfer::VIEWER_CAPABILITY,
+                html_http::CAPABILITY,
+            ],
+            false,
+        ),
+    ] {
+        capabilities(&tx, &caps);
+        hub.pump_inbound(&rx);
+        assert_eq!(hub.html_http_reload_enabled(5), enabled);
+    }
+}

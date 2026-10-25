@@ -1,4 +1,5 @@
 mod fixture;
+mod reload;
 use super::*;
 use base64::Engine;
 use fixture::Fixture;
@@ -65,6 +66,7 @@ impl Host {
                 VIEWER_CAPABILITY.into(),
                 wire::CAPABILITY.into(),
                 wire::HTTPS_CAPABILITY.into(),
+                wire::RELOAD_CAPABILITY.into(),
             ],
         };
         tx.send(StreamInbound::Frame {

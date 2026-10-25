@@ -141,3 +141,51 @@ fn complete_envelope_and_reason_are_bounded() {
     assert!(frame(&"\"".repeat(MAX_FRAME_LEN as usize / 2)).is_err());
     assert_eq!(crate::stream::STREAM_PROTO, 1);
 }
+
+#[test]
+fn explicit_reload_envelope_is_finite_and_refuses_cross_scope_or_nonmonotone_lineage() {
+    let old = response();
+    let mut next = id();
+    next.document += 1;
+    next.request += 1;
+    next.transfer += 1;
+    let begin = HttpRequest::Begin {
+        id: next,
+        source_generation: 7,
+        method: "POST".into(),
+        logical_url: "https://example.test/final".into(),
+        headers: vec![],
+        upload: BodyIdentity {
+            bytes: 3,
+            sha256: [42; 32],
+        },
+        allow_remote_content: false,
+    };
+    let reload = begin.with_predecessor(old).unwrap();
+    let frame = reload.frame().unwrap();
+    assert!(frame.payload.len() <= MAX_FRAME_LEN as usize);
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&frame.payload).unwrap()["event"],
+        "html_http_reload"
+    );
+    let round: HttpRequest = serde_json::from_slice(&frame.payload).unwrap();
+    assert!(round == reload);
+    for mode in 0..8 {
+        let mut bad = reload.clone();
+        let HttpRequest::Reload { previous, begin } = &mut bad else {
+            panic!("reload")
+        };
+        match mode {
+            0 => previous.serial = 0,
+            1 => begin.id.epoch += 1,
+            2 => begin.id.surface_id += 1,
+            3 => begin.id.binding += 1,
+            4 => begin.source_generation += 1,
+            5 => begin.id.document = old.request.document,
+            6 => begin.id.request = old.request.request,
+            7 => begin.logical_url = "x".repeat(URL_BYTES + 1),
+            _ => unreachable!(),
+        }
+        assert!(bad.validate().is_err(), "mode={mode}");
+    }
+}

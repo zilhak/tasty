@@ -1,5 +1,6 @@
 //! Native request owners meet the ordered model only at the real engine-driven Begin send.
 mod drive;
+mod reload;
 mod wait;
 use crate::{
     connection::ConnectionSender,
@@ -8,6 +9,7 @@ use crate::{
     html_http_native::NativeRequest,
     html_http_session::{CapturedDocument, HttpAction},
 };
+pub use reload::ReloadAuthority;
 use std::sync::{
     Arc, Mutex,
     atomic::{AtomicBool, Ordering},
@@ -17,6 +19,7 @@ use tasty_ipc::{
     html_transfer::TransferId,
 };
 pub use wait::{NativeResponse, NativeWait};
+#[derive(Clone)]
 pub struct BridgeScope {
     pub epoch: u64,
     pub surface_id: u32,
@@ -49,6 +52,8 @@ struct Inner {
 }
 pub struct HttpBridge {
     config: BridgeConfig,
+    reload: Option<ReloadAuthority>,
+    reload_reserved: Arc<AtomicBool>,
     sender: Arc<ConnectionSender>,
     source: Current,
     wake: Arc<dyn Fn() + Send + Sync>,
@@ -100,6 +105,8 @@ impl HttpBridge {
         }
         Ok(Arc::new(Self {
             config,
+            reload: None,
+            reload_reserved: Arc::new(AtomicBool::new(false)),
             sender,
             source: current,
             wake,
@@ -118,6 +125,7 @@ impl HttpBridge {
             && self.live.load(Ordering::Acquire)
             && self.sender.epoch().is_active()
             && (self.source)()
+            && self.reload.as_ref().is_none_or(ReloadAuthority::valid)
     }
     fn lock(&self) -> Result<std::sync::MutexGuard<'_, Inner>, BridgeError> {
         self.inner.lock().map_err(|_| {
@@ -182,9 +190,31 @@ impl HttpBridge {
         self.lock().ok()?.document.clone()
     }
     pub fn receive(&self, reply: HttpReply) -> bool {
-        let accepted = self
-            .document()
+        let document = self.document();
+        let first = document.as_ref().is_some_and(|d| d.entry() == reply.id());
+        let ready = matches!(&reply, HttpReply::UploadReady { .. });
+        let accepted = document
+            .as_ref()
             .is_some_and(|document| document.receive(reply));
+        if accepted
+            && first
+            && let Some(reload) = &self.reload
+        {
+            let state = document.and_then(|d| d.with_current(|m| m.state(d.entry())).flatten());
+            if ready && state == Some(crate::html_http_client::ReceiveState::Uploading) {
+                reload.consumed();
+            }
+            if matches!(
+                state,
+                Some(
+                    crate::html_http_client::ReceiveState::Failed
+                        | crate::html_http_client::ReceiveState::Cancelled
+                        | crate::html_http_client::ReceiveState::Released
+                )
+            ) {
+                reload.abandon();
+            }
+        }
         if accepted {
             (self.wake)();
         }
@@ -234,6 +264,9 @@ impl HttpBridge {
         if self.closing.swap(true, Ordering::AcqRel) {
             return;
         }
+        self.retire_contents(true);
+    }
+    fn retire_contents(&self, publish_close: bool) {
         let retired = self.lock().ok().map(|mut inner| {
             (
                 inner.document.take(),
@@ -243,7 +276,7 @@ impl HttpBridge {
         });
         if let Some((document, slots, jobs)) = retired {
             if let Some(document) = document {
-                if let Err(error) = document.close_and_send(&self.sender) {
+                if publish_close && let Err(error) = document.close_and_send(&self.sender) {
                     tracing::debug!(?error, "native HTTP bridge close not enqueued");
                 }
                 document.retire();
@@ -255,6 +288,9 @@ impl HttpBridge {
             drop(jobs);
         } else {
             self.live.store(false, Ordering::Release);
+        }
+        if let Some(reload) = &self.reload {
+            reload.abandon();
         }
         (self.wake)();
     }
@@ -279,3 +315,6 @@ mod tests;
 
 #[cfg(test)]
 mod boundary_tests;
+
+#[cfg(test)]
+mod reload_tests;

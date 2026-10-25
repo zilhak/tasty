@@ -117,6 +117,44 @@ impl Authority {
             allow_remote_content: *allow_remote_content,
         })
     }
+    pub(super) fn successor(
+        &self,
+        engine: &EngineRef<'_>,
+        hub: &StreamHub,
+        client: u32,
+        request: &HttpRequest,
+    ) -> core::Result<Self> {
+        let HttpRequest::Begin {
+            id,
+            logical_url,
+            allow_remote_content,
+            ..
+        } = request
+        else {
+            return Err(core::Error::Stale);
+        };
+        let old = self.entry;
+        if !self.current(engine, hub, client)
+            || (id.epoch, id.surface_id, id.binding) != (old.epoch, old.surface_id, old.binding)
+            || id.document <= old.document
+            || *allow_remote_content != self.allow_remote_content
+        {
+            return Err(core::Error::Stale);
+        }
+        // Re-capture the real original source/grant; the host has separately proven this URL
+        // against the predecessor's completed request before entering this narrow path.
+        let mut original = request.clone();
+        if let HttpRequest::Begin { logical_url, .. } = &mut original {
+            *logical_url = self.url.clone();
+        }
+        let mut captured = Self::capture(engine, hub, client, &original)?;
+        captured.entry_url = logical_url.clone();
+        captured.secure = reqwest::Url::parse(logical_url)
+            .map_err(|_| core::Error::Stale)?
+            .scheme()
+            == "https";
+        Ok(captured)
+    }
     pub(super) fn current(&self, engine: &EngineRef<'_>, hub: &StreamHub, client: u32) -> bool {
         if !(self.publication)()
             || !hub.html_http_enabled(client, self.secure)
