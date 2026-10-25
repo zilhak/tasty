@@ -140,6 +140,9 @@ impl ProfileWork {
         if !needs_claim {
             return;
         }
+        self.await_claim(&shared);
+    }
+    fn await_claim(&self, shared: &Arc<Shared>) {
         let Ok(mut state) = shared.state.lock() else {
             tracing::error!("private profile claim state poisoned; ownership retained");
             return;
@@ -149,7 +152,7 @@ impl ProfileWork {
             if matches!(*state, State::Taken) {
                 return;
             }
-            if Arc::strong_count(&shared) == 1 || !shared.active() || Instant::now() >= deadline {
+            if Arc::strong_count(shared) == 1 || !shared.active() || Instant::now() >= deadline {
                 let expired = Instant::now() >= deadline;
                 let next = if expired {
                     State::Ready(Err(PrepareError::Timeout))

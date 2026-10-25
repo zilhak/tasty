@@ -182,6 +182,14 @@ fn candidate(namespace: &Namespace, name: &OsStr) -> Result<Outcome, ProfileErro
             return Ok(Outcome::Uncertain);
         }
     };
+    reclaim_classified(namespace, name, dir, record)
+}
+fn reclaim_classified(
+    namespace: &Namespace,
+    name: &OsStr,
+    dir: Dir,
+    record: Record,
+) -> Result<Outcome, ProfileError> {
     match record.owner.state() {
         Ok(OwnerState::Live) => return Ok(Outcome::Live),
         Ok(OwnerState::Uncertain) => return Ok(Outcome::Uncertain),
@@ -211,6 +219,14 @@ fn candidate(namespace: &Namespace, name: &OsStr) -> Result<Outcome, ProfileErro
             return Ok(Outcome::Uncertain);
         }
     }
+    dispose_rechecked(namespace, name, record, objects)
+}
+fn dispose_rechecked(
+    namespace: &Namespace,
+    name: &OsStr,
+    record: Record,
+    objects: HashSet<(u64, u64)>,
+) -> Result<Outcome, ProfileError> {
     if !matches!(record.owner.state()?, OwnerState::Dead) {
         return Ok(Outcome::Uncertain);
     }

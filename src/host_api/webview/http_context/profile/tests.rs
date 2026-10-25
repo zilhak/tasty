@@ -250,7 +250,7 @@ fn malformed_foreign_record_inode_start_boot_and_record_symlink_are_retained() {
                 std::os::unix::fs::symlink(saved, &path).unwrap();
             }
         }
-        let r = reclaim_dead(parent.path(), 1).unwrap();
+        let r = reclaim_positive(parent.path(), 1);
         assert_eq!(
             (r.inspected, r.removed, r.kept_live, r.kept_uncertain),
             (1, 0, 0, 1)
@@ -457,8 +457,11 @@ fn actual_child_identity_live_retention_and_open_fd_consumer_are_observed() {
     tree.observations(&mut objects);
     drop(tree);
     fd_and_mapping_consumers(&child.root, &objects, file);
-    let audit = process::consumers(&child.root, &objects);
-    let r = reclaim_dead(parent.path(), 1).unwrap();
+    public_dead_sweep(&child.root, parent.path(), &objects);
+}
+fn public_dead_sweep(root: &Path, parent: &Path, objects: &std::collections::HashSet<(u64, u64)>) {
+    let audit = process::consumers(root, objects);
+    let r = reclaim_dead(parent, 1).unwrap();
     assert_eq!(r.inspected, 1);
     assert_eq!(r.kept_live, 0);
     assert_eq!(r.failed, 0);
@@ -538,4 +541,20 @@ fn deletion_error_retains_ownership_record_for_remaining_root() {
     );
     disk::remove_file(root.join("late-owned-file")).unwrap();
     p.discard_unpublished().unwrap();
+}
+
+// A root test's short-lived fork can inherit an unrelated namespace lock description.
+// The fixture is one tiny known tree: only bounded positive lock admission is retried;
+// capacity/refusal controls continue to call the nonblocking production API directly.
+fn reclaim_positive(parent: &Path, max: usize) -> CleanupReport {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    loop {
+        match reclaim_dead(parent, max) {
+            Ok(report) => return report,
+            Err(ProfileError::Capacity) if std::time::Instant::now() < deadline => {
+                std::thread::sleep(std::time::Duration::from_millis(2))
+            }
+            Err(error) => panic!("positive private profile sweep: {error}"),
+        }
+    }
 }

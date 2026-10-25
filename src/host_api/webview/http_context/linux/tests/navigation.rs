@@ -13,13 +13,7 @@ pub(super) fn run(case: &str) {
     let live = Arc::new(AtomicBool::new(true));
     let store = data_store();
     if case == "history" {
-        for n in 0..allowance::LIMIT - 1 {
-            let mut leaf = [0; 32];
-            leaf[..8].copy_from_slice(&(n as u64).to_le_bytes());
-            let mut permit = allowance::History::reserve(&store.0.history, leaf)
-                .unwrap_or_else(|e| panic!("{e:?}"));
-            permit.commit();
-        }
+        fill_history(&store);
     }
     let view = prepared(&store, &live);
     let window = window(&view);
@@ -106,27 +100,7 @@ fn bound(view: &PreparedView) {
 }
 
 fn fresh_pin(store: &DataStore, case: &str) {
-    let result = Rc::new(RefCell::new(None));
-    let out = result.clone();
-    let root = std::path::PathBuf::from(std::env::var("DE_FIXTURE_ROOT").unwrap());
-    std::fs::write(root.join("retire-endpoint"), b"retire").unwrap();
-    wait(|| root.join("next-proxy").exists());
-    let mut cfg = config(Arc::new(AtomicBool::new(true)));
-    cfg.proxy_uri = std::fs::read_to_string(root.join("next-proxy")).unwrap();
-    let expected = std::fs::read_to_string(root.join("next-expected")).unwrap();
-    let expected: [u8; 32] = (0..32)
-        .map(|i| u8::from_str_radix(&expected[i * 2..i * 2 + 2], 16).unwrap())
-        .collect::<Vec<_>>()
-        .try_into()
-        .unwrap();
-    cfg.expected_leaf = Arc::new(move |_, _| Some(expected));
-    store.prepare(cfg, Box::new(move |r| *out.borrow_mut() = Some(r)));
-    wait(|| result.borrow().is_some());
-    let next = result
-        .borrow_mut()
-        .take()
-        .unwrap()
-        .unwrap_or_else(|e| panic!("prepare: {e:?}"));
+    let next = prepare_fresh(store);
     if let Some(settings) = WebViewExt::settings(next.webview()) {
         WebSettingsExt::set_enable_page_cache(&settings, false);
     }
@@ -144,31 +118,8 @@ fn fresh_pin(store: &DataStore, case: &str) {
         wait(|| next.0.failure.get().is_some());
     }
     tracing::info!("FRESH_TLS_OBS flags={:?}", next.0.observations.borrow());
-    if case == "fresh_changed_valid" {
-        assert_eq!(next.0.sequence.get(), 1);
-        assert_eq!(&*next.0.held_methods.borrow(), &["POST"]);
-        assert_eq!(
-            &*next.0.observations.borrow(),
-            &[gio::TlsCertificateFlags::UNKNOWN_CA.bits()]
-        );
-        assert_eq!(store.0.history.borrow().used(), 2);
-    } else {
-        // The manager has already allowed this expected leaf. Refuse it before
-        // probing, even when the endpoint now presents a different certificate.
-        assert_eq!(next.0.failure.get(), Some(ContextError::Tls));
-        assert_eq!(next.0.sequence.get(), 0);
-        assert!(next.0.observations.borrow().is_empty());
-        assert!(next.0.held_methods.borrow().is_empty());
-        assert!(next.0.trusted.borrow().is_empty());
-        assert_eq!(store.0.history.borrow().used(), 1);
-    }
-    tracing::info!(
-        "FRESH_POLICY sequence={} trusted={} history={} failure={:?}",
-        next.0.sequence.get(),
-        next.0.trusted.borrow().len(),
-        store.0.history.borrow().used(),
-        next.0.failure.get()
-    );
+    verify_fresh(store, &next, case);
+    log_fresh_policy(store, &next);
     next.close();
     destroy(&window);
 }
@@ -216,4 +167,69 @@ fn successful(case: &str, store: &DataStore, view: &PreparedView) {
         assert_eq!(view.0.sequence.get(), 1);
         assert_eq!(store.0.history.borrow().used(), allowance::LIMIT);
     }
+}
+
+fn fill_history(store: &DataStore) {
+    for n in 0..allowance::LIMIT - 1 {
+        let mut leaf = [0; 32];
+        leaf[..8].copy_from_slice(&(n as u64).to_le_bytes());
+        let mut permit =
+            allowance::History::reserve(&store.0.history, leaf).unwrap_or_else(|e| panic!("{e:?}"));
+        permit.commit();
+    }
+}
+
+fn prepare_fresh(store: &DataStore) -> PreparedView {
+    let result = Rc::new(RefCell::new(None));
+    let out = result.clone();
+    let root = std::path::PathBuf::from(std::env::var("DE_FIXTURE_ROOT").unwrap());
+    std::fs::write(root.join("retire-endpoint"), b"retire").unwrap();
+    wait(|| root.join("next-proxy").exists());
+    let mut cfg = config(Arc::new(AtomicBool::new(true)));
+    cfg.proxy_uri = std::fs::read_to_string(root.join("next-proxy")).unwrap();
+    let expected = std::fs::read_to_string(root.join("next-expected")).unwrap();
+    let expected: [u8; 32] = (0..32)
+        .map(|i| u8::from_str_radix(&expected[i * 2..i * 2 + 2], 16).unwrap())
+        .collect::<Vec<_>>()
+        .try_into()
+        .unwrap();
+    cfg.expected_leaf = Arc::new(move |_, _| Some(expected));
+    store.prepare(cfg, Box::new(move |r| *out.borrow_mut() = Some(r)));
+    wait(|| result.borrow().is_some());
+    result
+        .borrow_mut()
+        .take()
+        .unwrap()
+        .unwrap_or_else(|e| panic!("prepare: {e:?}"))
+}
+
+fn verify_fresh(store: &DataStore, next: &PreparedView, case: &str) {
+    if case == "fresh_changed_valid" {
+        assert_eq!(next.0.sequence.get(), 1);
+        assert_eq!(&*next.0.held_methods.borrow(), &["POST"]);
+        assert_eq!(
+            &*next.0.observations.borrow(),
+            &[gio::TlsCertificateFlags::UNKNOWN_CA.bits()]
+        );
+        assert_eq!(store.0.history.borrow().used(), 2);
+    } else {
+        // The manager has already allowed this expected leaf. Refuse it before
+        // probing, even when the endpoint now presents a different certificate.
+        assert_eq!(next.0.failure.get(), Some(ContextError::Tls));
+        assert_eq!(next.0.sequence.get(), 0);
+        assert!(next.0.observations.borrow().is_empty());
+        assert!(next.0.held_methods.borrow().is_empty());
+        assert!(next.0.trusted.borrow().is_empty());
+        assert_eq!(store.0.history.borrow().used(), 1);
+    }
+}
+
+fn log_fresh_policy(store: &DataStore, next: &PreparedView) {
+    tracing::info!(
+        "FRESH_POLICY sequence={} trusted={} history={} failure={:?}",
+        next.0.sequence.get(),
+        next.0.trusted.borrow().len(),
+        store.0.history.borrow().used(),
+        next.0.failure.get()
+    );
 }
