@@ -1,10 +1,15 @@
 //! Joined, bounded observer ownership for the native diagnostic; no native API substitutes.
+#[path = "sentinel_io.rs"]
+mod sentinel_io;
+#[cfg(test)]
+#[path = "sentinel_stop_tests.rs"]
+mod stop_tests;
 #[cfg(test)]
 #[path = "sentinel_tests.rs"]
 mod tests;
+use sentinel_io::{Drain, POLL_WAIT, read, read_exact, write_all};
 use std::{
-    fmt,
-    io::{self, Read, Write},
+    fmt, io,
     net::{TcpListener, TcpStream},
     sync::{
         Arc, Mutex,
@@ -51,6 +56,7 @@ pub(super) struct Peers {
     threads: Vec<JoinHandle<Result<(), String>>>,
     observed: Arc<Mutex<Observed>>,
     record: Record,
+    drain: Arc<Drain>,
 }
 impl Peers {
     pub(super) fn start(
@@ -65,19 +71,24 @@ impl Peers {
             threads: Vec::new(),
             observed: Arc::new(Mutex::new(Observed::default())),
             record,
+            drain: Arc::new(Drain::new()),
         };
         for (listener, is_socks) in [(socks, true), (target, false)] {
             let stop = peers.stop.clone();
             let observed = peers.observed.clone();
+            let drain = peers.drain.clone();
             peers.threads.push(std::thread::spawn(move || {
-                observe(listener, is_socks, stop, observed, record)
+                observe(listener, is_socks, stop, observed, record, drain)
             }));
         }
         Ok(peers)
     }
-    fn stop_and_join(&mut self) -> Result<(), String> {
-        self.stop.store(true, Ordering::Release);
+    fn stop_and_join(&mut self, cleanup: bool) -> Result<(), String> {
         let mut errors = Vec::new();
+        if let Err(error) = self.drain.stop(cleanup) {
+            errors.push(error.to_string());
+        }
+        self.stop.store(true, Ordering::Release);
         // Never return early: a failed observer cannot leave its sibling running.
         for thread in self.threads.drain(..) {
             match thread.join() {
@@ -94,7 +105,7 @@ impl Peers {
     }
     /// Consume the owner, so no successful receipt can precede observer termination.
     pub(super) fn finish(mut self) -> Result<(), String> {
-        self.stop_and_join()?;
+        self.stop_and_join(false)?;
         self.observed
             .lock()
             .map_err(|_| "sentinel poisoned")?
@@ -105,7 +116,7 @@ impl Peers {
 }
 impl Drop for Peers {
     fn drop(&mut self) {
-        if let Err(error) = self.stop_and_join() {
+        if let Err(error) = self.stop_and_join(true) {
             (self.record)(format_args!("SENTINEL_CLEANUP_FAILED {error}"));
         }
     }
@@ -117,85 +128,90 @@ fn observe(
     stop: Arc<AtomicBool>,
     observed: Arc<Mutex<Observed>>,
     record: Record,
+    drain: Arc<Drain>,
 ) -> Result<(), String> {
-    let deadline = Instant::now() + Duration::from_secs(65);
     loop {
-        // Accept once even after stop, so an already queued direct connection is recorded.
-        match listener.accept() {
+        if drain.cleanup() {
+            record(format_args!("EXPECTED_FAILURE_CLEANUP_STOP"));
+            return Ok(());
+        }
+        drain.check(None).map_err(|e| e.to_string())?;
+        // Reserve before accept: two observers cannot exceed the shared accept bound.
+        drain.connection().map_err(|e| e.to_string())?;
+        let accepted = listener.accept();
+        if accepted.is_err() {
+            drain.unused_connection();
+        }
+        match accepted {
             Ok((mut socket, _)) => {
                 if socks {
-                    greeting(&mut socket, &stop, &observed, record)?;
+                    if let Err(error) = greeting(&mut socket, &drain, &observed, record) {
+                        if drain.cleanup() {
+                            record(format_args!("EXPECTED_FAILURE_CLEANUP_IO {error}"));
+                            return Ok(());
+                        }
+                        return Err(error);
+                    }
                 } else {
                     observed.lock().map_err(|_| "sentinel poisoned")?.direct = true;
                     record(format_args!("DIRECT_TARGET_CONNECTION"));
                 }
-                if stop.load(Ordering::Acquire) {
-                    return Ok(());
-                }
+                // Successful finalization drains until WouldBlock, never just one socket.
             }
             Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
                 if stop.load(Ordering::Acquire) {
-                    record(format_args!("EXPECTED_IDLE_LISTENER_SHUTDOWN"));
+                    record(format_args!("FINAL_DRAIN_QUEUE_EMPTY"));
                     return Ok(());
                 }
-                std::thread::sleep(Duration::from_millis(5));
+                std::thread::sleep(POLL_WAIT);
             }
-            // An interrupted nonblocking accept is retried within the same finite deadline.
             Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
             Err(error) => return Err(format!("sentinel accept failed: {error}")),
-        }
-        if Instant::now() >= deadline {
-            return Err("sentinel observer deadline elapsed".into());
         }
     }
 }
 
 fn greeting(
     socket: &mut TcpStream,
-    stop: &AtomicBool,
+    drain: &Drain,
     observed: &Mutex<Observed>,
     record: Record,
 ) -> Result<(), String> {
+    let deadline = Instant::now() + IO_WAIT;
     socket
-        .set_nonblocking(false)
-        .map_err(|e| format!("sentinel blocking socket: {e}"))?;
-    socket
-        .set_read_timeout(Some(IO_WAIT))
-        .map_err(|e| format!("sentinel read timeout: {e}"))?;
-    socket
-        .set_write_timeout(Some(IO_WAIT))
-        .map_err(|e| format!("sentinel write timeout: {e}"))?;
+        .set_nonblocking(true)
+        .map_err(|e| format!("sentinel nonblocking socket: {e}"))?;
     let mut head = [0; 2];
-    if let Err(error) = socket.read_exact(&mut head) {
-        return shutdown_or_error(error, stop, record, "SOCKS header");
-    }
+    read_exact(socket, &mut head, deadline, drain)
+        .map_err(|e| format!("sentinel SOCKS header: {e}"))?;
     let mut methods = vec![0; head[1] as usize];
-    if let Err(error) = socket.read_exact(&mut methods) {
-        return shutdown_or_error(error, stop, record, "SOCKS methods");
-    }
+    read_exact(socket, &mut methods, deadline, drain)
+        .map_err(|e| format!("sentinel SOCKS methods: {e}"))?;
     record(format_args!(
         "SOCKS_GREETING version={} methods={methods:?}",
         head[0]
     ));
+    let valid = head[0] == 5 && methods == [0];
     observed
         .lock()
         .map_err(|_| "sentinel poisoned")?
         .greeting(head[0], methods);
-    if let Err(error) = socket.write_all(&[5, 2]) {
-        return shutdown_or_error(error, stop, record, "SOCKS rejection");
-    }
+    write_all(socket, &[5, 2], deadline, drain)
+        .map_err(|e| format!("sentinel SOCKS rejection: {e}"))?;
     let mut auth = [0; 2];
-    match socket.read(&mut auth) {
-        // Selecting a method absent from the greeting must make the client close/refuse.
-        Ok(0) => {
+    match read(socket, &mut auth, deadline, drain) {
+        // Only a complete valid greeting can establish expected unsupported-method refusal.
+        Ok(0) if valid => {
             record(format_args!("EXPECTED_AUTH_REJECTION_CLOSED"));
             Ok(())
         }
+        Ok(0) => Err("native SOCKS method set changed; re-evaluate compatibility".into()),
         Err(error)
-            if matches!(
-                error.kind(),
-                io::ErrorKind::ConnectionReset | io::ErrorKind::ConnectionAborted
-            ) =>
+            if valid
+                && matches!(
+                    error.kind(),
+                    io::ErrorKind::ConnectionReset | io::ErrorKind::ConnectionAborted
+                ) =>
         {
             record(format_args!(
                 "EXPECTED_AUTH_REJECTION_RESET {:?}",
@@ -204,32 +220,6 @@ fn greeting(
             Ok(())
         }
         Ok(_) => Err("native replied to unsupported SOCKS authentication selection".into()),
-        Err(error) => shutdown_or_error(error, stop, record, "SOCKS auth refusal"),
-    }
-}
-
-fn shutdown_or_error(
-    error: io::Error,
-    stop: &AtomicBool,
-    record: Record,
-    stage: &str,
-) -> Result<(), String> {
-    if stop.load(Ordering::Acquire)
-        && matches!(
-            error.kind(),
-            io::ErrorKind::UnexpectedEof
-                | io::ErrorKind::ConnectionReset
-                | io::ErrorKind::ConnectionAborted
-                | io::ErrorKind::TimedOut
-                | io::ErrorKind::WouldBlock
-        )
-    {
-        record(format_args!(
-            "EXPECTED_OBSERVER_SHUTDOWN {stage}: {:?}",
-            error.kind()
-        ));
-        Ok(())
-    } else {
-        Err(format!("sentinel {stage} failed: {error}"))
+        Err(error) => Err(format!("sentinel SOCKS auth refusal: {error}")),
     }
 }

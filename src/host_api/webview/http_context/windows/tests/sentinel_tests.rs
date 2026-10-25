@@ -1,5 +1,8 @@
 use super::*;
-use std::net::Shutdown;
+use std::{
+    io::{Read, Write},
+    net::Shutdown,
+};
 fn discard(_: fmt::Arguments<'_>) {}
 fn valid() -> Peers {
     let mut observed = Observed::default();
@@ -9,6 +12,7 @@ fn valid() -> Peers {
         threads: Vec::new(),
         observed: Arc::new(Mutex::new(observed)),
         record: discard,
+        drain: Arc::new(Drain::new()),
     }
 }
 fn wait_for_stop(stop: &AtomicBool) {

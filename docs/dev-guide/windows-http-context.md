@@ -66,21 +66,39 @@ thread, in an authorized Windows environment. It creates only a hidden window,
 uses local diagnostic SOCKS/target sentinels, disables scripts and bounds each
 callback wait at20seconds. It records actual API errors; an environment failure
 is a failed native test, never a successful transport observation. Preserve its
-profile while native descendants remain uncertain. The probe signals observer stop,
-joins both owned threads, propagates observer I/O failures and panics, and only
-then validates the final bounded observations and emits CONFIRMED. Late direct
-connections or changed authentication methods therefore refuse the receipt.
-Drop stops and joins on earlier failures; it cannot create a successful receipt.
-Nonblocking accept polling and interrupted accepts are retried under a finite
-deadline. Closed/reset sockets after the deliberate unsupported-method reply are
-expected refusal; EOF/reset/timeouts during signalled shutdown are recorded with
-that reason. Other observer errors fail the receipt, even after an earlier valid
-greeting. Read and write waits are bounded at two seconds.
+profile while native descendants remain uncertain. Successful finalization signals
+stop, drains both nonblocking listener queues until each reports empty, joins both
+owned threads and propagates every observer failure or panic. Only then does it
+validate the final observations and emit CONFIRMED. This covers already queued
+connections; a connection arriving after that observer's final empty-queue check
+is outside the receipt's observation interval.
+
+The shared observer lifetime deadline is65seconds. Finalization shortens it to at
+most two seconds from the stop request for both observers and all queued sockets
+together. Each accepted greeting also has its own two-second absolute deadline.
+Nonblocking reads/writes check the earlier deadline on every progress or retry;
+partial bytes never restart a timeout. Polling retries request a5-millisecond
+sleep and recheck the deadline after waking.
+These bound socket work, not OS thread scheduling, logging or waiting for a
+scheduled thread to join; no hard real-time wall-clock join guarantee is claimed.
+At most16 connections are accepted and at most4096 SOCKS bytes are read/written
+across the owner. Exhausting either budget or any deadline fails the receipt;
+the eight-greeting retention cap and overflow refusal remain unchanged.
+
+A successful receipt requires complete greetings. Header/method EOF, reset,
+timeout, changed methods or unexpected authentication bytes remain errors even
+after successful stop. Only a closed/reset peer after a complete valid greeting
+and the deliberately unsupported-method reply establishes expected refusal.
+Earlier native errors instead use failure-only Drop cleanup: it cancels queued
+and partial socket work, joins every observer and records the cleanup reason.
+That path cannot emit CONFIRMED or promote an earlier error into success.
 
 The actual observer/receipt module is portable and source-linked by its regression
 fixture. Controls exercise late observations, joined panic and error propagation,
 error-path cleanup, actual loopback greetings, empty/direct/method/overflow refusal
-and truncated-method I/O. These are observer correctness tests, not WebView2,
+and truncated-method I/O, multiple queued greetings, incomplete accepted sockets,
+shared byte/connection budget exhaustion and absolute finalization deadlines.
+These are observer correctness tests, not WebView2,
 certificate, HTTP or whole-App acceptance. Preserve the failed native controller
 case separately; passing portable receipts does not turn it into a feature PASS.
 
