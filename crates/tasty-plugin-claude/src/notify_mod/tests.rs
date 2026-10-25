@@ -116,3 +116,43 @@ fn unowned_existing_directory_is_never_overwritten_or_removed() {
     );
     assert_eq!(root, json!({}));
 }
+
+#[cfg(unix)]
+#[test]
+fn settings_parent_alias_has_one_canonical_identity_and_preserves_user_values() {
+    let temp = tempfile::tempdir().unwrap();
+    let canonical = temp.path().canonicalize().unwrap();
+    let alias = canonical.join("alias");
+    let real = canonical.join("real");
+    std::fs::create_dir(&real).unwrap();
+    std::os::unix::fs::symlink(&real, &alias).unwrap();
+    let settings = alias.join("settings.json");
+    let mut root = json!({"env":{"KEEP":"user"},"hooks":{"Stop":[{"command":"user"}]}});
+    let original = root.clone();
+    assert!(install(&mut root, &settings).unwrap());
+    assert_eq!(
+        directory(&settings).unwrap(),
+        directory(&real.join("settings.json")).unwrap()
+    );
+    assert!(!install(&mut root, &real.join("settings.json")).unwrap());
+    assert!(uninstall(&mut root, &real.join("settings.json")).unwrap());
+    assert_eq!(root, original);
+}
+
+#[cfg(unix)]
+#[test]
+fn aliased_parent_does_not_authorize_a_linked_managed_subtree() {
+    let temp = tempfile::tempdir().unwrap();
+    let canonical = temp.path().canonicalize().unwrap();
+    let real = canonical.join("real");
+    let outside = canonical.join("outside");
+    std::fs::create_dir(&real).unwrap();
+    std::fs::create_dir(&outside).unwrap();
+    std::os::unix::fs::symlink(&outside, real.join("tasty-managed")).unwrap();
+    let alias = canonical.join("alias");
+    std::os::unix::fs::symlink(&real, &alias).unwrap();
+    let mut root = json!({});
+    assert!(install(&mut root, &alias.join("settings.json")).is_err());
+    assert!(uninstall(&mut root, &alias.join("settings.json")).is_err());
+    assert_eq!(std::fs::read_dir(outside).unwrap().count(), 0);
+}

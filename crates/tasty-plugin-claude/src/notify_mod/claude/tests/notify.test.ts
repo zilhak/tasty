@@ -14,17 +14,25 @@ function fixture(on: On, variables: Record<string, string> = { TASTY_SURFACE_ID:
   const env: Record<string, string | undefined> = {};
   let refuse = false;
   let readDelay = 0;
+  let submitDelay = 0;
+  let mtime = 1;
+  const reads = { body: 0, live: 0, max: 0, writes: 0 };
+  on('state.set', ($, e, next) => { reads.writes++; return next(e); });
   on('env.set', ($, e) => { env[e.name] = e.value; return { value: {} }; });
   on('fs.exists', ($, e) => ({ value: e.path in files }));
-  on('fs.stat', ($, e) => ({ value: { kind: 'file', isLink: false, size: new TextEncoder().encode(files[e.path]).length, mtimeMs: 1 } }));
+  on('fs.stat', ($, e) => ({ value: { kind: 'file', isLink: false, size: new TextEncoder().encode(files[e.path]).length, mtimeMs: mtime } }));
   on('fs.read', async ($, e) => {
-    if (e.path === root && readDelay) await clock.sleep(readDelay);
+    if (e.path === root) {
+      reads.body++; reads.live++; reads.max = Math.max(reads.max, reads.live);
+      if (readDelay) await clock.sleep(readDelay);
+      reads.live--;
+    }
     return { value: e.as === 'bytes' ? { base64: btoa(Array.from(new TextEncoder().encode(files[e.path]), n => String.fromCharCode(n)).join('')) } : files[e.path]! };
   });
-  on('prompt.submit', ($, e) => { if (refuse) return { drop: 'test refusal' }; prompts.push(e.text); origins.push(e.origin); return { text: e.text, origin: e.origin }; });
+  on('prompt.submit', async ($, e) => { if (refuse) return { drop: 'test refusal' }; prompts.push(e.text); origins.push(e.origin); if (submitDelay) await clock.sleep(submitDelay); return { text: e.text, origin: e.origin }; });
   on('session.start', ($, e) => ({ cwd: e.cwd }));
   on('session.end', ($, e) => ({ sessionId: e.sessionId }));
-  return { clock, files, prompts, origins, env, variables, delay: (value: number) => { readDelay = value; }, refuse: (value: boolean) => { refuse = value; } };
+  return { clock, files, prompts, origins, env, variables, reads, touch: () => { mtime++; }, submitDelay: (value: number) => { submitDelay = value; }, delay: (value: number) => { readDelay = value; }, refuse: (value: boolean) => { refuse = value; } };
 }
 const start = ($: Engine) => $.session.start({ cwd: '/owned', surface: null, isInteractive: false });
 
@@ -140,4 +148,39 @@ test('visible heading has three translations and an English fallback', () => {
   expect(heading('ko')).toContain('성공의 증거가 아닙니다');
   expect(heading('ja')).toContain('成功の証拠ではありません');
   expect(heading('unknown')).toBe(heading('en'));
+});
+
+
+test('fully consumed unchanged snapshots suppress body reads but changed stat and meta are observed', async ($, on) => {
+  const f = fixture(on); await start($);
+  await f.clock.advance(1500); expect(f.reads.body).toBe(1); expect(f.reads.writes).toBe(1);
+  f.touch(); await f.clock.advance(500); expect(f.reads.body).toBe(2);
+  expect(f.prompts.length).toBe(0); expect(f.reads.writes).toBe(1);
+  f.files[root] = 'new\n'; f.touch(); await f.clock.advance(500);
+  expect(f.prompts.length).toBe(1); expect(f.prompts[0]).toContain('new\n');
+  await f.clock.advance(1000); expect(f.reads.body).toBe(3);
+  f.files[`${root}.meta`] = 'retention_start=4\n';
+  await f.clock.advance(500); expect(f.reads.body).toBe(4);
+  expect(f.prompts.length).toBe(2);
+});
+
+test('incomplete and refused snapshots are retried without overlapping body reads', async ($, on) => {
+  const f = fixture(on); await start($);
+  f.files[root] += 'partial'; await f.clock.advance(1000);
+  expect(f.reads.body).toBe(3);
+  f.files[root] += '\n'; f.refuse(true); await f.clock.advance(1000);
+  expect(f.reads.body).toBe(5); expect(f.prompts.length).toBe(0);
+  f.refuse(false); f.delay(1000); await f.clock.advance(1500);
+  expect(f.prompts.length).toBe(1); expect(f.reads.max).toBe(1);
+  await f.clock.advance(1500); expect(f.reads.body).toBe(6);
+});
+
+test('repeated start while an accepted submit awaits its result preserves one checkpoint owner', async ($, on) => {
+  const f = fixture(on); await start($);
+  f.submitDelay(1500); f.files[root] += 'accepted\n';
+  await f.clock.advance(500); expect(f.prompts.length).toBe(1);
+  await start($); await f.clock.advance(2500);
+  expect(f.prompts.length).toBe(1);
+  f.submitDelay(0); f.files[root] += 'later\n'; await f.clock.advance(500);
+  expect(f.prompts.length).toBe(2); expect(f.prompts[1]).toContain('later\n');
 });

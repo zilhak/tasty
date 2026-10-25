@@ -33,11 +33,22 @@ const ASSETS: &[(&str, &str)] = &[
 ];
 
 pub(crate) fn directory(settings: &Path) -> Result<PathBuf> {
-    Ok(settings
-        .parent()
-        .context("notify_mod.settings_parent")?
-        .join("tasty-managed")
-        .join("notify-mod"))
+    let mut anchor = settings.parent().context("notify_mod.settings_parent")?;
+    let mut missing = Vec::new();
+    let mut canonical = loop {
+        match std::fs::canonicalize(anchor) {
+            Ok(path) => break path,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                missing.push(anchor.file_name().context("notify_mod.settings_parent")?);
+                anchor = anchor.parent().context("notify_mod.settings_parent")?;
+            }
+            Err(e) => return Err(e.into()),
+        }
+    };
+    for component in missing.into_iter().rev() {
+        canonical.push(component);
+    }
+    Ok(canonical.join("tasty-managed").join("notify-mod"))
 }
 
 fn separator() -> char {
@@ -46,7 +57,9 @@ fn separator() -> char {
 
 /// Validate before touching files. Never coerce a user's non-string value.
 pub(crate) fn configure(root: &mut Value, dir: &Path, sep: char, install: bool) -> Result<bool> {
-    let path = dir.to_str().context("notify_mod.non_utf8_path")?;
+    let path =
+        tasty_utils::path::strip_verbatim_prefix(dir.to_str().context("notify_mod.non_utf8_path")?);
+    let path = path.as_str();
     if path.contains(sep) {
         bail!("notify_mod.path_separator");
     }
@@ -90,9 +103,12 @@ pub(crate) fn configure(root: &mut Value, dir: &Path, sep: char, install: bool) 
     Ok(true)
 }
 
-/// Refuse symlink traversal, including parents. Unknown files are never removed.
-fn check_path(path: &Path) -> Result<()> {
-    for ancestor in path.ancestors() {
+/// Refuse links below the canonical settings-parent boundary. Unknown files are never removed.
+fn check_path(path: &Path, boundary: &Path) -> Result<()> {
+    for ancestor in path
+        .ancestors()
+        .take_while(|ancestor| *ancestor != boundary)
+    {
         match std::fs::symlink_metadata(ancestor) {
             Ok(meta) if meta.file_type().is_symlink() => {
                 bail!("notify_mod.symlink: {}", ancestor.display())
@@ -106,7 +122,12 @@ fn check_path(path: &Path) -> Result<()> {
 }
 
 fn check_owner(dir: &Path) -> Result<()> {
-    check_path(&dir.join(".tasty-owner"))?;
+    check_path(
+        &dir.join(".tasty-owner"),
+        dir.parent()
+            .and_then(Path::parent)
+            .context("notify_mod.settings_parent")?,
+    )?;
     if dir.exists() {
         let marker = std::fs::read_to_string(dir.join(".tasty-owner"))
             .context("notify_mod.owner_missing")?;
@@ -122,9 +143,16 @@ pub(crate) fn install(root: &mut Value, settings: &Path) -> Result<bool> {
     check_owner(&dir)?;
     let mut changed = configure(root, &dir, separator(), true)?;
     // Preflight every target so a known refusal does not leave half an asset set.
-    check_path(settings)?;
+    if std::fs::symlink_metadata(settings).is_ok_and(|meta| meta.file_type().is_symlink()) {
+        bail!("notify_mod.symlink: {}", settings.display());
+    }
     for (name, _) in ASSETS {
-        check_path(&dir.join(name))?;
+        check_path(
+            &dir.join(name),
+            dir.parent()
+                .and_then(Path::parent)
+                .context("notify_mod.settings_parent")?,
+        )?;
     }
     if !dir.exists() {
         std::fs::create_dir_all(&dir)?;
@@ -150,9 +178,16 @@ pub(crate) fn uninstall(root: &mut Value, settings: &Path) -> Result<bool> {
     let dir = directory(settings)?;
     check_owner(&dir)?;
     let mut changed = configure(root, &dir, separator(), false)?;
-    check_path(settings)?;
+    if std::fs::symlink_metadata(settings).is_ok_and(|meta| meta.file_type().is_symlink()) {
+        bail!("notify_mod.symlink: {}", settings.display());
+    }
     for (name, _) in ASSETS {
-        check_path(&dir.join(name))?;
+        check_path(
+            &dir.join(name),
+            dir.parent()
+                .and_then(Path::parent)
+                .context("notify_mod.settings_parent")?,
+        )?;
     }
     for (name, _) in ASSETS {
         match std::fs::remove_file(dir.join(name)) {
