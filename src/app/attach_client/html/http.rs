@@ -15,6 +15,37 @@ fn enabled() -> bool {
         false
     }
 }
+pub(in crate::app::attach_client) fn source_changed(
+    sess: &AttachClientSession,
+    engine: &mut EngineMut<'_>,
+    remote: u32,
+) {
+    let Some(surface) = sess
+        .state
+        .remote_to_local
+        .get(&remote)
+        .and_then(|local| engine.runtime.surfaces.get_mut(local))
+        .and_then(|surface| surface.as_any_mut().downcast_mut::<RemoteSurface>())
+    else {
+        return;
+    };
+    let Some(session) = surface.http_session.take() else {
+        return;
+    };
+    // A source notification is not a native Reload continuation. Retire its receipt
+    // before fetching new metadata, and let the old native allocation be destroyed.
+    session.close();
+    if surface
+        .lock_html_mirror()
+        .is_some_and(|mut mirror| mirror.user_reload())
+    {
+        surface.with_html_script(|state| {
+            *state = tasty_model::html_script::HtmlScriptState::new(state.sandbox());
+            state.on_host_load_requested();
+            state.on_load_started();
+        });
+    }
+}
 pub(super) fn synchronize(sess: &mut AttachClientSession, engine: &mut EngineMut<'_>) -> bool {
     let settings_source =
         crate::runtime::surface_registry::webview_kind::webview_settings_source("html");

@@ -221,6 +221,8 @@ pub(super) fn apply_one_mirror_event(
             );
         }
         MirrorEvent::MarkdownChanged { surface_id } => {
+            #[cfg(all(feature = "gui", target_os = "linux"))]
+            super::super::html::http::source_changed(sess, host.engine, surface_id);
             // 이 세션이 mirror하지 않는 문서의 신호는 무시한다.
             if let Some(local) = markdown_mirror_local(sess, surface_id) {
                 push_markdown_changed(plugin_manager, local);
