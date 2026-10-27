@@ -256,10 +256,14 @@ fn page(ui: &mut egui::Ui, th: &Theme, variant: Specimen, lang: &str) {
                         }
                     });
                     if let Some(n) = pending {
-                        let note = t("settings.anomaly.range")
-                            .replacen("{}", &ranges[i].0.to_string(), 1)
-                            .replacen("{}", &ranges[i].1.to_string(), 1)
-                            .replacen("{}", &n.to_string(), 1);
+                        let note = tasty_i18n::fill_args(
+                            t("settings.anomaly.range"),
+                            &[
+                                &ranges[i].0.to_string(),
+                                &ranges[i].1.to_string(),
+                                &n.to_string(),
+                            ],
+                        );
                         tasty_ui_widgets::number_field_note(ui, th, &note);
                     }
                 });

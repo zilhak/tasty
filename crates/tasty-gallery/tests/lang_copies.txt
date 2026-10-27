@@ -620,9 +620,10 @@ src/catalog/components/settings_macos_permissions.rs	debug	settings.macos_permis
 src/catalog/components/settings_number.rs	Toast duration	settings.overlay.toast_duration
 src/catalog/components/settings_number.rs	default	file_handler.picker.default_tag
 src/catalog/components/settings_number.rs	disabled	settings.file_handler.common.disabled
-src/catalog/components/settings_number.rs	s	settings.number.unit_s
+src/catalog/components/settings_number.rs	s	settings.anomaly.call_burst_window_secs.unit,settings.anomaly.slow_loop_window_secs.unit,settings.number.unit_s
 src/catalog/components/settings_remote_transfer.rs	Browse…	preset.field.browse,settings.remote_transfer.browse,settings.scripts.browse
 src/catalog/components/settings_remote_transfer.rs	Maximum size	settings.remote_transfer.max_capacity
+src/catalog/components/settings_remote_transfer.rs	MiB	settings.anomaly.rss_surge_min_mib.unit
 src/catalog/components/settings_remote_transfer.rs	Received files	settings.remote_transfer.section
 src/catalog/components/settings_remote_transfer.rs	Save folder	settings.remote_transfer.dir
 src/catalog/components/settings_remote_transfer.rs	~/.tasty/transfers/	settings.remote_transfer.dir_placeholder

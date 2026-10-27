@@ -6,6 +6,16 @@ fn frame(
     lang: &str,
     events: Vec<egui::Event>,
 ) -> egui::FullOutput {
+    specimen_frame(ctx, th, Specimen::Narrow, lang, events)
+}
+
+fn specimen_frame(
+    ctx: &egui::Context,
+    th: &Theme,
+    variant: Specimen,
+    lang: &str,
+    events: Vec<egui::Event>,
+) -> egui::FullOutput {
     ctx.run(
         egui::RawInput {
             screen_rect: Some(egui::Rect::from_min_size(
@@ -22,7 +32,7 @@ fn frame(
                 .show(ctx, |ui| {
                     ui.set_width(288.0);
                     ui.set_max_width(288.0);
-                    page(ui, th, Specimen::Narrow, lang);
+                    page(ui, th, variant, lang);
                 });
         },
     )
@@ -113,5 +123,23 @@ fn narrow_locales_render_the_received_pending_fields_and_japanese_commits_ten() 
             );
             assert!(!committed.shapes.iter().any(|shape| matches!(&shape.shape, egui::Shape::Rect(rect) if rect.stroke.color==th.input_border_invalid().to_egui())));
         }
+    }
+
+    // 실제로 그린 범위 안내를 수령 문구와 대조해 formatter 전환에도 값과 문구가 유지되는지 확인한다.
+    for (lang, expected) in [
+        ("en", "Between 2 and 10000. Commits as 2."),
+        ("ko", "2~10000 사이의 값입니다. 2(으)로 확정됩니다."),
+        ("ja", "2〜10000 の範囲です。2 として確定します。"),
+    ] {
+        let ctx = egui::Context::default();
+        crate::fonts::install(&ctx);
+        for _ in 0..3 {
+            specimen_frame(&ctx, &th, Specimen::Invalid, lang, Vec::new());
+        }
+        let output = specimen_frame(&ctx, &th, Specimen::Invalid, lang, Vec::new());
+        assert!(
+            texts(&output).contains(&expected.into()),
+            "{lang}: range copy changed"
+        );
     }
 }
