@@ -42,7 +42,7 @@ function CommandPalette({ onClose, onRun }) {
       <div style={{ width: "var(--tasty-palette-width)", background: "var(--tasty-surface-raised)", border: "var(--tasty-border-width) solid var(--tasty-border-strong)",
         borderRadius: "var(--tasty-radius)", overflow: "hidden", boxShadow: "var(--tasty-shadow-modal)" }}>
         <div style={{ padding: "var(--tasty-space-md)", borderBottom: "var(--tasty-border-width) solid var(--tasty-separator)" }}>
-          <Input block autoFocus icon={ic.search} placeholder="Type to search commands…"
+          <Input block ground="raised" autoFocus icon={ic.search} placeholder="Type to search commands…"
             value={q} onChange={(e) => setQ(e.target.value)} />
         </div>
         <div className="tasty-scroll" style={{ padding: "var(--tasty-space-sm)", maxHeight: "calc(var(--tasty-palette-list-max-height) + 2 * var(--tasty-space-sm))", overflow: "auto" }}>

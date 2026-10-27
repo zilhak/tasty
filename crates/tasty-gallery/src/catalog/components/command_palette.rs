@@ -9,8 +9,9 @@ use crate::catalog::spec::{self, StageVariant, TokenChip};
 use crate::catalog::widgets::dialog as kit;
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
-    spec::stage(ui, theme, StageVariant::Wrap, |ui| {
-        palette_card(ui, theme, BoxEdge::NORMAL);
+    spec::stage(ui, theme, StageVariant::Column, |ui| {
+        palette_card_state(ui, theme, BoxEdge::NORMAL, false);
+        palette_card_state(ui, theme, BoxEdge::NORMAL, true);
     });
 
     spec::meta(
@@ -83,6 +84,10 @@ fn row(
 
 /// 팔레트 카드 한 장. WebView 페이지 위 예제가 불투명 가장자리로 다시 쓴다.
 pub fn palette_card(ui: &mut egui::Ui, theme: &Theme, edge: BoxEdge) {
+    palette_card_state(ui, theme, edge, false);
+}
+
+fn palette_card_state(ui: &mut egui::Ui, theme: &Theme, edge: BoxEdge, focused: bool) {
     kit::frame_card_edge(
         ui,
         theme,
@@ -91,14 +96,15 @@ pub fn palette_card(ui: &mut egui::Ui, theme: &Theme, edge: BoxEdge) {
         edge,
         |ui| {
             kit::region_sym(ui, theme.spacing_md, theme.spacing_md, |ui| {
-                kit::field(
-                    ui,
-                    theme,
-                    None,
-                    crate::i18n::t("command_palette.placeholder"),
-                    true,
-                    false,
-                );
+                let mut query = String::new();
+                tasty_ui_widgets::Input::new()
+                    .ground(tasty_ui_widgets::Ground::Raised)
+                    .placeholder(crate::i18n::t("command_palette.placeholder"))
+                    .focus_look(focused)
+                    .icon(&|ui, rect, color| {
+                        icons::SEARCH.image(rect.height(), color).paint_at(ui, rect);
+                    })
+                    .show(ui, theme, &mut query);
             });
             kit::hsep(ui, theme);
 

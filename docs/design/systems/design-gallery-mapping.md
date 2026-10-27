@@ -361,13 +361,15 @@ crate 쪽 view 가 **소유하지 않는 것**(=본체 wrapper 잔류): `egui::A
 
 | 디자인 원본 | 본체 view | 갤러리 specimen |
 |---|---|---|
-| `overlays/search_bar.jsx` (360×28) | `src/adapters/ui/search_bar.rs::draw_search_bar` | `search_bar` (Overlays) |
+| `overlays/search_bar.jsx` (CSS 셸 360×38 · Input 높이 28, 배율 1) | `src/adapters/ui/search_bar.rs::draw_search_bar` | `search_bar` (Overlays) |
 | `overlays/tools_menu.jsx` (내용 폭, `tools-menu-min-width` 160 ~ `tools-menu-max-width` 240) | `src/adapters/ui/tools_menu.rs::draw_tools_menu`(공용 `menu_item` 행) | `tools_menu` (Overlays) |
 | `overlays/command_palette.jsx` (`palette-width` 540, × UI 배율) | `src/adapters/ui/popup/command_palette.rs::draw_command_palette_view` | `command_palette` (Overlays "Command palette") |
 | `gallery/overlays-dialogs.jsx` §`convert` · kit `info_modal.jsx` `ConvertSurfacePopup` (`convert-popup-width` 240 × ui_scale) | `src/adapters/ui/popup/convert.rs::draw_convert_view`(공용 `menu_item_kbd` 행 — 끝에 단축키 키캡) | `convert` · `convert-shortcut` · `convert-narrow` (Overlays "Convert surface", `components/convert.rs::draw`·`draw_shortcut`·`draw_narrow`) |
 | `gallery/overlays-dialogs.jsx` §`filehandler` (420px · 프레임은 `gallery/overlays-shared.jsx` `FileHandlerFrame`) | `src/adapters/ui/popup/file_handler_picker.rs::draw_file_handler_picker_view` | `file_handler_picker` (Overlays "File handler picker", `components/file_handler_picker.rs::draw`) |
 | (시안 없음 — 확정 토큰 + `icons.json` `close`/`fit` 조합뿐이라 신규 시각 결정이 없었다, 근거 → [fullscreen-stage §디자인 소스](fullscreen-stage.md#디자인-소스--신규-시안-없이-만든-이유)) | `src/adapters/ui/fullscreen.rs::draw_fullscreen_stage`(셸: scrim+제목+종료 버튼) | `fullscreen-stage` (Overlays, `components/fullscreen_stage.rs::draw`) |
 | `ui_kits/terminal/overlays/info_modal.jsx` `PopupTitleBar`(fullscreen) · `gallery/overlays-dialogs.jsx` "Popup title bar" Spec | `src/adapters/ui/popup/draw.rs`(타이틀바 전체화면 버튼 — `fit` 아이콘, 24 칸) | `fullscreen-stage-titlebar` (Overlays, `components/fullscreen_stage.rs::draw_titlebar`) |
+
+팔레트와 검색 바의 입력 칸은 본체와 갤러리 모두 공용 `Input`의 `Ground::Raised`를 쓴다. 채움은 `input-raised-bg`, 휴지·호버 테두리는 `input-raised-border`, 포커스는 `border-focus` 테두리와 1px 링이다. 검색 바의 정규식 오류는 포커스 유무와 관계없이 `accent-danger` 테두리를 쓰며 포커스 시 같은 색 링을 더한다. `command_palette` 견본은 normal·focused, `search_bar` 견본은 normal·focused·invalid focused·invalid blurred를 제공하며 현재 갤러리 테마(Mocha·Latte)를 따른다. 본체 검색 바 sizer는 `input-height` 28 + 상하 `popup-content-margin` 4씩으로 할당 높이 36을 만들고, 매니저가 그 바깥에 1px 테두리를 그려 외곽 높이는 38이다(배율 1). 본문 높이는 28이며 링은 패딩 영역까지 그릴 수 있다. 기존 할당 폭 360은 유지하므로 본체의 테두리 포함 폭은 362이고 CSS 셸의 border-box 폭은 360이다. 갤러리도 Input 28과 패딩·프레임 테두리를 사용하고, 오류 견본의 `.*`는 켜짐·`ab`는 꺼짐이다. 견본 포커스 표시는 `Input::focus_look`이고 실제 입력의 포커스는 TextEdit가 관리한다.
 
 **`command_palette` 의 단축키만은 복제가 아니다.** 프레임·행·footer 는 위 표대로 mock 복제지만,
 행 우측의 키캡은 본체와 갤러리가 **같은 함수**(`tasty_ui_widgets::kbd_parts_at`)를 부른다 —

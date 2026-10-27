@@ -33,11 +33,11 @@ OS 메뉴의 찾기와 탭 스트립의 검색 버튼도 같은 규칙을 따른
 
 ### 검색 옵션 & 표시
 
-우측 토글 3종: `Aa`(대소문자, 기본 off) · `.*`(정규식, Rust `regex`, 기본 off) · `ab`(단어 단위 `\b`, literal/regex 모두). 정규식 컴파일 실패는 매치 0 과 같이 카운터 `0/0` 을 danger 색으로 표시. 매치 카운터(`3/42`), 선택 시 해당 위치로 자동 스크롤.
+우측 토글 3종: `Aa`(대소문자, 기본 off) · `.*`(정규식, Rust `regex`, 기본 off) · `ab`(단어 단위 `\b`, literal/regex 모두). 정규식 컴파일 실패는 매치 0 과 같이 카운터 `0/0` 을 danger 색으로 표시. 입력 칸은 `input-height`(배율 1에서 28px)를 그대로 쓴다. 셸 sizer는 입력 높이와 상하 `popup-content-margin` 패딩을 더해 매 프레임 할당 높이를 정한다. 배율 1에서 본문은 28px, 관리자 할당은 36px, 바깥에 그리는 1px 테두리를 포함한 외곽은 38px다. 포커스 링은 셸 패딩 안에 그리며 본문 높이로 자르지 않는다. 색은 공용 `Input`의 `Ground::Raised`로 `input-raised-bg` 채움과 `input-raised-border` 휴지·호버 테두리를 쓴다. 정상 포커스는 `border-focus` 테두리와 1px 링이다. 정규식 오류가 있으면 포커스 유무와 관계없이 `accent-danger` 테두리를 유지하고, 포커스가 있으면 같은 색 링을 더한다. 매치 카운터(`3/42`), 선택 시 해당 위치로 자동 스크롤.
 
 ### 키보드 라우팅 (headless popup, sticky 아님)
 
-검색 바는 일반 headless `PopupDef`(sticky_focus 아님) — 포커스가 터미널이면 떠 있어도 키(Escape 포함)를 가로채지 않고 PTY 로 흘린다. 라우팅 결정자는 `PopupState.focused` 플래그이고 find 단축키가 이걸 토글. 검색 바 포커스 상태의 find 는 winit 단축키 경로(overlay 게이트)에 막히므로, 검색 바 draw fn 안에서 `KeybindingSettings.find` 바인딩을 입력칸보다 먼저 egui 입력에서 소비(`consume_binding_egui`)해 감지한다(하드코딩 없음). 그 키 누름이 만든 글자도 함께 지우므로 `Alt+F` 같은 조합이 검색어에 `f` 를 넣지 않는다. popup 시스템은 [design/systems/popup](../../design/systems/popup.md).
+검색 바는 일반 headless `PopupDef`(sticky_focus 아님) — 포커스가 터미널이면 떠 있어도 키(Escape 포함)를 가로채지 않고 PTY 로 흘린다. 라우팅 결정자는 `PopupState.focused` 플래그이고 find 단축키가 이걸 토글. 검색 바 포커스 상태의 find 는 winit 단축키 경로(overlay 게이트)에 막히므로, 검색 바 draw fn은 그리기 전의 `popup_keyboard_focus` 스냅샷으로 포커스를 읽는다. 그리기 중 팝업 관리자는 별도 대여되므로, 터미널 복귀는 `PopupAction::ReleaseFocus`를 반환하고 관리자를 복원한 뒤 적용한다. 검색 바 draw fn 안에서 `KeybindingSettings.find` 바인딩을 입력칸보다 먼저 egui 입력에서 소비(`consume_binding_egui`)해 감지한다(하드코딩 없음). 그 키 누름이 만든 글자도 함께 지우므로 `Alt+F` 같은 조합이 검색어에 `f` 를 넣지 않는다. popup 시스템은 [design/systems/popup](../../design/systems/popup.md).
 
 ## 인터페이스
 

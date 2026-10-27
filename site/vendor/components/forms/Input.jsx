@@ -11,6 +11,11 @@ import React from "react";
  *   focusable, selectable and copyable; focus shows the 1px focus edge, no ring.
  * ground="raised" — the field sits on surface-raised (menu, banner, popover). The box
  *   steps down to bg-panel + border-strong in every state (2026-10-14); ink is unchanged.
+ *   Consumers on surface-raised (2026-10-27): command palette search field, terminal search bar
+ *   query field — no exception; every Input drawn on a surface-raised shell passes ground="raised".
+ * invalid — red edge in every state; focused adds the red ring (2026-10-27: focus no longer
+ *   repaints the edge blue over an invalid field).
+ * focused — paints the focused box without DOM focus. Static specimens only (gallery).
  */
 
 const CSS = `
@@ -31,9 +36,9 @@ const CSS = `
 }
 .tasty-input--block { display: flex; width: 100%; }
 .tasty-input.tasty-input--mono input { font-family: var(--tasty-font-mono); font-size: var(--tasty-font-size-caption); }
-.tasty-input:focus-within { border-color: var(--tasty-border-focus); box-shadow: 0 0 0 var(--tasty-border-width) var(--tasty-border-focus); }
+.tasty-input:focus-within, .tasty-input[data-focus="true"] { border-color: var(--tasty-border-focus); box-shadow: 0 0 0 var(--tasty-border-width) var(--tasty-border-focus); }
 .tasty-input--invalid { border-color: var(--tasty-accent-danger); }
-.tasty-input--invalid:focus-within { box-shadow: 0 0 0 var(--tasty-border-width) var(--tasty-accent-danger); }
+.tasty-input--invalid:focus-within, .tasty-input--invalid[data-focus="true"] { border-color: var(--tasty-accent-danger); box-shadow: 0 0 0 var(--tasty-border-width) var(--tasty-accent-danger); }
 .tasty-input input {
   flex: 1; min-width: 0;
   border: 0; outline: 0; padding: 0; margin: 0;
@@ -51,7 +56,8 @@ const CSS = `
 .tasty-input--raised[data-disabled="true"] { background: var(--tasty-state-disabled-fill-raised); border-color: var(--tasty-state-disabled-border-raised); }
 .tasty-input--raised[data-readonly="true"] { background: var(--tasty-input-readonly-raised-bg); border-color: var(--tasty-input-readonly-raised-border); }
 .tasty-input--raised.tasty-input--invalid { border-color: var(--tasty-accent-danger); }
-.tasty-input--raised:focus-within, .tasty-input--raised[data-readonly="true"]:focus-within { border-color: var(--tasty-border-focus); }
+.tasty-input--raised:focus-within, .tasty-input--raised[data-focus="true"], .tasty-input--raised[data-readonly="true"]:focus-within { border-color: var(--tasty-border-focus); }
+.tasty-input--raised.tasty-input--invalid:focus-within, .tasty-input--raised.tasty-input--invalid[data-focus="true"] { border-color: var(--tasty-accent-danger); }
 .tasty-input__icon { display: inline-flex; color: var(--tasty-text-muted); flex: none; }
 .tasty-input__icon svg { width: var(--tasty-icon-size-md); height: var(--tasty-icon-size-md); display: block; }
 .tasty-input__addon { color: var(--tasty-text-muted); font-family: var(--tasty-font-mono); font-size: var(--tasty-font-size-caption); flex: none; }
@@ -76,6 +82,7 @@ export function Input({
   disabled = false,
   readOnly = false,
   ground = "panel",
+  focused = false,
   className = "",
   ...rest
 }) {
@@ -89,7 +96,7 @@ export function Input({
     className,
   ].filter(Boolean).join(" ");
   return (
-    <div className={cls} data-disabled={disabled} data-readonly={!disabled && readOnly}>
+    <div className={cls} data-disabled={disabled} data-readonly={!disabled && readOnly} data-focus={(!disabled && focused) || undefined}>
       {icon && <span className="tasty-input__icon">{icon}</span>}
       <input disabled={disabled} readOnly={readOnly} {...rest} />
       {addon && <span className="tasty-input__addon">{addon}</span>}

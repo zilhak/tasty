@@ -122,16 +122,18 @@ pub(crate) fn draw_popup_layer(
         state.plugin_popup_hittest.clone();
 
     let mut dispatch_closed: Vec<&'static str> = Vec::new();
+    let mut dispatch_unfocused = Vec::new();
     let draw_result = popups.draw(
         ctx,
         &mut |id, ui| {
-            if let Some(def) = crate::adapters::ui::popup::defs::find(id)
-                && matches!(
-                    (def.draw_fn)(ui, state, engine),
-                    crate::adapters::ui::PopupAction::Close
-                )
-            {
-                dispatch_closed.push(def.id);
+            if let Some(def) = crate::adapters::ui::popup::defs::find(id) {
+                match (def.draw_fn)(ui, state, engine) {
+                    crate::adapters::ui::PopupAction::Close => dispatch_closed.push(def.id),
+                    crate::adapters::ui::PopupAction::ReleaseFocus => {
+                        dispatch_unfocused.push(def.id)
+                    }
+                    crate::adapters::ui::PopupAction::None => {}
+                }
             }
         },
         Some(draw_ctx),
@@ -149,6 +151,11 @@ pub(crate) fn draw_popup_layer(
         .extend(draw_result.overlay_targets);
 
     state.popups = popups;
+    for id in dispatch_unfocused {
+        if state.popups.is_focused(id) {
+            state.popups.set_focused(id, false);
+        }
+    }
 
     // 무대는 별도 콘텐츠이며 원본 팝업은 열린 채 아래에 남는다.
     if let Some(stage) = draw_result.fullscreen_requested {

@@ -1,4 +1,4 @@
-<!-- source-hash: 814c78380237 -->
+<!-- source-hash: ddcf2b9b2485 -->
 # Keybindings
 
 Use Tasty with shortcuts that feel familiar. Choose a preset or assign your preferred keys to actions you use often. Open **Settings** > **Keybindings** to get started.
@@ -239,7 +239,7 @@ While the settings window or the notification panel is open, `Esc` closes that o
 ## Two things that save you from memorising keybindings
 
 - **Modifier key hints** — Hold `Ctrl` · `Alt` · `Shift` and the like for 0.5 seconds or longer (Shift alone: 1.2 seconds) and a list of keybindings starting with that combination appears below the sidebar. It disappears when you let go. On Windows and Linux, `Win` and `Super` show the list only when at least one keybinding uses that key. Turn it off with **Settings** > **General** > **Accessibility** > **Show modifier key hints**; the panel can be dragged around or resized.
-- **Command palette** — `Ctrl+Shift+P` or the palette shortcut keycap on the right of the status bar. Type an action's name and run it with `Enter`. The actions in the Keybindings tab and the global commands of active plugins are searchable. Left out are the command palette itself, **Exit fullscreen stage**, **Copy link** (its target is the link under the mouse), the code field keys, and the Explorer keys for moving between items, extending the selection, opening and clearing the selection (the Explorer's rename and move to trash are included). Script keybindings don't appear in the palette either.
+- **Command palette** — `Ctrl+Shift+P` or the palette shortcut keycap on the right of the status bar. Type an action's name and run it with `Enter`. The actions in the Keybindings tab and the global commands of active plugins are searchable. Left out are the command palette itself, **Exit fullscreen stage**, **Copy link** (its target is the link under the mouse), the code field keys, and the Explorer keys for moving between items, extending the selection, opening and clearing the selection (the Explorer's rename and move to trash are included). Script keybindings don't appear in the palette either. The query field keeps a distinct background and border when unfocused, and shows a focus border while you type.
 
 ## Editing the settings file directly
 

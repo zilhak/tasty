@@ -12,7 +12,7 @@ export interface InputProps extends Omit<React.InputHTMLAttributes<HTMLInputElem
   block?: boolean;
   /** Use the monospace family (paths, IDs, regex). */
   mono?: boolean;
-  /** Error state — red border + ring. */
+  /** Error state — red border in every state; focused adds the red ring (2026-10-27). */
   invalid?: boolean;
   /** Unavailable control — neutral box + disabled ink (text-disabled), no pointer, not selectable. */
   disabled?: boolean;
@@ -21,8 +21,11 @@ export interface InputProps extends Omit<React.InputHTMLAttributes<HTMLInputElem
   readOnly?: boolean;
   /** Ground the field sits on (2026-10-14). "panel" (default) = bg-panel or lower (dialogs, panels).
    *  "raised" = surface-raised (menus, banners, popovers): box → input-raised-* / state-disabled-*-raised
-   *  (bg-panel + border-strong) in every state, so it never merges with the ground. */
+   *  (bg-panel + border-strong) in every state, so it never merges with the ground.
+   *  Command palette and terminal search bar fields are raised consumers (2026-10-27), not exceptions. */
   ground?: "panel" | "raised";
+  /** Paint the focused box without DOM focus — static gallery specimens only; live fields use real focus. */
+  focused?: boolean;
 }
 
 /**

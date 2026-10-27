@@ -12,15 +12,20 @@ pub(crate) const WIDTH: LogicalPx = LogicalPx(360.0);
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Column, |ui| {
-        bar(ui, theme, "2/3", false);
-        bar(ui, theme, "0/0", true);
+        bar_state(ui, theme, "2/3", false, false);
+        bar_state(ui, theme, "2/3", false, true);
+        bar_state(ui, theme, "0/0", true, true);
+        bar_state(ui, theme, "0/0", true, false);
     });
 
     spec::meta(
         ui,
         theme,
         &[
-            ("frame", "360px row · height 28"),
+            (
+                "frame",
+                "360px body width · 38px painted shell · 28px Input",
+            ),
             ("anchor", "focused surface top-right · sticky"),
             ("scrim", "none"),
             ("parts", "input · 2/3 counter · ▲▼ · Aa .* ab · close"),
@@ -51,6 +56,10 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
 }
 
 pub(crate) fn bar(ui: &mut egui::Ui, theme: &Theme, count: &str, no_match: bool) {
+    bar_state(ui, theme, count, no_match, false);
+}
+
+fn bar_state(ui: &mut egui::Ui, theme: &Theme, count: &str, invalid: bool, focused: bool) {
     kit::frame_card_popover_edge(
         ui,
         theme,
@@ -67,8 +76,14 @@ pub(crate) fn bar(ui: &mut egui::Ui, theme: &Theme, count: &str, no_match: bool)
                         + theme.spacing_md.scaled(4.0);
                     let input_w =
                         (WIDTH - theme.spacing_sm.scaled(2.0) - trailing).max(LogicalPx(80.0));
-                    kit::field(ui, theme, Some(input_w), "tasty", false, false);
-                    let counter_color = if no_match {
+                    let mut query = if invalid { "(tas" } else { "tasty" }.to_owned();
+                    tasty_ui_widgets::Input::new()
+                        .ground(tasty_ui_widgets::Ground::Raised)
+                        .width(input_w.value())
+                        .invalid(invalid)
+                        .focus_look(focused)
+                        .show(ui, theme, &mut query);
+                    let counter_color = if invalid {
                         theme.accent_danger()
                     } else {
                         theme.text_muted()
@@ -82,8 +97,8 @@ pub(crate) fn bar(ui: &mut egui::Ui, theme: &Theme, count: &str, no_match: bool)
                     icon_btn(ui, theme, icons::CHEVRON_DOWN, false);
                     icon_btn(ui, theme, icons::CHEVRON_RIGHT, false);
                     toggle_chip(ui, theme, "Aa", false);
-                    toggle_chip(ui, theme, ".*", false);
-                    toggle_chip(ui, theme, "ab", true);
+                    toggle_chip(ui, theme, ".*", invalid);
+                    toggle_chip(ui, theme, "ab", !invalid);
                     let h = theme.item_height_interactive.value() * 0.6;
                     let (r, _) = ui.allocate_exact_size(
                         egui::vec2(theme.border_width.value(), h),

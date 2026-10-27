@@ -13,6 +13,7 @@ const WSelect = window.TastyDesignSystem_41fd3f.Select;
 const WTag = window.TastyDesignSystem_41fd3f.Tag;
 const WTable = window.TastyDesignSystem_41fd3f.Table;
 const WInput = window.TastyDesignSystem_41fd3f.Input;
+const { GroundThemes: WGroundThemes, GroundCap: WGroundCap } = window.OverlaysShared;
 const { Backdrop, PaletteFrame, LocalSshSection, PortsFrame, PORTS_COLUMNS, PortsFavoritesG, PortStarG, RemoteFrame, SettingsFrame, SettingsGeneralOverlayFrame, SettingsRemoteTransferFrame, ToastDragValue, GitViewerFrame, ClipboardFrame, RemoteFormFrame, RemoteAttachFrame, RaNewRow, RaWsPeek, FilePickerFrame, ScriptManagerFrame, ic } = window.OverlaysShared;
 
 // 2026-09-29 disabled sites without a screen — static specimens of the kit
@@ -688,6 +689,20 @@ function Page() {
           <Meta
             specs={[["width", "480–540px"], ["anchor", "top, ~40–90px"], ["header", <>Input + <span className="tok">--tasty-separator</span></>], ["rows", <>28px MenuItem · first active</>], ["footer", "mono hints ↑↓ ↵ esc"]]}
             tokens={[{ tok: "--tasty-surface-raised", use: "frame", color: "var(--tasty-surface-raised)" }, { tok: "--tasty-surface-active", use: "highlight", color: "var(--tasty-surface-active)" }, { tok: "--tasty-font-mono", use: "hints" }]} />
+        </Spec>
+        <Spec title="Search field ground — normal · focused (2026-10-27)"
+          when={<>The palette shell is <span className="tok">--tasty-surface-raised</span>, so its search field is an <b>Input ground="raised"</b> (the 10-14 rule, no exception). The box steps down to <code>bg-panel</code> with a <code>border-strong</code> edge, so it reads against the shell before it takes focus. The field opens focused (autoFocus); <b>normal</b> is the box after focus moves away. Width, icon, placeholder, list and footer are unchanged; no copy changes.</>}>
+          <Stage variant="solo center" style={{ padding: 20, background: "var(--tasty-bg-app)" }}>
+            <WGroundThemes render={() => (
+              <div style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-md)" }}>
+                <WGroundCap>normal — focus elsewhere</WGroundCap><PaletteFrame rows={2} />
+                <WGroundCap>focused</WGroundCap><PaletteFrame rows={2} focused value="term" />
+              </div>
+            )} />
+          </Stage>
+          <Meta
+            specs={[["field ground", <>ground="raised" · no exception</>], ["normal", <>input-raised-bg → bg-panel · input-raised-border → border-strong</>], ["focused", <>bg unchanged · border-focus edge + 1px border-focus ring</>], ["Mocha", "bg-panel = base · border-strong = surface1 · shell surface-raised = surface0"], ["Latte", "bg-panel = base · border-strong = surface1 · shell surface-raised = surface0"], ["ink", "text-primary · placeholder text-placeholder · icon text-muted (unchanged)"]]}
+            tokens={[{ tok: "--tasty-input-raised-bg", use: "field fill", color: "var(--tasty-input-raised-bg)" }, { tok: "--tasty-input-raised-border", use: "field edge", color: "var(--tasty-input-raised-border)" }, { tok: "--tasty-border-focus", use: "focused edge + ring", color: "var(--tasty-border-focus)" }, { tok: "--tasty-surface-raised", use: "shell", color: "var(--tasty-surface-raised)" }]} />
         </Spec>
       </Section>
 

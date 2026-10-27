@@ -37,6 +37,8 @@ pub enum PopupAction {
     None,
     /// The popup requests to be closed.
     Close,
+    /// Keep the popup open and return keyboard input to its surface.
+    ReleaseFocus,
 }
 
 /// 팝업 이동 영역. 콘텐츠 위젯이 포인터를 사용 중이면 이동·리사이즈를 시작하지 않으므로

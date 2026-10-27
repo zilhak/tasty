@@ -96,7 +96,7 @@ debug IPC(`debug.host_popup.open`/`debug.inject_egui_mouse`)로 확인할 수 �
 
 ### UI 요소 인벤토리
 
-- **검색 입력** (상단): 쿼리 입력. 즉시 필터.
+- **검색 입력** (상단): 쿼리 입력. 즉시 필터. 공용 `Input`의 `Ground::Raised`를 써서 `input-raised-bg` 채움과 `input-raised-border` 휴지·호버 테두리를 그린다. 포커스는 `border-focus` 테두리와 1px 링으로 표시한다.
 - **후보 리스트**: 각 행 = leading 아이콘(디자인 명시 명령은 전용 아이콘, 나머지는 fallback) + 명령 라벨 + 우측 키캡. 선택 행 강조, `↑/↓` 이동.
 - **키캡**: 첫 바인딩을 키 하나마다 별도 키캡으로 그리고 사이에 `+` 를 둔다 — 상태바·메뉴와 같은 공용 `Kbd` 위젯이라 치수·색이 한 곳에서 나온다.
 - **footer**: 네비게이션 힌트 한 줄. 목록 바로 아래에 붙는다.

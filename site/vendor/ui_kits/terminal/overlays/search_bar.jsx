@@ -68,7 +68,7 @@ function SearchBar({ lines = [], onClose }) {
       borderRadius: "var(--tasty-radius)", boxShadow: "var(--tasty-shadow-popover)",
       fontFamily: "var(--tasty-font-ui)" }}>
       <span style={{ flex: 1, minWidth: 60, display: "flex" }}>
-        <Input block invalid={hasQuery && error} autoFocus placeholder="Search..." value={q}
+        <Input block ground="raised" invalid={hasQuery && error} autoFocus placeholder="Search..." value={q}
           onChange={(e) => setQ(e.target.value)} onKeyDown={onKey} />
       </span>
       <span style={{ flex: "none", width: 40, textAlign: "center", fontSize: 12,

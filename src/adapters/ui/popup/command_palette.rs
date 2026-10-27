@@ -160,30 +160,19 @@ pub fn draw_command_palette_view(
     let search_ir = egui::Frame::NONE
         .inner_margin(margin_all(theme.spacing_md))
         .show(ui, |ui| {
-            ui.horizontal(|ui| {
-                ui.set_min_height(theme.input_height().value()); // 디자인 Input control-height
-                let icon_size = theme.icon_glyph_size_md.value(); // 디자인 Input icon-size-md
-                let (icon_rect, _) =
-                    ui.allocate_exact_size(egui::vec2(icon_size, icon_size), egui::Sense::hover());
-                icons::SEARCH
-                    .image(icon_size, theme.text_muted().to_egui())
-                    .paint_at(ui, icon_rect);
-                let resp = ui.add(
-                    egui::TextEdit::singleline(props.query_buffer)
-                        .hint_text(tasty_egui_theme::hint_text(
-                            theme,
-                            props.placeholder.clone(),
-                        ))
-                        .desired_width(ui.available_width())
-                        .font(egui::TextStyle::Body),
-                );
-                if !resp.has_focus() {
-                    resp.request_focus();
-                }
-                if resp.changed() {
-                    query_changed = true;
-                }
-            });
+            let resp = tasty_ui_widgets::Input::new()
+                .ground(tasty_ui_widgets::Ground::Raised)
+                .placeholder(&props.placeholder)
+                .icon(&|ui, rect, color| {
+                    icons::SEARCH.image(rect.height(), color).paint_at(ui, rect);
+                })
+                .show(ui, theme, props.query_buffer);
+            if !resp.has_focus() {
+                resp.request_focus();
+            }
+            if resp.changed() {
+                query_changed = true;
+            }
         });
     if query_changed {
         action = CommandPaletteAction::QueryChanged;

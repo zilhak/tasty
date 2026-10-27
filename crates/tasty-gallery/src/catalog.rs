@@ -1296,7 +1296,7 @@ pub fn pages() -> Vec<Page> {
                     "search",
                     "Search bar",
                     "Headless, sticky, top-right",
-                    Some("360×28 · find bar on the focused surface, no scrim"),
+                    Some("360px body width · 28px Input + padding and border · no scrim"),
                     components::search_bar::draw,
                 ),
                 section(

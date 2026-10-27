@@ -81,7 +81,8 @@ function Backdrop({ height = 360, blur = false, children }) {
 }
 
 // opaque: popup over an opaque-mode WebView page (2026-10-21) — square corner, no shadow, border kept
-function PaletteFrame({ opaque = false } = {}) {
+// ground: the search field is ground="raised" (2026-10-27). focused/value drive static state specimens.
+function PaletteFrame({ opaque = false, focused = false, value = "", rows = 4 } = {}) {
   const items = [
     { label: "New Terminal", sc: "Ctrl+T", icon: ic.term, active: true },
     { label: "Split Pane Vertical", sc: "Ctrl+D", icon: ic.split },
@@ -92,10 +93,10 @@ function PaletteFrame({ opaque = false } = {}) {
     <div align="top" style={{ width: 480, background: "var(--tasty-surface-raised)", border: "1px solid var(--tasty-border-strong)",
       borderRadius: opaque ? "var(--tasty-webview-opaque-radius)" : "var(--tasty-radius)", overflow: "hidden", boxShadow: opaque ? "var(--tasty-webview-opaque-shadow)" : "var(--tasty-shadow-modal)" }}>
       <div style={{ padding: 10, borderBottom: "1px solid var(--tasty-separator)" }}>
-        <Input block icon={ic.search} placeholder="Type to search commands…" defaultValue="" />
+        <Input block ground="raised" focused={focused} icon={ic.search} placeholder="Type to search commands…" defaultValue={value} />
       </div>
       <div style={{ padding: 6 }}>
-        {items.map((i) => (
+        {items.slice(0, rows).map((i) => (
           <MenuItem key={i.label} label={i.label} icon={i.icon} active={i.active}
             shortcut={i.sc ? <Kbd keys={i.sc} /> : null} />
         ))}
@@ -840,7 +841,9 @@ function ShellMock({ scope = "none", split = "v", child = false, narrow = false,
 }
 
 // ── Search bar — 360px headless popup floating top-right of the focused surface ──
-function SearchBarFrame() {
+// ground: the query field is ground="raised" (2026-10-27). Props drive the state specimens:
+//   focused (static focus paint) · invalid (regex error, counter 0/0 red, .* on) · height of the faux terminal.
+function SearchBarFrame({ value = "tasty", focused = false, invalid = false, height = 240 } = {}) {
   const Toggle = ({ label, active }) => (
     <IconButton size="sm" active={active} aria-label={label}>
       <span style={{ fontFamily: "var(--tasty-font-mono)", fontSize: 11, fontWeight: 600,
@@ -848,7 +851,7 @@ function SearchBarFrame() {
     </IconButton>
   );
   return (
-    <div style={{ position: "relative", width: "100%", height: 240, borderRadius: "var(--tasty-radius)", overflow: "hidden",
+    <div style={{ position: "relative", width: "100%", height, borderRadius: "var(--tasty-radius)", overflow: "hidden",
       border: "1px solid var(--tasty-border-default)", background: "#000" }}>
       {/* faux terminal text */}
       <div style={{ padding: "12px 14px", fontFamily: "var(--tasty-font-mono)", fontSize: 12.5, lineHeight: 1.7, color: "var(--tasty-color-neutral-1100, #cdd6f4)", opacity: 0.85 }}>
@@ -862,16 +865,33 @@ function SearchBarFrame() {
       <div role="search" style={{ position: "absolute", top: 8, right: 8, width: 360, maxWidth: "calc(100% - 16px)",
         display: "flex", alignItems: "center", gap: 4, padding: 4, background: "var(--tasty-surface-raised)",
         border: "var(--tasty-border-width) solid var(--tasty-search-bar-border)", borderRadius: "var(--tasty-radius)", boxShadow: "var(--tasty-shadow-popover)" }}>
-        <span style={{ flex: 1, minWidth: 60, display: "flex" }}><Input block defaultValue="tasty" /></span>
-        <span style={{ flex: "none", width: 40, textAlign: "center", fontSize: 12, color: "var(--tasty-text-muted)", fontVariantNumeric: "tabular-nums" }}>2/3</span>
+        <span style={{ flex: 1, minWidth: 60, display: "flex" }}><Input block ground="raised" focused={focused} invalid={invalid} defaultValue={value} /></span>
+        <span style={{ flex: "none", width: 40, textAlign: "center", fontSize: 12, color: invalid ? "var(--tasty-accent-danger)" : "var(--tasty-text-muted)", fontVariantNumeric: "tabular-nums" }}>{invalid ? "0/0" : "2/3"}</span>
         <IconButton size="sm" aria-label="Previous"><Icon name="chevronUp" size={14} /></IconButton>
         <IconButton size="sm" aria-label="Next"><Icon name="chevronDown" size={14} /></IconButton>
-        <Toggle label="Aa" /><Toggle label=".*" /><Toggle label="ab" active />
+        <Toggle label="Aa" /><Toggle label=".*" active={invalid} /><Toggle label="ab" active={!invalid} />
         <span style={{ width: 1, alignSelf: "stretch", margin: "0 2px", background: "var(--tasty-separator)" }} />
         <IconButton size="sm" aria-label="Close">{ic.x}</IconButton>
       </div>
     </div>
   );
+}
+
+// ── Mocha · Latte pair for ground specimens (2026-10-27) — Mocha inherits the page, Latte is scoped ──
+function GroundThemes({ render }) {
+  return (
+    <div style={{ display: "flex", gap: "var(--tasty-space-lg)", flexWrap: "wrap", alignItems: "flex-start" }}>
+      {[["Mocha", undefined], ["Latte", "latte"]].map(([l, t]) => (
+        <div key={l} data-theme={t} style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-md)", padding: "var(--tasty-space-md)", background: "var(--tasty-bg-app)", border: "var(--tasty-border-width) solid var(--tasty-border-default)", borderRadius: "var(--tasty-radius)", minWidth: 0 }}>
+          <span style={{ fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-micro)", color: "var(--tasty-text-muted)" }}>{l}</span>
+          {render(l)}
+        </div>
+      ))}
+    </div>
+  );
+}
+function GroundCap({ children }) {
+  return <span style={{ fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-micro)", color: "var(--tasty-text-muted)" }}>{children}</span>;
 }
 
 // ── File handler picker — "Open with…" list ──
@@ -2925,7 +2945,7 @@ function FilePickerFrame({ state = "loaded", remote = false, indicator = "badge"
 
 // ── shared across the 4 overlay sub-pages (dialogs / windows / popups / banners) ──
 window.OverlaysShared = {
-  ic, Backdrop,
+  ic, Backdrop, GroundThemes, GroundCap,
   PaletteFrame, ApprovalFrame, RenameFrame, SettingsFrame, SettingsGeneralOverlayFrame, SettingsRemoteTransferFrame, TransferProgressFrame, TransferErrorFrame, ToastDurationField, ToastDragValue,
   ToolsMenuFrame, PortsFrame, PORTS_COLUMNS, PortsFavoritesG, PortStarG, RemoteFrame, LocalSshSection, SearchBarFrame,
   FileHandlerFrame, FhFooter, FhRow, FhGroup, PresetFrame, MarkdownOpenFrame,

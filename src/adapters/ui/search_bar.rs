@@ -1,3 +1,5 @@
+use egui::emath::GuiRounding as _;
+
 use crate::adapters::ui::icons;
 use crate::adapters::ui::popup::{PopupAction, PopupScope};
 use crate::i18n::t;
@@ -12,6 +14,26 @@ use tasty_type_geometry::length::LogicalPx;
 const COUNTER_FONT_PRIMITIVE_12: LogicalPx = LogicalPx(12.0);
 
 pub(crate) const SEARCH_BAR_POPUP_ID: &str = "search_bar";
+
+/// Baseline search bar width; the sizer applies host zoom once.
+const SEARCH_BAR_WIDTH: LogicalPx = LogicalPx(360.0);
+
+/// The manager paints the border outside this rectangle. Its content keeps the
+/// canonical Input height; two padding bands plus the outside border form the shell.
+pub fn search_bar_default_size() -> egui::Vec2 {
+    let theme = crate::theme::theme();
+    let padding = LogicalPx(theme.popup_content_margin().value().round_ui());
+    let height = theme.input_height() + padding.scaled(2.0);
+    egui::vec2(
+        crate::adapters::ui::zoomed_px(&theme, SEARCH_BAR_WIDTH).value(),
+        height.value(),
+    )
+}
+
+/// Recompute from current Theme tokens on every frame, including UI zoom changes.
+pub fn search_bar_sizer(_state: &MainViewState, _engine: &EngineRead<'_>) -> egui::Vec2 {
+    search_bar_default_size()
+}
 
 /// PopupDef::on_close entry point — 어떤 경로로 닫히든(대상 surface 소멸 포함) 검색 결과를 비운다.
 /// 남겨 두면 다른 surface에서 다시 열 때 이전 surface의 좌표가 강조된다.
@@ -71,7 +93,13 @@ pub fn draw_search_bar(
     let theme = crate::theme::theme();
 
     // 팝업의 focused 상태에 텍스트 필드 포커스를 맞춘다.
-    let want_focus = state.popups.is_focused("search_bar");
+    let want_focus = state.popup_keyboard_focus.contains(&SEARCH_BAR_POPUP_ID);
+
+    // Layout stays inside the body. Allow the Input's outside ring into the shell padding.
+    ui.set_clip_rect(
+        ui.clip_rect()
+            .expand(theme.popup_content_margin().value().round_ui()),
+    );
 
     let mut action = PopupAction::None;
 
@@ -97,16 +125,13 @@ pub fn draw_search_bar(
                     super_held,
                 )
             });
-        let response = ui.add(
-            egui::TextEdit::singleline(&mut state.search.query)
-                .id(query_id)
-                .hint_text(tasty_egui_theme::hint_text(
-                    &crate::theme::theme(),
-                    t("search.placeholder"),
-                ))
-                .desired_width(input_width)
-                .font(egui::TextStyle::Body),
-        );
+        let response = tasty_ui_widgets::Input::new()
+            .ground(tasty_ui_widgets::Ground::Raised)
+            .id(query_id)
+            .placeholder(t("search.placeholder"))
+            .width(input_width)
+            .invalid(!state.search.query.is_empty() && state.search.last_error.is_some())
+            .show(ui, &theme, &mut state.search.query);
 
         // 팝업이 포커스 상태인데 필드는 아니라면 포커스를 요청한다.
         if want_focus && !response.has_focus() {
@@ -118,7 +143,7 @@ pub fn draw_search_bar(
             // find 단축키 → 검색창은 그대로 두고 포커스만 터미널로 되돌린다.
             if find_pressed {
                 response.surrender_focus();
-                state.popups.set_focused("search_bar", false);
+                action = PopupAction::ReleaseFocus;
             } else if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
                 // Escape → 닫기 + 검색 상태 clear (하이라이트 제거) + 터미널 포커스 복귀.
                 state.search.clear();
@@ -404,3 +429,7 @@ fn scroll_to_current_match(state: &mut MainViewState, engine: &EngineRead<'_>) {
             }
         });
 }
+
+#[cfg(test)]
+#[path = "search_bar_tests.rs"]
+mod tests;

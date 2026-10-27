@@ -4,6 +4,7 @@
 // page's specimens + nav. See the other overlays-*.jsx for the rest.
 const { Section, Spec, Stage, Meta, Note, Do, Dont, GIcon } = window.Gallery;
 const { Kbd, MenuItem } = window.TastyDesignSystem_41fd3f;
+const { GroundThemes: PGroundThemes, GroundCap: PGroundCap } = window.OverlaysShared;
 const { ToolsMenuFrame, SearchBarFrame, HeldLabel, TabStripMock, SidebarMock, RailMock, CatSwitchSidebarMock, CatSwitchRailMock, ic, CatMenu, RailCategoryFrame, catIc, ModifierHintPanelG, MH_CAT_SECTIONS, MH_MIXED_SECTIONS, MH_EMPTY_SECTIONS } = window.OverlaysShared;
 
 const NAV = [
@@ -95,6 +96,22 @@ function Page() {
             specs={[["frame", "360 × 28 row"], ["anchor", "top-right of focused surface"], ["counter", "cur/total · red on 0"], ["toggles", "Aa · .* · ab"], ["dismiss", <span className="ic">Esc</span>]]}
             tokens={[{ tok: "--tasty-surface-raised", use: "bar fill", color: "var(--tasty-surface-raised)" }, { tok: "--tasty-search-bar-border", use: "edge → menu-border", color: "var(--tasty-search-bar-border)" }, { tok: "--tasty-accent-danger", use: "no-match counter", color: "var(--tasty-accent-danger)" }, { tok: "--tasty-shadow-popover", use: "lift" }]} />
           <Note>Sticky-focus popover: the input keeps focus and the bar persists through clicks in the terminal — it closes only on <span className="ic">Esc</span> or its × button.</Note>
+        </Spec>
+        <Spec title="Query field ground — normal · focused · invalid (2026-10-27)"
+          when={<>The bar is <span className="tok">--tasty-surface-raised</span>, so the query field is an <b>Input ground="raised"</b> (the 10-14 rule, no exception): <code>bg-panel</code> fill, <code>border-strong</code> edge. <b>normal</b> is the box after a shortcut hands focus back to the terminal; the bar stays open. <b>invalid</b> is a regex error with <code>.*</code> on: the edge is <code>accent-danger</code> in both focus states, and focused adds the danger ring. Behaviour (Enter, Shift+Enter, Esc, filtering) and copy are unchanged.</>}>
+          <Stage variant="solo center" style={{ padding: 20, background: "var(--tasty-bg-app)" }}>
+            <PGroundThemes render={() => (
+              <div style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-sm)", width: 400, maxWidth: "100%" }}>
+                <PGroundCap>normal — focus back in the terminal</PGroundCap><SearchBarFrame height={48} />
+                <PGroundCap>focused</PGroundCap><SearchBarFrame height={48} focused />
+                <PGroundCap>invalid · focused</PGroundCap><SearchBarFrame height={48} focused invalid value="(tas" />
+                <PGroundCap>invalid · focus in the terminal</PGroundCap><SearchBarFrame height={48} invalid value="(tas" />
+              </div>
+            )} />
+          </Stage>
+          <Meta
+            specs={[["field ground", <>ground="raised" · no exception</>], ["normal", <>input-raised-bg → bg-panel · input-raised-border → border-strong</>], ["focused", <>border-focus edge + 1px border-focus ring</>], ["invalid", <>accent-danger edge · focused adds 1px accent-danger ring · counter 0/0 accent-danger</>], ["Mocha / Latte", "bg-panel = base · border-strong = surface1 · bar surface-raised = surface0"]]}
+            tokens={[{ tok: "--tasty-input-raised-bg", use: "field fill", color: "var(--tasty-input-raised-bg)" }, { tok: "--tasty-input-raised-border", use: "field edge", color: "var(--tasty-input-raised-border)" }, { tok: "--tasty-border-focus", use: "focused", color: "var(--tasty-border-focus)" }, { tok: "--tasty-accent-danger", use: "invalid", color: "var(--tasty-accent-danger)" }]} />
         </Spec>
       </Section>
 

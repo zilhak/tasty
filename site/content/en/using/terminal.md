@@ -1,4 +1,4 @@
-<!-- source-hash: 6c026b6d7169 -->
+<!-- source-hash: 246cd61e4513 -->
 # Working with the terminal
 
 Copy the output you need, search terminal history, and open file paths as you work. You can also select text without a mouse and receive notifications when work finishes.
@@ -121,6 +121,8 @@ In a normal terminal, search covers the scrollback and the screen. Inside a prog
 - Toggles on the right — **Match case** · **Regular expression** · **Match whole word**.
 - `Esc` or `×` while the cursor is in the search bar — close. Even with the search bar open, if the cursor is in the terminal, keystrokes go to the terminal as usual. Press `Ctrl+F` again to move between the search bar and the terminal.
 - The search bar opens on the Surface where the cursor is. If it is open in another tab or on a neighboring split Surface, that search is cleared and the bar moves to the current Surface.
+
+The query field keeps its own background and border when unfocused. An invalid regular expression turns its border red; the error remains visible when you return focus to the terminal.
 
 ## Opening links and paths
 
