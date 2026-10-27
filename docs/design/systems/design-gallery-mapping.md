@@ -1093,7 +1093,7 @@ Misc L1 의 두 번째 L2 서브탭 "Task pipeline" — 작업 그래프 report 
 | 숫자 여섯 칸 · 단위 · 범위와 확정값 안내 | `number::integer_field`, i128 편집, tasty-settings의 여섯 범위 상수 | mono Input과 동일 범위 상수, Enter/blur 확정 |
 | responsive 행 | `SettingsRow`와 `settings_label_column`, `settings_stack_row`의 자연 폭 판정과 기존 히스테리시스 | 같은 함수, 수동 stacked 플래그 없음 |
 
-스위치 caption은 실제 Ui 폭을 measure-md와 남은 폭 중 작은 값으로 제한한 뒤 줄을 바꾼다. 내부명은 한 번만 mono secondary로 그린다. 좁은 견본은 영어 SlowLoop 1→2, 한국어 기본 상태, 일본어 CallBurst 5→10을 보여 준다.
+스위치 caption은 실제 Ui 폭을 measure-md와 남은 폭 중 작은 값으로 제한한 뒤 줄을 바꾼다. 내부명은 한 번만 mono secondary로 그린다. 좁은 견본은 영어 SlowLoop 1→2, 한국어 기본 상태, 일본어 CallBurst 5→10을 보여 준다. 견본 액자의 폭은 영어·일본어 320, 한국어 440의 이름 있는 LogicalPx 전시 치수다. 대응하는 Theme 프레임 역할이 없어 같은 숫자의 다른 역할 토큰으로 대체하지 않는다.
 
 안내→섹션과 섹션 사이는 space-xl, 섹션 안은 settings-row-gap이다. 숫자 행 사이는 separator, 설명은 settings-row-caption-gap과 measure-md를 따른다. 범위 줄은 number-field-note-fg이며 입력칸 아래에 범위·확정값을 함께 보여준다. 기본 알림은 on/off/on이다. 알림을 꺼도 숫자는 보통 잉크로 편집 가능하다. SlowLoop는 응답 지연이 아닌 동일 호출 반복 횟수다. 각 caption에 기본값을 적고 별도의 복원 버튼은 두지 않는다. 저장은 다음 판정에 적용하며 기존 관측 이력을 초기화하지 않는다.
 

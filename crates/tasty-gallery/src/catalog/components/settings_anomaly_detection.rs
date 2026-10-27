@@ -7,6 +7,10 @@ use tasty_ui_widgets::{AnomalySection, Input, SettingsRow, settings_anomaly};
 use crate::catalog::spec::{self, StageVariant};
 use crate::catalog::widgets::dialog as kit;
 
+// 반응형 행을 비교하는 시안 액자의 전시 폭이다. 대응하는 Theme 프레임 역할은 없다.
+const NARROW_FRAME_WIDTH: LogicalPx = LogicalPx(320.0);
+const KOREAN_FRAME_WIDTH: LogicalPx = LogicalPx(440.0);
+
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 enum Specimen {
     Default,
@@ -44,9 +48,9 @@ fn specimens(ui: &mut egui::Ui, theme: &Theme, variants: &[Specimen]) {
         for &variant in variants {
             let frames = if variant == Specimen::Narrow {
                 vec![
-                    (tasty_themes::mocha_fallback(), "en", LogicalPx(320.0)),
-                    (crate::host_shell::latte_theme(), "ko", LogicalPx(440.0)),
-                    (tasty_themes::mocha_fallback(), "ja", LogicalPx(320.0)),
+                    (tasty_themes::mocha_fallback(), "en", NARROW_FRAME_WIDTH),
+                    (crate::host_shell::latte_theme(), "ko", KOREAN_FRAME_WIDTH),
+                    (tasty_themes::mocha_fallback(), "ja", NARROW_FRAME_WIDTH),
                 ]
             } else {
                 vec![
