@@ -77,4 +77,16 @@ mod tests {
         );
         assert_eq!(st.active_tab, SettingsTab::Appearance);
     }
+    #[test]
+    fn both_anomaly_aliases_select_the_new_misc_subtab() {
+        for alias in ["anomaly_detection", "anomaly-detection"] {
+            let mut state = SettingsUiState::new();
+            let applied = state.apply_debug_tabs(Some("misc"), Some(alias));
+            assert_eq!(applied.subtab, Some(true));
+            assert_eq!(
+                state.misc_sub_tab,
+                super::super::MiscSubTab::AnomalyDetection
+            );
+        }
+    }
 }

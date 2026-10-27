@@ -1286,6 +1286,7 @@ report_block = "試行 report 上限"
 report_block_desc = "タスクの試行 1 回分に保存する記録テキストの合計です。超えた記録は保存せず、件数だけを数えます。"
 
 [settings.misc.subtab]
+anomaly_detection = "異常検出"
 task_pipeline = "タスクパイプライン"
 tastyrc = "tastyrc"
 accessibility = "アクセシビリティ"
@@ -6972,3 +6973,51 @@ declined = "拒否したファイル: {}"
 title = "保存した作業スペースを復旧できませんでした"
 body = "作業スペースの記録を使用できません: {}"
 hint = "ディスクの空き容量とデータフォルダーの権限を確認し、Tastyを再起動してください。元の記録は保持されます。"
+
+[settings.anomaly]
+notice = "これらの検出器は問題の兆候になりやすいパターンを監視しますが、通常の作業でも反応することがあります。検出器の通知をオフにしても通知が表示されなくなるだけで、検出と記録は続き、下の値もそのまま適用されます。保存した変更は次の判定から適用されます。"
+show_notifications = "通知を表示:"
+detector = "検出器"
+range = "{}〜{} の範囲です。{} として確定します。"
+
+[settings.anomaly.rss_surge]
+title = "メモリ増加"
+caption = "連続したサンプルでメモリ (RSS) が増え続け、最小サイズを超えたプロセスを知らせます。"
+
+[settings.anomaly.slow_loop]
+title = "繰り返し呼び出し"
+caption = "エージェントが判定ウィンドウ内で同じ呼び出し (同じメソッド・同じ引数) を何度も繰り返すと知らせます。応答の遅さではなく、繰り返しの回数を数えます。"
+
+[settings.anomaly.call_burst]
+title = "呼び出しの急増"
+caption = "エージェントが判定ウィンドウ内で種類を問わず非常に多くの呼び出しを行うと知らせます。"
+
+[settings.anomaly.rss_surge_samples]
+label = "連続増加サンプル:"
+unit = "個"
+caption = "何回連続で増えたら増加とみなすかを決めます。既定値 5。"
+
+[settings.anomaly.rss_surge_min_mib]
+label = "最小 RSS:"
+unit = "MiB"
+caption = "このサイズ未満のプロセスは知らせません。0 ですべてのサイズが対象です。既定値 256。"
+
+[settings.anomaly.slow_loop_window_secs]
+label = "判定ウィンドウ:"
+unit = "秒"
+caption = "繰り返しを数える期間です。既定値 300。"
+
+[settings.anomaly.slow_loop_threshold]
+label = "同じ呼び出しの繰り返し:"
+unit = "回"
+caption = "判定ウィンドウ内でこの回数繰り返すと反復とみなします。既定値 20。"
+
+[settings.anomaly.call_burst_window_secs]
+label = "判定ウィンドウ:"
+unit = "秒"
+caption = "呼び出しを数える期間です。既定値 60。"
+
+[settings.anomaly.call_burst_threshold]
+label = "呼び出し回数:"
+unit = "回"
+caption = "判定ウィンドウ内でこの回数に達すると急増とみなします。既定値 1000。"

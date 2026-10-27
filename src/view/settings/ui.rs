@@ -140,11 +140,12 @@ pub(crate) enum TerminalSubTab {
     Performance,
 }
 
-/// Misc 탭의 하위 섹션. Scripts·TaskPipeline은 모든 플랫폼, Tastyrc는 Windows에서만 표시한다.
+/// Misc 탭의 하위 섹션. Scripts·TaskPipeline·AnomalyDetection은 모든 플랫폼, Tastyrc는 Windows에서만 표시한다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum MiscSubTab {
     Scripts,
     TaskPipeline,
+    AnomalyDetection,
     // 이유: 이 variant 를 push 하는 것이 Windows 전용 분기뿐이다(위 enum 주석).
     #[cfg_attr(not(windows), allow(dead_code))]
     Tastyrc,
@@ -400,6 +401,7 @@ impl SettingsUiState {
                 self.misc_sub_tab = match key {
                     "scripts" => MiscSubTab::Scripts,
                     "task_pipeline" | "task-pipeline" => MiscSubTab::TaskPipeline,
+                    "anomaly_detection" | "anomaly-detection" => MiscSubTab::AnomalyDetection,
                     "tastyrc" => MiscSubTab::Tastyrc,
                     _ => return false,
                 };
@@ -1178,6 +1180,13 @@ fn build_l2_sections(ui_state: &mut SettingsUiState) -> Vec<L2Section> {
                 selected: cur == MiscSubTab::TaskPipeline,
                 select: L2Select::Misc(MiscSubTab::TaskPipeline),
             });
+            sections.push(L2Section {
+                label: t("settings.misc.subtab.anomaly_detection").to_string(),
+                is_plugin: false,
+                separated: false,
+                selected: cur == MiscSubTab::AnomalyDetection,
+                select: L2Select::Misc(MiscSubTab::AnomalyDetection),
+            });
             #[cfg(windows)]
             sections.push(L2Section {
                 label: t("settings.misc.subtab.tastyrc").to_string(),
@@ -1828,6 +1837,7 @@ fn draw_misc_content(ui: &mut egui::Ui, draft: &mut Settings, ui_state: &mut Set
             }
         }
         MiscSubTab::TaskPipeline => draw_task_pipeline_tab(ui, draft),
+        MiscSubTab::AnomalyDetection => draw_anomaly_detection_tab(ui, draft),
         #[cfg(windows)]
         MiscSubTab::Tastyrc => draw_tastyrc_subtab(ui, &mut ui_state.bashrc_user_draft),
         #[cfg(not(windows))]

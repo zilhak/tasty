@@ -87,6 +87,7 @@ pub mod script_manager;
 pub mod search_bar;
 pub mod segmented;
 pub mod settings;
+pub mod settings_anomaly_detection;
 pub mod settings_appearance_colors;
 pub mod settings_control_metrics;
 pub mod settings_file_handlers;

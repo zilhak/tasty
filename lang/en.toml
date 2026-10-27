@@ -1334,6 +1334,7 @@ report_block = "Attempt report limit"
 report_block_desc = "Total note text kept for one task attempt. Notes past it are not stored, only counted."
 
 [settings.misc.subtab]
+anomaly_detection = "Anomaly detection"
 task_pipeline = "Task pipeline"
 tastyrc = "tastyrc"
 accessibility = "Accessibility"
@@ -7042,3 +7043,51 @@ declined = "Declined: {}"
 title = "Could not recover the saved workspace"
 body = "The workspace journal could not be used: {}"
 hint = "Check available disk space and data folder permissions, then restart Tasty. The original journal is preserved."
+
+[settings.anomaly]
+notice = "These detectors look for patterns that often mean trouble, but normal work can trigger them too. Turning a detector's notifications off only hides them: it keeps detecting and recording, and its values below still apply. Saved changes apply from the next check."
+show_notifications = "Show notifications:"
+detector = "Detector"
+range = "Between {} and {}. Commits as {}."
+
+[settings.anomaly.rss_surge]
+title = "Memory growth"
+caption = "Flags a process whose memory (RSS) keeps rising across consecutive samples while above the minimum size."
+
+[settings.anomaly.slow_loop]
+title = "Repeated calls"
+caption = "Flags an agent that makes the same call (same method, same arguments) many times within the window. It counts repeats, not slow responses."
+
+[settings.anomaly.call_burst]
+title = "Call bursts"
+caption = "Flags an agent that makes a very large number of calls of any kind within the window."
+
+[settings.anomaly.rss_surge_samples]
+label = "Rising samples in a row:"
+unit = "samples"
+caption = "How many consecutive rising samples count as growth. Default 5."
+
+[settings.anomaly.rss_surge_min_mib]
+label = "Minimum RSS:"
+unit = "MiB"
+caption = "Processes below this size are not flagged. 0 checks every size. Default 256."
+
+[settings.anomaly.slow_loop_window_secs]
+label = "Window:"
+unit = "s"
+caption = "The period repeats are counted over. Default 300."
+
+[settings.anomaly.slow_loop_threshold]
+label = "Repeats of one call:"
+unit = "times"
+caption = "Repeats within the window that count as a loop. Default 20."
+
+[settings.anomaly.call_burst_window_secs]
+label = "Window:"
+unit = "s"
+caption = "The period calls are counted over. Default 60."
+
+[settings.anomaly.call_burst_threshold]
+label = "Calls in window:"
+unit = "calls"
+caption = "Calls within the window that count as a burst. Default 1000."

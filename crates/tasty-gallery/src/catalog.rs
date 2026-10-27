@@ -1759,6 +1759,28 @@ pub fn pages() -> Vec<Page> {
                             components::settings_task_pipeline::draw,
                         ),
                         spec(
+                            "settings-anomaly",
+                            "Misc › Anomaly detection",
+                            Some("Memory growth · Repeated calls · Call bursts · nine fields · notify off keeps numbers editable"),
+                            components::settings_anomaly_detection::draw,
+                        ),
+                        spec(
+                            "settings-anomaly-off", "Anomaly detection · notification switches",
+                            Some("All on · notification off while editing a number · numbers stay normal and editable"),
+                            components::settings_anomaly_detection::draw_off,
+                        ),
+                        spec(
+                            "settings-anomaly-range",
+                            "Anomaly detection · range and narrow",
+                            Some("Typed 1 commits as 2 · minimum RSS 0 · narrow responsive rows"),
+                            components::settings_anomaly_detection::draw_range,
+                        ),
+                        spec(
+                            "settings-anomaly-narrow", "Anomaly detection · narrow ko / ja",
+                            Some("Existing settings_stack_row natural-width decision and hysteresis · captions wrap"),
+                            components::settings_anomaly_detection::draw_narrow,
+                        ),
+                        spec(
                             "settings-performance",
                             "Terminal › Performance",
                             Some(

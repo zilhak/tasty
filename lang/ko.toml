@@ -1286,6 +1286,7 @@ report_block = "회차 report 상한"
 report_block_desc = "작업 회차 하나에 저장하는 기록 텍스트의 합입니다. 넘는 기록은 저장하지 않고 개수만 셉니다."
 
 [settings.misc.subtab]
+anomaly_detection = "이상 탐지"
 task_pipeline = "작업 파이프라인"
 tastyrc = "tastyrc"
 accessibility = "접근성"
@@ -6972,3 +6973,51 @@ declined = "거절한 파일: {}"
 title = "저장된 작업 공간을 복구하지 못했습니다"
 body = "작업 공간 기록을 사용할 수 없습니다: {}"
 hint = "디스크 여유 공간과 데이터 폴더 권한을 확인한 뒤 Tasty를 다시 시작하세요. 원본 기록은 보존됩니다."
+
+[settings.anomaly]
+notice = "이 탐지기들은 문제일 가능성이 큰 패턴을 살피지만, 정상적인 작업에서도 걸릴 수 있습니다. 탐지기의 알림을 끄면 알림만 숨겨집니다. 탐지와 기록은 계속되고 아래 값도 그대로 적용됩니다. 저장한 변경은 다음 판정부터 적용됩니다."
+show_notifications = "알림 표시:"
+detector = "탐지기"
+range = "{}~{} 사이의 값입니다. {}(으)로 확정됩니다."
+
+[settings.anomaly.rss_surge]
+title = "메모리 증가"
+caption = "연속된 샘플에서 메모리(RSS)가 계속 늘면서 최소 크기를 넘은 프로세스를 알립니다."
+
+[settings.anomaly.slow_loop]
+title = "반복 호출"
+caption = "에이전트가 판정 창 안에서 같은 호출(같은 메서드, 같은 인자)을 여러 번 반복하면 알립니다. 응답이 느린지가 아니라 반복 횟수를 셉니다."
+
+[settings.anomaly.call_burst]
+title = "호출 폭주"
+caption = "에이전트가 판정 창 안에서 종류와 관계없이 매우 많은 호출을 하면 알립니다."
+
+[settings.anomaly.rss_surge_samples]
+label = "연속 증가 샘플:"
+unit = "개"
+caption = "몇 번 연속으로 늘어야 증가로 볼지 정합니다. 기본값 5."
+
+[settings.anomaly.rss_surge_min_mib]
+label = "최소 RSS:"
+unit = "MiB"
+caption = "이 크기보다 작은 프로세스는 알리지 않습니다. 0이면 모든 크기를 봅니다. 기본값 256."
+
+[settings.anomaly.slow_loop_window_secs]
+label = "판정 창:"
+unit = "초"
+caption = "반복을 세는 기간입니다. 기본값 300."
+
+[settings.anomaly.slow_loop_threshold]
+label = "같은 호출 반복:"
+unit = "회"
+caption = "판정 창 안에서 이만큼 반복되면 반복 호출로 봅니다. 기본값 20."
+
+[settings.anomaly.call_burst_window_secs]
+label = "판정 창:"
+unit = "초"
+caption = "호출을 세는 기간입니다. 기본값 60."
+
+[settings.anomaly.call_burst_threshold]
+label = "호출 횟수:"
+unit = "회"
+caption = "판정 창 안에서 이만큼 호출하면 폭주로 봅니다. 기본값 1000."

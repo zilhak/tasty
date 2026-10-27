@@ -2,6 +2,7 @@
 //! + 그에 종속된 helper 만 보관한다.
 
 mod accessibility;
+mod anomaly_detection;
 mod appearance;
 mod choice;
 mod general;
@@ -21,6 +22,7 @@ mod terminal;
 mod terminal_input;
 
 pub use accessibility::draw_accessibility_tab;
+pub use anomaly_detection::draw_anomaly_detection_tab;
 pub use appearance::draw_appearance_tab;
 pub use general::draw_general_tab;
 #[cfg(target_os = "macos")]

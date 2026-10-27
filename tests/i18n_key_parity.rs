@@ -17,6 +17,11 @@ const SAME_AS_ENGLISH_ALLOWLIST: &[(&str, &[&str], &str)] = &[
     ("settings.number.unit_pt", &["ko", "ja"], "단위 기호"),
     ("settings.number.unit_s", &["ko", "ja"], "단위 기호"),
     (
+        "settings.anomaly.rss_surge_min_mib.unit",
+        &["ko", "ja"],
+        "MiB is the same binary size unit in all locales",
+    ),
+    (
         "image.state.too_large_size",
         &["ko", "ja"],
         "숫자 자리와 단위 기호 (× px)",

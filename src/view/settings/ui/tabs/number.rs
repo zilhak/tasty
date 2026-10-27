@@ -23,7 +23,7 @@ pub(super) struct NumberSpec<'a> {
     /// 칸의 글자가 이 값이면 단위 자리에 단위 대신 이 설명을 적는다(예: -1 의 "no limit").
     pub no_limit: Option<(i128, &'a str)>,
     /// 범위 밖일 때 칸 아래에 적는 범위 문장(`number-field-note-fg`). 없으면 범위와 확정될 값을
-    /// `accent-danger` 로 적는다.
+    /// `accent-danger` 로 적는다. 문장의 세 자리표시는 min·max·확정값으로 채운다.
     pub range_note: Option<&'a str>,
     /// 값 정렬.
     pub align: egui::Align,
@@ -365,7 +365,12 @@ fn field(
 
         if let Some(settled) = pending {
             match spec.range_note {
-                Some(note) => tasty_ui_widgets::number_field_note(ui, theme, note),
+                Some(note) => {
+                    // A caller may translate the range sentence with three positional slots.
+                    // Static notes without slots retain their original text.
+                    let note = translated_range_note(note, spec, &settled);
+                    tasty_ui_widgets::number_field_note(ui, theme, &note);
+                }
                 None => {
                     ui.label(
                         egui::RichText::new(range_line(spec, &settled))
@@ -381,9 +386,38 @@ fn field(
     committed
 }
 
+fn translated_range_note(note: &str, spec: &NumberSpec<'_>, settled: &str) -> String {
+    let lo = spec.min.map(|v| spec.format(v)).unwrap_or_default();
+    let hi = spec.max.map(|v| spec.format(v)).unwrap_or_default();
+    tasty_i18n::fill_args(note, &[&lo, &hi, settled])
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn translated_notes_name_the_committed_bound_and_keep_static_notes() {
+        let spec = NumberSpec::int(2.0, 10000.0);
+        let settled = out_of_range_int("1", &spec).unwrap();
+        assert_eq!(settled, 2);
+        assert_eq!(
+            translated_range_note(
+                "Between {} and {}. Commits as {}.",
+                &spec,
+                &settled.to_string()
+            ),
+            "Between 2 and 10000. Commits as 2."
+        );
+        assert_eq!(
+            translated_range_note("{2} within {0}–{1}", &spec, "2"),
+            "2 within 2–10000"
+        );
+        assert_eq!(
+            translated_range_note("Fixed note", &spec, "2"),
+            "Fixed note"
+        );
+    }
 
     fn spec() -> NumberSpec<'static> {
         NumberSpec::int(25.0, 200.0)

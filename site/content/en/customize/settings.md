@@ -1,4 +1,4 @@
-<!-- source-hash: 5d5767cb42fc -->
+<!-- source-hash: 8019a8f19454 -->
 # Settings
 
 Adjust your shell, fonts, and workspace preferences to suit the way you work. Use the settings window or edit `~/.tasty/config.toml` directly. For key combinations and colours, see [Keybindings](keybindings.md) and [Themes](themes.md).
@@ -100,6 +100,7 @@ These tables are stored not in `config.toml` but in `~/.tasty/file-handlers.toml
 
 - **Scripts** — Register Lua scripts to run from a keybinding or an event ([Lua scripts](scripts.md)). Enter the file path (for example `~/.tasty/scripts/my-script.lua`) and a display name; attach the keybinding under **Keybindings** > **Run Scripts**. If the file changes after registration, a **changed** marker appears and you are asked to confirm on the next run.
 - **Task pipeline** — Size limits for the notes kept in a task graph's report. A note longer than the **Note size limit** is cut, and notes past the **Attempt report limit** are not stored, only counted. The first value must always be smaller than the second ([Task report](../agents/tasks.md)).
+- **Anomaly detection** — Change notification switches and thresholds for memory growth, repeated calls and call bursts. These are heuristic signals that normal work can trigger. Repeated calls counts the same call, rather than response latency. Turning notifications off keeps detection, recording and numeric editing active. Saved values apply from the next check. Out-of-range numbers are clamped on Enter or when leaving the field; Cancel discards the draft.
 - On Windows a **Tastyrc** section is added.
 
 ### Plugins

@@ -81,6 +81,7 @@ mod searchable_select;
 mod segmented;
 mod select;
 mod sequence_editor;
+mod settings_anomaly;
 mod settings_row;
 mod settings_row_stack;
 mod shell_setup;
@@ -339,3 +340,5 @@ pub use notifications::{
     NotificationAction, NotificationLabels, NotificationPanelState, NotificationRow,
     NotificationSummary, NotificationTone, notification_panel, notification_summary,
 };
+
+pub use settings_anomaly::{AnomalySection, settings_anomaly};
