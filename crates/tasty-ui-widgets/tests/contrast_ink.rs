@@ -14,6 +14,7 @@ fn themes() -> [Theme; 2] {
     ]
 }
 
+#[allow(clippy::disallowed_methods)] // reason: 대비 시험에서 Theme 채널을 합성한 계산값을 조립하며 제품 색상을 정의하지 않는다.
 fn composite(src: egui::Color32, dst: egui::Color32) -> egui::Color32 {
     let channel = |s: u8, d: u8| {
         (f32::from(s) + f32::from(d) * (1.0 - f32::from(src.a()) / 255.0)).round() as u8
