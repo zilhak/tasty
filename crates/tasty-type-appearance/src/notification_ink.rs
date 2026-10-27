@@ -17,7 +17,7 @@ const DANGER_RAISED_RATIO: f32 = 0.6;
 
 /// DTCG semantic.accent-success-ink: Latte green 60% toward primitive.color-black.
 const SUCCESS_INK_RATIO: f32 = 0.6;
-const SUCCESS_INK_BLACK: HexColor = HexColor::from_rgb(0, 0, 0);
+const SUCCESS_INK_BLACK: HexColor = crate::hex!("#000000");
 
 impl Theme {
     /// Trusted text and shield on the unchanged success tint. Other green consumers keep accent_success.

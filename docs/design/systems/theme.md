@@ -180,7 +180,7 @@ pub const BRAND: HexColor = hex!("#89b4fa");          // OK (alpha·3-digit shor
 // pub const BAD: HexColor = hex!("#zzz");            // ← compile error
 ```
 
-`from_hex_const`(= `from_hex` 의 const fn 버전)으로 잘못된 hex 를 빌드 에러로 잡는다.
+`from_hex_const`(= `from_hex` 의 const fn 버전)으로 잘못된 hex 를 빌드 에러로 잡는다. 고정 DTCG 원시색도 이 경로를 쓴다. 예를 들어 `semantic.accent-success-ink`의 혼합 대상인 `primitive.color-black`은 `hex!("#000000")`이며 테마 팔레트의 `black`과 구별한다.
 
 ### 새 색 도입 시
 
