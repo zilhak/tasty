@@ -144,3 +144,5 @@ tasty notification read --all --workspace 12
 ## 관련
 
 - [design/systems/popup](../../design/systems/popup.md) · [design/systems/toast](../../design/systems/toast.md) · [settings](../settings/index.md)
+
+목록의 warning 글리프는 `notification_item_warning_glyph()` → `accent_warning_glyph()`를 팝업과 전체화면에서 공유한다. 읽음·미읽음은 같은 색이며, Latte에서는 기존 yellow보다 어두운 전경으로 휴지·hover의 3:1 목표를 유지한다. 배지와 error·info 역할은 별개다.

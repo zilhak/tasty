@@ -1,4 +1,4 @@
-<!-- source-hash: d561ca548a44 -->
+<!-- source-hash: e3ecec87c391 -->
 # Plugins
 
 Use plugins for tools such as Markdown and image viewers or AI agent integrations. Explore the bundled plugins, add new ones, and manage which tools run and what permissions they have.
@@ -39,6 +39,8 @@ In the **Settings** window, plugin pages appear in two places.
 A plugin that adds a Surface drawn as a web page, even one you installed yourself, applies the zoom, color scheme, allow remote content, and sandbox scripts values from its own settings page to that Surface, the same way HTML does. Values you have not changed follow the defaults the plugin sets, and on a Surface that supports the zoom shortcuts, the shortcuts change that plugin's zoom value.
 
 The **Configure** button in the plugin window goes to these pages too.
+
+In the light theme, the trusted verdict uses dark green text and a shield. It describes the signature verdict; it does not certify code review or runtime safety.
 
 ## The plugin window
 

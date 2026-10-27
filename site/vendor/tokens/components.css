@@ -632,7 +632,7 @@
   --tasty-notification-item-glyph-size:     var(--tasty-icon-size-sm);  /* 14 */
   --tasty-notification-item-glyph-gap:      var(--tasty-space-sm);
   --tasty-notification-item-error-glyph:    var(--tasty-notify-error);
-  --tasty-notification-item-warning-glyph:  var(--tasty-notify-warning);
+  --tasty-notification-item-warning-glyph:  var(--tasty-accent-warning-glyph); /* 2026-10-27: was notify-warning (Latte 2.31 rest / 1.94 hover) → Latte 3.99 / 3.35; Mocha identical */
   --tasty-notification-item-info-glyph:     var(--tasty-notify-info);
   --tasty-notification-item-title-fg:       var(--tasty-text-primary);    /* unread */
   --tasty-notification-item-title-fg-read:  var(--tasty-text-secondary);
@@ -1436,7 +1436,8 @@
   --tasty-plugin-trust-body-fg: var(--tasty-text-secondary); /* trust box cause + risk paragraphs */
   --tasty-plugin-trust-glyph-danger: var(--tasty-accent-danger); /* unverified (unknown key · missing .pub · unsigned · signature error) glyph */
   --tasty-plugin-trust-glyph-warning: var(--tasty-accent-warning-glyph); /* permissions-changed glyph */
-  --tasty-plugin-trust-glyph-success: var(--tasty-accent-success); /* trusted glyph */
+  --tasty-plugin-trust-glyph-success: var(--tasty-accent-success-ink); /* trusted glyph — 2026-10-27: was accent-success (Latte 2.45:1); Mocha identical */
+  --tasty-plugin-trust-body-trusted-fg: var(--tasty-accent-success-ink); /* 2026-10-27: trusted one-line body (plugins.trust_trusted_body) — Latte ≥ 5.5:1 on mantle/base+tint */
   --tasty-notice-column-inset: var(--tasty-space-sm); /* window top-right notice column: inset from the work area edge (under window banners / top-right search bar) */
   --tasty-notice-column-gap: var(--tasty-space-sm); /* gap between stacked notices in the column */
   --tasty-notice-column-width: var(--tasty-size-360); /* notice column width (= search bar width); max = work area − 2 × inset */

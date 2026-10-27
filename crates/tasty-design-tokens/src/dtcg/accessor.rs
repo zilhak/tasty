@@ -133,6 +133,7 @@ pub const SEMANTIC_COLOR_TO_THEME_ACCESSOR: &[(&str, &str)] = &[
     ("semantic.accent-remote", "accent_remote()"),
     ("semantic.accent-route", "accent_route()"),
     ("semantic.accent-success", "accent_success()"),
+    ("semantic.accent-success-ink", "accent_success_ink()"),
     ("semantic.accent-warning", "accent_warning()"),
     ("semantic.accent-warning-glyph", "accent_warning_glyph()"),
     ("semantic.accent-window-close", "accent_window_close()"),
@@ -269,6 +270,10 @@ pub const SEMANTIC_COLOR_ACCESSOR_GEN: &[(&str, &str, &str)] = &[
 /// 단순 필드 반환이 아닌 색 접근자는 theme.rs에 직접 구현한다.
 /// 터미널 전용 색이나 사용하지 않는 토큰처럼 접근자 자체가 없는 색은 이 목록에서 제외한다.
 const SEMANTIC_COLOR_HAND_WRITTEN: &[(&str, &str)] = &[
+    (
+        "semantic.accent-success-ink",
+        "Latte green 60% + primitive black 합성색",
+    ),
     (
         "semantic.accent-warning-glyph",
         "Latte yellow 50% + neutral-1100 합성색",

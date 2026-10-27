@@ -217,7 +217,10 @@ fn notification_warning_badge_is_readable_in_both_shipped_themes() {
             ratio >= 4.5,
             "{name} warning badge contrast {ratio:.4} < 4.5"
         );
-        assert_eq!(th.notification_item_warning_glyph(), th.accent_warning());
+        assert_eq!(
+            th.notification_item_warning_glyph(),
+            th.accent_warning_glyph()
+        );
         assert_eq!(th.notification_badge_error_fg(), th.text_on_accent());
         assert_eq!(th.notification_badge_info_fg(), th.text_on_accent());
         if !light {

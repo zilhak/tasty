@@ -3600,10 +3600,10 @@ impl crate::theme::Theme {
         self.badge_dot_size()
     }
 
-    /// `component.notification-item-warning-glyph` → `{semantic.notify-warning}`
+    /// `component.notification-item-warning-glyph` → `{semantic.accent-warning-glyph}`
     #[inline]
     pub fn notification_item_warning_glyph(&self) -> HexColor {
-        self.accent_warning()
+        self.accent_warning_glyph()
     }
 
     /// `component.notification-rail-width` → `{primitive.size-44}` = 44px
@@ -3888,16 +3888,22 @@ impl crate::theme::Theme {
         self.text_secondary()
     }
 
+    /// `component.plugin-trust-body-trusted-fg` → `{semantic.accent-success-ink}`
+    #[inline]
+    pub fn plugin_trust_body_trusted_fg(&self) -> HexColor {
+        self.accent_success_ink()
+    }
+
     /// `component.plugin-trust-glyph-danger` → `{semantic.accent-danger}`
     #[inline]
     pub fn plugin_trust_glyph_danger(&self) -> HexColor {
         self.accent_danger()
     }
 
-    /// `component.plugin-trust-glyph-success` → `{semantic.accent-success}`
+    /// `component.plugin-trust-glyph-success` → `{semantic.accent-success-ink}`
     #[inline]
     pub fn plugin_trust_glyph_success(&self) -> HexColor {
-        self.accent_success()
+        self.accent_success_ink()
     }
 
     /// `component.plugin-trust-glyph-warning` → `{semantic.accent-warning-glyph}`

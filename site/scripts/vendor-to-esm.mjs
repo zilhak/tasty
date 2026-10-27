@@ -272,6 +272,7 @@ const GALLERY_MODULE = {
   OverlaysWindowsPluginTrust: "./overlays-windows-plugin-trust.jsx",
   OverlaysWindowsFileHandlers: "./overlays-windows-file-handlers.jsx",
   OverlaysWindowsPerf: "./overlays-windows-perf.jsx",
+  OverlaysWindowsAnomaly: "./overlays-windows-anomaly.jsx",
   PluginsMdAddress: "./plugins-md-address.jsx",
   PluginsHtmlContrast: "./plugins-html-address-contrast.jsx",
   OverlaysShared: "./overlays-shared.jsx",

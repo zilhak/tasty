@@ -56,7 +56,10 @@ function TrustBox2({ kind, lang = "en", attention = false }) {
   const box = { display: "flex", flexDirection: "column", gap: "var(--tasty-space-sm)", padding: "var(--tasty-space-md) var(--tasty-size-14)", borderRadius: "var(--tasty-radius)",
     background: "color-mix(in srgb, " + acc + " calc(var(--tasty-tint-fill-alpha) * 100%), transparent)", border: "var(--tasty-border-width) solid color-mix(in srgb, " + acc + " calc(var(--tasty-tint-border-alpha) * 100%), transparent)" };
   if (kind === "trusted") return (
-    <div style={{ ...box, flexDirection: "row", alignItems: "center", color: acc, fontSize: "var(--tasty-font-size-term-sm)" }}><Icon name="shieldCheck" size={16} /><span>Signed by a <b>trusted publisher</b> — its key is in your trust store.</span></div>
+    <div style={{ ...box, flexDirection: "row", alignItems: "center", fontSize: "var(--tasty-font-size-term-sm)" }}>
+      <span style={{ display: "inline-flex", flex: "none", color: "var(--tasty-plugin-trust-glyph-success)" }}><Icon name="shieldCheck" size={16} /></span>
+      <span style={{ color: "var(--tasty-plugin-trust-body-trusted-fg)" }}>Signed by a <b>trusted publisher</b> — its key is in your trust store.</span>
+    </div>
   );
   const p = { margin: 0, fontSize: "var(--tasty-font-size-term-sm)", lineHeight: "var(--tasty-line-height-ui)", color: "var(--tasty-plugin-trust-body-fg)", overflowWrap: "anywhere", textWrap: "pretty" };
   return (
@@ -99,9 +102,9 @@ function Manifest({ narrow }) {
   );
 }
 
-function AddPanel({ kind, lang, state, width = "var(--tasty-size-560)", narrow, focus }) {
+function AddPanel({ kind, lang, state, width = "var(--tasty-size-560)", narrow, focus, ground = "var(--tasty-bg-panel)" }) {
   return (
-    <div style={{ width, maxWidth: "100%", display: "flex", flexDirection: "column", background: "var(--tasty-bg-panel)", border: "var(--tasty-border-width) solid var(--tasty-border-default)", borderRadius: "var(--tasty-radius)", overflow: "hidden" }}>
+    <div style={{ width, maxWidth: "100%", display: "flex", flexDirection: "column", background: ground, border: "var(--tasty-border-width) solid var(--tasty-border-default)", borderRadius: "var(--tasty-radius)", overflow: "hidden" }}>
       <div style={{ padding: "var(--tasty-space-md)", display: "flex", flexDirection: "column", gap: "var(--tasty-space-md)" }}>
         <Manifest narrow={narrow} />
         <TrustBox2 kind={kind} lang={lang} />
@@ -155,7 +158,28 @@ function PluginTrustSpecs() {
           specs={[["box", "tint-fill + tint-border of the tone · pad 12 / 14 · radius 4 (unchanged recipe)"], ["tone (2026-10-19)", "success trusted · warning permissions changed · danger unverified (all four) — danger now means “at your own risk”, not “blocked”"], ["title", "13/600 text-primary · glyph 16 carries the tone (accent titles failed 4.5:1 in Latte)"], ["cause", "one sentence naming the state · term-sm text-secondary"], ["risk", "shared paragraph · term-sm text-secondary · wraps anywhere"], ["fingerprint", "unknown key · missing .pub only — never invented for unsigned / signature error"], ["bar", "grants left · Cancel (ghost) · Add anyway (danger) right · wraps under on narrow"], ["only blocked state", "Already installed (disabled Add plugin + reason, unchanged)"]]}
           tokens={[{ tok: "--tasty-plugin-trust-title-fg", use: "→ text-primary", color: "var(--tasty-plugin-trust-title-fg)" }, { tok: "--tasty-plugin-trust-body-fg", use: "→ text-secondary", color: "var(--tasty-plugin-trust-body-fg)" }, { tok: "--tasty-plugin-trust-glyph-danger", use: "→ accent-danger", color: "var(--tasty-plugin-trust-glyph-danger)" }, { tok: "--tasty-plugin-trust-glyph-warning", use: "→ accent-warning-glyph (new semantic; Latte remap)", color: "var(--tasty-plugin-trust-glyph-warning)" }, { tok: "--tasty-plugin-trust-glyph-success", use: "→ accent-success", color: "var(--tasty-plugin-trust-glyph-success)" }]} />
         <Note><b>Keyboard and choice.</b> After Verify shows an unverified verdict, <b>initial focus is Cancel</b>; <span className="ic">Enter</span> activates the focused button only, so Enter cancels. There is no implicit default button. <span className="ic">Esc</span> = Cancel (nothing installed, the tab returns to the path field). <span className="ic">Tab</span> moves Cancel → Add anyway. Pointer: one click on Add anyway. Nothing is installed or registered before that click / key. Remembering the choice and re-asking rules are the implementation's, not this design's.</Note>
-        <Note><b>Contrast (WCAG relative luminance).</b> Title text-primary on the danger tint: Mocha ≈ 11:1 · Latte ≈ 7:1. Body text-secondary: Mocha ≈ 8:1 · Latte n1000 ≈ 4.7:1. Danger glyph: Latte #d20f39 on tint ≈ 4.1:1 (≥ 3) · Mocha #f38ba8 ≈ 6:1. Warning glyph (permissions changed): Latte before #df8e1d ≈ 2.2:1 → <span className="tok">--tasty-accent-warning-glyph</span> (yellow 50% toward n1100) ≈ 3.6:1. Danger button label: Latte white on #d20f39 5.43:1 · Mocha crust on #f38ba8 ≈ 8:1. Trusted row: unchanged (its green ink in Latte is ≈ 3.3:1 — noted, not changed by this request).</Note>
+        <Note><b>Contrast (WCAG relative luminance).</b> Title text-primary on the danger tint: Mocha ≈ 11:1 · Latte ≈ 7:1. Body text-secondary: Mocha ≈ 8:1 · Latte n1000 ≈ 4.7:1. Danger glyph: Latte #d20f39 on tint ≈ 4.1:1 (≥ 3) · Mocha #f38ba8 ≈ 6:1. Warning glyph (permissions changed): Latte before #df8e1d ≈ 2.2:1 → <span className="tok">--tasty-accent-warning-glyph</span> (yellow 50% toward n1100) ≈ 3.6:1. Danger button label: Latte white on #d20f39 5.43:1 · Mocha crust on #f38ba8 ≈ 8:1. Trusted box: see <b>Trusted verdict — contrast (2026-10-27)</b> below (the old “≈ 3.3:1” figure measured neither real ground and is withdrawn).</Note>
+      </Spec>
+
+      <Spec id="plugin-trusted-contrast" title="Trusted verdict — contrast on both grounds (2026-10-27)"
+        when={<>After Verify on a folder signed by a trusted key, the box keeps its one line, shield, copy, padding, success tint fill and border. Only the two inks move to a new success <b>ink</b> role: the body to <span className="tok">--tasty-plugin-trust-body-trusted-fg</span>, the shield to <span className="tok">--tasty-plugin-trust-glyph-success</span>, both → <span className="tok">--tasty-accent-success-ink</span>. In Mocha that role is accent-success, so Mocha is pixel-identical; Latte remaps it to green 60% toward black. Each theme is shown on <b>mantle</b> (the host Add tab, panel_fill) and on <b>base</b> (this board's AddPanel). The shield is a hover-only display element; pointing at it adds no tint. Permissions changed and unverified stay as they were (reference rows).</>}>
+        <Stage variant="solo" style={{ padding: "var(--tasty-space-lg)", background: "var(--tasty-bg-app)", gap: "var(--tasty-space-lg)", flexWrap: "wrap", alignItems: "flex-start" }}>
+          {THEMES.map(([label, attr]) => (
+            <Themed key={label} attr={attr}>
+              <span style={cap}>{label}</span>
+              <span style={{ ...cap, fontFamily: "var(--tasty-font-mono)" }}>trusted · on mantle (host Add tab)</span><AddPanel kind="trusted" ground="var(--tasty-bg-sidebar)" />
+              <span style={{ ...cap, fontFamily: "var(--tasty-font-mono)" }}>trusted · on base (board AddPanel)</span><AddPanel kind="trusted" />
+              <span style={{ ...cap, fontFamily: "var(--tasty-font-mono)" }}>reference · permissions changed · unknown key (unchanged)</span>
+              <AddPanel kind="permissions-changed" ground="var(--tasty-bg-sidebar)" />
+              <AddPanel kind="unknown-key" ground="var(--tasty-bg-sidebar)" />
+            </Themed>
+          ))}
+        </Stage>
+        <Meta
+          specs={[["fill", "accent-success × tint-fill-alpha 0.12 (egui 31/255) — unchanged"], ["border", "accent-success × tint-border-alpha 0.36 — unchanged"], ["body", "term-sm · plugin-trust-body-trusted-fg · target 4.5:1"], ["shield", "16 · plugin-trust-glyph-success · target 3:1 (same goal as the warning / danger trust glyphs)"], ["hover", "no change — the shield is Sense::hover display only"]]}
+          tokens={[{ tok: "--tasty-accent-success-ink", use: "new semantic · Mocha → accent-success · Latte green 60% toward black ≈ #26601a", color: "var(--tasty-accent-success-ink)" }, { tok: "--tasty-plugin-trust-body-trusted-fg", use: "new · → accent-success-ink", color: "var(--tasty-plugin-trust-body-trusted-fg)" }, { tok: "--tasty-plugin-trust-glyph-success", use: "was accent-success → accent-success-ink", color: "var(--tasty-plugin-trust-glyph-success)" }, { tok: "--tasty-accent-success", use: "fill + border only (unchanged, global)", color: "var(--tasty-accent-success)" }]} />
+        <Note><b>Contrast (WCAG relative luminance, specified colours).</b> Box grounds: Latte mantle+tint #d2e0d7 (CSS 0.12 and egui 31/255 byte path give the same bytes) · base+tint CSS #dae7dd / egui #dae7dc. Latte body and shield, ink #26601a: mantle+tint <b>5.55:1</b> (both methods) · base+tint <b>5.94:1</b> CSS / 5.94:1 egui. Before (#40a02b): 2.45 / 2.62. Mocha (ink = accent-success #a6e3a1, unchanged): mantle+tint 9.02:1 CSS / 8.91:1 egui · base+tint 8.26:1 both. egui path = round(src × 31/255) + dst × (1 − 31/255), rounded per channel.</Note>
+        <Note><b>Why a new role.</b> accent-success is shared by many green consumers (status dots, Tags, fills), so it can't change; text-secondary would meet 4.5 but turns Mocha's green line grey. Mixing toward n1100 (the accent-warning-glyph move) greys the green before it clears 4.5 (30% = #486756, 4.59:1), so the Latte remap mixes toward black instead and stays visibly green.</Note>
       </Spec>
 
       <Spec id="plugin-unverified-states" title="Adding · failure · narrow window · ko / ja · Needs attention › Register anyway (2026-10-19)"

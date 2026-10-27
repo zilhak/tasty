@@ -65,6 +65,16 @@ fn rows() -> Vec<NotificationRow<'static>> {
             time: "14m",
         },
         NotificationRow {
+            id: 5,
+            tone: NotificationTone::Warning,
+            unread: false,
+            title: "Disk usage above 85% (read)",
+            body: "The nightly ETL keeps running, but the next snapshot may not fit.",
+            source: "data-pipeline › ingest",
+            source_closed: false,
+            time: "9m",
+        },
+        NotificationRow {
             id: 4,
             tone: NotificationTone::Info,
             unread: false,
@@ -130,7 +140,7 @@ pub fn draw(ui: &mut egui::Ui, th: &Theme) {
     spec::note(
         ui,
         th,
-        "Opening does not mark read. Expand a row or use its check button; mark all only affects this window. Error, warning and info counts are separate from surface attention.",
+        "Opening does not mark read. Expand a row or use its check button; mark all only affects this window. Read and unread warning glyphs share accent-warning-glyph, including hover; the count badge keeps its separate role. Error and info retain their original colors.",
     );
 }
 

@@ -335,8 +335,18 @@ pub(super) fn trust_boxes(ui: &mut egui::Ui, theme: &Theme, width: f32) {
     ui.vertical(|ui| {
         ui.set_width(width);
         ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
+        for (label, ground) in [
+            ("Trusted · mantle (host Add tab)", theme.bg_sidebar()),
+            ("Trusted · base (design board)", theme.bg_panel()),
+        ] {
+            crate::catalog::spec::cluster(ui, theme, label, |ui| {
+                egui::Frame::new().fill(ground.to_egui()).show(ui, |ui| {
+                    ui.set_width(width);
+                    trust_box(ui, theme, PluginTrustKind::Trusted, "");
+                });
+            });
+        }
         for kind in [
-            PluginTrustKind::Trusted,
             PluginTrustKind::PermissionsChanged,
             PluginTrustKind::UnknownKey,
             PluginTrustKind::MissingPubkey,

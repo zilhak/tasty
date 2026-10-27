@@ -15,7 +15,21 @@ const WARNING_GLYPH_RATIO: f32 = 0.5;
 /// DTCG `semantic.accent-danger-raised`의 Latte color-mix 비율.
 const DANGER_RAISED_RATIO: f32 = 0.6;
 
+/// DTCG semantic.accent-success-ink: Latte green 60% toward primitive.color-black.
+const SUCCESS_INK_RATIO: f32 = 0.6;
+const SUCCESS_INK_BLACK: HexColor = HexColor::from_rgb(0, 0, 0);
+
 impl Theme {
+    /// Trusted text and shield on the unchanged success tint. Other green consumers keep accent_success.
+    #[inline]
+    pub fn accent_success_ink(&self) -> HexColor {
+        if self.is_light {
+            mix_srgb(self.accent_success(), SUCCESS_INK_RATIO, SUCCESS_INK_BLACK)
+        } else {
+            self.accent_success()
+        }
+    }
+
     /// 경고 배지 채움. Mocha의 원래 경고색은 유지한다.
     #[inline]
     pub fn notify_warning_fill(&self) -> HexColor {

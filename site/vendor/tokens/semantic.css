@@ -53,6 +53,9 @@
   /* 2026-10-21: danger INK (error text + its glyph) on a RAISED ground (surface-raised cards). Mocha = accent-danger
      (5.43:1 on surface0); Latte remaps (red #d20f39 on surface0 = 3.52:1). Fills / invalid edges keep accent-danger. */
   --tasty-accent-danger-raised: var(--tasty-accent-danger);
+  /* 2026-10-27: success INK (text + its glyph) on a success TINT box (accent-success × tint-fill over mantle/base).
+     Mocha = accent-success (≈ 8.3–9.0:1); Latte remaps (green #40a02b on its own tint = 2.45:1). Fills / borders keep accent-success. */
+  --tasty-accent-success-ink: var(--tasty-accent-success);
   /* attention: a SECOND, deliberately non-yellow "notice" tone for states that
      want a heads-up without the transient/validation reading of warning-yellow.
      Used for plugin needs-attention (rejected / failing). Peach re-points per
@@ -382,6 +385,9 @@
   --tasty-accent-warning-glyph: color-mix(in srgb, var(--tasty-color-yellow) 50%, var(--tasty-color-neutral-1100));
   /* danger ink on raised (2026-10-21): red 60% toward text n1100 ≈ #a4224a — 4.79:1 on surface0, 6.54:1 on base. Same move as accent-warning-glyph. */
   --tasty-accent-danger-raised: color-mix(in srgb, var(--tasty-color-red) 60%, var(--tasty-color-neutral-1100));
+  /* success ink on tint (2026-10-27): green 60% toward black ≈ #26601a — 5.55:1 on mantle+tint, 5.94:1 on base+tint (CSS 0.12 and egui 31/255 agree to 0.01).
+     Toward n1100 (the accent-warning-glyph move) greys the green before 4.5 (30% = #486756, 4.59). */
+  --tasty-accent-success-ink: color-mix(in srgb, var(--tasty-color-green) 60%, var(--tasty-color-black));
 
   /* disabled ink — Latte's light end of the ramp is compressed (neutral-600..800
      sit within 1.2:1 of each other), so the same ramp step reads fainter than in

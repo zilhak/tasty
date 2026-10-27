@@ -866,6 +866,16 @@
         }
       }
     },
+    "accent-success-ink": {
+      "$type": "color",
+      "$value": "{semantic.accent-success}",
+      "$description": "success ink (text + glyph) on a success tint box",
+      "$extensions": {
+        "com.tasty.mode": {
+          "latte": "color-mix(in srgb, var(--tasty-color-green) 60%, var(--tasty-color-black))"
+        }
+      }
+    },
     "notify-error": {
       "$type": "color",
       "$value": "{semantic.accent-danger}"
@@ -3128,7 +3138,7 @@
     },
     "notification-item-warning-glyph": {
       "$type": "color",
-      "$value": "{semantic.notify-warning}"
+      "$value": "{semantic.accent-warning-glyph}"
     },
     "notification-item-info-glyph": {
       "$type": "color",
@@ -5326,8 +5336,13 @@
     },
     "plugin-trust-glyph-success": {
       "$type": "color",
-      "$value": "{semantic.accent-success}",
+      "$value": "{semantic.accent-success-ink}",
       "$description": "trusted glyph"
+    },
+    "plugin-trust-body-trusted-fg": {
+      "$type": "color",
+      "$value": "{semantic.accent-success-ink}",
+      "$description": "trusted one-line body (plugins.trust_trusted_body)"
     },
     "notice-column-inset": {
       "$type": "dimension",

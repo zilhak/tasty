@@ -166,6 +166,34 @@ function Popup() {
           tokens={[{ tok: "--tasty-notification-item-body-lines-wide", use: "3" }, { tok: "--tasty-notification-item-bg-selected", use: "→ surface-active", color: "var(--tasty-notification-item-bg-selected)" }]} />
       </Spec>
 
+      <Spec id="notification-warning-glyph" title="Warning level glyph — Latte contrast, rest and hover (2026-10-27)"
+        when={<>The warning glyph is the only thing in a row that says “warning” (no level word in title, body or meta), so it must clear the <b>3:1</b> non-text floor on both the resting row (bg-panel) and the hover bed (bg-panel + overlay-hover). <span className="tok">--tasty-notification-item-warning-glyph</span> now points at the existing <span className="tok">--tasty-accent-warning-glyph</span> instead of notify-warning. Mocha resolves to the same yellow as before; Latte gets the darker warning-glyph ink. Read and unread use the same colour (level is identity, not state). Error and info glyphs, the count badge and accent-warning are unchanged. Popup and fullscreen render the same NotificationItem, so both lists follow.</>}>
+        {stage(THEMES.map(([label, attr]) => {
+          const NI = DS.NotificationItem;
+          const W = { level: "warning", title: "Disk usage above 85% on /var/lib/warehouse", body: "The nightly ETL keeps running, but the next snapshot may not fit.", source: "data-pipeline › ingest", time: "9m" };
+          const rows = [["warning · unread · rest", Object.assign({}, W, { unread: true })], ["warning · unread · hover", Object.assign({}, W, { unread: true, hover: true })], ["warning · read · rest", W], ["warning · read · hover", Object.assign({}, W, { hover: true })],
+            ["error · unread (reference)", { level: "error", unread: true, title: "Build failed: cargo build exited with status 101", body: "error[E0308]: mismatched types", source: "api-gateway › build", time: "2m" }], ["info · read (reference)", { level: "info", title: "Deploy to staging finished", body: "All checks passed.", source: "agents-prod › deploy", time: "14m" }]];
+          const list = (wide) => (
+            <div style={{ width: wide ? "var(--tasty-size-560)" : "var(--tasty-notifications-popup-width)", maxWidth: "100%", background: "var(--tasty-bg-panel)", border: "var(--tasty-border-width) solid var(--tasty-border-default)", borderRadius: "var(--tasty-radius)", overflow: "hidden" }}>
+              {rows.map(([c, p]) => <div key={c}><div style={{ ...mono, padding: "var(--tasty-space-xs) var(--tasty-notification-item-pad-x) 0" }}>{c}</div>{NI && <NI {...p} wide={wide} />}</div>)}
+            </div>
+          );
+          return (
+            <Themed key={label} attr={attr}>
+              <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>{label}</span>
+              <div style={{ display: "flex", gap: "var(--tasty-space-lg)", flexWrap: "wrap", alignItems: "flex-start" }}>
+                <div><Cap>popup list</Cap>{list(false)}</div>
+                <div><Cap>fullscreen list</Cap>{list(true)}</div>
+              </div>
+            </Themed>
+          );
+        }))}
+        <Meta specs={[["glyph", "14 · alertTriangle · same ink read / unread · rest / hover"], ["ground", "bg-panel · hover = + overlay-hover (Mocha white 8% · Latte black 8%)"], ["target", "3:1 non-text, specified colours (AA edge pixels not counted)"]]}
+          tokens={[{ tok: "--tasty-notification-item-warning-glyph", use: "was notify-warning → now accent-warning-glyph (Mocha = accent-warning · Latte yellow 50% toward n1100 ≈ #966f43)", color: "var(--tasty-notification-item-warning-glyph)" }, { tok: "--tasty-notify-warning", use: "unchanged (accent-warning) — no longer read by the list glyph", color: "var(--tasty-notify-warning)" }, { tok: "--tasty-notification-badge-warning-bg", use: "unchanged (notify-warning-fill)", color: "var(--tasty-notification-badge-warning-bg)" }, { tok: "--tasty-notification-item-error-glyph / info-glyph", use: "unchanged", color: "var(--tasty-notification-item-error-glyph)" }]} />
+        <Note><b>Contrast (WCAG relative luminance).</b> Latte, glyph #966f43 on base #eff1f5: <b>3.99:1</b> rest · hover <b>3.35:1</b> CSS (base × 0.92) / <b>3.35:1</b> egui bytes (premultiplied black (0,0,0,20): base × 235/255, rounded). Before (#df8e1d): 2.31 rest · 1.94 hover. Mocha, glyph #f9e2af (unchanged) on base #1e1e2e: 12.91:1 rest · hover 10.20:1 CSS (white 0.08) / 10.21:1 egui (premultiplied (20,20,20,20): 20 + base × 235/255).</Note>
+        <Note><b>Why reuse accent-warning-glyph.</b> It already is “a warning glyph that must clear 3:1 on light grounds” (plugin trust box, notice column), and it clears the hover bed too. A notification-only role would hold the same value. The badge keeps its own fill role (notify-warning-fill), so it is unaffected.</Note>
+      </Spec>
+
       <Spec title="Read rules and arrival">
         {stage(<span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-secondary)", maxWidth: 720, textWrap: "pretty" }}>Opening or closing the popup marks nothing read. An item becomes read by its <b>✓</b> or by <b>expanding</b> it. <b>Mark all read</b> covers this window's list only. When the last unread item of a source surface is read, the existing attention-clear rule runs; hard occupancy protection is unchanged. A new notification updates the pills and the LNB line 2 only: it is inserted at the top of the list without moving selection, scroll offset (when scrolled down) or keyboard focus, and never opens the popup.</span>, { minHeight: 0 })}
         <Meta specs={[["open / close", "no read change"], ["per item", "✓ · expand"], ["Mark all read", "this window's list"], ["attention", "existing clear rule after the source's last unread is read"], ["Jump", "explicit only · disabled when source closed"], ["arrival", "no auto-open · no focus / selection / scroll change"]]} />

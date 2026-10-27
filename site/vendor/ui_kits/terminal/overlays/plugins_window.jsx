@@ -197,9 +197,10 @@ function TrustBox({ manifest }) {
     background: "color-mix(in srgb, " + acc + " calc(var(--tasty-tint-fill-alpha) * 100%), transparent)",
     border: "var(--tasty-border-width) solid color-mix(in srgb, " + acc + " calc(var(--tasty-tint-border-alpha) * 100%), transparent)" };
   if (kind === "trusted") return (
-    <div style={{ ...box, flexDirection: "row", alignItems: "center", color: acc, fontSize: "var(--tasty-font-size-term-sm)" }}>
-      <Icon name="shieldCheck" size={16} />
-      <span>Signed by a <b>trusted publisher</b> — its key is in your trust store.</span>
+    <div style={{ ...box, flexDirection: "row", alignItems: "center", fontSize: "var(--tasty-font-size-term-sm)" }}>
+      {/* 2026-10-27: inks split from the tone — glyph + body → accent-success-ink (Latte ≥ 5.5:1 on mantle/base+tint); fill/border keep accent-success */}
+      <span style={{ display: "inline-flex", flex: "none", color: "var(--tasty-plugin-trust-glyph-success)" }}><Icon name="shieldCheck" size={16} /></span>
+      <span style={{ color: "var(--tasty-plugin-trust-body-trusted-fg)" }}>Signed by a <b>trusted publisher</b> — its key is in your trust store.</span>
     </div>
   );
   const p = { margin: 0, fontSize: "var(--tasty-font-size-term-sm)", lineHeight: "var(--tasty-line-height-ui)", color: "var(--tasty-plugin-trust-body-fg)", overflowWrap: "anywhere" };

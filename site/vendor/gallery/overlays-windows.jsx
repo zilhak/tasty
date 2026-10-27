@@ -241,6 +241,7 @@ const NAV = [
   { id: "optionkey", label: "Win · Super as option (b12)" },
   { id: "pluginswindow", label: "Plugins window · avatar · disabled sites" },
   { id: "scripts", label: "Misc · Scripts" },
+  { id: "anomaly", label: "Misc · Anomaly detection" },
   { id: "gitviewer", label: "Git viewer" },
   { id: "clipboard", label: "Clipboard viewer" },
   { id: "notifications", label: "Notifications" },
@@ -1416,6 +1417,7 @@ function Page() {
       {window.OverlaysWindowsB12 && <window.OverlaysWindowsB12.SettingsNarrowSection />}
       {window.OverlaysWindowsFileHandlers && <window.OverlaysWindowsFileHandlers.FileHandlerSection />}
       {window.OverlaysWindowsPerf && <window.OverlaysWindowsPerf.PerfSection />}
+      {window.OverlaysWindowsAnomaly && <window.OverlaysWindowsAnomaly.AnomalySection />}
       <Section id="permissions" title="Settings › General › Permissions (macOS) — 2026-09-28">
         <Spec title="Status table, one action per row, one request button"
           when={<>macOS builds only, the last L2 under General. A three-column table: <b>permission</b> · <b>status</b> · <b>row action</b>. The four states are told apart by <b>glyph + word</b>, with colour as a third channel: <b>Granted</b> check / success, <b>Not granted</b> alertCircle / warning, <b>Unknown</b> helpCircle / muted, <b>Cannot check automatically</b> eyeOff / muted. Unknown (inference failed) and Cannot check (deliberately not looked at) share the muted ink but never the glyph, and neither can be misread as granted. The Full Disk Access shortcut moves <b>into its own row</b> as Secondary / Sm <b>[Open System Settings]</b>. What needs explaining per row now lives in HelpHints, so the two notes under the table are short. <b>[Request all permissions]</b> stays Primary / Md under the table. While requesting it is disabled and the line below becomes a spinner + <i>requesting</i> copy; the button carries no spinner. The debug-only Accessibility row carries a <b>debug</b> Tag.</>}>

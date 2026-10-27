@@ -704,7 +704,8 @@ const L2 = {
   // is the one SEPARATED row (see KB_L2_SEPARATED — a new axis on the L2 row).
   Keybindings: ["General", "Workspace", "Pane", "Tab", "Surface", "Clipboard", "Zoom", "Explorer", "Scripts", "Preset", "Plugins", "Import / Export"],
   FileHandler: ["File Extension Mapping", "File Detectors", "File Handlers", "Hook Handlers"],
-  Misc: IS_WINDOWS ? ["Scripts", "Tastyrc"] : ["Scripts"],
+  // 2026-10-27: Scripts → Task pipeline → Anomaly detection → Tastyrc (Windows only)
+  Misc: IS_WINDOWS ? ["Scripts", "Task pipeline", "Anomaly detection", "Tastyrc"] : ["Scripts", "Task pipeline", "Anomaly detection"],
   Plugins: ["git-helper", "ai-review", "docker", "k8s-lens"],
 };
 
@@ -1038,6 +1039,16 @@ function SettingsWindow({ theme, onTheme, uiScale, onUiScale, onClose }) {
     if (l1 === "Misc") {
       if (l2 === "Scripts")
         return <ScriptManager />;
+      if (l2 === "Task pipeline")
+        return (
+          <>
+            <Mono>Report limits</Mono>
+            <Row label="Note size limit" caption={<RowCaption>One note longer than this is cut at a UTF-8 boundary and marked as truncated. Must be smaller than the attempt limit.</RowCaption>}><Input mono defaultValue="1024" style={{ width: "var(--tasty-field-width-xs)" }} /><span style={{ fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-number-field-unit-fg)" }}>B</span></Row>
+            <Row label="Attempt report limit" caption={<RowCaption>Total note text kept for one task attempt. Notes past it are not stored, only counted.</RowCaption>}><Input mono defaultValue="16384" style={{ width: "var(--tasty-field-width-xs)" }} /><span style={{ fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-number-field-unit-fg)" }}>B</span></Row>
+          </>
+        );
+      if (l2 === "Anomaly detection" && window.TastyKit.AnomalySubtab)
+        return <window.TastyKit.AnomalySubtab />;
       if (l2 === "Tastyrc")
         return (
           <>

@@ -116,12 +116,12 @@ pub fn plugin_trust_box(
             ui.spacing_mut().item_spacing = egui::vec2(gap, gap);
             if kind == PluginTrustKind::Trusted {
                 ui.horizontal(|ui| {
-                    glyph_cell(ui, kind, glyph, tone);
+                    glyph_cell(ui, kind, glyph, kind.glyph_color(theme).to_egui());
                     ui.add(
                         egui::Label::new(
                             egui::RichText::new(body.first().copied().unwrap_or_default())
                                 .size(term_sm)
-                                .color(tone),
+                                .color(theme.plugin_trust_body_trusted_fg().to_egui()),
                         )
                         .wrap(),
                     );
