@@ -48,6 +48,18 @@ struct NotAWindow {
 
 const NOT_A_WINDOW: &[NotAWindow] = &[
     NotAWindow {
+        path: "lang/ko.toml",
+        phrase: "판정 창 안에서",
+        count: 4,
+        evidence: "settings.anomaly의 slow_loop·call_burst와 각 threshold caption은 호출을 세는 시간 구간을 뜻한다. src/app/anomaly_settings.rs의 thresholds가 slow_loop_window_secs·call_burst_window_secs를 밀리초로 변환해 detector에 전달한다.",
+    },
+    NotAWindow {
+        path: "lang/ko.toml",
+        phrase: "판정 창:",
+        count: 2,
+        evidence: "settings.anomaly.slow_loop_window_secs·call_burst_window_secs의 라벨이다. 두 unit은 초이며 src/view/settings/ui/tabs/anomaly_detection.rs가 crates/tasty-settings/src/anomaly_detection.rs의 해당 기간 필드에 연결한다. OS Window를 여는 항목이 아니다.",
+    },
+    NotAWindow {
         path: "crates/tasty-plugin-image/lang/ko.toml",
         phrase: "파일 선택 창",
         count: 1,
