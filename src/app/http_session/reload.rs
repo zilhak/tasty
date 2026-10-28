@@ -104,6 +104,13 @@ impl HttpSession {
             .map_err(|_| "native receipt poisoned")? = Some(receipt);
         Ok(())
     }
+    #[cfg_attr(
+        not(target_os = "linux"),
+        expect(
+            dead_code,
+            reason = "only the WebKitGTK adapter retains HTTP reloads and probes native trust"
+        )
+    )]
     pub(crate) fn retire_reload(&self) -> Result<(), String> {
         let receipt = self
             .reload

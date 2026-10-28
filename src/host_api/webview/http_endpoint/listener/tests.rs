@@ -30,7 +30,11 @@ fn identity() -> DocumentIdentity {
     }
 }
 fn config(url: String, handler: Handler) -> EndpointConfig {
+    config_with(url, handler, Transport::Socks)
+}
+fn config_with(url: String, handler: Handler, transport: Transport) -> EndpointConfig {
     EndpointConfig {
+        transport,
         identity: identity(),
         entry_url: url,
         allow_remote_content: false,
@@ -398,6 +402,8 @@ async fn verified_body_from_a_different_source_generation_is_rejected_before_sta
     assert_eq!(budget.active_connections(), 0);
     assert_eq!(budget.active_owners(), 0);
 }
+
+mod http_proxy;
 
 mod tls;
 

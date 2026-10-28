@@ -31,7 +31,7 @@ pub(super) fn attach_script_gate(
     } else {
         gate
     };
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", windows))]
     let gate = if let Some(session) = &rs.http_session {
         gate.with_http_session(session.clone())
     } else {

@@ -88,6 +88,7 @@ async fn deliveries(runtime: NativeRuntime) {
     let native = NativeBudget::new(4_000_000);
     let current_view = view.clone();
     let config = EndpointConfig {
+        transport: crate::host_api::webview::http_endpoint::listener::Transport::Socks,
         identity: DocumentIdentity {
             epoch: 1,
             surface: 42,

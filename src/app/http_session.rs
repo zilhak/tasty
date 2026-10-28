@@ -1,17 +1,16 @@
 //! App-side lifetime for one actual browser document; no speculative native request is created.
-use crate::webview::{
-    http_context::{
-        preparation::{Preparation, PrepareError},
-        profile::PreparedProfile,
+#[cfg(target_os = "linux")]
+use crate::webview::http_context::{
+    preparation::{Preparation, PrepareError},
+    profile::PreparedProfile,
+};
+use crate::webview::http_endpoint::{
+    body::BodySource,
+    listener::{
+        DocumentIdentity, Endpoint, EndpointConfig, EndpointError, Transport,
+        trust::{NativeTrust, TrustConfig},
     },
-    http_endpoint::{
-        body::BodySource,
-        listener::{
-            DocumentIdentity, Endpoint, EndpointConfig, EndpointError,
-            trust::{NativeTrust, TrustConfig},
-        },
-        runtime::{NativeRuntime, Setup},
-    },
+    runtime::{NativeRuntime, Setup},
 };
 use std::{
     sync::{
@@ -34,15 +33,23 @@ pub(crate) use native_store::NativeStore;
 mod receive;
 mod reload;
 mod retirement;
+#[cfg(windows)]
+mod script_policy;
 pub(crate) use receive::Observation;
 pub(crate) use reload::ReloadSetup;
 type EndpointReceipt = mpsc::Receiver<Result<(Endpoint, Option<NativeTrust>), EndpointError>>;
 type Notices =
     std::collections::HashMap<tasty_ipc::html_transfer::TransferId, (String, Option<u64>, u64)>;
 type Current = Arc<dyn Fn() -> bool + Send + Sync>;
+/// WebKitGTK authenticates RFC1929 SOCKS; Chromium-based WebView2 only supports HTTP proxy auth.
+#[cfg(target_os = "linux")]
+const NATIVE_TRANSPORT: Transport = Transport::Socks;
+#[cfg(windows)]
+const NATIVE_TRANSPORT: Transport = Transport::HttpProxy;
 struct State {
     setup: Option<Setup>,
     runtime: Option<NativeRuntime>,
+    #[cfg(target_os = "linux")]
     preparation: Option<Preparation>,
     endpoint_pending: Option<EndpointReceipt>,
     endpoint: Option<Arc<Endpoint>>,
@@ -68,6 +75,10 @@ pub(crate) struct HttpSession {
     wake: Arc<dyn Fn() + Send + Sync>,
     deliveries: Arc<delivery::Deliveries>,
     notices: Mutex<Notices>,
+    #[cfg(windows)]
+    script: script_policy::ScriptPolicy,
+    #[cfg(windows)]
+    me: std::sync::Weak<Self>,
 }
 impl HttpSession {
     pub(crate) fn new(
@@ -126,7 +137,11 @@ impl HttpSession {
         let bodies = BodySource::new(bridge.clone(), view.clone(), current.clone());
         let setup = Setup::start(current.clone(), wake.clone())
             .map_err(|error| format!("native HTTP runtime: {error:?}"))?;
-        Ok(Arc::new(Self {
+        Ok(Arc::new_cyclic(|_me| Self {
+            #[cfg(windows)]
+            script: script_policy::ScriptPolicy::default(),
+            #[cfg(windows)]
+            me: _me.clone(),
             source,
             view,
             https,
@@ -148,6 +163,7 @@ impl HttpSession {
             state: Mutex::new(State {
                 setup: Some(setup),
                 runtime: None,
+                #[cfg(target_os = "linux")]
                 preparation: None,
                 endpoint_pending: None,
                 endpoint: None,
@@ -179,6 +195,7 @@ impl HttpSession {
             let runtime = state.runtime.as_ref().expect("ready runtime");
             let id = self.source.metadata_id();
             let config = EndpointConfig {
+                transport: NATIVE_TRANSPORT,
                 identity: DocumentIdentity {
                     epoch: id.epoch,
                     surface: id.surface_id,
@@ -197,16 +214,20 @@ impl HttpSession {
                 native_budget: tasty_remote::html_http_native::NativeBudget::new(
                     tasty_ipc::admission::QUEUED_BYTES_LIMIT,
                 ),
-                handler: self
-                    .deliveries
-                    .handler(self.bodies.handler(), self.current.clone()),
+                handler: self.deliveries.handler(
+                    self.bodies.handler(),
+                    self.current.clone(),
+                    self.local_policy(),
+                ),
             };
             let (tx, rx) = mpsc::sync_channel(1);
             let handle = runtime.handle();
             let budget = runtime.endpoint_budget();
             let endpoint_wake = wake.clone();
             drop(runtime.handle().spawn(async move {
-                let result = if config.https {
+                // Only WebKitGTK observes its own TLS failure through the endpoint probe. WebView2
+                // compares the presented leaf in its certificate-error event instead.
+                let result = if config.https && cfg!(target_os = "linux") {
                     Endpoint::start_with_native_trust(
                         handle,
                         config,
@@ -235,6 +256,7 @@ impl HttpSession {
             }));
             state.endpoint_pending = Some(rx);
         }
+        #[cfg(target_os = "linux")]
         if state.runtime.is_some() && state.preparation.is_none() && !self.native_store.is_live() {
             let runtime = state.runtime.as_ref().expect("ready runtime");
             let (receipt, work) = Preparation::new(
@@ -266,11 +288,33 @@ impl HttpSession {
         }
         Ok(())
     }
+    #[cfg(windows)]
+    fn local_policy(&self) -> Option<delivery::LocalPolicy> {
+        let session = self.me.clone();
+        Some(Arc::new(move |request| {
+            session
+                .upgrade()
+                .ok_or(EndpointError::Retired)?
+                .local_headers(request)
+        }))
+    }
+    #[cfg(not(windows))]
+    fn local_policy(&self) -> Option<delivery::LocalPolicy> {
+        None
+    }
+    #[cfg_attr(
+        not(target_os = "linux"),
+        expect(
+            dead_code,
+            reason = "only the WebKitGTK adapter retains HTTP reloads and probes native trust"
+        )
+    )]
     pub(crate) fn with_native_trust<T>(&self, f: impl FnOnce(&NativeTrust) -> T) -> Option<T> {
         // reason: no trust capability may escape poisoned setup; the owning poll reports and retires it.
         let state = self.state.lock().ok()?;
         state.trust.as_ref().map(f)
     }
+    #[cfg(target_os = "linux")]
     pub(crate) fn prepare_probe(&self) -> Result<Preparation, String> {
         let state = self
             .state
@@ -292,6 +336,13 @@ impl HttpSession {
             .map_err(|_| "native probe profile capacity")?;
         Ok(receipt)
     }
+    #[cfg_attr(
+        not(target_os = "linux"),
+        expect(
+            dead_code,
+            reason = "only the WebKitGTK adapter retains HTTP reloads and probes native trust"
+        )
+    )]
     pub(crate) fn prepare_authority(
         &self,
         url: &str,
@@ -331,6 +382,7 @@ impl HttpSession {
                 .or_else(|| self.final_body.lock().ok()?.clone())
         })
     }
+    #[cfg(target_os = "linux")]
     pub(crate) fn profile(&self) -> Option<Result<PreparedProfile, PrepareError>> {
         // reason: poisoned setup cannot yield a native profile; the owning poll reports and retires it.
         self.state.lock().ok()?.preparation.as_ref()?.poll()
@@ -352,6 +404,13 @@ impl HttpSession {
         };
         self.bridge.drive(next_id, |job| runtime.spawn_verify(job))
     }
+    #[cfg_attr(
+        not(target_os = "linux"),
+        expect(
+            dead_code,
+            reason = "only the WebKitGTK adapter retains HTTP reloads and probes native trust"
+        )
+    )]
     pub(crate) fn request_retained(&self) {
         self.retaining.store(true, Ordering::Release);
     }

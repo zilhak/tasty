@@ -7,6 +7,7 @@ use std::{
     time::Duration,
 };
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+pub mod proxy;
 
 /// Caller supplies 256 bits of fresh OS-backed randomness for one mirror session.
 /// This value belongs in its scoped proxy URI, never logs or persisted settings.

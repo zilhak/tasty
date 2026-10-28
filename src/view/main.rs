@@ -96,7 +96,7 @@ pub struct MainView {
     pub(crate) double_tap: crate::double_tap::DoubleTapDetector,
     /// Native WebView instances keyed by surface ID.
     pub(crate) webviews: std::collections::HashMap<u32, crate::webview::PlatformWebView>,
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", windows))]
     pub(crate) http_preparing:
         std::collections::HashMap<u32, crate::webview::http_native::PendingNative>,
     pub(crate) webview_runtime:
@@ -240,7 +240,7 @@ impl MainView {
             ime_advance_base: (0, 0),
             double_tap: crate::double_tap::DoubleTapDetector::new(),
             webviews: std::collections::HashMap::new(),
-            #[cfg(target_os = "linux")]
+            #[cfg(any(target_os = "linux", windows))]
             http_preparing: std::collections::HashMap::new(),
             webview_runtime: std::collections::HashMap::new(),
             webview_applied_settings: std::collections::HashMap::new(),

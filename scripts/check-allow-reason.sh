@@ -74,7 +74,7 @@ fi
 REASON_MARKERS='reason:;이유:;complexity-exempt:;SAFETY[[:space:]]*:'
 
 # 근거 없는 억제 수의 상한. 넘으면 실패하고 줄어든 것은 실패가 아니다.
-CAP=125
+CAP=124
 
 # 훑은 .rs 수의 하한. 줄어든 억제 수가 수집 일부 누락 때문이 아닌지 가른다. 늘어나는 것은 실패가 아니다.
 # 2026-10-10 3cba284fd 에서 git ls-files 로 2112개였다. 가장 큰 두 단위(src/adapters 268,

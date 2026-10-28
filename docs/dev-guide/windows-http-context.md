@@ -1,106 +1,112 @@
-# Windows remote HTTP context boundary
+# Windows remote HTTP context
 
-The Windows remote HTTP context factory refuses construction with
-`ContextError::AuthenticatedSocksUnavailable`. Its `DataStore` has an uninhabited
-field, so no successful store or native view can be returned. The check performs
-no filesystem, COM, network, runtime or protocol-ID work. The shared host must
-check this boundary before preparing a profile or endpoint and retain its
-unsupported remote state. It must not substitute the normal local WebView.
-This component is source-bound in its fixture; the shared native module declaration
-and App error presentation remain the integrating host's responsibility.
+A Windows GUI client shows a remote HTTP(S) document in WebView2. Every request of
+that WebView reaches the document endpoint, which forwards it to the remote host
+as described in the [HTTP bridge](html-http-bridge.md). The client never connects
+to the logical target.
 
-## Required transport and native evidence
+## Why an HTTP proxy front
 
-The document endpoint and its private TLS probe require SOCKS5 username/password
-authentication with unpredictable endpoint credentials. Chromium's
-[proxy contract](https://github.com/chromium/chromium/blob/main/net/docs/proxy.md#socksv5-proxy-scheme)
-does not support SOCKS5 authentication. Browser arguments and the WebView2 HTTP
-BasicAuthenticationRequested event do not establish RFC1929 authentication.
-Removing endpoint authentication, forwarding through an unauthenticated local
-relay or enabling a direct route would change the required boundary.
+Chromium has no SOCKS5 username/password authentication, so the SOCKS front used
+by WebKitGTK cannot authenticate a WebView2 context. On Windows the document
+endpoint uses `Transport::HttpProxy` instead. The listener still binds only a
+fresh loopback port and keeps the same budgets, destination policy, body
+ownership and certificate map. Only the front differs:
 
-The pinned `webview2-com` binding is0.38.2 with `windows`0.61.3. A source-bound
-hidden native probe created WebView2 environment155.0.4283.62 from SSH session0.
-Controller creation returned0x80070578 (invalid window handle). A registered,
-verified-live hidden HWND and InPrivate controller options gave the same error.
-The probe did not reach navigation, SOCKS, HTTP or TLS. This is an observed
-controller obstacle, not a native measurement of authentication support or a
-claim that every Windows session has this restriction. No interactive desktop
-or input was used.
+- A request without valid `Proxy-Authorization` gets `407` with a
+  `Basic realm="tasty-<random>"` challenge and `Connection: close`.
+- The user is `tasty` and the password is the hex document token. Neither appears
+  in a URL, a browser argument or a log.
+- `CONNECT host:port` selects a tunnel. The endpoint answers
+  `200 Connection Established` and then continues with the same TLS or plaintext
+  routing as the SOCKS front.
+- An absolute-form `http://` request is served on the same connection. The
+  endpoint removes `Proxy-Authorization` and `Proxy-Connection` from the head
+  before the request codec reads it. Userinfo, other schemes and origin-form
+  requests get `403`.
+- The connection is closed after any refusal. Its write side is shut down first
+  and a bounded amount of input is drained, so Windows does not reset the
+  connection before the browser reads the reply.
 
-WebView2's
-[CertificateIsInvalid status](https://learn.microsoft.com/en-us/microsoft-edge/webview2/reference/winrt/microsoft_web_webview2_core/corewebview2weberrorstatus)
-includes unknown authorities as well as weak algorithms/keys, pin failures and
-other errors. That value alone cannot attest unknown-CA-only. Matching a leaf
-hash does not narrow the native cause. The Windows factory never grants a
-certificate exception or acknowledges an endpoint NativeTrust request.
+## WebView2 context
 
-## Ownership and integration
+Each HTTP document view has its own user-data folder under
+`webview/http` in the Tasty home and an InPrivate controller. Cookies therefore
+live only as long as that view. The environment uses these browser arguments:
 
-No Windows target profile, native probe pool or certificate history is allocated
-by the refused factory. A future supported native implementation must use one
-separate process-local, permanently untrusted private probe resource across
-sessions and Reloads through the endpoint ProbePool contract. It must preserve
-the exact target authority, leaf, current view/source, original native request
-and upload, enforce finite target trust history, and clear selected HTTP cache
-and service-worker data while retaining cookies/storage and the same view.
+- `--proxy-server=http://127.0.0.1:<port>` sends every scheme to the endpoint.
+- `--proxy-bypass-list=<-loopback>` removes Chromium's implicit loopback bypass, so
+  `localhost` and `127.0.0.1` refer to the remote host.
+- `--disable-quic` keeps HTTP/3 off, since QUIC would not use the proxy.
+- `--disable-background-networking` keeps background browser services quiet.
 
-Those properties, native cookie isolation, loopback/WebSocket containment,
-same-view POST continuation, exact scan/render bytes and App capability
-negotiation are not implemented by this refusal boundary. HTTP/HTTPS capability
-activation remains off. The existing file-entry response adapter is separate
-and is not changed by this module.
+`BasicAuthenticationRequested` answers only when the document is still current
+and the challenge URI and realm match its own endpoint. Every other challenge,
+including a remote page's `401`, is cancelled. Reputation checks, password
+saving and general autofill are off, and new windows are refused.
 
-## Reproducing the component checks
+`ServerCertificateErrorDetected` allows a certificate only when the status is
+`CertificateIsInvalid` and the DER SHA-256 equals the leaf this endpoint generated
+for that host and port. The endpoint generates that leaf, and the remote host
+verified the real origin certificate. A leaf match therefore leaves an untrusted
+issuer as the only possible cause. Any other status or certificate keeps
+WebView2's refusal.
 
-The source-bound fixture builder in
-`src/host_api/webview/http_context/windows/tests/fixture.py` writes an isolated
-Cargo package referencing the actual factory and its test modules. It extracts
-the exact registry dependency closure from the root lock; it does not resolve
-new versions or modify the root manifest/lock. Use the existing owned target.
+## Script policy
 
-The ordinary Windows test confirms that factory refusal leaves the native COM
-apartment uninitialized. The explicitly ignored native test additionally needs
-owned absolute `U6_PROFILE` and `U6_LOG` paths. Run that test alone, with one test
-thread, in an authorized Windows environment. It creates only a hidden window,
-uses local diagnostic SOCKS/target sentinels, disables scripts and bounds each
-callback wait at20seconds. It records actual API errors; an environment failure
-is a failed native test, never a successful transport observation. Preserve its
-profile while native descendants remain uncertain. Successful finalization signals
-stop, drains both nonblocking listener queues until each reports empty, joins both
-owned threads and propagates every observer failure or panic. Only then does it
-validate the final observations and emit CONFIRMED. This covers already queued
-connections; a connection arriving after that observer's final empty-queue check
-is outside the receipt's observation interval.
+WebView2 fixes script enablement when a navigation starts, before any response
+exists. A native setting cannot follow the scan of the verified main response.
+In HTTP mode the native setting therefore stays on, and the endpoint decides:
 
-The shared observer lifetime deadline is65seconds. Finalization shortens it to at
-most two seconds from the stop request for both observers and all queued sockets
-together. Each accepted greeting also has its own two-second absolute deadline.
-Nonblocking reads/writes check the earlier deadline on every progress or retry;
-partial bytes never restart a timeout. Polling retries request a5-millisecond
-sleep and recheck the deadline after waking.
-These bound socket work, not OS thread scheduling, logging or waiting for a
-scheduled thread to join; no hard real-time wall-clock join guarantee is claimed.
-At most16 connections are accepted and at most4096 SOCKS bytes are read/written
-across the owner. Exhausting either budget or any deadline fails the receipt;
-the eight-greeting retention cap and overflow refusal remain unchanged.
+- `NavigationStarting` records the main-frame URL and starts the gate's load.
+- The endpoint's next response for that URL is the main response. Its exact
+  verified body is scanned and decides the document's scripts.
+- While scripts are not allowed, every response carries
+  `Content-Security-Policy: script-src 'none'` and `Cache-Control: no-store`. Each
+  iframe response also carries the policy, because CSP does not inherit.
+- A commit while that main response is still unserved is WebView2's own page,
+  such as the first attempt that received the proxy challenge or an error page.
+  It does not commit a document to the gate.
 
-A successful receipt requires complete greetings. Header/method EOF, reset,
-timeout, changed methods or unexpected authentication bytes remain errors even
-after successful stop. Only a closed/reset peer after a complete valid greeting
-and the deliberately unsupported-method reply establishes expected refusal.
-Earlier native errors instead use failure-only Drop cleanup: it cancels queued
-and partial socket work, joins every observer and records the cleanup reason.
-That path cannot emit CONFIRMED or promote an earlier error into success.
+Script Allow marks the verified response for one replay and calls `Reload`. The
+endpoint answers the reloaded main request with that exact response, so a POST
+is not sent again.
 
-The actual observer/receipt module is portable and source-linked by its regression
-fixture. Controls exercise late observations, joined panic and error propagation,
-error-path cleanup, actual loopback greetings, empty/direct/method/overflow refusal
-and truncated-method I/O, multiple queued greetings, incomplete accepted sockets,
-shared byte/connection budget exhaustion and absolute finalization deadlines.
-These are observer correctness tests, not WebView2,
-certificate, HTTP or whole-App acceptance. Preserve the failed native controller
-case separately; passing portable receipts does not turn it into a feature PASS.
+## Reload
 
-Native process ownership and cleanup belong to the caller; no user desktop or input
-is required.
+Linux keeps the same native view and continues the original request. Windows
+has no retained continuation yet. A user or agent Reload starts a new document
+generation, which creates a new endpoint and a new WebView2 context. The entry
+URL is requested again with GET, and cookies of the previous context are not
+kept. A script allowance with the same URL and fingerprint still applies.
+
+## Limits
+
+- WebSocket and other upgrades are refused, like on Linux.
+- `[::1]` is unreachable: WebView2 sends no request for it to the proxy.
+- SmartScreen sends an unauthenticated `CONNECT` that receives `407` and is not
+  repeated. Reputation checking is disabled.
+
+## Measured behaviour
+
+These were observed with WebView2 runtime 155.0.4283.62 on Windows 11 in an interactive
+session. An SSH session0 environment cannot create the controller
+(`0x80070578`).
+
+- The first request receives `407`. WebView2 then raises
+  `BasicAuthenticationRequested` and repeats the request. Later requests send
+  `Proxy-Authorization` without a challenge.
+- The challenged attempt completes as `ValidProxyAuthenticationRequired` and can
+  raise `ContentLoading`. The view ignores both.
+- With `<-loopback>`, navigation, fetch, images and WebSocket requests to
+  `localhost` and `127.0.0.1` all reached the proxy. A trap listener received no
+  direct connection.
+- `IsScriptEnabled` changes after `NavigationStarting` do not affect that
+  navigation. A `script-src 'none'` response header blocks the document's
+  scripts.
+
+Two isolated debug instances on one PC confirmed the whole path. They showed a
+local origin with CSS, images, a cookie and blocked scripts, and the banner. Allow
+ran scripts and a same-origin fetch without a second main request. An
+auto-submitted POST reached the origin once. Reload kept the script allowance.
+`https://example.com` passed the leaf check and rendered.

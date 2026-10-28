@@ -1,7 +1,7 @@
 use super::{NativeError, NativeLimits, Result};
 use crate::html_http_body::VerifiedBody;
 use std::sync::Arc;
-use tasty_ipc::html_http::{BodyIdentity, CHUNK_BYTES, ResponseId};
+use tasty_ipc::html_http::{BodyIdentity, CHUNK_BYTES, Header, ResponseId};
 use tokio::io::{AsyncWrite, AsyncWriteExt};
 
 /// The caller retains the current native waiter and chooses its exact already-scanned response.
@@ -16,6 +16,28 @@ pub async fn write_response<S: AsyncWrite + Unpin>(
     limits: NativeLimits,
     current: &(dyn Fn() -> bool + Send + Sync),
 ) -> Result<()> {
+    write_response_with(io, body, expected, method, upload, &[], limits, current).await
+}
+/// Same as [`write_response`], followed by client-local headers the verified response does not
+/// carry (for example a script-blocking policy). They only restrict the native document; the
+/// verified head and body bytes are written unchanged.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the full response identity and both write policies stay explicit"
+)]
+pub async fn write_response_with<S: AsyncWrite + Unpin>(
+    io: &mut S,
+    body: Arc<VerifiedBody>,
+    expected: ResponseId,
+    method: &str,
+    upload: BodyIdentity,
+    local: &[Header],
+    limits: NativeLimits,
+    current: &(dyn Fn() -> bool + Send + Sync),
+) -> Result<()> {
+    if local.iter().any(|header| !local_header(header)) {
+        return Err(NativeError::Invalid);
+    }
     if !body.matches_native(expected, method, upload) {
         return Err(NativeError::Identity);
     }
@@ -26,10 +48,27 @@ pub async fn write_response<S: AsyncWrite + Unpin>(
         return Err(NativeError::Timeout);
     }
     let mut io = super::io::CurrentIo::new(io, current);
-    let result = tokio::time::timeout(limits.io_timeout, write(&mut io, &body, current))
+    let result = tokio::time::timeout(limits.io_timeout, write(&mut io, &body, local, current))
         .await
         .map_err(|_| NativeError::Timeout)?;
     super::io::finish(result, current)
+}
+/// A local header is a token name with a visible ASCII value, never framing or hop-by-hop.
+fn local_header(header: &Header) -> bool {
+    !header.name.is_empty()
+        && header
+            .name
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"!#$%&'*+-.^_`|~".contains(&b))
+        && header.value.iter().all(|b| (0x20..0x7f).contains(b))
+        && ![
+            "content-length",
+            "connection",
+            "transfer-encoding",
+            "set-cookie",
+        ]
+        .iter()
+        .any(|name| header.name.eq_ignore_ascii_case(name))
 }
 fn headers(body: &VerifiedBody) -> Result<bool> {
     let mut length = false;
@@ -77,6 +116,7 @@ async fn part<S: AsyncWrite + Unpin>(
 async fn write<S: AsyncWrite + Unpin>(
     io: &mut S,
     body: &VerifiedBody,
+    local: &[Header],
     current: &(dyn Fn() -> bool + Send + Sync),
 ) -> Result<()> {
     // Check all framing before publishing even the status line. Header values and duplicates
@@ -88,7 +128,7 @@ async fn write<S: AsyncWrite + Unpin>(
         current,
     )
     .await?;
-    for header in &body.head().headers {
+    for header in body.head().headers.iter().chain(local) {
         part(io, header.name.as_bytes(), current).await?;
         part(io, b": ", current).await?;
         part(io, &header.value, current).await?;

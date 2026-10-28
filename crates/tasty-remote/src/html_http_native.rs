@@ -6,7 +6,7 @@ mod response;
 pub use budget::NativeBudget;
 pub use io::CurrentIo;
 pub use request::{Destination, NativeRequest, read_request};
-pub use response::write_response;
+pub use response::{write_response, write_response_with};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NativeError {

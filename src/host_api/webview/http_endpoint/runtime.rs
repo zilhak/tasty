@@ -163,6 +163,13 @@ impl NativeRuntime {
     pub(crate) fn endpoint_budget(&self) -> EndpointBudget {
         self.parts.endpoints.clone()
     }
+    #[cfg_attr(
+        not(any(target_os = "linux", test)),
+        expect(
+            dead_code,
+            reason = "only the WebKitGTK adapter retains HTTP reloads and probes native trust"
+        )
+    )]
     pub(crate) fn current(&self) -> Current {
         let state = self._owner.state.clone();
         Arc::new(move || state.current())

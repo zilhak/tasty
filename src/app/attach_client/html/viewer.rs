@@ -95,20 +95,6 @@ pub(in crate::app::attach_client) fn synchronize(
             }
             continue;
         }
-        #[cfg(all(feature = "gui", windows))]
-        if mirror.metadata.as_ref().is_some_and(|metadata| {
-            matches!(
-                &metadata.source,
-                tasty_ipc::html_transfer::HtmlSource::Http { .. }
-            )
-        }) {
-            // Mandatory transport compatibility is checked before any native preparation.
-            // The uninhabited factory keeps the existing unsupported mirror presentation.
-            match crate::webview::http_context::windows::DataStore::new() {
-                Err(crate::webview::http_context::windows::ContextError::AuthenticatedSocksUnavailable)=>{},
-                Ok(_)=>continue,
-            }
-        }
         mirror.enable_resources(sess.transport.html.server_resources && super::viewer_available());
         changed |= mirror.poll_navigation();
         changed |= mirror.poll_resources();
@@ -183,14 +169,14 @@ pub(in crate::app::attach_client) fn synchronize(
             // HTTP presentation belongs to its actual native/model session. The legacy file
             // metadata receiver deliberately cannot transfer HTTP bodies; its terminal state
             // must not erase the current HTTP document's actionable script banner.
-            #[cfg(target_os = "linux")]
+            #[cfg(all(feature = "gui", any(target_os = "linux", windows)))]
             if surface.http_session.is_some() {
                 continue;
             }
             surface.with_html_script(|state| state.on_load_failed());
         }
     }
-    #[cfg(all(feature = "gui", target_os = "linux"))]
+    #[cfg(all(feature = "gui", any(target_os = "linux", windows)))]
     {
         changed |= super::http::synchronize(sess, engine);
     }

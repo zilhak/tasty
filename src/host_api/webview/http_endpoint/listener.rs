@@ -1,14 +1,24 @@
-//! Response-aware loopback SOCKS endpoint. It never opens a connection to the logical target.
+//! Response-aware loopback proxy endpoint. It never opens a connection to the logical target.
 mod budget;
 mod policy;
 pub(crate) mod preparation;
 mod request;
+#[cfg_attr(
+    not(target_os = "linux"),
+    expect(
+        dead_code,
+        reason = "only the WebKitGTK adapter retains HTTP reloads and probes native trust"
+    )
+)]
 pub(crate) mod trust;
 use super::{
     certificates::{Authority, Certificates},
-    io::{Current, CurrentConnection},
+    io::{Current, CurrentConnection, Prefixed},
 };
-use crate::remote::html_http::endpoint::{self, EndpointToken};
+use crate::remote::html_http::endpoint::{
+    self, EndpointToken,
+    proxy::{self, ProxyRealm, ProxyRoute},
+};
 pub(crate) use budget::EndpointBudget;
 use std::{
     future::Future,
@@ -49,6 +59,10 @@ pub(crate) trait ResponseOwner: Send {
         None
     }
     fn write_completed(&self, _success: bool) {}
+    /// Client-local headers written after the verified head, such as a script-blocking policy.
+    fn local_headers(&self) -> &[tasty_ipc::html_http::Header] {
+        &[]
+    }
 }
 pub(crate) type ResponseFuture =
     Pin<Box<dyn Future<Output = Result<Box<dyn ResponseOwner>, EndpointError>> + Send>>;
@@ -75,7 +89,37 @@ impl DocumentIdentity {
             ) == (self.epoch, self.surface, self.binding, self.document)
     }
 }
+/// How the native engine authenticates to the document endpoint.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Transport {
+    /// RFC1929 SOCKS5 credentials carried in the proxy URI (WebKitGTK).
+    #[cfg_attr(
+        not(any(target_os = "linux", test)),
+        expect(
+            dead_code,
+            reason = "only the WebKitGTK adapter retains HTTP reloads and probes native trust"
+        )
+    )]
+    Socks,
+    /// Basic HTTP proxy authentication answered by the native auth handler (WebView2).
+    HttpProxy,
+}
+/// Values a native HTTP proxy authentication handler needs; never logged or persisted.
+#[cfg_attr(
+    not(any(windows, test)),
+    expect(
+        dead_code,
+        reason = "only the WebView2 adapter authenticates through the HTTP proxy front"
+    )
+)]
+pub(crate) struct ProxyCredentials {
+    pub uri: String,
+    pub challenge: String,
+    pub user: &'static str,
+    pub password: String,
+}
 pub(crate) struct EndpointConfig {
+    pub transport: Transport,
     pub identity: DocumentIdentity,
     pub entry_url: String,
     pub allow_remote_content: bool,
@@ -91,6 +135,7 @@ struct State {
     current: Current,
     stop: Arc<AtomicBool>,
     token: EndpointToken,
+    realm: ProxyRealm,
     certificates: Arc<Certificates>,
     budget: EndpointBudget,
     trust: Option<Arc<trust::Gate>>,
@@ -165,11 +210,19 @@ impl Endpoint {
             .try_fill_bytes(&mut entropy)
             .map_err(|_| EndpointError::Worker)?;
         let token = EndpointToken::from_random_bytes(entropy);
+        let mut entropy = [0; 16];
+        rand::rngs::OsRng
+            .try_fill_bytes(&mut entropy)
+            .map_err(|_| EndpointError::Worker)?;
+        let realm = ProxyRealm::from_random_bytes(entropy);
         let listener = TcpListener::bind("127.0.0.1:0")
             .await
             .map_err(|_| EndpointError::Io)?;
         let port = listener.local_addr().map_err(|_| EndpointError::Io)?.port();
-        let proxy_uri = token.proxy_uri(port);
+        let proxy_uri = match config.transport {
+            Transport::Socks => token.proxy_uri(port),
+            Transport::HttpProxy => format!("http://127.0.0.1:{port}"),
+        };
         if !current() {
             return Err(EndpointError::Retired);
         }
@@ -186,6 +239,7 @@ impl Endpoint {
             current,
             stop,
             token,
+            realm,
             certificates,
             budget,
             trust,
@@ -199,8 +253,35 @@ impl Endpoint {
             task: Some(task),
         })
     }
+    #[cfg_attr(
+        not(any(target_os = "linux", test)),
+        expect(
+            dead_code,
+            reason = "only the WebKitGTK adapter retains HTTP reloads and probes native trust"
+        )
+    )]
     pub(crate) fn proxy_uri(&self) -> String {
         self.proxy_uri.clone()
+    }
+    /// Basic proxy credentials for the HttpProxy transport; None for SOCKS.
+    #[cfg_attr(
+        not(any(windows, test)),
+        expect(
+            dead_code,
+            reason = "only the WebView2 adapter authenticates through the HTTP proxy front"
+        )
+    )]
+    pub(crate) fn proxy_credentials(&self) -> Option<ProxyCredentials> {
+        if self.state.config.transport != Transport::HttpProxy {
+            return None;
+        }
+        let (user, password) = proxy::credentials(&self.state.token);
+        Some(ProxyCredentials {
+            uri: format!("{}/", self.proxy_uri),
+            challenge: self.state.realm.challenge(),
+            user,
+            password,
+        })
     }
     pub(crate) fn expected_leaf(&self, host: &str, port: u16) -> Option<[u8; 32]> {
         self.state.certificates.expected_leaf(host, port)
@@ -287,6 +368,9 @@ async fn retire_connections(tasks: &mut JoinSet<()>) {
 async fn connection(state: Arc<State>, socket: TcpStream) -> Result<(), EndpointError> {
     let deadline = state.config.limits.io_timeout;
     let mut io = CurrentConnection::new(socket, state.current.clone());
+    if state.config.transport == Transport::HttpProxy {
+        return proxy_connection(state, io).await;
+    }
     let route = endpoint::authenticate(&mut io, &state.token, deadline)
         .await
         .map_err(|_| EndpointError::Auth)?;
@@ -301,6 +385,46 @@ async fn connection(state: Arc<State>, socket: TcpStream) -> Result<(), Endpoint
     endpoint::accept_route(&mut io)
         .await
         .map_err(|_| EndpointError::Io)?;
+    routed(state, io, authority).await
+}
+async fn proxy_connection(
+    state: Arc<State>,
+    mut io: CurrentConnection<TcpStream>,
+) -> Result<(), EndpointError> {
+    let deadline = state.config.limits.io_timeout;
+    let route = proxy::authenticate_http(&mut io, &state.token, &state.realm, deadline)
+        .await
+        .map_err(|_| EndpointError::Auth)?;
+    let (route, head) = match route {
+        ProxyRoute::Tunnel(route) => (route, None),
+        ProxyRoute::Forward { authority, head } => (authority, Some(head)),
+    };
+    let authority =
+        Authority::new(&route.host, route.port).map_err(|_| EndpointError::Destination)?;
+    let admitted = match head {
+        None => state.policy.candidate(&authority),
+        Some(_) => state.policy.permits("http", &authority),
+    };
+    if !(state.current)() || !admitted {
+        proxy::reject_proxy_route(&mut io)
+            .await
+            .map_err(|_| EndpointError::Io)?;
+        return Err(EndpointError::Destination);
+    }
+    if let Some(head) = head {
+        return request::serve(state, Prefixed::new(head, io), authority, "http").await;
+    }
+    proxy::accept_tunnel(&mut io)
+        .await
+        .map_err(|_| EndpointError::Io)?;
+    routed(state, io, authority).await
+}
+async fn routed(
+    state: Arc<State>,
+    io: CurrentConnection<TcpStream>,
+    authority: Authority,
+) -> Result<(), EndpointError> {
+    let deadline = state.config.limits.io_timeout;
     let first = tokio::time::timeout(deadline, io.first_byte())
         .await
         .map_err(|_| EndpointError::Io)?

@@ -1,7 +1,34 @@
 //! Native policy consumes the exact verified response delivered for the actual method and upload.
 use super::*;
-use crate::webview::http_endpoint::listener::{EndpointError, Handler};
+use crate::webview::http_endpoint::listener::{EndpointError, Handler, ResponseOwner};
 use tasty_remote::{html_http_body::VerifiedBody, html_http_native::NativeRequest};
+/// Decides client-local headers for a response after its delivery is recorded.
+pub(super) type LocalPolicy = Arc<
+    dyn Fn(&NativeRequest) -> Result<Vec<tasty_ipc::html_http::Header>, EndpointError>
+        + Send
+        + Sync,
+>;
+struct Local {
+    inner: Box<dyn ResponseOwner>,
+    headers: Vec<tasty_ipc::html_http::Header>,
+}
+impl ResponseOwner for Local {
+    fn body(&self) -> &Arc<VerifiedBody> {
+        self.inner.body()
+    }
+    fn request(&self) -> &Arc<NativeRequest> {
+        self.inner.request()
+    }
+    fn native_delivery(&self) -> Option<crate::webview::http_endpoint::body::NativeDelivery> {
+        self.inner.native_delivery()
+    }
+    fn write_completed(&self, success: bool) {
+        self.inner.write_completed(success);
+    }
+    fn local_headers(&self) -> &[tasty_ipc::html_http::Header] {
+        &self.headers
+    }
+}
 #[derive(Default)]
 pub(super) struct Deliveries {
     pending: Mutex<Vec<Delivery>>,
@@ -20,12 +47,18 @@ struct Delivery {
     upload: tasty_ipc::html_http::BodyIdentity,
 }
 impl Deliveries {
-    pub(super) fn handler(self: &Arc<Self>, inner: Handler, current: Current) -> Handler {
+    pub(super) fn handler(
+        self: &Arc<Self>,
+        inner: Handler,
+        current: Current,
+        local: Option<LocalPolicy>,
+    ) -> Handler {
         let deliveries = self.clone();
         Arc::new(move |request: Arc<NativeRequest>| {
             let future = inner(request.clone());
             let deliveries = deliveries.clone();
             let current = current.clone();
+            let local = local.clone();
             Box::pin(async move {
                 if !current() {
                     return Err(EndpointError::Retired);
@@ -52,7 +85,15 @@ impl Deliveries {
                     method: request.method.clone(),
                     upload: request.identity,
                 });
-                Ok(response)
+                drop(pending);
+                let Some(local) = local else {
+                    return Ok(response);
+                };
+                let headers = local(&request)?;
+                Ok(Box::new(Local {
+                    inner: response,
+                    headers,
+                }) as Box<dyn ResponseOwner>)
             })
         })
     }
@@ -105,6 +146,13 @@ impl Deliveries {
     }
 }
 impl HttpSession {
+    #[cfg_attr(
+        not(target_os = "linux"),
+        expect(
+            dead_code,
+            reason = "only the WebKitGTK adapter retains HTTP reloads and probes native trust"
+        )
+    )]
     pub(crate) fn can_restart_initial_get(&self) -> bool {
         self.is_current() && self.deliveries.initial_get(self.source.entry_url())
     }

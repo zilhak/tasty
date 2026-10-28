@@ -101,4 +101,4 @@ DAG 화면의 읽기 요청과 App 워커 소유 경계는 [Model + Host View �
 
 - [HTTP transport bridge](html-http-bridge.md) — public Linux X11 App/native renderer, GUI/headless HTTP/HTTPS/Reload server protocol, bounded encoded receiving and consent, exact-body verification/replay, native source/owner fences, authenticated endpoints and TLS-only UNKNOWN_CA proof, singleton probe pool, bounded typed profile-lock admission, selected-clear and retained-view Reload; component-test scope is separate from actual native observations.
 
-- [Windows HTTP context](windows-http-context.md) — authenticated SOCKS compatibility refusal, native certificate-cause limits and bounded final observer drain receipts.
+- [Windows HTTP context](windows-http-context.md) — WebView2 remote HTTP view: authenticated HTTP proxy front, exact-leaf certificate check, response-header script policy and Reload limits.

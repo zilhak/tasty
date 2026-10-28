@@ -62,3 +62,50 @@ impl CurrentConnection<tokio::net::TcpStream> {
         Ok(byte[0])
     }
 }
+
+/// Replays an already consumed request head before the remaining stream bytes.
+pub(super) struct Prefixed<S> {
+    head: Vec<u8>,
+    offset: usize,
+    inner: S,
+}
+impl<S> Prefixed<S> {
+    pub(super) fn new(head: Vec<u8>, inner: S) -> Self {
+        Self {
+            head,
+            offset: 0,
+            inner,
+        }
+    }
+}
+impl<S: AsyncRead + Unpin> AsyncRead for Prefixed<S> {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        let this = self.get_mut();
+        if this.offset < this.head.len() {
+            let n = buf.remaining().min(this.head.len() - this.offset);
+            buf.put_slice(&this.head[this.offset..this.offset + n]);
+            this.offset += n;
+            return Poll::Ready(Ok(()));
+        }
+        Pin::new(&mut this.inner).poll_read(cx, buf)
+    }
+}
+impl<S: AsyncWrite + Unpin> AsyncWrite for Prefixed<S> {
+    fn poll_write(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        bytes: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        Pin::new(&mut self.get_mut().inner).poll_write(cx, bytes)
+    }
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.get_mut().inner).poll_flush(cx)
+    }
+    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.get_mut().inner).poll_shutdown(cx)
+    }
+}

@@ -2,10 +2,10 @@
 //! The caller validates attach ownership and owns one document generation. Reusing a response
 //! never opens a second upstream request. TLS verification is per client; native TLS termination is a separate adapter.
 mod body;
-#[cfg(any(test, all(feature = "gui", target_os = "linux")))]
+#[cfg(any(test, all(feature = "gui", any(target_os = "linux", windows))))]
 pub(crate) mod endpoint;
 mod headers;
-#[cfg(all(feature = "gui", target_os = "linux"))]
+#[cfg(all(feature = "gui", any(target_os = "linux", windows)))]
 pub(crate) mod local_tls;
 mod tls;
 mod transfer;

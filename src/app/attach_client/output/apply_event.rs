@@ -10,9 +10,9 @@ pub(super) fn apply_one_mirror_event(
     match ev {
         MirrorEvent::Html(reply) => super::super::html::receive(sess, reply),
         MirrorEvent::Http(reply) => {
-            #[cfg(all(feature = "gui", target_os = "linux"))]
+            #[cfg(all(feature = "gui", any(target_os = "linux", windows)))]
             super::super::html::http::receive(sess, host.engine, reply);
-            #[cfg(not(all(feature = "gui", target_os = "linux")))]
+            #[cfg(not(all(feature = "gui", any(target_os = "linux", windows))))]
             sess.transport.html.http_documents.receive(reply);
         }
         MirrorEvent::Desynced { frames } => {
@@ -221,7 +221,7 @@ pub(super) fn apply_one_mirror_event(
             );
         }
         MirrorEvent::MarkdownChanged { surface_id } => {
-            #[cfg(all(feature = "gui", target_os = "linux"))]
+            #[cfg(all(feature = "gui", any(target_os = "linux", windows)))]
             super::super::html::http::source_changed(sess, host.engine, surface_id);
             // 이 세션이 mirror하지 않는 문서의 신호는 무시한다.
             if let Some(local) = markdown_mirror_local(sess, surface_id) {

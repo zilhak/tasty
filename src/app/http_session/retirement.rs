@@ -1,6 +1,13 @@
 //! Endpoint/socket joins settle off GTK before a retained native document can resume.
 use super::*;
 impl HttpSession {
+    #[cfg_attr(
+        not(target_os = "linux"),
+        expect(
+            dead_code,
+            reason = "only the WebKitGTK adapter retains HTTP reloads and probes native trust"
+        )
+    )]
     pub(crate) fn endpoint_joined(&self) -> Result<bool, String> {
         match self.joined.load(Ordering::Acquire) {
             0 => Ok(false),
@@ -19,6 +26,8 @@ impl HttpSession {
             *retained = Some(body);
         }
         self.bodies.retire();
+        #[cfg(windows)]
+        self.script.clear();
         self.close_reload();
         // Mint the exact terminal Close while the old captured document is still current.
         // BodySource is already revoked; publication/endpoint callbacks retire immediately next.
@@ -32,6 +41,7 @@ impl HttpSession {
             return;
         };
         state.setup.take();
+        #[cfg(target_os = "linux")]
         state.preparation.take();
         state.trust.take();
         let endpoint = state.endpoint.take();

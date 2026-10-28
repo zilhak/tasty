@@ -54,9 +54,9 @@ pub struct RemoteSurface {
     /// Requested HTML source, shared across GUI/headless and never written by native commit callbacks.
     pub html_mirror: Option<Arc<Mutex<tasty_remote::html_mirror::HtmlMirror>>>,
     pub html_source: Arc<Mutex<tasty_remote::html_source::HtmlSourceState>>,
-    #[cfg(all(feature = "gui", target_os = "linux"))]
+    #[cfg(all(feature = "gui", any(target_os = "linux", windows)))]
     pub(crate) http_session: Option<Arc<crate::app::http_session::HttpSession>>,
-    #[cfg(all(feature = "gui", target_os = "linux"))]
+    #[cfg(all(feature = "gui", any(target_os = "linux", windows)))]
     pub(crate) http_native_store: Arc<crate::app::http_session::NativeStore>,
 }
 
@@ -119,9 +119,9 @@ impl RemoteSurface {
             initial_file: None,
             html_source: Arc::default(),
             html_mirror: None,
-            #[cfg(all(feature = "gui", target_os = "linux"))]
+            #[cfg(all(feature = "gui", any(target_os = "linux", windows)))]
             http_session: None,
-            #[cfg(all(feature = "gui", target_os = "linux"))]
+            #[cfg(all(feature = "gui", any(target_os = "linux", windows)))]
             http_native_store: Arc::default(),
         }
     }
@@ -330,7 +330,7 @@ impl Surface for RemoteSurface {
     }
 
     fn webview_url(&self) -> Option<String> {
-        #[cfg(all(feature = "gui", target_os = "linux"))]
+        #[cfg(all(feature = "gui", any(target_os = "linux", windows)))]
         if let Some(session) = &self.http_session {
             return (session.is_current()
                 || session.entry_body().is_some()

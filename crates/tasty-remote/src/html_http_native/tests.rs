@@ -238,6 +238,62 @@ async fn native_response_preserves_status_duplicate_headers_and_verified_encoded
     assert_eq!(identity(&io[end..]), body.encoded_identity());
 }
 #[tokio::test]
+async fn local_headers_follow_the_verified_head_and_framing_names_are_refused() {
+    let body = verified(b"<p>x</p>".to_vec(), b"<p>x</p>", None);
+    let policy = Header {
+        name: "Content-Security-Policy".into(),
+        value: b"script-src 'none'".to_vec(),
+    };
+    let mut io = Vec::new();
+    write_response_with(
+        &mut io,
+        body.clone(),
+        body.head().id,
+        "POST",
+        identity(b"\0x\xff"),
+        std::slice::from_ref(&policy),
+        limits(),
+        &|| true,
+    )
+    .await
+    .unwrap();
+    let end = io.windows(4).position(|s| s == b"\r\n\r\n").unwrap() + 4;
+    let head = String::from_utf8_lossy(&io[..end]);
+    let csp = head
+        .find("Content-Security-Policy: script-src 'none'\r\n")
+        .unwrap();
+    assert!(head.find("Set-Cookie:").unwrap() < csp);
+    assert!(csp < head.find("Connection: close").unwrap());
+    assert_eq!(&io[end..], b"<p>x</p>");
+    for (name, value) in [
+        ("Content-Length", b"1".to_vec()),
+        ("Set-Cookie", b"a=1".to_vec()),
+        ("Bad Name", b"x".to_vec()),
+        ("X-Split", b"a\r\nInjected: 1".to_vec()),
+    ] {
+        let mut io = Vec::new();
+        let header = Header {
+            name: name.into(),
+            value,
+        };
+        assert!(matches!(
+            write_response_with(
+                &mut io,
+                body.clone(),
+                body.head().id,
+                "POST",
+                identity(b"\0x\xff"),
+                std::slice::from_ref(&header),
+                limits(),
+                &|| true,
+            )
+            .await,
+            Err(NativeError::Invalid)
+        ));
+        assert!(io.is_empty(), "{name}");
+    }
+}
+#[tokio::test]
 async fn native_response_full_identity_and_retirement_cannot_publish_any_bytes() {
     let body = verified(b"owned".to_vec(), b"owned", None);
     for mode in 0..4 {

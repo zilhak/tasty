@@ -1,6 +1,6 @@
 //! Complete verified bytes and full native request identity are required before any response byte.
 use super::*;
-use tasty_remote::html_http_native::{Destination, read_request, write_response};
+use tasty_remote::html_http_native::{Destination, read_request, write_response_with};
 use tokio::io::{AsyncRead, AsyncWrite};
 pub(super) async fn serve<S: AsyncRead + AsyncWrite + Unpin>(
     state: Arc<State>,
@@ -45,12 +45,13 @@ pub(super) async fn serve<S: AsyncRead + AsyncWrite + Unpin>(
     {
         return Err(EndpointError::Identity);
     }
-    let result = write_response(
+    let result = write_response_with(
         &mut io,
         body.clone(),
         body.head().id,
         &request.method,
         request.identity,
+        response.local_headers(),
         state.config.limits,
         &current,
     )

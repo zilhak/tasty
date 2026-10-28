@@ -15,7 +15,7 @@
 
 ## 원격 전송 기반
 
-서버는 생성·복원 URL과 `html.open`의 최신 요청 URL을 GUI/headless 공통 source 세대로 관리한다. 파일 source의 부모가 전송 root·cwd이며 HTTP(S)는 전달받은 cwd를 보관한다. snapshot 영속화와 native commit 관측은 별개다. [HTML 전송 계약](../../dev-guide/html-transfer.md)에 따라 Linux·Windows GUI client는 완성된 파일 entry를 받아 native WebView로 표시한다. 양쪽 entry viewer 협상이 없거나 client HTML plugin이 미등록이면 placeholder/deferred를 유지한다. 서버와 하위 파일 capability를 협상하면 같은 root의 CSS·이미지·script·하위HTML 등 파일 GET도 받는다. 구 서버는 entry만 표시하며 HTTP(S)는 아직 지원하지 않는다. client 파일·네트워크로 대체하지 않는다.
+서버는 생성·복원 URL과 `html.open`의 최신 요청 URL을 GUI/headless 공통 source 세대로 관리한다. 파일 source의 부모가 전송 root·cwd이며 HTTP(S)는 전달받은 cwd를 보관한다. snapshot 영속화와 native commit 관측은 별개다. [HTML 전송 계약](../../dev-guide/html-transfer.md)에 따라 Linux·Windows GUI client는 완성된 파일 entry를 받아 native WebView로 표시한다. 양쪽 entry viewer 협상이 없거나 client HTML plugin이 미등록이면 placeholder/deferred를 유지한다. 서버와 하위 파일 capability를 협상하면 같은 root의 CSS·이미지·script·하위HTML 등 파일 GET도 받는다. 구 서버는 entry만 표시하고 HTTP(S)를 제공하지 않는다. HTTP(S)는 [원격 HTTP(S) native viewer](#원격-https-native-viewer)가 맡는다. client 파일·네트워크로 대체하지 않는다.
 
 원격 주소는 읽기 전용이며 Reload만 제공한다. 100000 bytes를 넘는 각 파일은 Allow·Decline을 기다리고 여러 질문은 하나씩 보인다. 문서 누적2000000 bytes에서 Continue·Stop을 기다린다. Decline·실패는 해당 파일만 끝내고 skipped를 Reload까지 유지한다. Stop은 완료한 본문을 보존하고 나머지 요청을 끝낸다. 크기 → 스크립트 → 페이지 순서로 배치한다. 스크립트는 client 설정으로 판정하며 원격 설정·허용을 전달하지 않는다. Allow는 이미 스캔한 body를 재사용하고 사용자 Reload는 새 요청으로 누적량·크기 허용을 초기화한다. 같은 지문은 기존 스크립트 허용을 유지하고 다른 지문은 다시 차단한다. 에이전트의 `surface.html_reload`도 새 entry를 요청하되 호스트 출처이므로 배너 열람을 이어받지 않는다. metadata 이후 30초 credit timeout은 크기 질문 대기 중에도 흐르며 실패 뒤 늦은 Allow는 무효다. Reload로 새 요청을 시작한다. 완료한 본문은 연결이 끊겨도 보존하지만 Reload는 비활성이다. 재연결은 새 connection epoch로 다시 받는다.
 
@@ -415,8 +415,8 @@ overlay). 3자 매핑: [design-gallery-mapping.md](../../design/systems/design-g
 
 ### 원격 HTTP(S) native viewer
 
-Linux X11 client는 지원하는 GUI·headless 원격 서버에 attach하면 HTTP·HTTPS·Reload를 별도로 협상한다. 실제 등록된 Xlib 창과 X11 GDK backend가 준비되어야 하며 환경 변수로 켜지 않는다. native Wayland·macOS·Windows client는 이 경로를 알리지 않고 미지원 표시를 유지한다. macOS 최소 버전 11은 바뀌지 않는다. 파일 mirror·구 peer fallback은 별도 기존 경로다.
+Linux X11·Windows client는 지원하는 GUI·headless 원격 서버에 attach하면 HTTP·HTTPS·Reload를 별도로 협상한다. Linux는 실제 등록된 Xlib 창과 X11 GDK backend가 준비되어야 하며 환경 변수로 켜지 않는다. Windows는 문서마다 전용 WebView2 context가 인증 proxy로 원격 호스트에 요청한다([Windows HTTP context](../../dev-guide/windows-http-context.md)). native Wayland·macOS client는 이 경로를 알리지 않고 미지원 표시를 유지한다. macOS 최소 버전 11은 바뀌지 않는다. 파일 mirror·구 peer fallback은 별도 기존 경로다.
 
-원격 호스트가 실제 HTTP 요청을 실행한다. POST 같은 요청은 원격 서비스의 상태를 바꿀 수 있다. client의 sandboxScripts·allowRemoteContent 설정, 같은 origin 기본 허용과 각 redirect/cross-origin 검사, 브라우저 CORS·CSP·mixed-content 정책을 유지한다. 수신한 정확한 본문을 검사하고 지문과 문서에 묶인 스크립트 허용은 이미 받은 응답으로 다시 표시하여 POST를 재실행하지 않는다. 명시적 Reload는 같은 native view에서 원래 method/upload와 cookie로 새 요청을 보낸다.
+원격 호스트가 실제 HTTP 요청을 실행한다. POST 같은 요청은 원격 서비스의 상태를 바꿀 수 있다. client의 sandboxScripts·allowRemoteContent 설정, 같은 origin 기본 허용과 각 redirect/cross-origin 검사, 브라우저 CORS·CSP·mixed-content 정책을 유지한다. 수신한 정확한 본문을 검사하고 지문과 문서에 묶인 스크립트 허용은 이미 받은 응답으로 다시 표시하여 POST를 재실행하지 않는다. Linux의 명시적 Reload는 같은 native view에서 원래 method/upload와 cookie로 새 요청을 보낸다. Windows의 Reload는 새 문서 세대의 새 WebView2 context에서 entry 주소를 GET으로 다시 요청하며 이전 cookie를 옮기지 않는다. 같은 주소·지문의 스크립트 허용은 유지한다.
 
 각 응답의 encoded 100000바이트와 문서 encoded 누적 2000000바이트 한도에서 기존 허용/거절·계속/중지 UI를 사용한다. Reload는 수신 동의를 초기화하며 본문 지문이 바뀌면 스크립트 동의도 초기화한다. 연결 종료 뒤 받은 본문은 JS를 끄고 남길 수 있으나 재연결과 source 교체에는 cookie나 스크립트 동의를 옮기지 않는다. client 직접 접속·global TLS trust·미지원 backend fallback은 없다. native owner와 전송 수명은 [HTTP bridge](../../dev-guide/html-http-bridge.md#linux-app-session-and-native-factory)를 따른다.

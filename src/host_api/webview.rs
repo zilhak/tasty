@@ -3,11 +3,14 @@
 
 pub(crate) mod entry_response;
 mod file_stamp;
-#[cfg(any(target_os = "linux", windows))]
-pub(crate) mod http_context;
 #[cfg(target_os = "linux")]
+pub(crate) mod http_context;
+#[cfg(any(target_os = "linux", windows))]
 pub(crate) mod http_endpoint;
 #[cfg(target_os = "linux")]
+pub(crate) mod http_native;
+#[cfg(windows)]
+#[path = "webview/http_native/windows.rs"]
 pub(crate) mod http_native;
 pub mod keys;
 mod load_generation;
@@ -156,7 +159,12 @@ impl WebViewBounds {
 pub(crate) fn http_viewer_available(window: &winit::window::Window) -> bool {
     linux::http_available(window)
 }
-#[cfg(not(target_os = "linux"))]
+/// WebView2 shows a remote HTTP document through the same runtime as local HTML.
+#[cfg(windows)]
+pub(crate) fn http_viewer_available(_window: &winit::window::Window) -> bool {
+    true
+}
+#[cfg(target_os = "macos")]
 pub(crate) fn http_viewer_available(_window: &winit::window::Window) -> bool {
     false
 }

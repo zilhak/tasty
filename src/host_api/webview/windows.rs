@@ -5,7 +5,9 @@
 // 이유: native 포인터·핸들 호출을 묶는 FFI 모듈이다. 파일 단위 면제는 새 코드에도 적용되므로 안전 래퍼로 옮기면 범위를 줄여야 한다.
 #![allow(clippy::multiple_unsafe_ops_per_block)]
 
+mod http;
 mod keyboard;
+mod navigation;
 mod overlay;
 
 use std::cell::{Cell, RefCell};
@@ -22,10 +24,13 @@ use windows::core::*;
 use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
 use self::keyboard::{current_winit_mods, vk_to_winit_key, win32_scancode_to_physical};
+use self::navigation::{
+    complete_requests, replay_navigation, set_js, stop_navigation, webview_source,
+};
 use super::entry_response::{EntryResponseSource, windows as entry_adapter};
 use super::keys::WebViewKeySink;
 use super::load_generation::{is_current_load, nav_state_after_end};
-use super::scan_resume::{HistoryStep, Replay, RequestAction, ScanResume, Start, StartKind};
+use super::scan_resume::{HistoryStep, RequestAction, ScanResume, Start, StartKind};
 use super::script_gate::ScriptGate;
 use super::window_region::{PointerGate, WindowRegion};
 use super::{NavState, PendingNavigation, WebViewBounds};
@@ -38,6 +43,8 @@ pub struct PlatformWebView {
     entry_source: Option<EntryResponseSource>,
     entry_pending: Rc<RefCell<Vec<entry_adapter::PendingResponse>>>,
     _entry_profile: Option<tempfile::TempDir>,
+    /// The remote HTTP document this view shows through its endpoint proxy.
+    http: Option<Rc<super::http_native::NativeDocument>>,
     allow_remote: Rc<Cell<bool>>,
     nav_state: Rc<Cell<NavState>>,
     /// 마지막에 시작한 main frame 탐색의 NavigationId. chrome 상태는 이 탐색의 종료만 따른다.
@@ -60,98 +67,6 @@ pub struct PlatformWebView {
     region: RefCell<WindowRegion>,
     /// 대상 팝업이 보이는 동안 이 창을 꺼서 WebView 영역의 포인터를 부모(winit)로 보낸 상태.
     pointer: RefCell<PointerGate>,
-}
-
-/// 스캔을 기다리려고 취소하거나 멈춘 탐색을 같은 종류로 다시 시작한다.
-fn replay_navigation(
-    webview: &ICoreWebView2,
-    replay: Replay,
-    url: &str,
-) -> windows::core::Result<()> {
-    // SAFETY: webview는 호출 동안 valid, main thread 호출. HSTRING은 호출 끝까지 산다.
-    unsafe {
-        match replay {
-            Replay::Reload => webview.Reload(),
-            Replay::Navigate => webview.Navigate(&HSTRING::from(url)),
-            Replay::Back => webview.GoBack(),
-            Replay::Forward => webview.GoForward(),
-        }
-    }
-}
-
-/// 붙잡아 둔 문서 요청을 놓아 준다. 확인을 통과했거나 그 탐색이 이미 끝난 요청이다.
-fn complete_requests(surface_id: u32, deferrals: Vec<ICoreWebView2Deferral>) {
-    for deferral in deferrals {
-        // SAFETY: deferral은 WebResourceRequested에서 받은 COM 객체이고 main thread 호출이다.
-        if let Err(e) = unsafe { deferral.Complete() } {
-            tracing::warn!(
-                "WebView surface {surface_id}: completing a held document request failed: {e}"
-            );
-        }
-    }
-}
-
-/// 확인하지 못했거나 지문이 다른 본문의 탐색을 멈춘다. 멈춘 탐색은 오류로 끝나 `NavigationCompleted`가
-/// 온다(그 완료가 재시작을 준다). `Stop`이 실패하면 완료가 오지 않을 수 있으므로 이 로드를 실패로 끝내
-/// Loading에 남지 않게 한다. `body_held`는 그 탐색의 문서 요청을 deferral로 붙잡고 있는지다.
-/// 붙잡지 못했거나 이미 commit했으면 `Stop` 실패 뒤 그 본문은 확인 없이 그려질 수 있다.
-fn stop_navigation(
-    surface_id: u32,
-    webview: &ICoreWebView2,
-    body_held: bool,
-    resume: &RefCell<ScanResume<ICoreWebView2Deferral>>,
-    gate: Option<&ScriptGate>,
-    nav_state: &Cell<NavState>,
-) {
-    // SAFETY: webview는 호출 동안 valid, main thread 호출.
-    let Err(e) = (unsafe { webview.Stop() }) else {
-        return;
-    };
-    if body_held {
-        tracing::warn!(
-            "WebView surface {surface_id}: Stop failed ({e}); the load ends as failed and the \
-             document request stays held"
-        );
-    } else {
-        tracing::error!(
-            "WebView surface {surface_id}: Stop failed ({e}) for a document that is not held; \
-             the load ends as failed but the unchecked document may still be shown"
-        );
-    }
-    resume.borrow_mut().stop_failed();
-    if let Some(gate) = gate {
-        gate.failed();
-        if let Some(js) = gate.finished() {
-            set_js(webview, js);
-        }
-    }
-    nav_state.set(NavState::Failed);
-}
-
-/// `Source`를 문자열로 읽고 COM 할당을 해제한다.
-fn webview_source(wv: &ICoreWebView2) -> windows::core::Result<Option<String>> {
-    let mut uri = windows::core::PWSTR::null();
-    // SAFETY: wv는 호출 동안 valid, main thread 호출. 반환 PWSTR은 이 함수가 해제한다.
-    unsafe { wv.Source(&mut uri)? };
-    // SAFETY: Source가 성공하면 uri는 NUL로 끝나는 유효한 문자열이다.
-    let text = unsafe { uri.to_string() }.ok();
-    // SAFETY: 반환 URI의 할당은 호출자가 해제한다.
-    unsafe { CoTaskMemFree(Some(uri.0 as *const c_void)) };
-    Ok(text)
-}
-
-fn set_js(webview: &ICoreWebView2, enabled: bool) {
-    // SAFETY: webview/settings는 호출 동안 valid, main thread 호출.
-    unsafe {
-        match webview.Settings() {
-            Ok(settings) => {
-                if let Err(e) = settings.SetIsScriptEnabled(enabled) {
-                    tracing::warn!("WebView2 SetIsScriptEnabled failed: {e}");
-                }
-            }
-            Err(e) => tracing::warn!("WebView2 Settings() failed: {e}"),
-        }
-    }
 }
 
 /// 창 핸들·종류 오류는 Permanent, 이후 native 생성·등록 오류는 Transient로 분류한다.
@@ -177,6 +92,54 @@ impl PlatformWebView {
         key_bridge: Rc<dyn WebViewKeySink>,
         entry_source: Option<super::entry_response::EntryResponseSource>,
     ) -> std::result::Result<Self, super::WebViewCreateError> {
+        Self::create(
+            window,
+            bounds,
+            scale_factor,
+            surface_id,
+            key_bridge,
+            entry_source,
+            None,
+        )
+    }
+
+    pub(crate) fn new_http(
+        window: &impl HasWindowHandle,
+        bounds: WebViewBounds,
+        scale_factor: f64,
+        surface_id: u32,
+        key_bridge: Rc<dyn WebViewKeySink>,
+        document: super::http_native::NativeDocument,
+    ) -> std::result::Result<Self, super::WebViewCreateError> {
+        let document = Some(Rc::new(document));
+        Self::create(
+            window,
+            bounds,
+            scale_factor,
+            surface_id,
+            key_bridge,
+            None,
+            document,
+        )
+    }
+
+    fn create(
+        window: &impl HasWindowHandle,
+        bounds: WebViewBounds,
+        scale_factor: f64,
+        surface_id: u32,
+        key_bridge: Rc<dyn WebViewKeySink>,
+        entry_source: Option<EntryResponseSource>,
+        http: Option<Rc<super::http_native::NativeDocument>>,
+    ) -> std::result::Result<Self, super::WebViewCreateError> {
+        // Native script enablement is fixed per navigation, so the endpoint's script policy
+        // decides for a remote HTTP document instead.
+        let http_js = http.is_some();
+        let http_environment = http
+            .as_deref()
+            .map(http::HttpEnvironment::new)
+            .transpose()
+            .map_err(perm)?;
         let entry_environment = entry_source
             .as_ref()
             .map(|_| entry_adapter::EntryEnvironment::new())
@@ -234,12 +197,15 @@ impl PlatformWebView {
             .map_err(|e| transient(format!("CreateWindowExW failed: {e}")))?;
 
             let (env_tx, env_rx) = mpsc::channel();
+            let (folder, options) = match (&entry_environment, &http_environment) {
+                (Some(entry), _) => (PCWSTR(entry.folder.as_ptr()), Some(&entry.options)),
+                (None, Some(http)) => (PCWSTR(http.folder.as_ptr()), Some(&http.options)),
+                (None, None) => (PCWSTR::null(), None),
+            };
             CreateCoreWebView2EnvironmentWithOptions(
                 PCWSTR::null(),
-                entry_environment
-                    .as_ref()
-                    .map_or(PCWSTR::null(), |entry| PCWSTR(entry.folder.as_ptr())),
-                entry_environment.as_ref().map(|entry| &entry.options),
+                folder,
+                options,
                 &CreateCoreWebView2EnvironmentCompletedHandler::create(Box::new(
                     move |_hr, env| {
                         if let Err(e) = env_tx.send(env) {
@@ -264,7 +230,7 @@ impl PlatformWebView {
                     Ok(())
                 },
             ));
-            if entry_source.is_some() {
+            if entry_source.is_some() || http.is_some() {
                 entry_adapter::controller(&env, hwnd, &callback)
             } else {
                 env.CreateCoreWebView2Controller(hwnd, &callback)
@@ -315,9 +281,12 @@ impl PlatformWebView {
             // 차단 상태에서 http(s) 요청을 빈 403 응답으로 대체한다. 앞 스캔 결과를 받은 탐색의 file
             // 문서 요청은 지문을 확인할 때까지 붙잡는다(scan_resume).
             let allow_remote = Rc::new(Cell::new(false));
-            webview
-                .AddWebResourceRequestedFilter(w!("*"), COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL)
-                .map_err(|e| transient(format!("AddWebResourceRequestedFilter failed: {e}")))?;
+            // A remote HTTP document's requests all reach its endpoint, which decides them.
+            if http.is_none() {
+                webview
+                    .AddWebResourceRequestedFilter(w!("*"), COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL)
+                    .map_err(|e| transient(format!("AddWebResourceRequestedFilter failed: {e}")))?;
+            }
             let env_cb = env.clone();
             let entry_pending = Rc::new(RefCell::new(Vec::new()));
             let pending_request = Rc::clone(&entry_pending);
@@ -414,6 +383,7 @@ impl PlatformWebView {
             // NavigationStarting은 main frame 탐색에서만 온다. WebView2는 응답 단계가 없어
             // 로드 시작과 응답 결정을 여기서 함께 한다(docs/surfaces/html/index.md 후보 이벤트, 미측정).
             let entry_navigation = entry_source.clone();
+            let http_start = http.as_ref().map(|document| document.session.clone());
             let h_start = NavigationStartingEventHandler::create(Box::new(
                 move |sender, args| -> windows::core::Result<()> {
                     tracing::debug!("WebView surface {surface_id}: load started");
@@ -470,7 +440,16 @@ impl PlatformWebView {
                                 .as_ref()
                                 .is_some_and(|g| g.is_fragment_move(&uri_str));
                         let mut record = true;
-                        if let (Some(gate), Some(wv)) = (gate_start.borrow().as_ref(), &sender)
+                        if let Some(session) = &http_start {
+                            if !skip {
+                                generation_start.set(nav_id);
+                                if let Some(gate) = gate_start.borrow().as_ref() {
+                                    gate.load_started();
+                                }
+                                session.expect_main_response(&uri_str);
+                            }
+                        } else if let (Some(gate), Some(wv)) =
+                            (gate_start.borrow().as_ref(), &sender)
                             && !skip
                         {
                             generation_start.set(nav_id);
@@ -534,11 +513,16 @@ impl PlatformWebView {
                     transient(format!("entry new-window boundary failed: {error}"))
                 })?;
             }
+            if let Some(document) = &http {
+                http::install(&webview, surface_id, Rc::downgrade(document))
+                    .map_err(|error| transient(format!("HTTP view setup failed: {error}")))?;
+            }
 
             let committed_url: Rc<RefCell<Option<String>>> = Rc::new(RefCell::new(None));
             let commit_url = committed_url.clone();
             let resume_content = scan_resume.clone();
             let nav_content = nav_state.clone();
+            let http_commit = http.as_ref().map(|document| document.session.clone());
             let mut tok_content: i64 = 0;
             let h_content = ContentLoadingEventHandler::create(Box::new(
                 move |sender, args| -> windows::core::Result<()> {
@@ -565,8 +549,12 @@ impl PlatformWebView {
                     }
                     let uri_str = webview_source(wv)?;
                     *commit_url.borrow_mut() = uri_str.clone();
-                    if let Some(gate) = gate_commit.borrow().as_ref() {
-                        set_js(wv, gate.committed(uri_str.as_deref()));
+                    if let Some(gate) = gate_commit.borrow().as_ref()
+                        && !http_commit
+                            .as_ref()
+                            .is_some_and(|session| session.awaiting_main_response())
+                    {
+                        set_js(wv, gate.committed(uri_str.as_deref()) || http_js);
                     }
                     Ok(())
                 },
@@ -580,9 +568,17 @@ impl PlatformWebView {
             let generation_done = gate_generation.clone();
             let chrome_done = chrome_generation.clone();
             let resume_done = scan_resume.clone();
+            let http_done = http.as_ref().map(|document| document.session.clone());
             let mut tok_done: i64 = 0;
             let h_done = NavigationCompletedEventHandler::create(Box::new(
                 move |sender, args| -> windows::core::Result<()> {
+                    // The proxy challenge ends a first attempt that WebView2 repeats with credentials.
+                    if http_js
+                        && let Some(args) = &args
+                        && http::proxy_challenge(args)
+                    {
+                        return Ok(());
+                    }
                     let nav_id = args.as_ref().and_then(|a| {
                         let mut id = 0u64;
                         match a.NavigationId(&mut id) {
@@ -629,7 +625,7 @@ impl PlatformWebView {
                             gate_done.borrow().as_ref().and_then(|g| g.finished()),
                             &sender,
                         ) {
-                            set_js(wv, js);
+                            set_js(wv, js || http_js);
                         }
                     } else {
                         tracing::debug!(
@@ -652,6 +648,9 @@ impl PlatformWebView {
                         // 앞 로드의 늦은 실패는 새 로드의 게이트를 건드리지 않는다.
                         if current && let Some(gate) = gate_done.borrow().as_ref() {
                             gate.failed();
+                        }
+                        if current && let Some(session) = &http_done {
+                            http::load_failed(session);
                         }
                     }
                     // 앞 로드의 늦은 종료는 새 로드의 Loading을 Done이나 Failed로 덮지 않는다.
@@ -697,7 +696,7 @@ impl PlatformWebView {
                         gate_failed.borrow().as_ref().and_then(|g| g.finished()),
                         &sender,
                     ) {
-                        set_js(wv, js);
+                        set_js(wv, js || http_js);
                     }
                     Ok(())
                 },
@@ -759,7 +758,10 @@ impl PlatformWebView {
                 _environment: env,
                 entry_source,
                 entry_pending,
-                _entry_profile: entry_environment.map(|entry| entry.profile),
+                _entry_profile: entry_environment
+                    .map(|entry| entry.profile)
+                    .or(http_environment.map(|http| http.profile)),
+                http,
                 allow_remote,
                 nav_state,
                 chrome_generation,
@@ -987,13 +989,30 @@ impl PlatformWebView {
             Some(gate) => gate.set_sandbox(!enabled),
             None => enabled,
         };
-        set_js(&self.webview, js);
+        set_js(&self.webview, js || self.http.is_some());
     }
 
     /// 문서 단위 스크립트 허용을 붙인다. 첫 로드 전에 호출한다.
     pub fn attach_script_gate(&self, gate: ScriptGate) {
-        set_js(&self.webview, gate.effective_js());
+        set_js(&self.webview, gate.effective_js() || self.http.is_some());
+        if let Some(document) = &self.http {
+            document.session.attach_script_gate(gate.clone());
+        }
         *self.script_gate.borrow_mut() = Some(gate);
+    }
+
+    /// A remote HTTP document reloads its verified response once instead of a new request.
+    pub(crate) fn reload_after_script_allow(&self) {
+        let Some(document) = &self.http else {
+            return self.reload();
+        };
+        let Some(body) = document.session.entry_body() else {
+            return;
+        };
+        match document.session.bodies.replay_once(body.head().id) {
+            Ok(()) => self.reload(),
+            Err(error) => tracing::warn!(?error, "native HTTP script response replay refused"),
+        }
     }
 
     pub fn reload(&self) {
@@ -1088,6 +1107,8 @@ impl Drop for PlatformWebView {
             source.retire();
             entry_adapter::poll(source, &self._environment, &self.entry_pending);
         }
+        // Revoke endpoint, body and view authority before WebView2 tears down the view.
+        drop(self.http.take());
         // SAFETY: controller.Close()는 webview2 자원 해제, DestroyWindow는 child HWND 정리.
         // 둘 다 self가 처음 만들어진 main thread에서 Drop이 호출된다는 전제 (PlatformWebView는
         // !Send/!Sync 기본 — COM 객체 포함).
