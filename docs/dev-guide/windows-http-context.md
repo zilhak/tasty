@@ -74,11 +74,29 @@ is not sent again.
 
 ## Reload
 
-Linux keeps the same native view and continues the original request. Windows
-has no retained continuation yet. A user or agent Reload starts a new document
-generation, which creates a new endpoint and a new WebView2 context. The entry
-URL is requested again with GET, and cookies of the previous context are not
-kept. A script allowance with the same URL and fingerprint still applies.
+A user or agent Reload keeps the same view and WebView2 context, like Linux. The
+environment fixed its proxy address at creation, so the successor document's
+endpoint binds the same loopback port:
+
+1. The view retires the current document's Reload receipt, records its proxy
+   port, marks the session retained and closes it.
+2. The new document generation creates a successor session from that receipt.
+   Its endpoint waits until the predecessor endpoint has joined, then binds the
+   recorded port with a fresh token and realm.
+3. When that endpoint listens, the view adopts the successor session and its
+   credentials and moves the script gate to it.
+4. The view clears the disk cache, service workers and Cache Storage. Cookies and
+   other storage stay. A failed clear fails the session instead of reloading.
+5. `Reload()` resends the current entry with its original method, body and
+   cookies. WebView2's cached proxy credentials no longer match, so the endpoint
+   answers `407` and the view authenticates again with the new credentials.
+
+The successor bridge admits only a first request that matches the captured main
+request's URL, method and upload. A document without a Reload receipt, such as
+one whose first load failed or whose peer did not negotiate Reload, is replaced
+by a new view instead. That view requests the entry URL with GET and starts
+without the previous cookies. If another process takes the port before the
+successor binds it, the successor fails and the failure is shown.
 
 ## Limits
 
@@ -101,6 +119,9 @@ session. An SSH session0 environment cannot create the controller
 - With `<-loopback>`, navigation, fetch, images and WebSocket requests to
   `localhost` and `127.0.0.1` all reached the proxy. A trap listener received no
   direct connection.
+- `Reload()` of a document opened by POST resends the POST with the same body
+  and cookies. A proxy listener closed and rebound on the same port with new
+  credentials and realm makes WebView2 receive `407` and ask again.
 - `IsScriptEnabled` changes after `NavigationStarting` do not affect that
   navigation. A `script-src 'none'` response header blocks the document's
   scripts.
@@ -108,5 +129,7 @@ session. An SSH session0 environment cannot create the controller
 Two isolated debug instances on one PC confirmed the whole path. They showed a
 local origin with CSS, images, a cookie and blocked scripts, and the banner. Allow
 ran scripts and a same-origin fetch without a second main request. An
-auto-submitted POST reached the origin once. Reload kept the script allowance.
+auto-submitted POST reached the origin once. Reload kept the same view, the
+cookie and the script allowance, and a POST document's Reload sent the same body
+and cookie again. An HTTPS Reload accepted the successor endpoint's new leaf.
 `https://example.com` passed the leaf check and rendered.

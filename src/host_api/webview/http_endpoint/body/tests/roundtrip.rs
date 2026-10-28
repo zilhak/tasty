@@ -26,6 +26,7 @@ async fn roundtrip(runtime: NativeRuntime) {
     let current_view = view.clone();
     let config = EndpointConfig {
         transport: crate::host_api::webview::http_endpoint::listener::Transport::Socks,
+        port: 0,
         identity: DocumentIdentity {
             epoch: 1,
             surface: 42,

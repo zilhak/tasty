@@ -383,7 +383,7 @@ impl PlatformWebView {
             // NavigationStarting은 main frame 탐색에서만 온다. WebView2는 응답 단계가 없어
             // 로드 시작과 응답 결정을 여기서 함께 한다(docs/surfaces/html/index.md 후보 이벤트, 미측정).
             let entry_navigation = entry_source.clone();
-            let http_start = http.as_ref().map(|document| document.session.clone());
+            let http_start = http.as_ref().map(Rc::downgrade);
             let h_start = NavigationStartingEventHandler::create(Box::new(
                 move |sender, args| -> windows::core::Result<()> {
                     tracing::debug!("WebView surface {surface_id}: load started");
@@ -440,13 +440,15 @@ impl PlatformWebView {
                                 .as_ref()
                                 .is_some_and(|g| g.is_fragment_move(&uri_str));
                         let mut record = true;
-                        if let Some(session) = &http_start {
+                        if let Some(document) = &http_start {
                             if !skip {
                                 generation_start.set(nav_id);
                                 if let Some(gate) = gate_start.borrow().as_ref() {
                                     gate.load_started();
                                 }
-                                session.expect_main_response(&uri_str);
+                                if let Some(document) = document.upgrade() {
+                                    document.session().expect_main_response(&uri_str);
+                                }
                             }
                         } else if let (Some(gate), Some(wv)) =
                             (gate_start.borrow().as_ref(), &sender)
@@ -522,7 +524,7 @@ impl PlatformWebView {
             let commit_url = committed_url.clone();
             let resume_content = scan_resume.clone();
             let nav_content = nav_state.clone();
-            let http_commit = http.as_ref().map(|document| document.session.clone());
+            let http_commit = http.as_ref().map(Rc::downgrade);
             let mut tok_content: i64 = 0;
             let h_content = ContentLoadingEventHandler::create(Box::new(
                 move |sender, args| -> windows::core::Result<()> {
@@ -552,7 +554,8 @@ impl PlatformWebView {
                     if let Some(gate) = gate_commit.borrow().as_ref()
                         && !http_commit
                             .as_ref()
-                            .is_some_and(|session| session.awaiting_main_response())
+                            .and_then(std::rc::Weak::upgrade)
+                            .is_some_and(|document| document.session().awaiting_main_response())
                     {
                         set_js(wv, gate.committed(uri_str.as_deref()) || http_js);
                     }
@@ -568,7 +571,7 @@ impl PlatformWebView {
             let generation_done = gate_generation.clone();
             let chrome_done = chrome_generation.clone();
             let resume_done = scan_resume.clone();
-            let http_done = http.as_ref().map(|document| document.session.clone());
+            let http_done = http.as_ref().map(Rc::downgrade);
             let mut tok_done: i64 = 0;
             let h_done = NavigationCompletedEventHandler::create(Box::new(
                 move |sender, args| -> windows::core::Result<()> {
@@ -649,8 +652,10 @@ impl PlatformWebView {
                         if current && let Some(gate) = gate_done.borrow().as_ref() {
                             gate.failed();
                         }
-                        if current && let Some(session) = &http_done {
-                            http::load_failed(session);
+                        if current
+                            && let Some(document) = http_done.as_ref().and_then(|d| d.upgrade())
+                        {
+                            http::load_failed(&document.session());
                         }
                     }
                     // 앞 로드의 늦은 종료는 새 로드의 Loading을 Done이나 Failed로 덮지 않는다.
@@ -996,23 +1001,9 @@ impl PlatformWebView {
     pub fn attach_script_gate(&self, gate: ScriptGate) {
         set_js(&self.webview, gate.effective_js() || self.http.is_some());
         if let Some(document) = &self.http {
-            document.session.attach_script_gate(gate.clone());
+            document.session().attach_script_gate(gate.clone());
         }
         *self.script_gate.borrow_mut() = Some(gate);
-    }
-
-    /// A remote HTTP document reloads its verified response once instead of a new request.
-    pub(crate) fn reload_after_script_allow(&self) {
-        let Some(document) = &self.http else {
-            return self.reload();
-        };
-        let Some(body) = document.session.entry_body() else {
-            return;
-        };
-        match document.session.bodies.replay_once(body.head().id) {
-            Ok(()) => self.reload(),
-            Err(error) => tracing::warn!(?error, "native HTTP script response replay refused"),
-        }
     }
 
     pub fn reload(&self) {

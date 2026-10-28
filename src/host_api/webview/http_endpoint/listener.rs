@@ -120,6 +120,9 @@ pub(crate) struct ProxyCredentials {
 }
 pub(crate) struct EndpointConfig {
     pub transport: Transport,
+    /// Loopback port to bind; 0 picks a free one. A WebView2 view fixes its proxy address at
+    /// creation, so its retained Reload binds the port of the document it replaces.
+    pub port: u16,
     pub identity: DocumentIdentity,
     pub entry_url: String,
     pub allow_remote_content: bool,
@@ -143,6 +146,7 @@ struct State {
 pub(crate) struct Endpoint {
     state: Arc<State>,
     proxy_uri: String,
+    port: u16,
     stop: watch::Sender<bool>,
     task: Option<JoinHandle<Result<(), EndpointError>>>,
 }
@@ -215,7 +219,7 @@ impl Endpoint {
             .try_fill_bytes(&mut entropy)
             .map_err(|_| EndpointError::Worker)?;
         let realm = ProxyRealm::from_random_bytes(entropy);
-        let listener = TcpListener::bind("127.0.0.1:0")
+        let listener = TcpListener::bind(("127.0.0.1", config.port))
             .await
             .map_err(|_| EndpointError::Io)?;
         let port = listener.local_addr().map_err(|_| EndpointError::Io)?.port();
@@ -249,6 +253,7 @@ impl Endpoint {
         Ok(Self {
             state,
             proxy_uri,
+            port,
             stop,
             task: Some(task),
         })
@@ -262,6 +267,16 @@ impl Endpoint {
     )]
     pub(crate) fn proxy_uri(&self) -> String {
         self.proxy_uri.clone()
+    }
+    #[cfg_attr(
+        not(any(windows, test)),
+        expect(
+            dead_code,
+            reason = "only the WebView2 adapter keeps its proxy port across a Reload"
+        )
+    )]
+    pub(crate) fn port(&self) -> u16 {
+        self.port
     }
     /// Basic proxy credentials for the HttpProxy transport; None for SOCKS.
     #[cfg_attr(

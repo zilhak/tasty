@@ -233,3 +233,30 @@ async fn authenticated_connect_terminates_the_mapped_tls_leaf_before_http() {
     endpoint.join().await.unwrap();
     assert_eq!(budget.active_connections(), 0);
 }
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn successor_rebinds_the_joined_address_with_fresh_credentials() {
+    let budget = EndpointBudget::new();
+    let calls = Arc::new(AtomicUsize::new(0));
+    let first = start("http://remote.example/doc", counting(&calls), &budget).await;
+    let port = first.port();
+    assert_eq!(port, proxy_port(&first));
+    let old = authorization(&first);
+    first.join().await.unwrap();
+    let mut config = config_with(
+        "http://remote.example/doc".into(),
+        counting(&calls),
+        Transport::HttpProxy,
+    );
+    config.port = port;
+    let second = Endpoint::start(Handle::current(), config, budget.clone())
+        .await
+        .unwrap_or_else(|_| panic!("successor endpoint"));
+    assert_eq!(second.port(), port);
+    assert_ne!(authorization(&second), old);
+    let request =
+        format!("GET http://remote.example/doc HTTP/1.1\r\nHost: remote.example\r\n{old}\r\n");
+    let bytes = exchange(&second, request.as_bytes()).await;
+    assert!(bytes.starts_with(b"HTTP/1.1 407 "));
+    assert_eq!(calls.load(Ordering::Acquire), 0);
+    second.join().await.unwrap();
+}

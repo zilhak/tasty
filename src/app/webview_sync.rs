@@ -31,7 +31,7 @@ pub(crate) fn synchronize(
     plugins: Option<&PluginManager>,
     proofs: &super::html_runtime::NavigationProofs,
 ) {
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", windows))]
     {
         let mut replaced = Vec::new();
         for (sid, wv) in &view.webviews {
@@ -62,7 +62,7 @@ pub(crate) fn synchronize(
         .copied()
         .filter(|surface| {
             !view.webview_runtime.get(surface).is_some_and(|binding| {
-                #[cfg(target_os = "linux")]
+                #[cfg(any(target_os = "linux", windows))]
                 if view
                     .webviews
                     .get(surface)

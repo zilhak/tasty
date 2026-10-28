@@ -11,6 +11,16 @@ pub(crate) struct ReloadSetup {
 pub(crate) struct Successor {
     receipt: ReloadAuthority,
     native: Weak<()>,
+    #[cfg(windows)]
+    front: Option<Front>,
+}
+/// The loopback proxy address a WebView2 environment fixed at creation. The successor binds
+/// it only after the predecessor's endpoint has released it.
+#[cfg(windows)]
+#[derive(Clone)]
+struct Front {
+    port: u16,
+    joined: Arc<AtomicU8>,
 }
 pub(super) struct ReloadState {
     authority: Current,
@@ -18,6 +28,10 @@ pub(super) struct ReloadState {
     native: Mutex<Weak<()>>,
     captured: Mutex<Option<ReloadAuthority>>,
     successor: Mutex<Option<ReloadAuthority>>,
+    #[cfg(windows)]
+    inherited: Option<Front>,
+    #[cfg(windows)]
+    retained_port: Mutex<Option<u16>>,
 }
 impl ReloadSetup {
     pub(super) fn build(
@@ -27,6 +41,11 @@ impl ReloadSetup {
         current: Current,
         wake: Arc<dyn Fn() + Send + Sync>,
     ) -> Result<(Arc<HttpBridge>, ReloadState), String> {
+        #[cfg(windows)]
+        let inherited = self
+            .predecessor
+            .as_ref()
+            .and_then(|previous| previous.front.clone());
         let (bridge, native) = if let Some(previous) = self.predecessor {
             let native = previous
                 .native
@@ -54,6 +73,10 @@ impl ReloadSetup {
                 native: Mutex::new(native),
                 captured: Mutex::default(),
                 successor: Mutex::default(),
+                #[cfg(windows)]
+                inherited,
+                #[cfg(windows)]
+                retained_port: Mutex::default(),
             },
         ))
     }
@@ -104,13 +127,6 @@ impl HttpSession {
             .map_err(|_| "native receipt poisoned")? = Some(receipt);
         Ok(())
     }
-    #[cfg_attr(
-        not(target_os = "linux"),
-        expect(
-            dead_code,
-            reason = "only the WebKitGTK adapter retains HTTP reloads and probes native trust"
-        )
-    )]
     pub(crate) fn retire_reload(&self) -> Result<(), String> {
         let receipt = self
             .reload
@@ -166,6 +182,59 @@ impl HttpSession {
             .lock()
             .map_err(|_| "native lifetime poisoned")?
             .clone();
-        Ok(receipt.map(|receipt| Successor { receipt, native }))
+        #[cfg(windows)]
+        let front = self
+            .reload
+            .retained_port
+            .lock()
+            .map_err(|_| "native proxy port poisoned")?
+            .map(|port| Front {
+                port,
+                joined: self.joined.clone(),
+            });
+        Ok(receipt.map(|receipt| Successor {
+            receipt,
+            native,
+            #[cfg(windows)]
+            front,
+        }))
+    }
+    /// The port this session's endpoint binds: the inherited proxy address, or any free port.
+    pub(super) fn endpoint_port(&self) -> u16 {
+        #[cfg(windows)]
+        if let Some(front) = &self.reload.inherited {
+            return front.port;
+        }
+        0
+    }
+    /// Whether the endpoint may bind now. An inherited address waits for its predecessor's join.
+    pub(super) fn endpoint_admitted(&self) -> Result<bool, String> {
+        #[cfg(windows)]
+        if let Some(front) = &self.reload.inherited {
+            return match front.joined.load(Ordering::Acquire) {
+                0 => Ok(false),
+                1 => Ok(true),
+                _ => Err("predecessor endpoint retirement failed".into()),
+            };
+        }
+        Ok(true)
+    }
+    /// A retained WebView2 view keeps this endpoint's proxy address for its successor.
+    #[cfg(windows)]
+    pub(crate) fn retain_proxy_port(&self, port: u16) -> Result<(), String> {
+        *self
+            .reload
+            .retained_port
+            .lock()
+            .map_err(|_| "native proxy port poisoned")? = Some(port);
+        Ok(())
+    }
+    /// Whether a main response captured a Reload receipt that a successor can continue.
+    #[cfg(windows)]
+    pub(crate) fn reload_captured(&self) -> bool {
+        self.reload
+            .captured
+            .lock()
+            .is_ok_and(|captured| captured.is_some())
     }
 }

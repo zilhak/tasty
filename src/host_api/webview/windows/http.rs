@@ -7,8 +7,9 @@ use sha2::{Digest, Sha256};
 use std::{ffi::c_void, rc::Weak};
 use tasty_remote::html_http_client::ReceiveState;
 use webview2_com::{
-    BasicAuthenticationRequestedEventHandler, CoreWebView2EnvironmentOptions,
-    Microsoft::Web::WebView2::Win32::*, ServerCertificateErrorDetectedEventHandler,
+    BasicAuthenticationRequestedEventHandler, ClearBrowsingDataCompletedHandler,
+    CoreWebView2EnvironmentOptions, Microsoft::Web::WebView2::Win32::*,
+    ServerCertificateErrorDetectedEventHandler,
 };
 use windows::{Win32::System::Com::CoTaskMemFree, core::*};
 
@@ -37,7 +38,7 @@ impl HttpEnvironment {
         // address also goes to the remote host. QUIC would not use the proxy.
         let arguments = format!(
             "--proxy-server={} --proxy-bypass-list=<-loopback> --disable-quic --disable-background-networking",
-            document.credentials.uri.trim_end_matches('/')
+            document.proxy_uri().trim_end_matches('/')
         );
         let arguments: Vec<u16> = arguments.encode_utf16().chain(Some(0)).collect();
         let options: ICoreWebView2EnvironmentOptions =
@@ -80,12 +81,9 @@ pub(in crate::host_api::webview) fn install(
             args.Challenge(&mut challenge)?;
         }
         let (uri, challenge) = (take_string(uri), take_string(challenge));
-        let Some(document) = auth_document
+        let Some((user, password)) = auth_document
             .upgrade()
-            .filter(|document| document.session.is_current())
-            .filter(|document| {
-                uri == document.credentials.uri && challenge == document.credentials.challenge
-            })
+            .and_then(|document| document.answer(&uri, &challenge))
         else {
             tracing::debug!(
                 "WebView surface {surface_id}: HTTP authentication challenge cancelled"
@@ -93,18 +91,8 @@ pub(in crate::host_api::webview) fn install(
             // SAFETY: live event args on the WebView2 apartment.
             return unsafe { args.SetCancel(true) };
         };
-        let user: Vec<u16> = document
-            .credentials
-            .user
-            .encode_utf16()
-            .chain(Some(0))
-            .collect();
-        let password: Vec<u16> = document
-            .credentials
-            .password
-            .encode_utf16()
-            .chain(Some(0))
-            .collect();
+        let user: Vec<u16> = user.encode_utf16().chain(Some(0)).collect();
+        let password: Vec<u16> = password.encode_utf16().chain(Some(0)).collect();
         // SAFETY: live response object; both buffers are NUL-terminated for the calls.
         unsafe {
             let response = args.Response()?;
@@ -228,4 +216,97 @@ pub(in crate::host_api::webview) fn proxy_challenge(
     // SAFETY: live event args on the WebView2 apartment.
     unsafe { args.WebErrorStatus(&mut status) }.is_ok()
         && status == COREWEBVIEW2_WEB_ERROR_STATUS_VALID_PROXY_AUTHENTICATION_REQUIRED
+}
+
+/// Clear the HTTP caches a retained Reload must not reuse, then resume the original request.
+/// Cookies and other storage stay. A failed clear fails the session instead of reloading.
+pub(in crate::host_api::webview) fn clear_then_reload(
+    webview: &ICoreWebView2,
+    surface_id: u32,
+    session: std::sync::Arc<HttpSession>,
+) -> Result<()> {
+    let kinds = COREWEBVIEW2_BROWSING_DATA_KINDS(
+        COREWEBVIEW2_BROWSING_DATA_KINDS_DISK_CACHE.0
+            | COREWEBVIEW2_BROWSING_DATA_KINDS_SERVICE_WORKERS.0
+            | COREWEBVIEW2_BROWSING_DATA_KINDS_CACHE_STORAGE.0,
+    );
+    let view = webview.clone();
+    let done = ClearBrowsingDataCompletedHandler::create(Box::new(move |result| {
+        if let Err(error) = result {
+            tracing::warn!("WebView surface {surface_id}: HTTP cache clear failed: {error}");
+            session.fail();
+            return Ok(());
+        }
+        if !session.is_current() {
+            return Ok(());
+        }
+        // SAFETY: live WebView on its apartment thread; the completion runs there.
+        unsafe { view.Reload() }
+    }));
+    // SAFETY: live WebView and profile on the COM apartment thread. The profile owns the handler.
+    unsafe {
+        webview
+            .cast::<ICoreWebView2_13>()?
+            .Profile()?
+            .cast::<ICoreWebView2Profile2>()?
+            .ClearBrowsingData(kinds, &done)
+    }
+}
+
+impl super::PlatformWebView {
+    pub(crate) fn retaining_http(&self) -> bool {
+        self.http
+            .as_ref()
+            .is_some_and(|document| document.retaining())
+    }
+    /// Keep this view and context across the Reload when the document can continue. Otherwise
+    /// the caller's new document generation replaces the view.
+    pub(crate) fn request_http_reload(&self) -> std::result::Result<bool, String> {
+        if let Some(document) = &self.http
+            && !document.request_reload()?
+        {
+            tracing::debug!(
+                "WebView surface {}: no Reload receipt; the view is replaced",
+                self.surface_id
+            );
+        }
+        Ok(true)
+    }
+    /// Adopt the successor session, clear the HTTP caches and resume the original request in
+    /// this view, so its cookies, method and upload continue.
+    pub(crate) fn poll_http_reload(
+        &self,
+        session: std::sync::Arc<crate::app::http_session::HttpSession>,
+        _wake: std::sync::Arc<dyn Fn() + Send + Sync>,
+    ) -> std::result::Result<bool, String> {
+        let Some(document) = &self.http else {
+            return Ok(false);
+        };
+        if !document.poll_reload(&session)? {
+            return Ok(false);
+        }
+        if let Some(gate) = self.script_gate.borrow_mut().as_mut() {
+            *gate = gate.clone().with_http_session(session.clone());
+            session.attach_script_gate(gate.clone());
+        }
+        self.scan_resume.borrow_mut().host_request(None);
+        clear_then_reload(&self.webview, self.surface_id, session)
+            .map_err(|error| format!("native HTTP cache clear: {error}"))?;
+        Ok(true)
+    }
+
+    /// A remote HTTP document reloads its verified response once instead of a new request.
+    pub(crate) fn reload_after_script_allow(&self) {
+        let Some(document) = &self.http else {
+            return self.reload();
+        };
+        let session = document.session();
+        let Some(body) = session.entry_body() else {
+            return;
+        };
+        match session.bodies.replay_once(body.head().id) {
+            Ok(()) => self.reload(),
+            Err(error) => tracing::warn!(?error, "native HTTP script response replay refused"),
+        }
+    }
 }

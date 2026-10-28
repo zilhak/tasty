@@ -186,6 +186,9 @@ impl HttpSession {
             .state
             .lock()
             .map_err(|_| "native HTTP session poisoned")?;
+        if state.setup.is_some() && !self.endpoint_admitted()? {
+            return Ok(());
+        }
         if let Some(setup) = &mut state.setup {
             let Some(runtime) = setup.poll() else {
                 return Ok(());
@@ -196,6 +199,7 @@ impl HttpSession {
             let id = self.source.metadata_id();
             let config = EndpointConfig {
                 transport: NATIVE_TRANSPORT,
+                port: self.endpoint_port(),
                 identity: DocumentIdentity {
                     epoch: id.epoch,
                     surface: id.surface_id,
@@ -404,13 +408,6 @@ impl HttpSession {
         };
         self.bridge.drive(next_id, |job| runtime.spawn_verify(job))
     }
-    #[cfg_attr(
-        not(target_os = "linux"),
-        expect(
-            dead_code,
-            reason = "only the WebKitGTK adapter retains HTTP reloads and probes native trust"
-        )
-    )]
     pub(crate) fn request_retained(&self) {
         self.retaining.store(true, Ordering::Release);
     }
