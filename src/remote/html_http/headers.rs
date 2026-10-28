@@ -66,6 +66,21 @@ pub(super) fn clean(headers: &[Header], limit: usize, request: bool) -> Result<V
         .cloned()
         .collect())
 }
+/// The backend decodes only these codings for the script scan. A browser's wider offer
+/// (Chromium adds br and zstd over HTTPS) would let the origin pick an undecodable body.
+const ACCEPT_ENCODING: &[u8] = b"gzip, deflate";
+pub(super) fn limit_accept_encoding(headers: &mut Vec<Header>) {
+    let offered = headers
+        .iter()
+        .any(|h| h.name.eq_ignore_ascii_case("accept-encoding"));
+    if offered {
+        headers.retain(|h| !h.name.eq_ignore_ascii_case("accept-encoding"));
+        headers.push(Header {
+            name: "accept-encoding".into(),
+            value: ACCEPT_ENCODING.to_vec(),
+        });
+    }
+}
 pub(super) fn request(headers: Vec<Header>) -> Result<HeaderMap> {
     let mut map = HeaderMap::new();
     for h in headers {

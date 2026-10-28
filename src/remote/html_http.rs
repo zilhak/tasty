@@ -231,11 +231,12 @@ impl Document {
         {
             return Err(Error::UnsupportedUpgrade);
         }
-        let clean = headers::clean(
+        let mut clean = headers::clean(
             &request.headers,
             self.inner.backend.limits.header_bytes,
             true,
         )?;
+        headers::limit_accept_encoding(&mut clean);
         let mut digest = Sha256::new();
         for bytes in [
             method.as_str().as_bytes(),

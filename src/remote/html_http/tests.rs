@@ -388,6 +388,36 @@ async fn policy_stale_credit_and_upload_offsets_fail_closed() {
     assert!(matches!(op.join().await, Err(Error::Invalid(_))));
 }
 #[test]
+fn accept_encoding_offers_only_decodable_codings() {
+    let mut h = vec![
+        Header {
+            name: "Accept-Encoding".into(),
+            value: b"gzip, deflate, br, zstd".to_vec(),
+        },
+        Header {
+            name: "accept".into(),
+            value: b"text/html".to_vec(),
+        },
+    ];
+    headers::limit_accept_encoding(&mut h);
+    assert_eq!(
+        h,
+        vec![
+            Header {
+                name: "accept".into(),
+                value: b"text/html".to_vec(),
+            },
+            Header {
+                name: "accept-encoding".into(),
+                value: b"gzip, deflate".to_vec(),
+            },
+        ]
+    );
+    let mut plain = vec![h[0].clone()];
+    headers::limit_accept_encoding(&mut plain);
+    assert_eq!(plain, vec![h[0].clone()]);
+}
+#[test]
 fn connection_nominated_headers_and_proxy_credentials_never_cross() {
     let h = vec![
         Header {
