@@ -78,7 +78,6 @@ fn runs(marker: &std::path::Path) -> usize {
         .unwrap_or(0)
 }
 
-#[cfg(unix)]
 #[test]
 fn an_unknown_permit_acquire_spawns_nothing_and_the_next_tick_runs_once() {
     let dir = tempfile::tempdir().unwrap();

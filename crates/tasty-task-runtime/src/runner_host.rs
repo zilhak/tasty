@@ -481,7 +481,8 @@ mod binding_tests;
 #[path = "runner_host/record_limit_tests.rs"]
 mod record_limit_tests;
 
-#[cfg(test)]
+// The only test spawns a unix shell command; its helpers would be dead elsewhere.
+#[cfg(all(test, unix))]
 #[path = "runner_host/acquire_unknown_tests.rs"]
 mod acquire_unknown_tests;
 
