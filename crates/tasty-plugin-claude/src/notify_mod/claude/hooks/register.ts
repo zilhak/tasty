@@ -1,9 +1,10 @@
 import type { Register, Timer } from 'claude-code';
-import type { NotifyCursor } from '../types/index';
+import type { NotifyCursor, NotifyPending } from '../types/index';
 import { batch, MAX_READ, position, retention } from './reader';
-import { heading } from './messages';
+import { delivery } from './messages';
 
 const cursorRef = { plugin: 'tasty-notify', key: 'cursor' } as const;
+const gateRef = { plugin: 'tasty-notify-gate', key: 'record' } as const;
 
 export const register: Register = (on) => {
   let timer: Timer | undefined;
@@ -39,7 +40,8 @@ export const register: Register = (on) => {
     const save = async (value: NotifyCursor) => {
       if (!currentRun()) throw new Error('notify watcher retired');
       if (cursor && cursor.namespace === value.namespace && cursor.next === value.next
-          && cursor.retention === value.retention && cursor.missing === value.missing) return;
+          && cursor.retention === value.retention && cursor.missing === value.missing
+          && cursor.seq === value.seq && cursor.pending?.seq === value.pending?.seq) return;
       const result = await $.state.set(cursorRef, value);
       if (!result.isSet) throw new Error('notify cursor refused');
       cursor = value;
@@ -64,8 +66,10 @@ export const register: Register = (on) => {
       if (!cursor || cursor.namespace !== namespace) {
         const initial = await snapshot();
         if (initial) consumed = initial;
+        // An unconfirmed delivery of a previous namespace stays pending and is still delivered.
         await save({ namespace, next: initial ? initial.base + initial.bytes.length : 0,
-          retention: initial?.base ?? 0, missing: !initial });
+          retention: initial?.base ?? 0, missing: !initial, seq: cursor?.seq ?? 0,
+          ...(cursor?.pending ? { pending: cursor.pending } : {}) });
       }
       const active = await $.env.set('TASTY_CLAUDE_NOTIFY_MOD', surface);
       if ('deny' in active) return next(e);
@@ -74,8 +78,27 @@ export const register: Register = (on) => {
       // Do not arm at a later EOF and silently skip children completed during startup.
       return next(e);
     }
+    // A pending delivery is resubmitted with its exact text until the gate confirms
+    // it entered, so a reload never widens, repeats or drops it. An in-flight claim
+    // is not a confirmation: the entry can still be refused beneath the gate. A drop
+    // is the gate's duplicate or a refusal; the next poll reads the gate again.
+    const deliver = async (pending: NotifyPending) => {
+      if (((await $.state.get(gateRef)).value?.delivered ?? 0) < pending.seq) {
+        if (!currentRun()) return;
+        const submitted = await $.prompt.submit({ text: pending.text });
+        if (submitted.drop !== undefined) return;
+      }
+      await save(pending.namespace === namespace
+        ? { namespace, next: pending.next, retention: pending.retention, missing: false, seq: pending.seq }
+        : { namespace, next: cursor!.next, retention: cursor!.retention, missing: cursor!.missing, seq: pending.seq });
+    };
     const poll = async () => {
       try {
+        if (cursor!.pending) {
+          consumed = undefined;
+          await deliver(cursor!.pending);
+          return;
+        }
         const current = await snapshot();
         if (current === null) return;
         if (!current) {
@@ -89,10 +112,18 @@ export const register: Register = (on) => {
           const part = batch(current.bytes, start);
           if (!currentRun()) return;
           if (part.end > start) {
-            const submitted = await $.prompt.submit({ text: `${heading(locale)}\n${part.text}` });
-            if (submitted.drop !== undefined) throw new Error('notify prompt refused');
+            // Above the gate's record too: a recreated cursor must not reuse an admitted seq.
+            const gate = (await $.state.get(gateRef)).value;
+            const seq = Math.max(cursor!.seq ?? 0, gate?.delivered ?? 0, gate?.inflight ?? 0) + 1;
+            const pending = { namespace, seq, text: delivery(seq, locale, part.text),
+              next: current.base + part.end, retention: current.base };
+            // Durable before submit: a fresh module copy resubmits this exact text.
+            await save({ ...cursor!, seq, pending });
+            await deliver(pending);
+          } else {
+            await save({ namespace, next: current.base + part.end, retention: current.base,
+              missing: false, seq: cursor!.seq ?? 0 });
           }
-          await save({ namespace, next: current.base + part.end, retention: current.base, missing: false });
           consumed = part.end === current.bytes.length ? current : undefined;
         }
       } catch {

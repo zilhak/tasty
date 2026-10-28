@@ -16,6 +16,8 @@
     ".claude-plugin/types",
     "hooks",
     "types",
-    "tests"
+    "tests",
+    "gate/hooks",
+    "gate/types"
   ]
 }

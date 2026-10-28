@@ -52,35 +52,112 @@ fn installed_assets_are_embedded_and_second_install_does_not_write() {
     let settings = temp.path().join("settings.json");
     let mut root = json!({});
     assert!(install(&mut root, &settings).unwrap());
-    let dir = directory(&settings).unwrap();
-    let times: Vec<_> = ASSETS
+    let mods = directories(&settings).unwrap();
+    assert_eq!(mods.len(), 2);
+    let times: Vec<_> = mods
         .iter()
-        .map(|(name, content)| {
+        .flat_map(|(dir, assets)| assets.iter().map(move |asset| (dir, asset)))
+        .map(|(dir, (name, content))| {
             let path = dir.join(name);
             assert_eq!(std::fs::read_to_string(&path).unwrap(), *content);
             std::fs::metadata(path).unwrap().modified().unwrap()
         })
         .collect();
     assert!(!install(&mut root, &settings).unwrap());
-    for ((name, _), time) in ASSETS.iter().zip(times) {
-        assert_eq!(
-            std::fs::metadata(dir.join(name))
-                .unwrap()
-                .modified()
-                .unwrap(),
-            time
-        );
-    }
+    let after: Vec<_> = mods
+        .iter()
+        .flat_map(|(dir, assets)| assets.iter().map(move |(name, _)| dir.join(name)))
+        .map(|path| std::fs::metadata(path).unwrap().modified().unwrap())
+        .collect();
+    assert_eq!(after, times);
+    let dir = &mods[0].0;
     std::fs::write(dir.join("keep.txt"), "user").unwrap();
     assert!(uninstall(&mut root, &settings).unwrap());
     assert_eq!(
         std::fs::read_to_string(dir.join("keep.txt")).unwrap(),
         "user"
     );
+    assert!(!mods[1].0.exists());
     assert!(!uninstall(&mut root, &settings).unwrap());
-    for (name, _) in ASSETS {
-        assert!(!dir.join(name).exists());
+    for (dir, assets) in &mods {
+        for (name, _) in *assets {
+            assert!(!dir.join(name).exists());
+        }
     }
+}
+
+#[test]
+fn gate_is_a_sibling_plugin_with_its_own_path_entry() {
+    let temp = tempfile::tempdir().unwrap();
+    let settings = temp.path().join("settings.json");
+    let mut root = json!({"env":{ENV:"/other"}});
+    install(&mut root, &settings).unwrap();
+    let notify = directory(&settings).unwrap();
+    let gate = notify.parent().unwrap().join("notify-gate");
+    let sep = separator();
+    assert_eq!(
+        root["env"][ENV],
+        format!("/other{sep}{}{sep}{}", notify.display(), gate.display())
+    );
+    assert!(!gate.starts_with(&notify));
+    assert!(
+        std::fs::read_to_string(gate.join(".claude-plugin/plugin.json"))
+            .unwrap()
+            .contains("\"tasty-notify-gate\"")
+    );
+    assert_eq!(
+        std::fs::read_to_string(gate.join(".tasty-owner")).unwrap(),
+        MARKER
+    );
+    assert!(uninstall(&mut root, &settings).unwrap());
+    assert_eq!(root, json!({"env":{ENV:"/other"}}));
+    assert!(!gate.exists() && !notify.exists());
+}
+
+#[test]
+fn upgrade_from_notify_only_install_adds_the_gate_and_keeps_order() {
+    let temp = tempfile::tempdir().unwrap();
+    let settings = temp.path().join("settings.json");
+    let notify = directory(&settings).unwrap();
+    std::fs::create_dir_all(&notify).unwrap();
+    std::fs::write(notify.join(".tasty-owner"), MARKER).unwrap();
+    for (name, content) in ASSETS {
+        let path = notify.join(name);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, content).unwrap();
+    }
+    let sep = separator();
+    let mut root = json!({"env":{ENV:format!("{}{sep}/after", notify.display())}});
+    assert!(install(&mut root, &settings).unwrap());
+    let gate = notify.parent().unwrap().join("notify-gate");
+    assert_eq!(
+        root["env"][ENV],
+        format!("{}{sep}/after{sep}{}", notify.display(), gate.display())
+    );
+    for (name, content) in GATE_ASSETS {
+        assert_eq!(std::fs::read_to_string(gate.join(name)).unwrap(), *content);
+    }
+    let installed = root.clone();
+    assert!(!install(&mut root, &settings).unwrap());
+    assert_eq!(root, installed);
+}
+
+#[test]
+fn unowned_gate_directory_refuses_before_any_change() {
+    let temp = tempfile::tempdir().unwrap();
+    let settings = temp.path().join("settings.json");
+    let gate = directory(&settings)
+        .unwrap()
+        .parent()
+        .unwrap()
+        .join("notify-gate");
+    std::fs::create_dir_all(&gate).unwrap();
+    let mut root = json!({});
+    assert!(install(&mut root, &settings).is_err());
+    assert_eq!(root, json!({}));
+    assert!(!directory(&settings).unwrap().exists());
+    assert!(uninstall(&mut root, &settings).is_err());
+    assert!(gate.exists());
 }
 
 #[cfg(unix)]

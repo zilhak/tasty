@@ -1,4 +1,4 @@
-<!-- source-hash: f980747b2f51 -->
+<!-- source-hash: 8ad0c4933977 -->
 # Working with Claude and Codex
 
 Connect Claude Code and Codex CLI to share work across several agents. One agent can launch others and receive their results, so implementation, testing, and review can run alongside each other.
@@ -151,9 +151,9 @@ While a child waits on a background shell or subagent and that work's output has
 
 ### Receive automatically in Claude Code
 
-After updating Tasty, run `tasty claude install` again and start a new Claude Code session. It installs the notification mod alongside the existing hooks, preserving other hooks and plugin paths. The mod uses the API bundled with Claude Code2.1.307. Real model-turn acceptance is a separate check; a usage limit or authentication error is not success.
+After updating Tasty, run `tasty claude install` again and start a new Claude Code session. It installs the notification mod and its duplicate-prevention plugin alongside the existing hooks, preserving other hooks and plugin paths. The mod uses the API bundled with Claude Code2.1.307. Real model-turn acceptance is a separate check; a usage limit or authentication error is not success.
 
-The active mod watches its own completion log from session start. When Claude is busy, its plugin-origin notification is queued for a separate turn after the current turn. New sessions skip old log content; an ordinary mod reload resumes its saved cursor. Retention can discard unread lines, and a process interrupted between prompt acceptance and cursor storage can receive the last batch again. A status notification does not prove task success.
+The active mod watches its own completion log from session start. When Claude is busy, its plugin-origin notification is queued for a separate turn after the current turn. New sessions skip old log content; a mod reload resumes its saved cursor. A notification queued while the mod reloads is normally still delivered once, and a short notice may say a second copy was skipped. Rarely, if the duplicate-prevention plugin itself restarts mid-delivery, the same notification can arrive twice, but it is not lost. This applies to Claude sessions started after the install. Retention can discard unread lines. A status notification does not prove task success.
 
 In that Claude's Bash, `TASTY_CLAUDE_NOTIFY_MOD` should match its surface number. Do not also arm Monitor: both consumers send notifications. Skip Monitor in personal instructions or skills only for a session with this matching marker; Tasty does not edit those files. Remove the integration with `tasty claude uninstall`.
 

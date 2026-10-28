@@ -31,8 +31,44 @@ const ASSETS: &[(&str, &str)] = &[
         include_str!("notify_mod/claude/types/index.d.ts"),
     ),
 ];
+// A separate plugin: tasty-notify's own hooks do not see its timer submissions.
+// Its source sits inside the mod folder only so the engine tests can load it.
+const GATE_ASSETS: &[(&str, &str)] = &[
+    (
+        ".claude-plugin/plugin.json",
+        include_str!("notify_mod/claude/gate/.claude-plugin/plugin.json"),
+    ),
+    (
+        "hooks/hooks.json",
+        include_str!("notify_mod/claude/gate/hooks/hooks.json"),
+    ),
+    (
+        "hooks/register.ts",
+        include_str!("notify_mod/claude/gate/hooks/register.ts"),
+    ),
+    (
+        "types/index.d.ts",
+        include_str!("notify_mod/claude/gate/types/index.d.ts"),
+    ),
+];
+/// Sibling managed plugin directories, each its own path-list entry, in install order.
+type Assets = &'static [(&'static str, &'static str)];
+const MODS: &[(&str, Assets)] = &[("notify-mod", ASSETS), ("notify-gate", GATE_ASSETS)];
 
+#[cfg(test)]
 pub(crate) fn directory(settings: &Path) -> Result<PathBuf> {
+    Ok(managed_root(settings)?.join(MODS[0].0))
+}
+
+fn directories(settings: &Path) -> Result<Vec<(PathBuf, Assets)>> {
+    let root = managed_root(settings)?;
+    Ok(MODS
+        .iter()
+        .map(|(name, assets)| (root.join(name), *assets))
+        .collect())
+}
+
+fn managed_root(settings: &Path) -> Result<PathBuf> {
     let mut anchor = settings.parent().context("notify_mod.settings_parent")?;
     let mut missing = Vec::new();
     let mut canonical = loop {
@@ -48,7 +84,7 @@ pub(crate) fn directory(settings: &Path) -> Result<PathBuf> {
     for component in missing.into_iter().rev() {
         canonical.push(component);
     }
-    Ok(canonical.join("tasty-managed").join("notify-mod"))
+    Ok(canonical.join("tasty-managed"))
 }
 
 fn separator() -> char {
@@ -85,9 +121,13 @@ pub(crate) fn configure(root: &mut Value, dir: &Path, sep: char, install: bool) 
         old.split(sep).collect()
     };
     let before = parts.clone();
-    parts.retain(|part| *part != path);
-    if install {
-        parts.push(path);
+    // An entry present once keeps its place, so sibling entries do not swap on reinstall.
+    let present_once = parts.iter().filter(|part| **part == path).count() == 1;
+    if !(install && present_once) {
+        parts.retain(|part| *part != path);
+        if install {
+            parts.push(path);
+        }
     }
     if before == parts {
         return Ok(false);
@@ -138,15 +178,11 @@ fn check_owner(dir: &Path) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn install(root: &mut Value, settings: &Path) -> Result<bool> {
-    let dir = directory(settings)?;
-    check_owner(&dir)?;
-    let mut changed = configure(root, &dir, separator(), true)?;
-    // Preflight every target so a known refusal does not leave half an asset set.
+fn preflight(settings: &Path, dir: &Path, assets: &[(&str, &str)]) -> Result<()> {
     if std::fs::symlink_metadata(settings).is_ok_and(|meta| meta.file_type().is_symlink()) {
         bail!("notify_mod.symlink: {}", settings.display());
     }
-    for (name, _) in ASSETS {
+    for (name, _) in assets {
         check_path(
             &dir.join(name),
             dir.parent()
@@ -154,66 +190,83 @@ pub(crate) fn install(root: &mut Value, settings: &Path) -> Result<bool> {
                 .context("notify_mod.settings_parent")?,
         )?;
     }
-    if !dir.exists() {
-        std::fs::create_dir_all(&dir)?;
-        std::fs::write(dir.join(".tasty-owner"), MARKER)?;
-        changed = true;
+    Ok(())
+}
+
+pub(crate) fn install(root: &mut Value, settings: &Path) -> Result<bool> {
+    let mods = directories(settings)?;
+    let mut changed = false;
+    for (dir, _) in &mods {
+        check_owner(dir)?;
     }
-    for (name, content) in ASSETS {
-        let path = dir.join(name);
-        match std::fs::read(&path) {
-            Ok(bytes) if bytes == content.as_bytes() => continue,
-            Ok(_) => {}
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(e) => return Err(e.into()),
+    for (dir, _) in &mods {
+        changed |= configure(root, dir, separator(), true)?;
+    }
+    // Preflight every target so a known refusal does not leave half an asset set.
+    for (dir, assets) in &mods {
+        preflight(settings, dir, assets)?;
+    }
+    for (dir, assets) in &mods {
+        if !dir.exists() {
+            std::fs::create_dir_all(dir)?;
+            std::fs::write(dir.join(".tasty-owner"), MARKER)?;
+            changed = true;
         }
-        std::fs::create_dir_all(path.parent().context("notify_mod.asset_parent")?)?;
-        std::fs::write(path, content)?;
-        changed = true;
+        for (name, content) in *assets {
+            let path = dir.join(name);
+            match std::fs::read(&path) {
+                Ok(bytes) if bytes == content.as_bytes() => continue,
+                Ok(_) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => return Err(e.into()),
+            }
+            std::fs::create_dir_all(path.parent().context("notify_mod.asset_parent")?)?;
+            std::fs::write(path, content)?;
+            changed = true;
+        }
     }
     Ok(changed)
 }
 
 pub(crate) fn uninstall(root: &mut Value, settings: &Path) -> Result<bool> {
-    let dir = directory(settings)?;
-    check_owner(&dir)?;
-    let mut changed = configure(root, &dir, separator(), false)?;
-    if std::fs::symlink_metadata(settings).is_ok_and(|meta| meta.file_type().is_symlink()) {
-        bail!("notify_mod.symlink: {}", settings.display());
+    let mods = directories(settings)?;
+    let mut changed = false;
+    for (dir, _) in &mods {
+        check_owner(dir)?;
     }
-    for (name, _) in ASSETS {
-        check_path(
-            &dir.join(name),
-            dir.parent()
-                .and_then(Path::parent)
-                .context("notify_mod.settings_parent")?,
-        )?;
+    for (dir, _) in &mods {
+        changed |= configure(root, dir, separator(), false)?;
     }
-    for (name, _) in ASSETS {
-        match std::fs::remove_file(dir.join(name)) {
-            Ok(()) => changed = true,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(e) => return Err(e.into()),
+    for (dir, assets) in &mods {
+        preflight(settings, dir, assets)?;
+    }
+    for (dir, assets) in &mods {
+        for (name, _) in *assets {
+            match std::fs::remove_file(dir.join(name)) {
+                Ok(()) => changed = true,
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => return Err(e.into()),
+            }
         }
-    }
-    // Claude may generate types here. Do not recursively delete those or user files.
-    for name in [".claude-plugin", "hooks", "types"] {
-        match std::fs::remove_dir(dir.join(name)) {
-            Ok(()) => {}
-            Err(e)
-                if matches!(
-                    e.kind(),
-                    std::io::ErrorKind::NotFound | std::io::ErrorKind::DirectoryNotEmpty
-                ) => {}
-            Err(e) => return Err(e.into()),
+        // Claude may generate types here. Do not recursively delete those or user files.
+        for name in [".claude-plugin", "hooks", "types"] {
+            match std::fs::remove_dir(dir.join(name)) {
+                Ok(()) => {}
+                Err(e)
+                    if matches!(
+                        e.kind(),
+                        std::io::ErrorKind::NotFound | std::io::ErrorKind::DirectoryNotEmpty
+                    ) => {}
+                Err(e) => return Err(e.into()),
+            }
         }
-    }
-    if dir.exists()
-        && std::fs::read_dir(&dir)?
-            .all(|entry| entry.is_ok_and(|entry| entry.file_name() == ".tasty-owner"))
-    {
-        std::fs::remove_file(dir.join(".tasty-owner"))?;
-        std::fs::remove_dir(&dir)?;
+        if dir.exists()
+            && std::fs::read_dir(dir)?
+                .all(|entry| entry.is_ok_and(|entry| entry.file_name() == ".tasty-owner"))
+        {
+            std::fs::remove_file(dir.join(".tasty-owner"))?;
+            std::fs::remove_dir(dir)?;
+        }
     }
     Ok(changed)
 }

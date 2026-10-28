@@ -2,7 +2,12 @@ import { test, expect, mock } from 'claude-code/testing';
 import type { Engine } from 'claude-code/testing';
 import type { On } from 'claude-code';
 import { batch, position, retention } from '../hooks/reader';
-import { heading } from '../hooks/messages';
+import { delivery, heading } from '../hooks/messages';
+import { register as gate } from '../gate/hooks/register';
+
+// Installed beside this mod; most tests load both, as an install does.
+const it = (name: string, body: ($: Engine, on: On) => unknown) =>
+  test(name, { plugins: [{ name: 'tasty-notify-gate', register: gate }] }, body);
 
 const root = '/owned/tasty/notify/7.log';
 function fixture(on: On, variables: Record<string, string> = { TASTY_SURFACE_ID: '7', TASTY_PARENT_HOME: '/owned/tasty' }) {
@@ -15,6 +20,8 @@ function fixture(on: On, variables: Record<string, string> = { TASTY_SURFACE_ID:
   let refuse = false;
   let readDelay = 0;
   let submitDelay = 0;
+  let reject = false;
+  let late: 'drop' | 'throw' | undefined;
   let mtime = 1;
   const reads = { body: 0, live: 0, max: 0, writes: 0 };
   on('state.set', ($, e, next) => { reads.writes++; return next(e); });
@@ -29,14 +36,14 @@ function fixture(on: On, variables: Record<string, string> = { TASTY_SURFACE_ID:
     }
     return { value: e.as === 'bytes' ? { base64: btoa(Array.from(new TextEncoder().encode(files[e.path]), n => String.fromCharCode(n)).join('')) } : files[e.path]! };
   });
-  on('prompt.submit', async ($, e) => { if (refuse) return { drop: 'test refusal' }; prompts.push(e.text); origins.push(e.origin); if (submitDelay) await clock.sleep(submitDelay); return { text: e.text, origin: e.origin }; });
+  on('prompt.submit', async ($, e) => { if (late) { const mode = late; late = undefined; await clock.sleep(submitDelay); if (mode === 'throw') throw new Error('late rejection'); return { drop: 'late refusal' }; } if (reject) { reject = false; throw new Error('test rejection'); } if (refuse) return { drop: 'test refusal' }; prompts.push(e.text); origins.push(e.origin); if (submitDelay) await clock.sleep(submitDelay); return { text: e.text, origin: e.origin }; });
   on('session.start', ($, e) => ({ cwd: e.cwd }));
   on('session.end', ($, e) => ({ sessionId: e.sessionId }));
-  return { clock, files, prompts, origins, env, variables, reads, touch: () => { mtime++; }, submitDelay: (value: number) => { submitDelay = value; }, delay: (value: number) => { readDelay = value; }, refuse: (value: boolean) => { refuse = value; } };
+  return { clock, files, prompts, origins, env, variables, reads, touch: () => { mtime++; }, submitDelay: (value: number) => { submitDelay = value; }, delay: (value: number) => { readDelay = value; }, refuse: (value: boolean) => { refuse = value; }, rejectOnce: () => { reject = true; }, lateOnce: (mode: 'drop' | 'throw') => { late = mode; } };
 }
 const start = ($: Engine) => $.session.start({ cwd: '/owned', surface: null, isInteractive: false });
 
-test('startup ignores old log; fast completion is coalesced once; partial UTF8 line waits', async ($, on) => {
+it('startup ignores old log; fast completion is coalesced once; partial UTF8 line waits', async ($, on) => {
   const f = fixture(on);
   await start($);
   expect(f.env.TASTY_CLAUDE_NOTIFY_MOD).toBe('7');
@@ -54,7 +61,7 @@ test('startup ignores old log; fast completion is coalesced once; partial UTF8 l
   expect(f.prompts[1]).toContain('partial\n');
 });
 
-test('reload resumes session cursor and has one timer; clear continues; end cancels', async ($, on) => {
+it('reload resumes session cursor and has one timer; clear continues; end cancels', async ($, on) => {
   const f = fixture(on);
   await start($);
   f.files[root] += 'between loads\n';
@@ -71,7 +78,7 @@ test('reload resumes session cursor and has one timer; clear continues; end canc
   expect(f.prompts.length).toBe(2);
 });
 
-test('truncation meta, uncounted shrink, delete and recreate resume at beginning', async ($, on) => {
+it('truncation meta, uncounted shrink, delete and recreate resume at beginning', async ($, on) => {
   const f = fixture(on); await start($);
   f.files[`${root}.meta`] = 'retention_start=100                 \n';
   f.files[root] = 'new\n'; await f.clock.advance(500);
@@ -86,7 +93,7 @@ test('truncation meta, uncounted shrink, delete and recreate resume at beginning
   expect(f.prompts[3]).toContain('host reboot\n');
 });
 
-test('submit refusal retains cursor for retry; other surface logs are not read', async ($, on) => {
+it('submit refusal retains cursor for retry; other surface logs are not read', async ($, on) => {
   const f = fixture(on); await start($);
   f.files['/owned/tasty/notify/8.log'] = 'foreign\n';
   f.files[root] += 'own\n'; f.refuse(true);
@@ -96,7 +103,7 @@ test('submit refusal retains cursor for retry; other surface logs are not read',
   await f.clock.advance(500); expect(f.prompts.length).toBe(1);
 });
 
-test('outside Tasty clears inherited marker and starts no watcher', async ($, on) => {
+it('outside Tasty clears inherited marker and starts no watcher', async ($, on) => {
   const f = fixture(on, { TASTY_SURFACE_ID: '', TASTY_PARENT_HOME: '' }); await start($);
   await f.clock.advance(1000); expect(f.prompts.length).toBe(0);
   expect(f.env.TASTY_CLAUDE_NOTIFY_MOD).toBeUndefined();
@@ -112,7 +119,7 @@ test('reader byte offsets, bounded batches and invalid retention', () => {
 });
 
 
-test('initial missing log catches its first fast completion; large snapshots refuse without consuming', async ($, on) => {
+it('initial missing log catches its first fast completion; large snapshots refuse without consuming', async ($, on) => {
   const f = fixture(on); delete f.files[root]; await start($);
   f.files[root] = 'first completion\n'; await f.clock.advance(500);
   expect(f.prompts.length).toBe(1);
@@ -123,7 +130,7 @@ test('initial missing log catches its first fast completion; large snapshots ref
   expect(f.prompts.length).toBe(2);
 });
 
-test('new namespace takes a fresh EOF rather than replaying another surface', async ($, on) => {
+it('new namespace takes a fresh EOF rather than replaying another surface', async ($, on) => {
   const f = fixture(on); await start($);
   f.variables.TASTY_PARENT_HOME = '/other';
   f.files['/other/notify/7.log'] = 'other old line\n';
@@ -134,7 +141,7 @@ test('new namespace takes a fresh EOF rather than replaying another surface', as
 });
 
 
-test('retirement during an asynchronous read cannot submit or rearm the watcher', async ($, on) => {
+it('retirement during an asynchronous read cannot submit or rearm the watcher', async ($, on) => {
   const f = fixture(on); await start($);
   f.files[root] += 'retired completion\n'; f.delay(1000);
   await f.clock.advance(500);
@@ -151,7 +158,7 @@ test('visible heading has three translations and an English fallback', () => {
 });
 
 
-test('fully consumed unchanged snapshots suppress body reads but changed stat and meta are observed', async ($, on) => {
+it('fully consumed unchanged snapshots suppress body reads but changed stat and meta are observed', async ($, on) => {
   const f = fixture(on); await start($);
   await f.clock.advance(1500); expect(f.reads.body).toBe(1); expect(f.reads.writes).toBe(1);
   f.touch(); await f.clock.advance(500); expect(f.reads.body).toBe(2);
@@ -164,18 +171,21 @@ test('fully consumed unchanged snapshots suppress body reads but changed stat an
   expect(f.prompts.length).toBe(2);
 });
 
-test('incomplete and refused snapshots are retried without overlapping body reads', async ($, on) => {
+it('incomplete and refused snapshots are retried without overlapping body reads', async ($, on) => {
   const f = fixture(on); await start($);
   f.files[root] += 'partial'; await f.clock.advance(1000);
   expect(f.reads.body).toBe(3);
   f.files[root] += '\n'; f.refuse(true); await f.clock.advance(1000);
-  expect(f.reads.body).toBe(5); expect(f.prompts.length).toBe(0);
-  f.refuse(false); f.delay(1000); await f.clock.advance(1500);
-  expect(f.prompts.length).toBe(1); expect(f.reads.max).toBe(1);
-  await f.clock.advance(1500); expect(f.reads.body).toBe(6);
+  // A refused delivery is retried from its pending text, not from a new read.
+  expect(f.reads.body).toBe(4); expect(f.prompts.length).toBe(0);
+  f.refuse(false); f.delay(1000); f.files[root] += 'next\n'; await f.clock.advance(500);
+  expect(f.prompts.length).toBe(1); expect(f.prompts[0]).not.toContain('next\n');
+  await f.clock.advance(3000);
+  expect(f.prompts.length).toBe(2); expect(f.reads.max).toBe(1);
+  await f.clock.advance(1500); expect(f.reads.body).toBe(5);
 });
 
-test('repeated start while an accepted submit awaits its result preserves one checkpoint owner', async ($, on) => {
+it('repeated start while an accepted submit awaits its result preserves one checkpoint owner', async ($, on) => {
   const f = fixture(on); await start($);
   f.submitDelay(1500); f.files[root] += 'accepted\n';
   await f.clock.advance(500); expect(f.prompts.length).toBe(1);
@@ -184,3 +194,107 @@ test('repeated start while an accepted submit awaits its result preserves one ch
   f.submitDelay(0); f.files[root] += 'later\n'; await f.clock.advance(500);
   expect(f.prompts.length).toBe(2); expect(f.prompts[1]).toContain('later\n');
 });
+
+const notifyOrigin = { kind: 'plugin', name: 'tasty-notify' } as const;
+const end = ($: Engine) => $.session.end({ reason: 'prompt_input_exit', sessionId: 'test', resume: { id: 'test' } });
+
+it('reload while a delivery is queued enters it once and keeps later lines', async ($, on) => {
+  const f = fixture(on); await start($);
+  f.submitDelay(1500); f.files[root] += 'queued\n';
+  await f.clock.advance(500); expect(f.prompts.length).toBe(1);
+  // A fresh module copy: the engine still holds the first copy's prompt.
+  await end($); await start($);
+  await f.clock.advance(2500);
+  expect(f.prompts.length).toBe(1);
+  f.submitDelay(0); f.files[root] += 'later\n'; await f.clock.advance(500);
+  expect(f.prompts.length).toBe(2); expect(f.prompts[1]).toContain('later\n');
+  expect(f.prompts[1]).not.toContain('queued\n');
+});
+
+it('a repeated delivery entering after its first copy is dropped before the model', async ($, on) => {
+  const f = fixture(on); await start($);
+  f.files[root] += 'once\n'; await f.clock.advance(500);
+  expect(f.prompts.length).toBe(1);
+  expect(f.prompts[0]).not.toContain('[[tasty-notify');
+  const repeat = await $.prompt.submit({ text: `[[tasty-notify 1]]\n${heading(undefined)}\nonce\n`, wait: false, origin: notifyOrigin });
+  expect(repeat.drop).toBeDefined();
+  expect(f.prompts.length).toBe(1);
+  const user = await $.prompt.submit({ text: '[[tasty-notify 1]]\nonce\n', wait: false, origin: { kind: 'composer' } });
+  expect(user.drop).toBeUndefined();
+  const other = await $.prompt.submit({ text: '[[tasty-notify 1]]\nonce\n', wait: false, origin: { kind: 'plugin', name: 'other' } });
+  expect(other.drop).toBeUndefined();
+  expect(f.prompts.length).toBe(3);
+  expect(f.prompts[2]).toContain('[[tasty-notify 1]]');
+});
+
+it('a refused delivery is retried with its exact text before later lines', async ($, on) => {
+  const f = fixture(on); await start($);
+  f.refuse(true); f.files[root] += 'one\n'; await f.clock.advance(500);
+  expect(f.prompts.length).toBe(0);
+  f.files[root] += 'two\n'; f.refuse(false); await f.clock.advance(500);
+  expect(f.prompts.length).toBe(1);
+  expect(f.prompts[0]).toContain('one\n'); expect(f.prompts[0]).not.toContain('two\n');
+  await f.clock.advance(500);
+  expect(f.prompts.length).toBe(2);
+  expect(f.prompts[1]).toContain('two\n'); expect(f.prompts[1]).not.toContain('one\n');
+  await end($); await start($); await f.clock.advance(1000);
+  expect(f.prompts.length).toBe(2);
+});
+
+test('without the gate plugin deliveries still arrive once per poll', async ($, on) => {
+  const f = fixture(on); await start($);
+  f.files[root] += 'ungated\n'; await f.clock.advance(1500);
+  expect(f.prompts.length).toBe(1); expect(f.prompts[0]).toContain('ungated\n');
+});
+
+it('the gate strips exactly the marker delivery() writes', async ($, on) => {
+  const f = fixture(on); await start($);
+  const entered = await $.prompt.submit({ text: delivery(7, 'ko', 'x\n'), wait: false, origin: notifyOrigin });
+  expect(entered.drop).toBeUndefined();
+  expect(f.prompts[0]).toBe(`${heading('ko')}\nx\n`);
+});
+
+it('a rejected entry is rolled back by the gate and delivered on retry', async ($, on) => {
+  const f = fixture(on); await start($);
+  f.rejectOnce(); f.files[root] += 'rejected once\n'; await f.clock.advance(500);
+  expect(f.prompts.length).toBe(0);
+  await f.clock.advance(1000);
+  expect(f.prompts.length).toBe(1); expect(f.prompts[0]).toContain('rejected once\n');
+});
+
+it('a new delivery takes a sequence above an existing gate record', async ($, on) => {
+  const f = fixture(on); await start($);
+  // The gate already admitted seq 5 while this cursor holds none, as a recreated cursor would.
+  await $.prompt.submit({ text: delivery(5, undefined, 'earlier\n'), wait: false, origin: notifyOrigin });
+  f.files[root] += 'next\n'; await f.clock.advance(500);
+  expect(f.prompts.length).toBe(2); expect(f.prompts[1]).toContain('next\n');
+  await f.clock.advance(1000); expect(f.prompts.length).toBe(2);
+});
+
+it('a pending delivery survives a namespace change and is delivered once', async ($, on) => {
+  const f = fixture(on); await start($);
+  f.refuse(true); f.files[root] += 'old namespace\n'; await f.clock.advance(500);
+  expect(f.prompts.length).toBe(0);
+  f.variables.TASTY_PARENT_HOME = '/other'; f.files['/other/notify/7.log'] = 'other old\n';
+  await end($); f.refuse(false); await start($); await f.clock.advance(500);
+  expect(f.prompts.length).toBe(1); expect(f.prompts[0]).toContain('old namespace\n');
+  await f.clock.advance(1000); expect(f.prompts.length).toBe(1);
+  f.files['/other/notify/7.log'] += 'other new\n'; await f.clock.advance(500);
+  expect(f.prompts.length).toBe(2); expect(f.prompts[1]).toContain('other new\n');
+  expect(f.prompts[1]).not.toContain('other old');
+});
+
+for (const mode of ['drop', 'throw'] as const) {
+  it(`a reloaded watcher keeps a delivery refused (${mode}) after a slow lower hook`, async ($, on) => {
+    const f = fixture(on); await start($);
+    f.submitDelay(1500); f.lateOnce(mode); f.files[root] += 'held\n';
+    await f.clock.advance(500); expect(f.prompts.length).toBe(0);
+    // A fresh module copy polls while the gate's entry is still running beneath.
+    await end($); await start($);
+    await f.clock.advance(500); expect(f.prompts.length).toBe(0);
+    await f.clock.advance(1500); f.submitDelay(0);
+    await f.clock.advance(1000);
+    expect(f.prompts.length).toBe(1); expect(f.prompts[0]).toContain('held\n');
+    await f.clock.advance(1500); expect(f.prompts.length).toBe(1);
+  });
+}

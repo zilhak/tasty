@@ -7,3 +7,7 @@ const messages = {
 export function heading(locale: string | undefined): string {
   return messages[locale as keyof typeof messages] ?? messages.en;
 }
+// tasty-notify-gate strips this first line before the prompt enters.
+export function delivery(seq: number, locale: string | undefined, body: string): string {
+  return `[[tasty-notify ${seq}]]\n${heading(locale)}\n${body}`;
+}
