@@ -771,6 +771,6 @@ Markdown 조회 대기 표시는 plugin의 `user_initiated` 출처를 함께 확
 
 ## HTML entry 전송
 
-연결별 opt-in metadata·분할 전송의 [HTML 전송 계약](html-transfer.md)을 따른다. 전송 capability는 HTML viewer capability와 별개다. Linux GUI client는 viewer capability까지 협상한 연결의 파일 entry를 native로 표시한다. 구 peer·미지원 client는 placeholder를 유지한다. 하위 리소스와 HTTP(S)는 차단하며 client fallback이 없다.
+연결별 opt-in metadata·분할 전송의 [HTML 전송 계약](html-transfer.md)을 따른다. 전송 capability는 HTML viewer capability와 별개다. Linux·Windows GUI client는 viewer capability까지 협상한 연결의 파일 entry를 native로 표시한다. 구 peer·미지원 client는 placeholder를 유지한다. 하위 리소스와 HTTP(S)는 차단하며 client fallback이 없다.
 
 capture·Git·markdown의 custom control event 태그 검사는 client wire 파서의 `control_event`가 공유한다. 태그가 없거나 다르면 해당 파서는 인식하지 않은 것으로 처리하고 다음 파서로 넘긴다.

@@ -1,6 +1,6 @@
 # HTML entry 전송 계약
 
-attach 서버의 HTML 전송과 client entry viewer를 설명한다. Linux GUI client는 파일 entry 본문과 협상된 같은 root의 하위 파일을 받아 별도 native context에서 표시한다. HTTP(S) 실행은 지원하지 않으며 client 파일·네트워크로 대체하지 않는다. [HTML surface](../surfaces/html/index.md), [attach 동작](attach-behavior.md)을 함께 본다.
+attach 서버의 HTML 전송과 client entry viewer를 설명한다. Linux·Windows GUI client는 파일 entry 본문과 협상된 같은 root의 하위 파일을 받아 별도 native context에서 표시한다. HTTP(S) 실행은 지원하지 않으며 client 파일·네트워크로 대체하지 않는다. [HTML surface](../surfaces/html/index.md), [attach 동작](attach-behavior.md)을 함께 본다.
 
 ## source와 협상
 
