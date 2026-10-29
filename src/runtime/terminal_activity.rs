@@ -74,13 +74,14 @@ impl EngineMut<'_> {
         self.remote.mirror_busy_surfaces.remove(&surface_id);
     }
 
-    /// 하드 점유한 surface의 로컬 busy 전송 후보. 최초 값과 holder·busy 변경을 담는다.
+    /// 준비된 하드 점유 surface의 로컬 busy 전송 후보. 최초 값과 holder·busy 변경을 담는다.
+    /// 준비 전 점유는 후보와 캐시에서 빼서 descriptor 뒤 첫 호출에 최초 값을 낸다.
     /// 점유가 끝난 캐시는 지우고 같은 조회 간격 안의 holder 변경도 구분한다.
     /// 후보 생성 시 캐시를 갱신하므로 전송에 실패해도 같은 값은 재시도하지 않는다.
     pub fn busy_activity_forwards(
         &mut self,
     ) -> Vec<(crate::core::attach::AttachClientId, u32, bool)> {
-        let locks = self.live.occupancy.locks_snapshot();
+        let locks = self.live.occupancy.ready_locks_snapshot();
         let occupied: std::collections::HashSet<u32> = locks.iter().map(|&(sid, _)| sid).collect();
         self.remote
             .last_forwarded_busy
@@ -237,6 +238,33 @@ mod tests {
         e.live.busy_surfaces.insert(sid);
         assert_eq!(e.busy_activity_forwards(), vec![(7, sid, true)]);
 
+        assert!(e.busy_activity_forwards().is_empty());
+    }
+
+    /// 준비 전 점유는 후보도 캐시도 만들지 않는다. 준비 뒤 첫 호출이 그 사이 바뀐 현재 값을
+    /// 최초 값으로 한 번 낸다.
+    #[test]
+    fn busy_activity_forwards_waits_for_a_ready_lock() {
+        let mut e_session = crate::state::tests::test_state().1;
+        let mut e = e_session.borrow_mut();
+        let sid = e
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .all_surface_ids()[0];
+        let grant = e
+            .live
+            .occupancy
+            .acquire(sid, 7)
+            .expect("lock 획득")
+            .granted_seq;
+        e.live.occupancy.set_attachment_ready(7, grant, false);
+        assert!(e.busy_activity_forwards().is_empty());
+        e.live.busy_surfaces.insert(sid);
+        assert!(e.busy_activity_forwards().is_empty());
+        assert!(e.remote.last_forwarded_busy.is_empty());
+
+        e.live.occupancy.set_attachment_ready(7, grant, true);
+        assert_eq!(e.busy_activity_forwards(), vec![(7, sid, true)]);
         assert!(e.busy_activity_forwards().is_empty());
     }
 

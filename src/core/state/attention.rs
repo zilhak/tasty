@@ -198,7 +198,8 @@ impl EngineMut<'_> {
         self.live.attention.clear(surface_id);
     }
 
-    /// 하드 점유한 surface의 (holder, ID, kind) 전송 후보. 최초 값과 holder·kind 변경을 담는다.
+    /// 준비된 하드 점유 surface의 (holder, ID, kind) 전송 후보. 최초 값과 holder·kind 변경을 담는다.
+    /// 준비 전 점유는 후보와 캐시에서 빼서 descriptor 뒤 첫 호출에 최초 값을 낸다.
     /// 점유가 끝난 캐시는 지우며, 같은 호출 간격 안에 holder만 바뀐 경우도 구분한다.
     /// 후보 생성 시 캐시를 갱신하므로 실패한 전송을 같은 값으로 다시 시도하지 않는다.
     pub(crate) fn attention_forwards(
@@ -208,7 +209,7 @@ impl EngineMut<'_> {
         u32,
         Option<AttentionKind>,
     )> {
-        let locks = self.live.occupancy.locks_snapshot();
+        let locks = self.live.occupancy.ready_locks_snapshot();
         let occupied: std::collections::HashSet<u32> = locks.iter().map(|&(sid, _)| sid).collect();
         self.remote
             .last_forwarded_attention
@@ -483,6 +484,34 @@ mod tests {
 
         e.clear_attention(sid);
         assert_eq!(e.attention_forwards(), vec![(7, sid, None)]);
+        assert!(e.attention_forwards().is_empty());
+    }
+
+    /// 준비 전 점유는 후보도 캐시도 만들지 않고, 준비 뒤 첫 호출이 현재 값을 한 번 낸다.
+    #[test]
+    fn attention_forwards_waits_for_a_ready_lock() {
+        let mut e_session = state();
+        let mut e = e_session.borrow_mut();
+        let sid = e
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .all_surface_ids()[0];
+        let grant = e
+            .live
+            .occupancy
+            .acquire(sid, 7)
+            .expect("lock 획득")
+            .granted_seq;
+        e.live.occupancy.set_attachment_ready(7, grant, false);
+        e.raise_attention(sid, AttentionKind::NeedsInput);
+        assert!(e.attention_forwards().is_empty());
+        assert!(e.remote.last_forwarded_attention.is_empty());
+
+        e.live.occupancy.set_attachment_ready(7, grant, true);
+        assert_eq!(
+            e.attention_forwards(),
+            vec![(7, sid, Some(AttentionKind::NeedsInput))]
+        );
         assert!(e.attention_forwards().is_empty());
     }
 

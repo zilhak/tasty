@@ -65,13 +65,14 @@ impl EngineMut<'_> {
 }
 
 impl EngineMut<'_> {
-    /// 하드 점유 surface의 (holder, ID, cwd) 전송 후보. 최초 None도 포함한다.
+    /// 준비된 하드 점유 surface의 (holder, ID, cwd) 전송 후보. 최초 None도 포함한다.
+    /// 준비 전 점유는 후보와 캐시에서 빼서 descriptor 뒤 첫 호출에 최초 값을 낸다.
     /// holder와 값으로 중복을 구분하고 점유가 끝난 캐시는 지운다.
     /// 전송 전에 캐시를 갱신하므로 실패 후 같은 값의 재전송은 보장하지 않는다.
     pub fn surface_cwd_forwards(
         &mut self,
     ) -> Vec<(crate::core::attach::AttachClientId, u32, Option<String>)> {
-        let locks = self.live.occupancy.locks_snapshot();
+        let locks = self.live.occupancy.ready_locks_snapshot();
         let occupied: std::collections::HashSet<u32> = locks.iter().map(|&(sid, _)| sid).collect();
         self.remote
             .last_forwarded_cwd
@@ -151,6 +152,27 @@ mod tests {
             e.surface_cwd_forwards().is_empty(),
             "값이 그대로면 안 나간다"
         );
+    }
+
+    /// 준비 전 점유는 후보도 캐시도 만들지 않고, 준비 뒤 첫 호출이 최초 값을 한 번 낸다.
+    #[test]
+    fn cwd_forwards_waits_for_a_ready_lock() {
+        let mut e_session = engine();
+        let mut e = e_session.borrow_mut();
+        let sid = e
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .all_surface_ids()[0];
+        let grant = e.live.occupancy.acquire(sid, 7).expect("lock").granted_seq;
+        e.live.occupancy.set_attachment_ready(7, grant, false);
+        assert!(e.surface_cwd_forwards().is_empty());
+        assert!(e.remote.last_forwarded_cwd.is_empty());
+
+        e.live.occupancy.set_attachment_ready(7, grant, true);
+        let first = e.surface_cwd_forwards();
+        assert_eq!(first.len(), 1);
+        assert_eq!((first[0].0, first[0].1), (7, sid));
+        assert!(e.surface_cwd_forwards().is_empty());
     }
 
     #[test]

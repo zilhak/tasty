@@ -367,3 +367,6 @@ pub(crate) fn cancel_engine(
         }
     }
 }
+
+#[cfg(test)]
+mod order_tests;

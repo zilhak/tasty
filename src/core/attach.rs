@@ -296,6 +296,16 @@ impl OccupancyRegistry {
         self.surface_locks.iter().map(|(&s, &l)| (s, l)).collect()
     }
 
+    /// 준비된 surface lock만. 준비 전 점유의 client는 attach descriptor를 아직 받지 않아서
+    /// 그보다 먼저 상태 Control을 받으면 attach가 실패한다.
+    pub(crate) fn ready_locks_snapshot(&self) -> Vec<(SurfaceId, AttachLock)> {
+        self.surface_locks
+            .iter()
+            .filter(|(_, l)| l.ready)
+            .map(|(&s, &l)| (s, l))
+            .collect()
+    }
+
     /// client가 점유한 surface 하나를 반환한다. 여러 항목이면 순서는 보장하지 않는다.
     pub fn surface_held_by(&self, client_id: AttachClientId) -> Option<SurfaceId> {
         self.surface_locks

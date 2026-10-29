@@ -123,7 +123,9 @@ attach 직후 서버가 현재 visible 화면을 `snapshot_and_stream` 으로 �
 
 ## workspace mux
 
-한 연결로 N 터미널 출력을 나르므로 workspace 모드 Data 프레임은 **surface-prefixed**(`encode_mux`/`decode_mux`). surface 단위 단일 연결은 prefix 없음. attach 직후 서버가 `attached_workspace` Control 로 트리(분할 방향/비율) + per-surface 디스크립터를 보내고, client 는 원격↔로컬 surface_id 재매핑으로 트리를 재구성한다. per-surface role 은 5종:
+한 연결로 N 터미널 출력을 나르므로 workspace 모드 Data 프레임은 **surface-prefixed**(`encode_mux`/`decode_mux`). surface 단위 단일 연결은 prefix 없음. attach 직후 서버가 `attached_workspace` Control 로 트리(분할 방향/비율) + per-surface 디스크립터를 보내고, client 는 원격↔로컬 surface_id 재매핑으로 트리를 재구성한다. client(GUI `crates/tasty-remote/src/transport.rs`, CLI `crates/tasty-cli/src/local/attach.rs`)는 attach 연결의 첫 Control 이 `attached_workspace`(단일 surface 면 `attached`) 또는 `attach_error` 라고 보고, 그 밖의 event 가 먼저 오면 attach 전체를 실패시킨다. 그래서 서버는 descriptor 전에 다른 Control 을 보내지 않는다. 점유는 `attach_activation::begin` 에서 잡히고 terminal 활성화가 끝난 `poll` 에서야 descriptor 가 나가므로, 그 사이의 점유는 준비 안 됨(`AttachLock.ready = false`)이다. Busy tick 의 상태 전송(`busy_activity_forwards`·`attention_forwards`·`surface_cwd_forwards`)은 준비된 lock 만 보는 `ready_locks_snapshot` 으로 후보를 만든다. 준비 전 점유는 후보에서도 전송 캐시에서도 빠지므로, 준비된 뒤 descriptor 다음 Busy tick 에서 점유 터미널마다 busy·attention·cwd 의 그때 값이 최초 값으로 한 번씩 나간다. 순서는 `src/app/attach_activation/order_tests.rs` 가 begin → Busy tick → poll → Busy tick 으로 재현해 본다.
+
+per-surface role 은 5종:
 
 - `{remote_id, role:"terminal", cols, rows}` — mirror 가능한 터미널.
 - `{remote_id, role:"mesh", kind, plugin_id, display_name}` — 같은 plugin 소유의 egui-mesh 로 등록된 kind(mesh mirror, 아래 절).
