@@ -8,6 +8,9 @@ use super::{ADDR_WAITING_AFTER_MS, NAV_FRAGMENT_MARKER};
 /// 주소 입력과 새로고침은 #tasty-nav 마커로 호스트에 알린다. 주소 이동에는 nonce 를 붙여 같은 경로를
 /// 다시 보내도 hash 가 바뀌게 한다. 원격 문서의 Esc 는 입력을 지금 원격 경로로 되돌린다.
 /// 오류 행은 다음 입력이나 Esc 에서 지우고 플러그인에 알려 보관한 실패도 버리게 한다.
+/// Esc 는 로컬·원격 모두 편집 중인 입력을 지금 경로로 되돌리고 이동하지 않는다.
+/// `address_keys`(단축키 설정 `explorer_focus_address`의 판정 값 JSON)는 주소 입력에 포커스를 주고 값 전체를
+/// 고른다. 읽기 전용 주소도 고를 수 있으며 Enter 는 이동하지 않는다.
 /// 원격 이동을 보낸 뒤 [`ADDR_WAITING_AFTER_MS`] 안에 결과로 문서가 다시 실리지 않으면 숨겨 둔 대기 행을
 /// 보인다. 페이지 안에서만 바꾸므로 입력 포커스와 IME 조합을 건드리지 않는다. 대기 행도 다음 입력·Esc
 /// 에서 지운다.
@@ -17,7 +20,12 @@ use super::{ADDR_WAITING_AFTER_MS, NAV_FRAGMENT_MARKER};
 /// 파일 경로별 스크롤 위치를 sessionStorage에 저장하고 복원을 시도한다.
 /// load_html 이후 저장소가 유지되는지는 세 WebView 백엔드 모두에서 검증하지 않았다.
 /// 저장소를 사용할 수 없으면 복원하지 않는다.
-pub(super) fn nav_script(file_path: &str, bar_h: f32, bar_h_row: f32) -> String {
+pub(super) fn nav_script(
+    file_path: &str,
+    bar_h: f32,
+    bar_h_row: f32,
+    address_keys: &str,
+) -> String {
     format!(
         r#"(function(){{
 var bar=document.getElementById('tasty-addr-bar');
@@ -73,10 +81,19 @@ if(o)o.addEventListener('click',function(){{location.hash='tasty-nav:refresh:'+n
 if(i){{
 i.addEventListener('input',function(){{sync();dismiss();}});
 i.addEventListener('keydown',function(e){{
-if(e.isComposing)return;
+if(e.isComposing||e.keyCode===229)return;
 if(e.key==='Enter'){{go();return;}}
-if(e.key==='Escape'&&remote&&!i.readOnly){{i.value=current;sync();dismiss();i.blur();}}
+if(e.key==='Escape'&&!i.readOnly){{e.preventDefault();if(i.value!==current){{i.value=current;sync();}}dismiss();i.blur();}}
 }});
+var ADDR_KEYS={address_keys};
+document.addEventListener('keydown',function(e){{
+if(e.isComposing||e.keyCode===229)return;
+var hit=ADDR_KEYS.some(function(k){{return e.ctrlKey===k.ctrl&&e.altKey===k.alt&&e.metaKey===k.meta&&e.shiftKey===k.shift&&e.code===k.code;}});
+if(!hit)return;
+e.preventDefault();
+i.focus();
+i.select();
+}},true);
 }}
 var toc=document.getElementById('tasty-toc');
 var tocToggle=document.getElementById('tasty-toc-toggle');
@@ -121,5 +138,6 @@ try{{sessionStorage.setItem(scrollKey,String(window.scrollY));}}catch(e){{}}
         bar_h = bar_h,
         bar_h_row = bar_h_row,
         wait_ms = ADDR_WAITING_AFTER_MS,
+        address_keys = address_keys,
     )
 }

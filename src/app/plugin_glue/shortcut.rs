@@ -211,6 +211,13 @@ impl App {
             &main.state,
             &engine.as_ref(),
         );
+        // 포커스 WebView의 편집 바인딩은 plugin 명령보다 먼저다. native 자식이 키를 받을 때와 같은 순서다.
+        if main
+            .webview_edit_for_key(&engine.read(), shortcut_key, mods)
+            .is_some()
+        {
+            return false;
+        }
         let host_kb = engine.runtime.settings.keybindings.clone();
 
         let matched = {

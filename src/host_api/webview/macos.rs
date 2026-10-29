@@ -578,9 +578,6 @@ impl KeyWebView {
     }
 
     fn forward_key_to_host(&self, event: &NSEvent) -> bool {
-        if event.isARepeat() {
-            return false;
-        }
         let mods = nsevent_mods_to_winit(event.modifierFlags());
         let chars = event.charactersIgnoringModifiers();
         let Some(key) = chars.and_then(|c| ns_chars_to_winit_key(&c.to_string())) else {
@@ -588,10 +585,62 @@ impl KeyWebView {
         };
         let physical = macos_keycode_to_physical(event.keyCode());
         let ivars = self.ivars();
-        ivars
+        // 자동 반복은 다시 실행하지 않고, 첫 누름을 막거나 가져갔던 조합이면 WebKit에도 보내지 않는다.
+        if event.isARepeat() {
+            return ivars
+                .key_bridge
+                .consumes_repeat(ivars.surface_id, &key, &physical, mods);
+        }
+        if ivars.key_bridge.blocks_edit_key(&key, &physical, mods) {
+            return true;
+        }
+        // Edit 메뉴가 없어 Cmd 편집 키(실행 취소 포함)도 사용자 바인딩으로 이 WebView의 편집 명령을 실행한다.
+        if let Some(action) = ivars.key_bridge.edit_action(&key, &physical, mods) {
+            run_editing_command(self, action);
+            return true;
+        }
+        if ivars
             .key_bridge
-            .capture_key(ivars.surface_id, key, physical, mods)
+            .capture_key(ivars.surface_id, key.clone(), physical, mods)
+        {
+            return true;
+        }
+        false
     }
+}
+
+/// WKWebView의 NSResponder 편집 selector를 실행한다. 대상 frame과 편집 가능 여부는 WebKit이 판단한다.
+fn run_editing_command(view: &NSView, action: super::WebViewEditAction) {
+    use super::WebViewEditAction as A;
+    let selector = match action {
+        A::Copy => objc2::sel!(copy:),
+        A::Cut => objc2::sel!(cut:),
+        A::Paste => objc2::sel!(paste:),
+        A::SelectAll => objc2::sel!(selectAll:),
+        A::Undo => objc2::sel!(undo:),
+        A::Redo => objc2::sel!(redo:),
+    };
+    // SAFETY: main thread AppKit 뷰에 응답 여부만 묻는다.
+    let responds: bool = unsafe { msg_send![view, respondsToSelector: selector] };
+    if !responds && matches!(action, A::Undo | A::Redo) {
+        // undo:/redo:는 뷰가 아니라 응답자 체인의 undoManager가 처리할 수 있다.
+        let app = objc2_app_kit::NSApplication::sharedApplication(view.mtm());
+        let null = std::ptr::null::<objc2::runtime::AnyObject>();
+        // SAFETY: main thread AppKit. target nil은 first responder부터 응답자 체인을 탄다.
+        let handled: bool = unsafe { msg_send![&*app, sendAction: selector, to: null, from: null] };
+        if !handled {
+            tracing::warn!("webview: edit selector {selector:?} is not handled");
+        }
+        return;
+    }
+    if !responds {
+        tracing::warn!("webview: edit selector {selector:?} is not handled");
+        return;
+    }
+    // SAFETY: 응답을 확인한 편집 action selector에 sender nil을 넘긴다. 반환값은 쓰지 않는다.
+    let _ignored: *mut objc2::runtime::AnyObject = unsafe {
+        msg_send![view, performSelector: selector, withObject: std::ptr::null::<objc2::runtime::AnyObject>()]
+    };
 }
 
 /// 자기 뷰 또는 자손이 first responder인지 확인한다. 키 처리와 포커스 반환에 같은 조건을 쓴다.
@@ -1001,6 +1050,11 @@ impl PlatformWebView {
     pub fn attach_script_gate(&self, gate: ScriptGate) {
         self.set_global_javascript(true);
         *self.script_gate.borrow_mut() = Some(gate);
+    }
+
+    /// 팔레트·host 키 경로의 편집 명령. 엔진이 포커스 frame과 편집 가능 여부를 판단한다.
+    pub fn execute_edit(&self, action: super::WebViewEditAction) {
+        run_editing_command(&self.webview, action);
     }
 
     pub fn reload(&self) {

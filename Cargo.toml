@@ -371,6 +371,11 @@ zbus = { version = "5.14", default-features = false, features = ["async-io", "bl
 [target.'cfg(windows)'.build-dependencies]
 winresource = "0.1"
 
+# Linux WebView의 web process 확장을 빌드한다(build.rs). 대상 OS 판정은 build.rs가 하므로 host와 무관하게 둔다.
+[build-dependencies]
+cc = "1.2"
+pkg-config = "0.3"
+
 [features]
 default = ["gui"]
 # headless에서 윈도잉·egui·GPU 의존성을 제외하도록 GUI 기능을 여기서 함께 켠다.

@@ -322,6 +322,16 @@ impl GpuState {
         (response.consumed, response.repaint)
     }
 
+    /// 다음 egui 프레임에 넣을 입력 이벤트. 호스트 입력 위젯의 키 재해석이 쓴다.
+    pub fn egui_input_events_mut(&mut self) -> &mut Vec<egui::Event> {
+        &mut self.egui_state.egui_input_mut().events
+    }
+
+    /// egui-winit 클립보드의 텍스트.
+    pub fn egui_clipboard_text(&mut self) -> Option<String> {
+        self.egui_state.clipboard_text()
+    }
+
     /// 메뉴를 닫는 클릭처럼 egui에 전달하지 않은 입력 뒤에 PointerGone을 넣어
     /// 이전 hover와 누름 상태를 정리한다.
     pub fn push_egui_pointer_gone(&mut self) {

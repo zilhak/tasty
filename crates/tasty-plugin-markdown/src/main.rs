@@ -70,6 +70,8 @@ const REFRESH_REQUESTED_EVENT: &str = "surface.refresh_requested";
 const DEBUG_NO_WATCH_ENV: &str = "TASTY_DEBUG_MARKDOWN_NO_WATCH";
 /// 문서 내 검색 바를 여는 host 단축키 동작.
 const FIND_ACTION: &str = "find";
+/// 주소창 이동. Explorer·HTML과 같은 사용자 설정을 쓴다.
+const ADDRESS_ACTION: &str = "explorer_focus_address";
 
 /// attach mirror 문서의 원문 조회를 host 에 거는 메서드. host 는 `request_id` 만 즉시
 /// 돌려주고 원문은 [`MIRROR_CONTENT_RESULT_EVENT`] 로 나중에 온다
@@ -674,7 +676,9 @@ impl Plugin for MarkdownPlugin {
             }
             // WebView에는 surface.set_context가 오지 않으므로 테마 변경 시 문서를 다시 만든다.
             THEME_CHANGED_EVENT => self.reload_all_webviews(),
-            HOST_SHORTCUT_CHANGED_EVENT if shortcut_change_touches_find(&ctx.envelope.payload) => {
+            HOST_SHORTCUT_CHANGED_EVENT
+                if shortcut_change_touches_page_keys(&ctx.envelope.payload) =>
+            {
                 self.reload_all_webviews()
             }
             REFRESH_REQUESTED_EVENT => self.on_refresh_requested(&ctx.envelope.payload),
@@ -987,10 +991,12 @@ impl MarkdownPlugin {
             return;
         };
         let recent = fetch_recent(host);
-        let find_bindings = fetch_find_bindings(host);
+        let find_bindings = fetch_bindings(host, FIND_ACTION, &["ctrl+f", "alt+f"]);
+        let address_bindings = fetch_bindings(host, ADDRESS_ACTION, &["alt+l"]);
         let file_path = doc.file_path.as_deref().unwrap_or_default();
         let html = render::render_document(render::DocumentInput {
             find_bindings: &find_bindings,
+            address_bindings: &address_bindings,
             theme: &theme,
             tr: &self.tr,
             file_path,
@@ -1105,11 +1111,11 @@ fn fetch_theme(host: &HostHandle, surface_id: u32) -> Option<Theme> {
     }
 }
 
-/// 단축키 설정 `find` 의 바인딩을 조회한다. 조회하지 못하면 기본 프리셋 값으로 문서 내
-/// 검색을 계속 열 수 있게 한다. 사용자 설정과 다를 수 있어 경고를 남긴다.
-fn fetch_find_bindings(host: &HostHandle) -> Vec<String> {
-    let fallback = || vec!["ctrl+f".to_string(), "alt+f".to_string()];
-    match host.call("settings.get_keybinding", json!({ "action": FIND_ACTION })) {
+/// 단축키 설정 `action` 의 바인딩을 조회한다. 조회하지 못하면 기본 프리셋 값으로 문서 내
+/// 검색·주소창 이동을 계속 쓸 수 있게 한다. 사용자 설정과 다를 수 있어 경고를 남긴다.
+fn fetch_bindings(host: &HostHandle, action: &str, defaults: &[&str]) -> Vec<String> {
+    let fallback = || defaults.iter().map(|s| s.to_string()).collect();
+    match host.call("settings.get_keybinding", json!({ "action": action })) {
         Ok(v) => match v.get("bindings").and_then(|b| b.as_array()) {
             Some(arr) => arr
                 .iter()
@@ -1121,18 +1127,23 @@ fn fetch_find_bindings(host: &HostHandle) -> Vec<String> {
             }
         },
         Err(e) => {
-            tracing::warn!("settings.get_keybinding failed: {e} — using the default find keys");
+            tracing::warn!(
+                "settings.get_keybinding({action}) failed: {e} — using the default keys"
+            );
             fallback()
         }
     }
 }
 
-/// `command.host_shortcut_changed` 가 검색 동작의 변경을 포함하는지.
-fn shortcut_change_touches_find(payload: &Value) -> bool {
+/// `command.host_shortcut_changed` 가 문서에 넣은 검색·주소창 이동 바인딩을 바꾸는지.
+fn shortcut_change_touches_page_keys(payload: &Value) -> bool {
     payload
         .get("action_ids")
         .and_then(|a| a.as_array())
-        .is_some_and(|ids| ids.iter().any(|id| id.as_str() == Some(FIND_ACTION)))
+        .is_some_and(|ids| {
+            ids.iter()
+                .any(|id| matches!(id.as_str(), Some(FIND_ACTION | ADDRESS_ACTION)))
+        })
 }
 
 /// 호스트의 recent.query에서 최신 경로를 최대 10개 조회한다.

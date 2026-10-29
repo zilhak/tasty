@@ -3,10 +3,19 @@
 //! 배경: `docs/design/systems/webview.md`.
 
 use crate::settings::KeybindingSettings;
-use crate::webview::{HostShortcutPolicy, ShortcutSources};
+use crate::webview::{HostShortcutPolicy, ShortcutSources, WebViewEditAction};
 
 /// 페이지가 처리할 액션 ID. 키 조합을 바꿔도 해당 액션은 host로 보내지 않는다.
-const PAGE_RESERVED_FIELDS: &[&str] = &["find", "copy", "cut", "paste", "select_all"];
+/// 편집 액션은 `ShortcutSources::edit`로 키를 받은 WebView의 엔진 편집 명령이 된다.
+const PAGE_RESERVED_FIELDS: &[&str] = &[
+    "find",
+    "copy",
+    "cut",
+    "paste",
+    "select_all",
+    "page_undo",
+    "page_redo",
+];
 /// explorer 에 포커스가 있을 때만 동작하는 액션. webview 위에서는 실행되지 않으므로 host 가
 /// 가져가지 않는다. 특히 실행 취소 키는 페이지의 undo/redo 와, 뒤로·앞으로 키(Alt+←·Alt+→)는
 /// 페이지의 뒤로·앞으로와 같다. 주소창 포커스(`explorer_focus_address`)는 주소 띠가 있는
@@ -37,6 +46,10 @@ pub(crate) fn webview_shortcut_policy(
             .unwrap_or(&[])
             .to_vec(),
         refresh: kb.refresh.clone(),
+        edit: WebViewEditAction::ALL
+            .into_iter()
+            .map(|a| (a, kb.get_bindings(a.field_id()).unwrap_or(&[]).to_vec()))
+            .collect(),
     })
 }
 
@@ -242,6 +255,41 @@ mod tests {
         assert!(bridge.capture_key(html, k(), unknown(), ctrl_alt));
         assert!(!bridge.capture_key(html, l(), unknown(), alt_mod()));
         assert!(!bridge.capture_key(other, k(), unknown(), ctrl_alt));
+    }
+
+    /// 편집 네 액션은 host 조합이 아니라 현재 설정의 편집 명령이 되고, 재지정·해제를 따른다.
+    #[test]
+    fn edit_bindings_follow_the_settings_and_are_not_host_claims() {
+        let mut kb = kb();
+        assert!(kb.clear_field("copy"));
+        assert!(kb.add_binding("copy", "ctrl+shift+c".into()));
+        assert!(kb.clear_field("select_all"));
+        assert!(kb.add_binding("select_all", "ctrl+alt+a".into()));
+        assert!(kb.clear_field("paste"));
+        let policy = webview_shortcut_policy(&kb, Vec::new());
+        let ctrl_shift = ModifiersState::CONTROL | ModifiersState::SHIFT;
+        assert_eq!(
+            policy.edit_action(&Key::Character("c".into()), ctrl_shift),
+            Some(WebViewEditAction::Copy)
+        );
+        assert!(!policy.claims(&Key::Character("c".into()), ctrl_shift));
+        assert_eq!(
+            policy.edit_action(
+                &Key::Character("a".into()),
+                ModifiersState::CONTROL | alt_mod()
+            ),
+            Some(WebViewEditAction::SelectAll)
+        );
+        assert_eq!(
+            policy.edit_action(&Key::Character("v".into()), alt_mod()),
+            None,
+            "해제한 paste 는 편집 명령을 만들지 않는다"
+        );
+        assert_eq!(
+            policy.edit_action(&Key::Character("c".into()), alt_mod()),
+            None,
+            "이전 copy 조합 alt+c 가 남아 있다"
+        );
     }
 
     /// 페이지의 undo/redo 키를 host가 가로채지 않는다.

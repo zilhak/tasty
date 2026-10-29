@@ -1,4 +1,4 @@
-<!-- source-hash: 2e83c9af22b9 -->
+<!-- source-hash: 950341b774ab -->
 # Keybindings
 
 Use Tasty with shortcuts that feel familiar. Choose a preset or assign your preferred keys to actions you use often. Open **Settings** > **Keybindings** to get started.
@@ -72,24 +72,30 @@ Category keybindings work only when **Settings** > **General** > **Workspace cat
 | Screenshot to clipboard | `Ctrl+Alt+S` | `Ctrl+Cmd+S` |
 | Copy path (explorer) | `Alt+Shift+C` | `Cmd+Shift+C` |
 | Copy link (link under the mouse) | None | None |
-| Cut (explorer) | `Ctrl+X` · `Alt+X` | `Ctrl+X` · `Cmd+X` |
-| Select all (explorer) | `Ctrl+A` · `Alt+A` | `Ctrl+A` · `Cmd+A` |
+| Cut (explorer · web page · address bar) | `Ctrl+X` · `Alt+X` | `Ctrl+X` · `Cmd+X` |
+| Select all (explorer · web page · address bar) | `Ctrl+A` · `Alt+A` | `Ctrl+A` · `Cmd+A` |
 | Refresh (the surface you are looking at) | `F5` | `F5` |
 | Refresh · go to parent folder (explorer) | `F5` · `Alt+↑` | `F5` · `Cmd+↑` |
 | Back · forward (explorer) | `Alt+←` · `Alt+→` | `Cmd+←` · `Cmd+→` |
-| Go to the address bar (explorer · HTML) | `Alt+L` | `Cmd+L` |
+| Go to the address bar (explorer · HTML · Markdown) | `Alt+L` | `Cmd+L` |
 | Open the selected item · clear the selection (explorer) | `Enter` · `Esc` | `Enter` · `Esc` |
 | Move between items · extend the selection (explorer) | Arrow keys · `Home` · `End` · `PageUp` · `PageDown` · the same with `Shift` | Same |
 | New folder · new file (explorer) | `F7` · `Shift+F4` | `F7` · `Shift+F4` (hold `Fn` with them by default) |
 | Rename · move to trash (explorer) | `F2` · `Delete` · `Alt+Backspace` | `F2` · `Delete` · `Cmd+Backspace` |
 | Undo (explorer) | `Ctrl+Z` · `Alt+Z` | `Ctrl+Z` · `Cmd+Z` |
+| Undo (web page · address bar) | `Ctrl+Z` · `Alt+Z` | `Ctrl+Z` · `Cmd+Z` |
 | Redo (explorer) | `Ctrl+Shift+Z` · `Ctrl+Y` · `Alt+Shift+Z` | `Ctrl+Shift+Z` · `Ctrl+Y` · `Cmd+Shift+Z` |
+| Redo (web page · address bar) | `Ctrl+Shift+Z` · `Ctrl+Y` · `Alt+Shift+Z` | `Ctrl+Shift+Z` · `Ctrl+Y` · `Cmd+Shift+Z` |
 | Show or hide hidden files (explorer) | `Ctrl+Shift+.` · `Alt+Shift+.` | `Ctrl+Shift+.` · `Cmd+Shift+.` |
 | Zoom in · zoom out · reset zoom | `Ctrl+=` · `Ctrl+-` · `Ctrl+0` (`Alt` also works) | `Ctrl+=` · `Ctrl+-` · `Ctrl+0` (`Cmd` also works) |
 
 **Refresh** asks the surface you are looking at to refresh. Markdown re-reads its file (or the original on the remote), the explorer re-reads its folder, and a terminal does nothing. Even when it shares a key with the explorer's own Refresh, the folder is read once. Over a Markdown or HTML page, the only keys without modifiers it takes are function keys such as `F5`; if you assign a letter such as `R`, that page keeps it as typing. While Refresh has `F5`, programs inside a terminal (mc, htop and so on) do not receive `F5`. To use `F5` in a terminal program, clear this Refresh key or change it under **Settings** > **Keybindings** > **Surface**.
 
 `Ctrl+C` copies when there is selected text; otherwise it interrupts the running program as usual.
+
+The copy, cut, paste and select-all keys also work in the body of Markdown and HTML views, in their input fields, and in the HTML address bar. They act only where the focus is. In an input field, select all picks just that field's text; in the body it picks the whole document. Read-only fields and the body do not change on cut or paste. On Windows and Linux, editing keys that web views and input fields already know, such as `Ctrl+C` and `Ctrl+V`, keep working even if you remove them here. A key you add here, such as `Alt+C`, runs the same edit once. Copy or cut with nothing selected leaves the clipboard as it was. Undo and redo in web pages can be changed separately from the explorer; on Mac, removing them also turns off `Cmd+Z` in web pages. If a plugin command uses the same key, the edit comes first in web pages. Word movement uses the default keys of the web view and the input field. On Linux, if too many edit requests pile up while a page is not responding, the edit keys can stop working in that view. Typing still works; close the view and open it again to get the edit keys back.
+
+On Windows, while a Markdown or HTML view has keyboard focus, a shortcut assigned to a letter, digit or symbol key pressed without `Ctrl` or `Alt` (with or without `Shift`) is not received, and the key is typed into the view. For shortcuts that should also work in web views, use a combination with `Ctrl` or `Alt`, or a non-character key such as `F5`.
 
 **Copy link** has no default key. Once you assign one, hover a terminal link and press it to copy the link text right away. It does not appear in the command palette.
 

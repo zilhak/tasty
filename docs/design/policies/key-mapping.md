@@ -88,6 +88,13 @@ Windows 의 Win+L·Win+D·Win+E 같은 셸 예약 조합과 GNOME·KDE 의 Super
 | Linux | `ctrl+shift+c` / `ctrl+shift+v` | Ctrl+Shift+C/V |
 | Windows | `ctrl+c` / `ctrl+v` | Ctrl+C/V |
 
+`copy`·`cut`·`paste`·`select_all` 바인딩은 터미널·Explorer뿐 아니라 native WebView(html·markdown 본문과 그 입력란)와
+HTML 주소 입력에도 적용한다. 각 편집 대상이 원래 처리하는 기본 편집 키(WebView 엔진·egui 입력의 Ctrl/⌘+C 등)는
+바인딩 해제와 관계없이 남고, Tasty 바인딩은 키를 더할 뿐 같은 입력을 두 번 실행하지 않는다. 대상별 계약은
+[WebView 편집 액션](../systems/webview.md#편집-액션)과 [HTML 주소 표시줄](../../surfaces/html/index.md#주소-표시줄)에 있다.
+페이지 텍스트의 실행 취소·다시 실행은 같은 대상에 쓰는 별도 바인딩 `page_undo`·`page_redo`다. macOS WKWebView는
+Edit 메뉴 없이 ⌘+Z를 처리하지 않으므로 이 바인딩이 그 키를 정한다.
+
 ## OS 고유 키 이름 혼용 금지
 
 바인딩 토큰 `ctrl`/`alt`/`shift` 는 **물리적 위치를 추상화한 이름**이며 OS 가 인식하는 키 이름과 다를 수 있다. tasty 는 각 키를 OS 고유 이름으로 인식하고 바인딩 문자열과의 변환만 OS별로 다르게 한다:

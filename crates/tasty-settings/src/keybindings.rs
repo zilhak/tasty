@@ -144,16 +144,17 @@ pub struct KeybindingSettings {
     pub screenshot_to_clipboard: Vec<String>,
     /// Open terminal text search bar.
     pub find: Vec<String>,
-    /// Copy selection (or inject egui Copy event) from focused surface.
+    /// Copy the selection of the focused surface: terminal text, an egui Copy event, or the
+    /// focused WebView page or HTML address input.
     pub copy: Vec<String>,
     /// Copy selected file paths as text (Explorer only).
     pub copy_path: Vec<String>,
     /// Copy the terminal link under the mouse pointer. Unbound by default;
     /// the link menu's Copy toast shows this binding as its hint once bound.
     pub copy_link: Vec<String>,
-    /// Cut selected files (Explorer only).
+    /// Cut selected Explorer files, or the selection of the focused WebView page or HTML address input.
     pub cut: Vec<String>,
-    /// Select all files (Explorer only).
+    /// Select all Explorer files, or the focused WebView input or document, or the HTML address input.
     pub select_all: Vec<String>,
     /// 포커스된 surface 에 새로고침 요청 신호를 보낸다. 갱신 여부와 의미는 그 surface 의 처리자가 정한다.
     /// `explorer_refresh` 와 같은 조합을 써도 충돌로 보지 않는다([`KeybindingSettings::SHARED_COMBO_PAIRS`]).
@@ -187,8 +188,15 @@ pub struct KeybindingSettings {
     pub explorer_undo: Vec<String>,
     /// Redo the latest undone copy or move in the focused Explorer's history.
     pub explorer_redo: Vec<String>,
-    /// Paste clipboard content into focused terminal / paste files in Explorer.
+    /// Paste into the focused terminal, Explorer folder, WebView page or HTML address input.
     pub paste: Vec<String>,
+    /// Undo the last text edit in the focused WebView page or HTML address input. Separate from
+    /// Explorer file history. Keys the page engine already treats as undo still work when unbound.
+    #[serde(default = "default_page_undo")]
+    pub page_undo: Vec<String>,
+    /// Redo the last undone text edit in the focused WebView page or HTML address input.
+    #[serde(default = "default_page_redo")]
+    pub page_redo: Vec<String>,
     /// Increase font size.
     pub zoom_in: Vec<String>,
     /// Decrease font size.
@@ -354,6 +362,20 @@ pub fn quick_switch_modifier_options(current: &str) -> Vec<String> {
 /// 누락된 화면 캡처 바인딩의 기본값. 네 프리셋이 같은 조합을 사용한다.
 fn default_screenshot_to_clipboard() -> Vec<String> {
     vec!["ctrl+alt+s".to_string()]
+}
+
+/// 누락된 페이지 실행 취소 바인딩의 기본값. macOS에서 `alt`는 Cmd다.
+fn default_page_undo() -> Vec<String> {
+    vec!["ctrl+z".to_string(), "alt+z".to_string()]
+}
+
+/// 누락된 페이지 다시 실행 바인딩의 기본값.
+fn default_page_redo() -> Vec<String> {
+    vec![
+        "ctrl+shift+z".to_string(),
+        "ctrl+y".to_string(),
+        "alt+shift+z".to_string(),
+    ]
 }
 
 /// 누락된 전체화면 무대 종료 바인딩의 기본값.

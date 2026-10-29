@@ -154,6 +154,7 @@ impl State {
         self.manager
             .set_network_proxy_settings(NetworkProxyMode::Custom, Some(&mut proxy));
         let context = WebContext::with_website_data_manager(&self.manager);
+        crate::host_api::webview::linux::selection::install(&context);
         retain_profile(&context, &self.profile);
         let prepared = view::State::new(
             context,

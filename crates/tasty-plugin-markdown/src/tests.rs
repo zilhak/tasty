@@ -1143,6 +1143,7 @@ fn deferred_state_document(source: &str, load_error: Option<&str>, large_deferre
     let tr = Translator::default();
     render::render_document(render::DocumentInput {
         find_bindings: &[],
+        address_bindings: &[],
         theme: &theme,
         tr: &tr,
         file_path: "/a/big.md",

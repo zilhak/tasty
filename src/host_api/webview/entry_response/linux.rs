@@ -59,6 +59,7 @@ fn finish(request: &URISchemeRequest, source: &EntryResponseSource, body: Arc<Na
 }
 pub(in crate::host_api::webview) fn webview(source: EntryResponseSource) -> WebView {
     let context = WebContext::new_ephemeral();
+    crate::host_api::webview::linux::selection::install(&context);
     if source.resources_enabled()
         && let Some(security) = context.security_manager()
     {

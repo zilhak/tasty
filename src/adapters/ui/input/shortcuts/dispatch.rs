@@ -35,6 +35,13 @@ impl MainView {
         use crate::adapters::ui::popup::PopupScope;
         use crate::model::SplitDirection;
 
+        // WebView가 포커스면 편집 액션은 그 페이지의 포커스 대상에만 실행한다.
+        if let Some(action) = crate::webview::WebViewEditAction::from_field_id(action_id)
+            && self.run_webview_edit(engine, action)
+        {
+            return true;
+        }
+
         let terminal_rect = self.compute_terminal_rect();
         let cell_w = self.base.gpu.cell_width();
         let cell_h = self.base.gpu.cell_height();
@@ -590,6 +597,10 @@ impl MainView {
         let terminal_rect = self.compute_terminal_rect();
         let cell_w = self.base.gpu.cell_width();
         let cell_h = self.base.gpu.cell_height();
+
+        if self.handle_webview_edit_shortcut(engine, key, mods) {
+            return true;
+        }
 
         if self.handle_copy_shortcut(engine, key, mods) {
             return true;

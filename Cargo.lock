@@ -6115,6 +6115,7 @@ dependencies = [
  "base64 0.22.1",
  "block2 0.6.2",
  "bytemuck",
+ "cc",
  "chrono",
  "clap",
  "cosmic-text",
@@ -6141,6 +6142,7 @@ dependencies = [
  "objc2-foundation 0.3.2",
  "objc2-quartz-core 0.3.2",
  "objc2-web-kit",
+ "pkg-config",
  "png 0.18.1",
  "pollster",
  "pulldown-cmark",
@@ -6789,7 +6791,7 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-markdown"
-version = "0.1.484"
+version = "0.1.485"
 dependencies = [
  "ammonia",
  "anyhow",

@@ -493,6 +493,9 @@ impl App {
             self.view.proxy.clone(),
             self.view.display_owner.clone(),
         );
+        // 모달이 열린 동안 만든 창도 native 편집 키를 막는다.
+        main.webview_key_bridge
+            .set_modal_open(self.view.is_modal_active());
         self.view.views.insert(window_id, Box::new(main));
         self.engines.attach_window(window_id, engine);
         self.view.focused_view_id =

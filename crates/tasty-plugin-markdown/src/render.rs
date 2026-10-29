@@ -101,6 +101,8 @@ pub struct DocumentInput<'a> {
     pub large_deferred: bool,
     /// 단축키 설정 `find` 의 바인딩. 페이지는 host 설정을 받지 않으므로 검색 바를 여는 조합을 문서에 넣는다.
     pub find_bindings: &'a [String],
+    /// 단축키 설정 `explorer_focus_address` 의 바인딩. 페이지가 주소 입력에 포커스를 주고 전체 선택한다.
+    pub address_bindings: &'a [String],
 }
 
 pub use address::{ADDR_WAITING_AFTER_MS, AddrFailure, AddrFailureKind, AddrWaitingView};
@@ -134,6 +136,7 @@ pub(crate) fn render_document(input: DocumentInput) -> String {
         remote,
         large_deferred,
         find_bindings,
+        address_bindings,
     } = input;
 
     let (body_html, headings) = if remote.as_ref().is_some_and(|r| r.disconnected) {
@@ -244,6 +247,7 @@ pub(crate) fn render_document(input: DocumentInput) -> String {
             file_path,
             address::bar_height_px(theme, false),
             address::bar_height_px(theme, true),
+            &find_keys::dom_matchers_json(address_bindings),
         ),
         find_script = find_in_page_script(tr, find_bindings),
         highlight = highlight,
@@ -1820,22 +1824,32 @@ debounceTimer=setTimeout(runSearch,150);
 }}
 function next(){{if(!matches.length)return;current=(current+1)%matches.length;applyCurrent();updateCount();}}
 function prev(){{if(!matches.length)return;current=(current-1+matches.length)%matches.length;applyCurrent();updateCount();}}
+var returnTo=null;
 function openBar(){{
+var a=document.activeElement;
+if(a&&a!==input&&a!==document.body)returnTo=a;
 bar.hidden=false;
 input.focus();
 input.select();
 }}
 function closeBar(){{
 if(bar.hidden)return;
+var had=document.activeElement===input;
 bar.hidden=true;
 clearHighlights();
 input.value='';
 updateCount();
+if(had){{
+if(returnTo&&returnTo.isConnected)returnTo.focus({{preventScroll:true}});
+else input.blur();
+}}
+returnTo=null;
 }}
 input.addEventListener('compositionstart',function(){{composing=true;}});
 input.addEventListener('compositionend',function(){{composing=false;scheduleSearch();}});
 input.addEventListener('input',scheduleSearch);
 input.addEventListener('keydown',function(e){{
+if(e.isComposing||e.keyCode===229)return;
 if(e.key==='Escape'){{e.preventDefault();closeBar();}}
 else if(e.key==='Enter'){{e.preventDefault();if(e.shiftKey)prev();else next();}}
 }});
@@ -1846,7 +1860,7 @@ document.addEventListener('keydown',function(e){{
 if(isFindKey(e)){{
 e.preventDefault();
 openBar();
-}}else if(e.key==='Escape'&&!bar.hidden){{
+}}else if(e.key==='Escape'&&!bar.hidden&&!e.defaultPrevented&&!e.isComposing&&!(isEditable(e.target)&&e.target!==input)){{
 closeBar();
 }}
 }});
@@ -2405,13 +2419,15 @@ mod tests {
         );
     }
 
-    /// 같은 경로를 다시 보내도 hash 가 바뀌도록 주소 이동에 nonce 를 붙이고, 원격 Esc 는 지금 경로로 되돌린다.
+    /// 같은 경로를 다시 보내도 hash 가 바뀌도록 주소 이동에 nonce 를 붙이고, 로컬·원격 Esc 는 지금 경로로 되돌린다.
     #[test]
     fn address_script_adds_a_nonce_and_reverts_on_escape() {
-        let js = nav_script("/remote/notes.md", 41.0, 61.0);
+        let js = nav_script("/remote/notes.md", 41.0, 61.0, "[]");
         assert!(js.contains("location.hash='tasty-nav:addr:'+nonce()+':'+encodeURIComponent(v);"));
         assert!(js.contains("var current=\"/remote/notes.md\";"));
-        assert!(js.contains("e.key==='Escape'&&remote&&!i.readOnly){i.value=current;"));
+        assert!(js.contains(
+            "e.key==='Escape'&&!i.readOnly){e.preventDefault();if(i.value!==current){i.value=current;"
+        ));
         assert!(js.contains("location.hash='tasty-nav:addr-dismiss:'+nonce();"));
         assert!(js.contains("setProperty('--md-addr-bar-h','41px')"));
         assert!(js.contains("location.hash='tasty-nav:browse:'+nonce();"));
@@ -2421,7 +2437,7 @@ mod tests {
     /// 건드리지 않고, 다음 입력·Esc 는 대기 행과 타이머를 지우고 plugin 에 알린다.
     #[test]
     fn address_script_shows_the_waiting_row_in_place_and_clears_it_like_an_error() {
-        let js = nav_script("/remote/notes.md", 41.0, 61.0);
+        let js = nav_script("/remote/notes.md", 41.0, 61.0, "[]");
         assert!(js.contains(&format!(
             "if(remote&&waitRow)wait({ADDR_WAITING_AFTER_MS});"
         )));
@@ -3036,6 +3052,7 @@ mod tests {
         let recent: Vec<String> = Vec::new();
         render_document(DocumentInput {
             find_bindings: &[],
+            address_bindings: &[],
             theme: &theme,
             tr: &tr,
             file_path: "/a/current.md",
@@ -3246,6 +3263,7 @@ mod tests {
         let recent = vec!["/a/one.md".to_string(), "/b/two.md".to_string()];
         let html = render_document(DocumentInput {
             find_bindings: &[],
+            address_bindings: &[],
             theme: &theme,
             tr: &tr,
             file_path: "/a/current.md",
@@ -3269,6 +3287,7 @@ mod tests {
         let tr = Translator::default();
         render_document(DocumentInput {
             find_bindings: &[],
+            address_bindings: &[],
             theme: &theme,
             tr: &tr,
             file_path: "/remote/notes.md",
@@ -3341,6 +3360,7 @@ mod tests {
         let tr = Translator::default();
         let html = render_document(DocumentInput {
             find_bindings: &[],
+            address_bindings: &[],
             theme: &theme,
             tr: &tr,
             file_path: "/a/doc.md",
@@ -3398,6 +3418,7 @@ mod tests {
         let tr = Translator::load(&Path::new(env!("CARGO_MANIFEST_DIR")).join("lang"), "en");
         render_document(DocumentInput {
             find_bindings: &[],
+            address_bindings: &[],
             theme: &theme,
             tr: &tr,
             file_path: "/remote/notes.md",
@@ -3730,7 +3751,7 @@ mod tests {
 
     #[test]
     fn refresh_script_uses_a_nonce_so_repeat_clicks_still_navigate() {
-        let script = nav_script("/remote/notes.md", 41.0, 61.0);
+        let script = nav_script("/remote/notes.md", 41.0, 61.0, "[]");
         assert!(script.contains("tasty-nav:refresh:'+nonce()"));
         assert!(script.contains("return String(Date.now());"));
     }
@@ -3746,7 +3767,7 @@ mod tests {
 
     #[test]
     fn nav_script_keys_scroll_restore_by_file_path_and_json_escapes_it() {
-        let script = nav_script("/a/weird \"path\".md", 41.0, 61.0);
+        let script = nav_script("/a/weird \"path\".md", 41.0, 61.0, "[]");
         assert!(script.contains("sessionStorage"));
         assert!(script.contains("tasty-md-scroll:"));
         assert!(script.contains("scrollTo"));
@@ -3762,6 +3783,7 @@ mod tests {
         let tr = Translator::default();
         let html = render_document(DocumentInput {
             find_bindings: &[],
+            address_bindings: &[],
             theme: &theme,
             tr: &tr,
             file_path: "/a/missing.md",
@@ -3781,6 +3803,7 @@ mod tests {
         let tr = Translator::default();
         let with_mermaid = render_document(DocumentInput {
             find_bindings: &[],
+            address_bindings: &[],
             theme: &theme,
             tr: &tr,
             file_path: "/a/diagram.md",
@@ -3799,6 +3822,7 @@ mod tests {
 
         let without_mermaid = render_document(DocumentInput {
             find_bindings: &[],
+            address_bindings: &[],
             theme: &theme,
             tr: &tr,
             file_path: "/a/plain.md",
@@ -3869,6 +3893,7 @@ mod tests {
         let tr = Translator::default();
         let with_code = render_document(DocumentInput {
             find_bindings: &[],
+            address_bindings: &[],
             theme: &theme,
             tr: &tr,
             file_path: "/a/snippet.md",
@@ -3885,6 +3910,7 @@ mod tests {
 
         let without_code = render_document(DocumentInput {
             find_bindings: &[],
+            address_bindings: &[],
             theme: &theme,
             tr: &tr,
             file_path: "/a/plain.md",
@@ -3953,6 +3979,7 @@ mod tests {
         let tr = Translator::default();
         let html = render_document(DocumentInput {
             find_bindings: &[],
+            address_bindings: &[],
             theme: &theme,
             tr: &tr,
             file_path: "/a/xss.md",
@@ -3999,6 +4026,7 @@ mod tests {
         let tr = Translator::default();
         let with_code = render_document(DocumentInput {
             find_bindings: &[],
+            address_bindings: &[],
             theme: &theme,
             tr: &tr,
             file_path: "/a/snippet.md",
@@ -4016,6 +4044,7 @@ mod tests {
 
         let without_code = render_document(DocumentInput {
             find_bindings: &[],
+            address_bindings: &[],
             theme: &theme,
             tr: &tr,
             file_path: "/a/plain.md",
@@ -4039,6 +4068,7 @@ mod tests {
         let tr = Translator::default();
         let html = render_document(DocumentInput {
             find_bindings: &[],
+            address_bindings: &[],
             theme: &theme,
             tr: &tr,
             file_path: "/a/unlabeled.md",
@@ -4060,6 +4090,7 @@ mod tests {
         let tr = Translator::default();
         let html = render_document(DocumentInput {
             find_bindings: &[],
+            address_bindings: &[],
             theme: &theme,
             tr: &tr,
             file_path: "/a/broken.md",
@@ -4152,6 +4183,7 @@ mod tests {
         let tr = Translator::default();
         let with_image = render_document(DocumentInput {
             find_bindings: &[],
+            address_bindings: &[],
             theme: &theme,
             tr: &tr,
             file_path: "/a/pic.md",
@@ -4167,6 +4199,7 @@ mod tests {
 
         let without_image = render_document(DocumentInput {
             find_bindings: &[],
+            address_bindings: &[],
             theme: &theme,
             tr: &tr,
             file_path: "/a/plain.md",
@@ -4188,6 +4221,7 @@ mod tests {
         let tr = Translator::default();
         let html = render_document(DocumentInput {
             find_bindings: &[],
+            address_bindings: &[],
             theme: &theme,
             tr: &tr,
             file_path: "/a/broken.md",
@@ -4273,6 +4307,7 @@ mod tests {
         let tr = Translator::default();
         let with_math = render_document(DocumentInput {
             find_bindings: &[],
+            address_bindings: &[],
             theme: &theme,
             tr: &tr,
             file_path: "/a/math.md",
@@ -4289,6 +4324,7 @@ mod tests {
 
         let without_math = render_document(DocumentInput {
             find_bindings: &[],
+            address_bindings: &[],
             theme: &theme,
             tr: &tr,
             file_path: "/a/plain.md",
@@ -4311,6 +4347,7 @@ mod tests {
         let tr = Translator::default();
         let html = render_document(DocumentInput {
             find_bindings: &[],
+            address_bindings: &[],
             theme: &theme,
             tr: &tr,
             file_path: "/a/math.md",
@@ -4330,6 +4367,7 @@ mod tests {
         let tr = Translator::default();
         let html = render_document(DocumentInput {
             find_bindings: &[],
+            address_bindings: &[],
             theme: &theme,
             tr: &tr,
             file_path: "/a/broken.md",
@@ -4793,6 +4831,7 @@ Outro\n";
         let tr = Translator::default();
         let html = render_document(DocumentInput {
             find_bindings: &[],
+            address_bindings: &[],
             theme: &theme,
             tr: &tr,
             file_path: "/a/plain.md",
@@ -4815,6 +4854,7 @@ Outro\n";
         let tr = Translator::default();
         let html = render_document(DocumentInput {
             find_bindings: &[],
+            address_bindings: &[],
             theme: &theme,
             tr: &tr,
             file_path: "/a/doc.md",
@@ -4845,6 +4885,7 @@ Outro\n";
         let tr = Translator::default();
         let html = render_document(DocumentInput {
             find_bindings: &[],
+            address_bindings: &[],
             theme: &theme,
             tr: &tr,
             file_path: "/a/doc.md",
@@ -4868,6 +4909,7 @@ Outro\n";
         let tr = Translator::default();
         let html = render_document(DocumentInput {
             find_bindings: &[],
+            address_bindings: &[],
             theme: &theme,
             tr: &tr,
             file_path: "/a/doc.md",
@@ -4902,6 +4944,7 @@ Outro\n";
         let tr = Translator::default();
         let html = render_document(DocumentInput {
             find_bindings: &[],
+            address_bindings: &[],
             theme: &theme,
             tr: &tr,
             file_path: "/a/doc.md",
@@ -4922,7 +4965,7 @@ Outro\n";
     /// (`#tasty-nav:`)은 건드리지 않는다.
     #[test]
     fn nav_script_scrolls_anchors_and_leaves_the_host_signal_channel_alone() {
-        let js = nav_script("/a/doc.md", 41.0, 61.0);
+        let js = nav_script("/a/doc.md", 41.0, 61.0, "[]");
         assert!(js.contains("scrollIntoView"), "got: {js}");
         assert!(js.contains("preventDefault"), "got: {js}");
         assert!(
@@ -4942,6 +4985,7 @@ Outro\n";
         let tr = Translator::default();
         let html = render_document(DocumentInput {
             find_bindings: &[],
+            address_bindings: &[],
             theme: &theme,
             tr: &tr,
             file_path: "/a/doc.md",
@@ -4976,6 +5020,7 @@ Outro\n";
         let tr = Translator::default();
         let html = render_document(DocumentInput {
             find_bindings: &[],
+            address_bindings: &[],
             theme: &theme,
             tr: &tr,
             file_path: "/a/doc.md",
@@ -5135,8 +5180,10 @@ Outro\n";
         let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
         let tr = Translator::default();
         let bindings = ["ctrl+shift+g".to_string()];
+        let address = vec!["ctrl+alt+k".to_string()];
         let html = render_document(DocumentInput {
             find_bindings: &bindings,
+            address_bindings: &address,
             theme: &theme,
             tr: &tr,
             file_path: "/a/doc.md",
@@ -5148,6 +5195,10 @@ Outro\n";
             large_deferred: false,
         });
         assert!(html.contains(r#""code":"KeyG""#), "got: {html}");
+        assert!(
+            html.contains(r#"var ADDR_KEYS=[{"code":"KeyK","ctrl":true,"alt":true"#),
+            "주소창 이동 바인딩이 문서에 없다"
+        );
     }
 
     #[test]

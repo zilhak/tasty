@@ -69,7 +69,9 @@ impl WebViewCreateError {
 
 pub use crate::model::NavState;
 
-pub use keys::{HostShortcutPolicy, ShortcutSources, WebViewKeyBridge, WebViewKeyEvent};
+pub use keys::{
+    HostShortcutPolicy, ShortcutSources, WebViewEditAction, WebViewKeyBridge, WebViewKeyEvent,
+};
 
 /// backend가 기록한 탐색 시도. user_gesture는 Linux·Windows 엔진의 보고값이며 macOS는 false다.
 /// 제스처 안에서 페이지 스크립트가 바꾼 목적지도 포함될 수 있어 목적지에 대한 별도 사용자 동의는 아니다.

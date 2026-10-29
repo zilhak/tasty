@@ -181,6 +181,8 @@ const ENTRY_PLACEMENT: &[(&str, KeybindingsSubTab, Option<&str>)] = &[
     ("cut", KeybindingsSubTab::Clipboard, None),
     ("select_all", KeybindingsSubTab::Clipboard, None),
     ("paste", KeybindingsSubTab::Clipboard, None),
+    ("page_undo", KeybindingsSubTab::Clipboard, None),
+    ("page_redo", KeybindingsSubTab::Clipboard, None),
     (
         "screenshot_to_clipboard",
         KeybindingsSubTab::Clipboard,

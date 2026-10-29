@@ -169,6 +169,7 @@ WebViewKeySink에 보내고 공통 bridge가 소비 여부를 동기 반환한�
 | 메서드 | 역할 |
 |--------|------|
 | capture_key | 키 소비 여부를 반환한다 |
+| edit_action | 사용자 편집 바인딩이면 실행할 편집 명령을 반환한다 |
 | note_focus | native 클릭·focus 획득을 알려 모델 focus를 맞춘다 |
 
 backend는 Rc<dyn WebViewKeySink>만 받는다. 정책 교체와 큐 관리는 구체 bridge가 맡는다.
@@ -178,7 +179,134 @@ address(주소창 포커스 `explorer_focus_address`)는 bridge가 받은 주소
 설정 field·quick-switch·사용자 script·활성 plugin의 effective binding 생성은 webview_claims가 맡는다.
 
 modifier 없는 키와 Shift 전용 키는 페이지 입력에 남긴다. 예외는 ShortcutSources의 refresh(공통 새로고침) 조합 중 F1~F24 기능키다. 문자를 만들지 않는 키라 입력·IME를 방해하지 않는다. host가 가져간 refresh 키는 모델 focus가 아니라 키를 받은 WebView surface를 대상으로 한다([공통 새로고침](../../features/keybindings/index.md#공통-새로고침--refresh)).
-find·copy·cut·paste·select_all은 host 액션 field에서 제외하고 이 예약 조합과 동등한 plugin 조합도 제외한다.
+find·copy·cut·paste·select_all·page_undo·page_redo는 host 액션 field에서 제외하고 이 예약 조합과 동등한 plugin 조합도 제외한다.
+
+### 편집 액션
+
+`copy`·`cut`·`paste`·`select_all`·`page_undo`·`page_redo`의 현재 바인딩은 `ShortcutSources::edit`로 들어간다. backend는 `capture_key`보다
+먼저 `edit_action`을 묻고, 편집 액션이면 키를 받은 그 WebView에 엔진 편집 명령을 callback 안에서 요청한 뒤
+페이지 전달을 막는다. host 큐를 거치지 않고 그 native WebView 객체에 바로 요청하므로 나중에 다른 WebView나 닫힌
+surface로 옮겨 가지 않는다. macOS와 Linux 대부분은 요청이 callback 안에서 끝난다. Linux의 Copy·Cut과
+Windows의 DevTools 명령은 같은 WebView에 비동기로 이어지며 아래 규칙을 따른다. 대상 frame·편집 가능
+여부는 엔진이 정한다: 포커스된 입력란·textarea·contenteditable·하위 frame이 대상이고, 입력란이 없으면 본문
+선택·문서 전체 선택이다. 선택 없는 복사·잘라내기는 클립보드를 바꾸지 않고, 읽기 전용 입력과 본문은 잘라내기·붙여넣기로
+바뀌지 않는다. 페이지 스크립트 허용과 무관하다. Windows에서는 페이지 keydown 취소가 명령을 막는다(아래).
+
+| 플랫폼 | 실행 경로 | 엔진에 그대로 두는 키 |
+|--------|-----------|------------------------|
+| Linux (WebKitGTK) | `webkit_web_view_execute_editing_command`(Copy·Cut·Paste·SelectAll·Undo·Redo). Copy·Cut은 아래 선택 확인을 거친다 | Ctrl+V, Shift+Insert |
+| Windows (WebView2) | DevTools `Input.dispatchKeyEvent`의 `commands`(copy·cut·paste·selectAll·undo·redo). 페이지는 키 정보가 없는 keydown을 한 번 받는다 | Ctrl+C/X/V/A, Ctrl+Insert, Shift+Insert, Shift+Delete, Ctrl+Z, Ctrl+Shift+Z, Ctrl+Y |
+| macOS (WKWebView) | NSResponder `copy:`·`cut:`·`paste:`·`selectAll:`·`undo:`·`redo:`. 뷰가 `undo:`·`redo:`에 응답하지 않으면 응답자 체인으로 보낸다 | 없음 |
+
+WebKitGTK의 기본 Copy·Cut은 선택이 없어도 빈 내용으로 클립보드를 차지해 기존 값을 지운다. 또 이 임베딩의
+WebKitGTK는 Ctrl+Z·Ctrl+Shift+Z를 스스로 실행하지 않는다. 그래서 Linux에서는 Ctrl+C·Ctrl+X·Ctrl+Insert·Shift+Delete·
+Ctrl+Z 계열과 Ctrl+A도 바인딩에 있으면 Tasty가 받는다. 이 키의 keydown은 확장의 document capture 리스너에서 멈춘다.
+페이지의 window capture 처리기와 document capture 처리기만 keydown을 받고, 요소·bubble 단계 처리기는 받지 않는다
+(`copy`·`cut` 이벤트는 엔진 명령이 그대로 보낸다). 확장은 앞선 처리기의 `preventDefault()`를 보지 않으므로 Linux에서는
+페이지가 keydown 취소로 이 명령을 막을 수 없으며, 페이지 keydown 취소가 명령을 막는 Windows와 다르다. 바인딩에서 지운
+키는 엔진 기본 동작으로 돌아간다.
+
+Linux의 편집 바인딩은 web process 확장을 거쳐 입력 순서대로 실행하고, Copy·Cut은 그 시점에 범위 선택이 있을 때만
+실행한다. `EditorState`는 편집 불가 본문에서 선택이 없어도 복사 가능으로 답하고 최대 수백 ms 늦으므로 쓰지 않는다.
+WebKitGTK의 기본 Copy는 선택이 없어도 빈 내용으로 클립보드를 차지한다(측정).
+
+- 확장: `src/host_api/webview/linux/selection_extension.c`. build.rs가 `webkit2gtk-web-extension-4.1`로 빌드하고 본체가
+  바이트로 내장한다. 실행 시 `<Tasty 홈>/webkit-extensions/<내용 해시>/`에 모듈 하나만 꺼낸다. 디렉터리는 이 사용자 소유
+  0700이어야 하고 다른 항목이 있으면 쓰지 않는다(WebKit은 그 디렉터리의 모든 `.so`를 불러온다). 기본 WebContext는
+  첫 WebView 전에, entry·HTTP(S) WebContext는 만든 직후에 지정한다. 별도 설치·패키징 단계는 없다. WebKit sandbox
+  설정은 바꾸지 않는다.
+- 순서: 키 입력과 포인터 입력은 WebKit UI process의 큐에서 한 번에 하나씩 web process로 가지만, UI가 보내는 메시지와
+  편집 명령은 큐를 앞지른다. 그래서 키 경로는 이렇게 한다.
+  - UI는 바인딩 키를 받으면 무장 메시지(nonce, WebKitGTK keyCode, Ctrl·Shift·Alt·Meta 비트)를 보내고 키를 그대로
+    WebKit 큐에 넘긴다. 무장이 키보다 먼저 가도 무장만 하므로 순서와 무관하다. 무장한 조합은 확장이 소유하며, 그 조합이
+    바인딩이 아닌 키로 다시 눌리면 UI가 소유를 풀고 그 키는 엔진 기본 동작으로 간다.
+  - WebKitGTK는 GDK META_MASK만 DOM `metaKey`로 옮긴다. 그래서 UI는 WebKit 기본 처리 전에 Super·Hyper·MOD4가 든 키
+    이벤트(누름·뗌)에 META_MASK를 더한다. 원래 비트는 지우지 않는다. 지우면 엔진의 Ctrl+C 바인딩이 Ctrl+Super+C에도
+    맞는다(측정). 더하면 엔진 동작은 바뀌지 않았고 DOM에서 C·Super+C·Ctrl+C·Ctrl+Super+C가 구분됐다(측정, X11). UI
+    분류는 META_MASK를 쓰지 않으므로 WebKit이 다시 보낸 키도 같은 키로 분류된다. Wayland와 별도 Meta 키가 있는
+    keymap은 측정하지 않았다.
+  - 확장은 문서마다 capture 단계 native `keydown` 리스너를 붙인다(WebKitDOM window 리스너는 keydown을 받지 못했다, 측정).
+    주 문서는 `document-loaded`에서, iframe·frame 문서는 그 frame의 `load`(capture)에서 붙인다. 무장 메시지를 받을 때마다
+    지금 있는 모든 frame 문서를 다시 순회해 빠진 문서에 붙인다. 무장이 키보다 먼저 도착하므로, load가 아직 끝나지 않은
+    frame 문서도 키가 오기 전에 리스너를 가진다. 깊이 상한은 없다. 주 문서의 준비 알림은 주 문서만의 준비를 뜻한다. 리스너는 소유한 조합이면 기본 동작과 이후 전파를 막는다. 그래서 그 조합은 엔진의 빈 복사로
+    가지 않고, 뒤의 페이지 처리기가 명령 전에 선택을 바꾸지 못한다. 그 뒤 무장 순서대로 키를 맞춰 그 문서의 범위 선택
+    여부를 WebView로 보낸다. 무장은 입력 순서대로 답한다. UI가 무효로 만든 무장과 앞 문서에서 만든 무장도 남아서
+    자기 키를 소비하고 UI가 그 답을 버리므로, 큐에 남은 옛 키가 더 새 무장을 가져가지 않는다. 맞은 무장보다 앞에
+    있던 무장(페이지가 멈춘 키)은 버린다. 기다리는 무장은 64개까지다. 하나가 더 오면(웹 프로세스가 멈췄거나 페이지 처리기가 키를 계속 멈춰 답이 오지 않는 경우) 확장은
+    기다리던 무장을 모두 버리고 그 page가 사는 동안 무장을 더 받지 않는다. 문서를 다시 읽어도 풀리지 않는다. 조합의
+    소유는 남으므로 큐에 있던 키를 포함해 소유한 키는 모두 명령 없이 막히고, 어떤 키도 나중 명령을 가져가지 않는다.
+    UI는 이 overflow 응답을 받으면 기다리던 무장을 모두 버리고 경고를 남기며, 그 page의 바인딩 편집 키를 명령 없이
+    소비한다. 바인딩이 아닌 입력과 키를 거치지 않는 host 명령(팔레트·IPC)은 그대로 쓸 수 있고, 페이지를 자동으로 닫거나
+    다시 읽지 않는다. 그 view를 닫고 다시 열면(새 page) 순서 경로가 돌아온다. 맞는 무장이 없으면 명령 없이 막기만 한다.
+    UI는 실패한 무장 하나만 지우고, 키 답을 받았을 때만 그보다 앞선 무장을 버린다. UI 쪽 기록도 64개까지이며 넘으면
+    가장 오래된 기록을 버려 그 명령은 실행되지 않는다.
+  - UI는 그 메시지를 받으면 명령을 실행한다. web process는 keydown을 처리하는 동안(이벤트 ack 전) 메시지를 보내므로
+    편집 명령은 다음 키보다 먼저 간다. 그래서 앞서 입력한 드래그·Shift 선택 키·Ctrl+A 뒤의 Copy와 Copy 뒤의
+    Ctrl+V·사용자 Paste·Undo 바인딩이 입력 순서대로 실행되며, UI에서 키를 보류하지 않는다.
+- 판정: 활성 요소가 iframe·frame이면 포커스가 있는 문서까지 내려가고, 그 문서의 native DOM selection 종류가 `Range`일 때만
+  선택이 있다. 입력란(email·number처럼 `selectionStart`가 없는 종류 포함)·읽기 전용 입력·textarea·이미지만 고른 범위도
+  같다. 다른 출처 frame도 읽는다. 페이지 스크립트를 실행하지 않으므로 스크립트 허용 여부와 결과가 같다. WebKitDOM은
+  2.40부터 deprecated지만, 스크립트가 꺼지면 `window-object-cleared`가 오지 않아 script world로 frame을 얻을 수 없다(측정).
+- 메시지는 nonce·page id·keyCode·수정자 비트·선택 여부만 담는다. 선택 내용은 보내거나 기록하지 않고 클립보드를 읽지 않는다.
+- 실패 시 닫힘: 새 문서가 commit되면 그 문서의 리스너 준비 알림이 올 때까지, 또는 키를 keyCode로 옮길 수 없으면 키 경로의
+  Copy·Cut은 실행하지 않고 키를 소비한다(엔진의 빈 복사를 막는다). keyCode는 WebKitGTK가 keydown에 넣는 Windows 가상
+  키 코드이며, UI는 바인딩으로 받을 수 있는 keyval을 WebKitGTK 2.50 `windowsKeyCodeForGdkKeyCode` 표와 같은 값으로 옮긴다.
+  대상은 글자·숫자, Shift를 누른 숫자 기호(`!`→1 등)와 US 배치 기호 쌍(`;:`·`=+`·`,<`·`-_`·`.>`·`/?`·`` `~ ``·`[{`·`\|`·
+  `]}`·`'"`), Tab·Enter·Escape·Space·Backspace·Insert·Delete·Home·End·PageUp·PageDown·방향키(keypad 이동 keyval 포함),
+  keypad 숫자·연산자, F1~F24다. WebKit 표에 없는 키(F25 이상, keypad Space·`=` 등)는 keyCode가 0이므로 옮기지 않는다.
+  WebKitGTK가 keyCode를 0으로 주는 키(키릴 문자 등 측정함)는 keyIdentifier `U+XXXX`가 실제 keyval을 대문자로 바꾼 Unicode와 같으므로, VK가 없고
+  ASCII가 아닌 Unicode가 있으면 그 code point로 맞춘다. 바인딩 인식은 그대로 물리 US 위치로 한다. Unicode가 없는 키(dead
+  key 등)는 확장이 DOM에서 같은 키로 알아볼 수 없으므로 순서 경로에 넣지 않는다. IME 조합·AltGr 단계·Wayland는 측정하지
+  않았다. 다른 명령은 바로 실행한다. 확장이 없으면 준비
+  알림이 오지 않으므로 Copy·Cut은 동작하지 않는다. 본문을 그대로 복사하는 대체 경로는 없다.
+- 무효화(`EditGuard`): 응답 page가 다르거나, 무장 뒤 그 WebView에 클릭·포커스 이탈·숨김·호스트의 로드·재로드·뒤로·앞으로·
+  문서 로드 시작·commit이 있었거나 WebView를 버렸으면 실행하지 않는다. 뒤의 키는 무효로 하지 않는다(큐가 정렬한다). 응답
+  시점에 같은 키로 `blocks_edit_key`를 다시 물어 host 모달·overlay가 열렸으면 실행하지 않는다. 소유한 키는 확장이 기본
+  동작을 막아 처리된 키가 되므로 WebKit이 UI로 다시 보내지 않는다. 같은 X 시각에 연달아 누른 키도 각각 무장한다.
+- host가 키 없이 요청한 Copy·Cut(팔레트·IPC)은 포커스 frame의 선택을 직접 묻는다. nonce·page id가 맞고, 그 사이 새 키나
+  위 무효화가 없을 때만 실행한다. 확장이 없거나(`Unavailable`) 1초 안에 답하지 않으면 실행하지 않고 warn 로그를 남긴다.
+- 페이지 처리기(스크립트 허용 시): window capture 처리기와 Tasty보다 먼저 등록된 document capture 처리기는 Tasty보다
+  먼저 keydown을 받는다. Tasty보다 나중에 등록된 document capture 처리기도 같은 단계에서 받는다(WebKitDOM에는
+  `stopImmediatePropagation`이 없다). 요소·bubble 단계 처리기는 받지 않는다. 먼저 받은 처리기가 바꾼 선택은 판정에
+  반영되고, 그 처리기의 `preventDefault()`는 명령을 막지 않는다. 바인딩 조합의 수정자 키(Ctrl 등) 자체의 keydown과
+  바인딩이 아닌 키는 모든 페이지 처리기가 그대로 받으므로, 그 keydown에서 페이지가 지운 선택도 판정에 반영된다.
+- 남은 범위: window capture 처리기가 `stopPropagation`이나 `stopImmediatePropagation`을 부르거나, 같은 document에서
+  먼저 받은 처리기가 `stopImmediatePropagation`을 부르면 키가 Tasty 리스너에 닿지 않아 Tasty는 실행하지 않는다. 그
+  처리기가 기본 동작도 막지 않았으면 다른 브라우저처럼 엔진 기본 동작이 실행된다. 무장과 그 키 사이에 main document나
+  frame이 새 문서를 commit하면 그 문서에 리스너가 붙기 전이라 엔진 기본 Copy 키(Ctrl+C·Ctrl+Insert)를 엔진이 처리한다.
+
+Windows의 DevTools 명령은 같은 WebView에 비동기로 전달되며, `controller.Close()` 뒤에는 호출이 실패한다.
+
+엔진에 그대로 두는 키는 바인딩에 있어도 Tasty가 명령을 실행하지 않는다. 페이지 keydown과 취소 규칙이 엔진 기본
+처리와 같게 유지되고 같은 입력이 두 번 실행되지 않는다. 바인딩에서 지워도 엔진 기본 편집 키는 계속 동작한다.
+Tasty 바인딩 해제는 Tasty가 더한 키를 없앨 뿐이다. 그 밖의 바인딩(예: `alt+c`, `ctrl+shift+c`)은 페이지 keydown
+대신 편집 명령으로 실행된다. 페이지 텍스트의 실행 취소·다시 실행은 `page_undo`·`page_redo`이며 Explorer 파일 이력의
+`explorer_undo`·`explorer_redo`와 별개다. 두 쌍은 같은 조합을 써도 충돌로 보지 않는다(`SHARED_COMBO_PAIRS`).
+macOS에는 엔진 기본 키가 없으므로 `page_undo`·`page_redo` 바인딩을 지우면 페이지 실행 취소 키도 없다.
+문자·단어 이동과 확장 선택·삭제, Tab 이동은 엔진 기본 키를 쓰며 Tasty 액션을 두지 않는다.
+
+host 창이 키를 받았거나(native 자식이 포커스를 갖지 않은 상태) 명령 팔레트에서 편집 액션을 실행하면 포커스
+surface의 WebView에 같은 명령을 실행한다(`run_webview_edit`). 터미널 붙여넣기나 다른 surface의 남은 선택으로 넘기지 않는다.
+
+host 모달이 열려 있거나 키보드를 가져가는 host overlay(popup·dialog)나 전체화면 무대가 열린 동안에는 native 자식이 OS 포커스를
+가졌어도 편집 바인딩 키와, 바인딩에 없더라도 엔진이 스스로 편집으로 처리하는 키(Windows·Linux의 Ctrl+C/X/V/A,
+Ctrl/Shift+Insert, Shift+Delete, Ctrl+Z, Ctrl+Shift+Z, Ctrl+Y와 엔진 키 표의 Ctrl+Shift+V 서식 없는 붙여넣기,
+Windows의 Alt+Backspace·Alt+Shift+Backspace 실행 취소·다시 실행, Linux의 Ctrl+/ 전체 선택)를 실행하지도 페이지에
+보내지도 않는다(`WebViewKeySink::blocks_edit_key`). 이 추가 키는 막는 동안에만 쓰며 평소에는 엔진 처리에 그대로 둔다. macOS WKWebView는 Edit 메뉴 없이 Cmd 편집 키를 실행하지 않으므로 바인딩만 막는다.
+모달 상태는 모달을 열고 닫을 때(`set_active_modal`·`take_active_modal`), overlay 상태는 프레임 동기화에서
+bridge에 알린다. 편집이 아닌 키는 이 판정과 무관하다.
+
+같은 조합이 여러 곳에 묶였을 때의 순서는 두 경로가 같다: 포커스 WebView의 편집 바인딩 > plugin 명령 > 그 밖의
+host 액션. native 경로는 `edit_action`을 `capture_key`보다 먼저 묻고 페이지 예약 조합과 같은 plugin 조합을 정책에서
+뺀다. host 창 경로는 `dispatch_plugin_shortcut_key`가 `webview_edit_for_key`에 걸리는 키를 plugin에 넘기지 않는다.
+
+Windows의 DevTools 명령은 페이지에 키 정보가 없는 keydown을 한 번 보낸다. 그 keydown에서 페이지가
+`preventDefault()`를 부르면 엔진이 명령을 실행하지 않는다. 이는 실제 키를 눌렀을 때 Chromium의 취소 규칙과 같으며,
+Tasty는 이 취소를 덮어쓰지 않는다. 취소는 keydown을 받은 문서 기준이라 상위 문서의 처리기는 포커스된 하위 frame의
+명령을 막지 않는다. WebView2 runtime 156에서 이 명령 경로로 확인한 범위: 포커스된 입력·textarea·contenteditable·
+하위 frame 대상, 읽기 전용 유지, 선택 없는 복사의 클립보드 유지, 입력란 범위의 전체 선택, 실행 취소·다시 실행,
+페이지 스크립트 차단과 무관함. Tasty 바인딩 키가 accelerator 경로로 이 명령에 이르는 실제 키보드 입력과 macOS는
+실제 실행으로 확인하지 않았다.
 예약 조합은 사용자의 현재 바인딩이다. markdown 페이지는 `find` 바인딩을 `settings.get_keybinding`으로 읽어 문서에 넣고
 `command.host_shortcut_changed`를 받으면 문서를 다시 만든다. html 표면의 사용자 페이지는 이 정보를 받지 않는다.
 host가 페이지에 남긴 modifier 없는 키도 `find` 바인딩이면 markdown 페이지가 찾기로 처리한다(`F3` 등). 글자 입력과 겹치는 조합은 입력칸·IME 조합 중에는 처리하지 않는다.
@@ -190,7 +318,17 @@ plugin scope는 bridge에서 미리 거르지 않으므로 소비된 뒤 현재 
 설정과 PluginCommandRegistry·PluginsConfig의 전역 revision이 바뀔 때만 정책 스냅숏을 다시 만든다.
 modifier가 있으면 winit과 같은 US physical-key 변환을 쓰고 표 밖 키는 논리 키로 돌아간다.
 key-up은 전달하지 않고 host의 modifier 저장값도 바꾸지 않는다.
-macOS·Windows는 repeat를 거르며 Linux/GDK는 정상 press 오판을 피하려고 반복을 허용한다.
+macOS·Windows의 자동 반복은 다시 실행하거나 큐에 넣지 않는다. 첫 누름을 입력 차단으로 막았거나, 편집 명령으로
+실행했거나, host가 가져갔을 조합이면 반복도 페이지·엔진에 보내지 않는다(`WebViewKeySink::consumes_repeat`).
+엔진에 그대로 두는 키와 가져가지 않는 키의 반복은 엔진·페이지로 간다. Linux/GDK의 key press에는 repeat 표시가 없어
+정상 press 오판을 피하려고 반복도 일반 press로 처리한다.
+Windows WebView2는 `AcceleratorKeyPressed`를 Ctrl이나 Alt를 누르고 있거나 글자로 바뀌지 않는 키에서만 올린다
+([ICoreWebView2Controller](https://learn.microsoft.com/en-us/microsoft-edge/webview2/reference/win32/icorewebview2controller)).
+그래서 Ctrl·Alt 없이 누르는 글자·숫자·기호 키(Shift 조합 포함)에 준 host·plugin·편집 바인딩은 native 페이지가 포커스를
+가진 동안 받지 못하고 페이지에 입력된다. 호스트가 먼저 입력을 보는 공식 대안인 `AllowHostInputProcessing`은 켜면
+`AcceleratorKeyPressed`가 비동기로 바뀌고, 측정한 session 0 환경(runtime 156)에서는 이 옵션을 켠 controller 생성이
+`REGDB_E_CLASSNOTREG`로 실패해 쓰지 않는다. 이 경계 때문에 "모든 바인딩을 웹 화면에서도 받는다"는 조건은 Windows에서
+충족하지 못한다. Ctrl·Alt 조합과 F 키 같은 글자가 아닌 키는 이 경로로 받는다.
 
 키 도착만으로 모델 focus를 바꾸지 않는다. X11에서는 포인터가 자식 위에 있다는 이유로 키가 올 수 있다.
 Linux만 보이는 webview와 활성 창이 있을 때 16ms GTK poll을 사용하고 숨김·비활성 때 취소한다.

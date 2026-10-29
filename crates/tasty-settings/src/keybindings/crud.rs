@@ -177,6 +177,8 @@ impl KeybindingSettings {
         ("explorer_undo", "settings.keybindings.explorer_undo_label"),
         ("explorer_redo", "settings.keybindings.explorer_redo_label"),
         ("paste", "settings.keybindings.paste_label"),
+        ("page_undo", "settings.keybindings.page_undo_label"),
+        ("page_redo", "settings.keybindings.page_redo_label"),
         ("zoom_in", "settings.keybindings.zoom_in_label"),
         ("zoom_out", "settings.keybindings.zoom_out_label"),
         ("zoom_reset", "settings.keybindings.zoom_reset_label"),
@@ -322,10 +324,13 @@ impl KeybindingSettings {
             .chain(Self::EXPLORER_LIST_BINDING_FIELDS)
     }
 
-    /// 같은 조합을 써도 충돌로 보지 않는 필드 쌍. 공통 `refresh` 는 탐색기 포커스에서 먼저 검사돼
-    /// 탐색기를 한 번만 새로고침하므로 `explorer_refresh` 와 F5 를 함께 써도 한 번의 동작이 된다.
-    pub const SHARED_COMBO_PAIRS: &'static [(&'static str, &'static str)] =
-        &[("refresh", "explorer_refresh")];
+    /// 같은 조합을 공유해도 한 번만 실행되는 필드 쌍. 공통 새로고침은 탐색기 전용 키보다 먼저,
+    /// 페이지 실행 취소·다시 실행과 탐색기 이력은 각각의 포커스 범위에서만 처리한다.
+    pub const SHARED_COMBO_PAIRS: &'static [(&'static str, &'static str)] = &[
+        ("refresh", "explorer_refresh"),
+        ("page_undo", "explorer_undo"),
+        ("page_redo", "explorer_redo"),
+    ];
 
     /// 두 필드가 같은 조합을 공유해도 되는가. 순서는 무관하다.
     pub fn may_share_combo(a: &str, b: &str) -> bool {
@@ -410,6 +415,8 @@ impl KeybindingSettings {
             "explorer_undo" => self.explorer_undo.as_slice(),
             "explorer_redo" => self.explorer_redo.as_slice(),
             "paste" => self.paste.as_slice(),
+            "page_undo" => self.page_undo.as_slice(),
+            "page_redo" => self.page_redo.as_slice(),
             "zoom_in" => self.zoom_in.as_slice(),
             "zoom_out" => self.zoom_out.as_slice(),
             "zoom_reset" => self.zoom_reset.as_slice(),
@@ -511,6 +518,8 @@ impl KeybindingSettings {
             "explorer_undo" => &mut self.explorer_undo,
             "explorer_redo" => &mut self.explorer_redo,
             "paste" => &mut self.paste,
+            "page_undo" => &mut self.page_undo,
+            "page_redo" => &mut self.page_redo,
             "zoom_in" => &mut self.zoom_in,
             "zoom_out" => &mut self.zoom_out,
             "zoom_reset" => &mut self.zoom_reset,

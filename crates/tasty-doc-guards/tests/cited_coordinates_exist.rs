@@ -230,6 +230,8 @@ fn comment_prefixes(rel: &str) -> Option<&'static [&'static str]> {
         Some("rs" | "m" | "mjs" | "jsx" | "ts" | "tsx" | "astro") => Some(&["//"]),
         Some("toml" | "sh" | "bash" | "yml" | "yaml" | "py" | "just" | "ps1") => Some(&["#"]),
         Some("lua") => Some(&["--"]),
+        // 블록 주석의 첫 줄(`/*`)과 이어지는 줄(` *`)도 읽는다.
+        Some("c" | "h") => Some(&["//", "/*", "*"]),
         None if matches!(
             name,
             "Justfile"
@@ -800,6 +802,7 @@ fn a_format_whose_comment_syntax_is_unknown_is_not_judged() {
     assert!(comment_prefixes("crates/x/src/lib.rs").is_some());
     assert!(comment_prefixes("Cargo.toml").is_some());
     assert!(comment_prefixes("scripts/x.sh").is_some());
+    assert!(comment_prefixes("src/x/ext.c").is_some());
     assert!(comment_prefixes(".githooks/pre-commit").is_some());
     assert!(comment_prefixes("site/index.html").is_none());
     assert!(citation_lines("site/index.html", "<img src=\"assets/x.svg\">").is_empty());

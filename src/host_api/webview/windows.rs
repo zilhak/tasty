@@ -69,6 +69,37 @@ pub struct PlatformWebView {
     pointer: RefCell<PointerGate>,
 }
 
+/// WebView2에는 편집 명령 API가 없어 DevTools `Input.dispatchKeyEvent`의 `commands`로 엔진 편집
+/// 명령을 실행한다. 페이지 스크립트 허용과 무관하게 포커스 frame에서 실행되며, 선택 없는 복사나
+/// 읽기 전용 대상의 잘라내기·붙여넣기는 아무것도 바꾸지 않는다.
+fn run_editing_command(webview: &ICoreWebView2, action: super::WebViewEditAction, surface_id: u32) {
+    use super::WebViewEditAction as A;
+    let command = match action {
+        A::Copy => "copy",
+        A::Cut => "cut",
+        A::Paste => "paste",
+        A::SelectAll => "selectAll",
+        A::Undo => "undo",
+        A::Redo => "redo",
+    };
+    let params = HSTRING::from(format!(
+        r#"{{"type":"rawKeyDown","commands":["{command}"]}}"#
+    ));
+    let done =
+        CallDevToolsProtocolMethodCompletedHandler::create(Box::new(move |result, _json| {
+            if let Err(e) = result {
+                tracing::warn!("WebView surface {surface_id}: edit command {command} failed: {e}");
+            }
+            Ok(())
+        }));
+    // SAFETY: GUI 스레드에서 살아 있는 WebView에 호출하며 HSTRING은 호출 동안 유지된다.
+    let sent =
+        unsafe { webview.CallDevToolsProtocolMethod(w!("Input.dispatchKeyEvent"), &params, &done) };
+    if let Err(e) = sent {
+        tracing::warn!("WebView surface {surface_id}: edit command {command} failed: {e}");
+    }
+}
+
 /// 창 핸들·종류 오류는 Permanent, 이후 native 생성·등록 오류는 Transient로 분류한다.
 /// 실제 일시 오류인지 모두 확인한 분류는 아니며 호출자의 재시도 상한이 필요하다.
 fn perm(msg: impl std::fmt::Display) -> super::WebViewCreateError {
@@ -711,6 +742,7 @@ impl PlatformWebView {
                 .map_err(|e| transient(format!("add_ProcessFailed failed: {e}")))?;
 
             let key_bridge_cb = key_bridge.clone();
+            let edit_target = webview.clone();
             let mut tok_key: i64 = 0;
             let h_key = AcceleratorKeyPressedEventHandler::create(Box::new(
                 move |_sender, args| -> windows::core::Result<()> {
@@ -724,9 +756,6 @@ impl PlatformWebView {
                     }
                     let mut status = COREWEBVIEW2_PHYSICAL_KEY_STATUS::default();
                     args.PhysicalKeyStatus(&mut status)?;
-                    if status.WasKeyDown.as_bool() {
-                        return Ok(());
-                    }
                     let mut vk: u32 = 0;
                     args.VirtualKey(&mut vk)?;
                     let Some(key) = vk_to_winit_key(vk) else {
@@ -734,7 +763,25 @@ impl PlatformWebView {
                     };
                     let physical =
                         win32_scancode_to_physical(status.ScanCode, status.IsExtendedKey.as_bool());
-                    if key_bridge_cb.capture_key(surface_id, key, physical, current_winit_mods()) {
+                    let mods = current_winit_mods();
+                    // 자동 반복은 다시 실행하지 않고, 첫 누름을 막거나 가져갔던 조합이면 페이지·엔진에도 보내지 않는다.
+                    if status.WasKeyDown.as_bool() {
+                        if key_bridge_cb.consumes_repeat(surface_id, &key, &physical, mods) {
+                            args.SetHandled(true)?;
+                        }
+                        return Ok(());
+                    }
+                    if key_bridge_cb.blocks_edit_key(&key, &physical, mods) {
+                        args.SetHandled(true)?;
+                        return Ok(());
+                    }
+                    // 사용자 편집 바인딩은 이 WebView의 포커스 frame에 엔진 편집 명령으로 실행한다.
+                    if let Some(action) = key_bridge_cb.edit_action(&key, &physical, mods) {
+                        run_editing_command(&edit_target, action, surface_id);
+                        args.SetHandled(true)?;
+                        return Ok(());
+                    }
+                    if key_bridge_cb.capture_key(surface_id, key, physical, mods) {
                         args.SetHandled(true)?;
                     }
                     Ok(())
@@ -1012,6 +1059,11 @@ impl PlatformWebView {
         if let Err(e) = unsafe { self.webview.Reload() } {
             tracing::warn!("WebView2 Reload failed: {e}");
         }
+    }
+
+    /// 팔레트·host 키 경로의 편집 명령. 엔진이 포커스 frame과 편집 가능 여부를 판단한다.
+    pub fn execute_edit(&self, action: super::WebViewEditAction) {
+        run_editing_command(&self.webview, action, self.surface_id);
     }
 
     pub fn go_back(&self) {

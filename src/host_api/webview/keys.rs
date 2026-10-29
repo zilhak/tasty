@@ -1,11 +1,104 @@
 //! native WebView 키를 공통 정책으로 판정해 host 요청 큐에 넣는다. 실제 실행은 큐를 읽는 호출자가 맡는다.
 //! modifier 없는 입력과 shift만 있는 입력은 페이지에 남긴다. 공통 새로고침의 기능키만 예외다. plugin 조합은 페이지 예약 키와도 비교한다.
 //! modifier 조합은 물리 US 배열 문자를 우선하고 물리 위치를 모르면 레이아웃 문자를 사용한다.
-//! repeat 제외는 플랫폼별로 다르며 Linux의 키 press는 반복 이벤트도 전달한다.
+//! repeat는 [`WebViewKeySink::consumes_repeat`]로 다시 실행하지 않고 막을지만 정한다. Linux의 키 press는
+//! repeat 표시가 없어 반복 이벤트도 일반 press로 전달한다.
 
 use std::cell::RefCell;
 
 use winit::keyboard::{Key, ModifiersState, PhysicalKey};
+
+/// 사용자 편집 바인딩이 native WebView에 실행할 엔진 편집 명령.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WebViewEditAction {
+    Copy,
+    Cut,
+    Paste,
+    SelectAll,
+    /// 페이지 텍스트 편집의 실행 취소. Explorer 파일 이력과 별개다.
+    Undo,
+    Redo,
+}
+
+impl WebViewEditAction {
+    pub const ALL: [WebViewEditAction; 6] = [
+        Self::Copy,
+        Self::Cut,
+        Self::Paste,
+        Self::SelectAll,
+        Self::Undo,
+        Self::Redo,
+    ];
+
+    /// 같은 동작의 `KeybindingSettings` 필드 ID.
+    pub fn field_id(self) -> &'static str {
+        match self {
+            Self::Copy => "copy",
+            Self::Cut => "cut",
+            Self::Paste => "paste",
+            Self::SelectAll => "select_all",
+            Self::Undo => "page_undo",
+            Self::Redo => "page_redo",
+        }
+    }
+
+    pub fn from_field_id(id: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|a| a.field_id() == id)
+    }
+
+    /// 엔진이 이미 같은 편집으로 처리하는 키. 이 키는 페이지 keydown과 엔진 처리에 그대로 두어 한 번만
+    /// 실행한다. Windows는 Ctrl+C/X/V/A, Ctrl/Shift+Insert, Shift+Delete, Ctrl+Z, Ctrl+Shift+Z, Ctrl+Y다.
+    /// Linux는 Ctrl+V와 Shift+Insert뿐이다. WebKitGTK는 이 임베딩에서 Ctrl+Z 계열을 실행하지 않고,
+    /// 기본 Copy·Cut은 선택이 없어도 클립보드를 비우므로 Tasty가 받는다. 바인딩된 Ctrl+A도 Tasty가
+    /// 받아 다른 편집 바인딩과 같은 입력 순서 경로로 실행한다.
+    /// macOS WKWebView는 Edit 메뉴 없이 Cmd 편집 키를 실행하지 않으므로 대상이 없다.
+    fn is_engine_default(self, key: &Key, mods: ModifiersState) -> bool {
+        if cfg!(target_os = "linux") && !matches!(self, Self::Paste) {
+            return false;
+        }
+        self.is_engine_key(key, mods)
+    }
+
+    /// 엔진이 바인딩과 관계없이 스스로 편집으로 처리할 수 있는 키. 입력을 막은 동안에는 바인딩에
+    /// 없어도 페이지로 보내지 않는다. macOS는 Edit 메뉴가 없어 대상이 없다.
+    fn is_engine_key(self, key: &Key, mods: ModifiersState) -> bool {
+        if cfg!(target_os = "macos") {
+            return false;
+        }
+        let ctrl_only = mods == ModifiersState::CONTROL;
+        let shift_only = mods == ModifiersState::SHIFT;
+        let ch = |c: &str| matches!(key, Key::Character(k) if k.eq_ignore_ascii_case(c));
+        let named = |n: winit::keyboard::NamedKey| matches!(key, Key::Named(k) if *k == n);
+        use winit::keyboard::NamedKey::{Delete, Insert};
+        match self {
+            Self::Copy => ctrl_only && (ch("c") || named(Insert)),
+            Self::Cut => (ctrl_only && ch("x")) || (shift_only && named(Delete)),
+            Self::Paste => (ctrl_only && ch("v")) || (shift_only && named(Insert)),
+            Self::SelectAll => ctrl_only && ch("a"),
+            Self::Undo => ctrl_only && ch("z"),
+            Self::Redo => {
+                (mods == ModifiersState::CONTROL | ModifiersState::SHIFT && ch("z"))
+                    || (ctrl_only && ch("y"))
+            }
+        }
+    }
+}
+
+/// 편집 액션 바인딩과 별개로 엔진 키 표가 붙인 편집 키. 입력을 막은 동안에만 쓰며, 그 밖의 처리는
+/// 엔진에 그대로 둔다. Chromium(WebView2)은 Ctrl+Shift+V 서식 없이 붙여넣기와 Windows의 Alt+Backspace
+/// 실행 취소·Alt+Shift+Backspace 다시 실행을, WebKitGTK는 Ctrl+Shift+V 일반 텍스트 붙여넣기와 Ctrl+/ 전체 선택을 둔다.
+fn is_engine_extra_edit_key(key: &Key, mods: ModifiersState) -> bool {
+    if cfg!(target_os = "macos") {
+        return false;
+    }
+    let ch = |c: &str| matches!(key, Key::Character(k) if k.eq_ignore_ascii_case(c));
+    let backspace = matches!(key, Key::Named(winit::keyboard::NamedKey::Backspace));
+    let ctrl_shift = ModifiersState::CONTROL | ModifiersState::SHIFT;
+    let alt_shift = ModifiersState::ALT | ModifiersState::SHIFT;
+    (mods == ctrl_shift && ch("v"))
+        || (cfg!(windows) && backspace && (mods == ModifiersState::ALT || mods == alt_shift))
+        || (cfg!(target_os = "linux") && mods == ModifiersState::CONTROL && ch("/"))
+}
 
 #[derive(Debug, Clone)]
 pub struct WebViewKeyEvent {
@@ -32,6 +125,8 @@ pub struct ShortcutSources {
     pub address: Vec<String>,
     /// 공통 새로고침 조합. modifier 가 없어도 F1~F24 기능키면 host 가 가져간다. 문자 키는 페이지에 남긴다.
     pub refresh: Vec<String>,
+    /// 편집 액션별 사용자 조합. 엔진 기본 편집 키가 아닌 조합만 native 명령으로 실행한다.
+    pub edit: Vec<(WebViewEditAction, Vec<String>)>,
 }
 
 /// 설정에서 만든 host 키 조합의 사본. 호출자가 변경 시 교체해야 한다.
@@ -39,6 +134,7 @@ pub struct ShortcutSources {
 pub struct HostShortcutPolicy {
     combos: Vec<String>,
     address: Vec<String>,
+    edit: Vec<(WebViewEditAction, Vec<String>)>,
 }
 
 impl HostShortcutPolicy {
@@ -50,6 +146,7 @@ impl HostShortcutPolicy {
             plugin,
             address,
             refresh,
+            edit,
         } = sources;
         let mut combos: Vec<String> = Vec::new();
         // `function_key_ok` 이면 modifier 가 없어도 F1~F24 기능키를 담는다(공통 새로고침 전용).
@@ -90,7 +187,11 @@ impl HostShortcutPolicy {
             .into_iter()
             .filter(|c| tasty_key_match::binding_has_modifier(c))
             .collect();
-        Self { combos, address }
+        Self {
+            combos,
+            address,
+            edit,
+        }
     }
 
     #[cfg(test)]
@@ -100,6 +201,22 @@ impl HostShortcutPolicy {
 
     pub fn claims(&self, key: &Key, mods: ModifiersState) -> bool {
         tasty_key_match::matches_any_binding(&self.combos, key, mods)
+    }
+
+    /// 엔진 기본 키까지 포함해 편집 바인딩에 걸리는지. 입력을 막은 동안 페이지로 보내지 않을 키다.
+    pub fn matches_edit_binding(&self, key: &Key, mods: ModifiersState) -> bool {
+        self.edit
+            .iter()
+            .any(|(_, combos)| tasty_key_match::matches_any_binding(combos, key, mods))
+    }
+
+    /// native 명령으로 실행할 편집 액션. 엔진이 같은 편집으로 처리하는 키는 None이다.
+    pub fn edit_action(&self, key: &Key, mods: ModifiersState) -> Option<WebViewEditAction> {
+        self.edit.iter().find_map(|(action, combos)| {
+            (tasty_key_match::matches_any_binding(combos, key, mods)
+                && !action.is_engine_default(key, mods))
+            .then_some(*action)
+        })
     }
 
     /// 주소 띠가 있는 html 페이지에서만 가져갈 조합인지.
@@ -121,6 +238,34 @@ pub trait WebViewKeySink {
         mods: ModifiersState,
     ) -> bool;
 
+    /// 사용자 편집 바인딩이면 그 액션을 돌려준다. backend는 키를 받은 WebView에 즉시 실행하고
+    /// 페이지 전달을 막는다. 큐를 거치지 않으므로 닫히거나 교체된 WebView에는 실행되지 않는다.
+    /// Windows 명령은 같은 WebView에 비동기로 전달된다. Linux는 키를 WebKit 입력 큐에 넘기고 web process 확장이
+    /// 그 키를 입력 순서대로 받았다고 알린 뒤 실행한다. 그 사이 포커스·문서가 바뀌었거나 host 모달·overlay가
+    /// 열렸거나 WebView를 버렸으면 실행하지 않고, Copy·Cut은 그 시점에 선택이 없으면 실행하지 않는다.
+    fn edit_action(
+        &self,
+        key: &Key,
+        physical: &PhysicalKey,
+        mods: ModifiersState,
+    ) -> Option<WebViewEditAction>;
+
+    /// host 모달이나 키보드를 가져가는 overlay가 열린 동안 페이지에 보내지도 실행하지도 않을 편집 키인지.
+    /// true이면 backend는 아무것도 실행하지 않고 페이지 전달을 막는다. [`Self::edit_action`]보다 먼저 묻는다.
+    fn blocks_edit_key(&self, key: &Key, physical: &PhysicalKey, mods: ModifiersState) -> bool;
+
+    /// 자동 반복 key-down을 페이지·엔진에 보내지 않을지. 첫 누름이 막혔거나(입력 차단), 편집 명령으로
+    /// 실행됐거나, host가 가져갔을 조합이면 true다. 반복에서는 아무것도 실행하거나 큐에 넣지 않는다.
+    /// false이면 반복을 엔진·페이지에 그대로 둔다. Linux GDK press에는 repeat 표시가 없어 쓰지 않는다.
+    #[cfg(any(windows, target_os = "macos", test))]
+    fn consumes_repeat(
+        &self,
+        surface_id: u32,
+        key: &Key,
+        physical: &PhysicalKey,
+        mods: ModifiersState,
+    ) -> bool;
+
     /// native 클릭 또는 포커스 관측을 알린다. 실제 모델 선택 변경은 host가 판단한다.
     fn note_focus(&self, surface_id: u32);
 }
@@ -133,6 +278,10 @@ pub struct WebViewKeyBridge {
     address_surfaces: RefCell<std::collections::HashSet<u32>>,
     pending: RefCell<Vec<WebViewKeyEvent>>,
     focus_requests: RefCell<Vec<u32>>,
+    /// host 모달이 열려 있다. 모달을 열고 닫을 때 바로 바꾼다.
+    modal_open: std::cell::Cell<bool>,
+    /// 키보드를 가져가는 host overlay(popup·dialog)가 열려 있다. 프레임 동기화에서 바꾼다.
+    overlay_open: std::cell::Cell<bool>,
 }
 
 impl WebViewKeyBridge {
@@ -156,6 +305,26 @@ impl WebViewKeyBridge {
     pub fn take_focus_requests(&self) -> Vec<u32> {
         std::mem::take(&mut *self.focus_requests.borrow_mut())
     }
+
+    pub fn set_modal_open(&self, open: bool) {
+        self.modal_open.set(open);
+    }
+
+    pub fn set_overlay_open(&self, open: bool) {
+        self.overlay_open.set(open);
+    }
+
+    fn input_blocked(&self) -> bool {
+        self.modal_open.get() || self.overlay_open.get()
+    }
+
+    /// host가 가져갈 조합인지만 판정한다. 큐는 바꾸지 않는다.
+    fn claims(&self, surface_id: u32, key: &Key, mods: ModifiersState) -> bool {
+        let policy = self.policy.borrow();
+        policy.claims(key, mods)
+            || (self.address_surfaces.borrow().contains(&surface_id)
+                && policy.claims_for_address(key, mods))
+    }
 }
 
 impl WebViewKeySink for WebViewKeyBridge {
@@ -168,12 +337,7 @@ impl WebViewKeySink for WebViewKeyBridge {
         mods: ModifiersState,
     ) -> bool {
         let key = shortcut_lookup_key(key, &physical, mods);
-        let policy = self.policy.borrow();
-        let claimed = policy.claims(&key, mods)
-            || (self.address_surfaces.borrow().contains(&surface_id)
-                && policy.claims_for_address(&key, mods));
-        drop(policy);
-        if !claimed {
+        if !self.claims(surface_id, &key, mods) {
             return false;
         }
         self.pending.borrow_mut().push(WebViewKeyEvent {
@@ -182,6 +346,48 @@ impl WebViewKeySink for WebViewKeyBridge {
             mods,
         });
         true
+    }
+
+    fn edit_action(
+        &self,
+        key: &Key,
+        physical: &PhysicalKey,
+        mods: ModifiersState,
+    ) -> Option<WebViewEditAction> {
+        if self.input_blocked() {
+            return None;
+        }
+        let key = shortcut_lookup_key(key.clone(), physical, mods);
+        self.policy.borrow().edit_action(&key, mods)
+    }
+
+    fn blocks_edit_key(&self, key: &Key, physical: &PhysicalKey, mods: ModifiersState) -> bool {
+        if !self.input_blocked() {
+            return false;
+        }
+        let key = shortcut_lookup_key(key.clone(), physical, mods);
+        self.policy.borrow().matches_edit_binding(&key, mods)
+            || WebViewEditAction::ALL
+                .into_iter()
+                .any(|a| a.is_engine_key(&key, mods))
+            || is_engine_extra_edit_key(&key, mods)
+    }
+
+    #[cfg(any(windows, target_os = "macos", test))]
+    fn consumes_repeat(
+        &self,
+        surface_id: u32,
+        key: &Key,
+        physical: &PhysicalKey,
+        mods: ModifiersState,
+    ) -> bool {
+        if self.blocks_edit_key(key, physical, mods)
+            || self.edit_action(key, physical, mods).is_some()
+        {
+            return true;
+        }
+        let key = shortcut_lookup_key(key.clone(), physical, mods);
+        self.claims(surface_id, &key, mods)
     }
 
     fn note_focus(&self, surface_id: u32) {
@@ -212,6 +418,7 @@ mod tests {
             plugin: strings(plugin),
             address: Vec::new(),
             refresh: Vec::new(),
+            edit: Vec::new(),
         })
     }
 
@@ -326,6 +533,7 @@ mod tests {
             plugin: variants.clone(),
             address: Vec::new(),
             refresh: Vec::new(),
+            edit: Vec::new(),
         });
         assert!(
             p.combos().is_empty(),
@@ -339,6 +547,7 @@ mod tests {
             plugin: strings(&["ctrl+shift+h"]),
             address: Vec::new(),
             refresh: Vec::new(),
+            edit: Vec::new(),
         });
         assert_eq!(p.combos(), ["ctrl+shift+h"]);
     }
@@ -378,6 +587,222 @@ mod tests {
             ModifiersState::CONTROL,
         );
         assert_eq!(key, ch("h"));
+    }
+
+    fn edit_policy(edit: &[(WebViewEditAction, &[&str])]) -> HostShortcutPolicy {
+        HostShortcutPolicy::new(ShortcutSources {
+            edit: edit.iter().map(|(a, c)| (*a, strings(c))).collect(),
+            ..Default::default()
+        })
+    }
+
+    /// 엔진 기본 편집 키가 아닌 사용자 조합만 native 명령이 되고, 기본 키는 엔진에 남긴다.
+    #[test]
+    fn only_non_engine_edit_combos_become_native_commands() {
+        let p = edit_policy(&[
+            (
+                WebViewEditAction::Copy,
+                &["ctrl+c", "alt+c", "ctrl+shift+c"],
+            ),
+            (WebViewEditAction::SelectAll, &["ctrl+a", "ctrl+alt+a"]),
+            (WebViewEditAction::Undo, &["ctrl+z", "alt+u"]),
+            (WebViewEditAction::Redo, &["ctrl+shift+z", "ctrl+y"]),
+        ]);
+        let ctrl_shift = ModifiersState::CONTROL | ModifiersState::SHIFT;
+        assert_eq!(
+            p.edit_action(&ch("c"), ctrl_shift),
+            Some(WebViewEditAction::Copy)
+        );
+        assert_eq!(
+            p.edit_action(&ch("c"), alt_mod()),
+            Some(WebViewEditAction::Copy)
+        );
+        assert_eq!(
+            p.edit_action(&ch("a"), ModifiersState::CONTROL | alt_mod()),
+            Some(WebViewEditAction::SelectAll)
+        );
+        let ctrl = ModifiersState::CONTROL;
+        let engine_ctrl_c = p.edit_action(&ch("c"), ctrl);
+        if cfg!(any(target_os = "macos", target_os = "linux")) {
+            // macOS는 Edit 메뉴가 없고, Linux는 선택이 있을 때만 복사하도록 Tasty가 받는다.
+            assert_eq!(engine_ctrl_c, Some(WebViewEditAction::Copy));
+        } else {
+            assert_eq!(engine_ctrl_c, None, "Ctrl+C 는 엔진이 이미 복사한다");
+        }
+        let engine = |key: &str, mods| p.edit_action(&ch(key), mods);
+        if cfg!(any(target_os = "macos", target_os = "linux")) {
+            // Linux는 바인딩된 Ctrl+A를 다른 편집 바인딩과 같은 입력 순서 경로로 실행한다.
+            assert_eq!(engine("a", ctrl), Some(WebViewEditAction::SelectAll));
+        } else {
+            assert_eq!(engine("a", ctrl), None, "Ctrl+A 는 엔진이 전체 선택한다");
+        }
+        if cfg!(windows) {
+            assert_eq!(
+                engine("z", ctrl),
+                None,
+                "WebView2 는 Ctrl+Z 를 실행 취소한다"
+            );
+            assert_eq!(engine("z", ctrl_shift), None);
+            assert_eq!(
+                engine("y", ctrl),
+                None,
+                "WebView2 는 Ctrl+Y 를 다시 실행한다"
+            );
+        } else {
+            // WebKitGTK 임베딩과 WKWebView 는 Ctrl/Cmd+Z 를 스스로 실행하지 않는다.
+            assert_eq!(engine("z", ctrl), Some(WebViewEditAction::Undo));
+            assert_eq!(engine("z", ctrl_shift), Some(WebViewEditAction::Redo));
+            assert_eq!(engine("y", ctrl), Some(WebViewEditAction::Redo));
+        }
+        assert_eq!(engine("u", alt_mod()), Some(WebViewEditAction::Undo));
+        assert_eq!(p.edit_action(&ch("v"), alt_mod()), None);
+    }
+
+    /// 빈 목록은 편집 명령을 만들지 않고 키는 페이지·host 판정으로 간다.
+    #[test]
+    fn an_empty_edit_binding_produces_no_command() {
+        let p = edit_policy(&[(WebViewEditAction::Paste, &[])]);
+        assert_eq!(p.edit_action(&ch("v"), alt_mod()), None);
+        let bridge = WebViewKeyBridge::new();
+        bridge.set_policy(edit_policy(&[(WebViewEditAction::Cut, &["alt+x"])]));
+        assert_eq!(
+            bridge.edit_action(&ch("x"), &unknown_physical(), alt_mod()),
+            Some(WebViewEditAction::Cut)
+        );
+        assert!(
+            bridge.take_pending().is_empty(),
+            "편집 키는 host 큐에 넣지 않는다"
+        );
+        bridge.set_policy(edit_policy(&[(WebViewEditAction::Cut, &[])]));
+        assert_eq!(
+            bridge.edit_action(&ch("x"), &unknown_physical(), alt_mod()),
+            None,
+            "바인딩 변경이 즉시 반영된다"
+        );
+    }
+
+    /// 모달이나 overlay가 열린 동안 편집 키는 엔진 기본 키까지 실행·전달 없이 소비되고, 닫히면 돌아온다.
+    #[test]
+    fn edit_keys_are_swallowed_while_host_input_is_blocked() {
+        let bridge = WebViewKeyBridge::new();
+        bridge.set_policy(edit_policy(&[(
+            WebViewEditAction::Paste,
+            &["ctrl+v", "alt+v"],
+        )]));
+        let phys = unknown_physical();
+        let ctrl = ModifiersState::CONTROL;
+        assert!(!bridge.blocks_edit_key(&ch("v"), &phys, alt_mod()));
+        assert_eq!(
+            bridge.edit_action(&ch("v"), &phys, alt_mod()),
+            Some(WebViewEditAction::Paste)
+        );
+        for (modal, overlay) in [(true, false), (false, true)] {
+            bridge.set_modal_open(modal);
+            bridge.set_overlay_open(overlay);
+            assert!(bridge.blocks_edit_key(&ch("v"), &phys, alt_mod()));
+            assert!(
+                bridge.blocks_edit_key(&ch("v"), &phys, ctrl),
+                "엔진 기본 키도 막는다"
+            );
+            assert_eq!(bridge.edit_action(&ch("v"), &phys, alt_mod()), None);
+            assert!(
+                !bridge.blocks_edit_key(&ch("q"), &phys, alt_mod()),
+                "편집이 아닌 키는 기존 판정으로 간다"
+            );
+            let extra: &[(Key, ModifiersState, bool)] = &[
+                (
+                    ch("v"),
+                    ModifiersState::CONTROL | ModifiersState::SHIFT,
+                    !cfg!(target_os = "macos"),
+                ),
+                (
+                    Key::Named(winit::keyboard::NamedKey::Backspace),
+                    ModifiersState::ALT,
+                    cfg!(windows),
+                ),
+                (
+                    Key::Named(winit::keyboard::NamedKey::Backspace),
+                    ModifiersState::ALT | ModifiersState::SHIFT,
+                    cfg!(windows),
+                ),
+                (ch("/"), ModifiersState::CONTROL, cfg!(target_os = "linux")),
+            ];
+            for (key, mods, held) in extra {
+                assert_eq!(
+                    bridge.blocks_edit_key(key, &phys, *mods),
+                    *held,
+                    "엔진 키 표의 편집 키 {key:?} {mods:?}"
+                );
+            }
+            let shift_insert = Key::Named(winit::keyboard::NamedKey::Insert);
+            assert_eq!(
+                bridge.blocks_edit_key(&shift_insert, &phys, ModifiersState::SHIFT),
+                !cfg!(target_os = "macos"),
+                "바인딩에 없는 엔진 편집 키도 막는다"
+            );
+        }
+        bridge.set_modal_open(false);
+        bridge.set_overlay_open(false);
+        assert!(!bridge.blocks_edit_key(&ch("v"), &phys, ctrl));
+        let ctrl_shift = ModifiersState::CONTROL | ModifiersState::SHIFT;
+        assert!(
+            !bridge.blocks_edit_key(&ch("v"), &phys, ctrl_shift),
+            "막지 않는 동안에는 엔진에 그대로 둔다"
+        );
+        assert_eq!(bridge.edit_action(&ch("v"), &phys, ctrl_shift), None);
+        assert_eq!(
+            bridge.edit_action(&ch("v"), &phys, alt_mod()),
+            Some(WebViewEditAction::Paste)
+        );
+    }
+
+    /// 반복은 첫 누름과 같은 판정으로 막되 아무것도 실행하거나 큐에 넣지 않는다.
+    /// 엔진에 그대로 두는 키와 가져가지 않는 키의 반복은 엔진·페이지로 간다.
+    #[test]
+    fn repeats_follow_the_first_press_decision_without_running_anything() {
+        let bridge = WebViewKeyBridge::new();
+        let mut policy_sources = ShortcutSources {
+            host: vec!["ctrl+r".into()],
+            ..Default::default()
+        };
+        policy_sources.edit = vec![
+            (
+                WebViewEditAction::Copy,
+                vec!["alt+c".into(), "ctrl+c".into()],
+            ),
+            (WebViewEditAction::Paste, vec!["ctrl+v".into()]),
+        ];
+        bridge.set_policy(HostShortcutPolicy::new(policy_sources));
+        let phys = unknown_physical();
+        let ctrl = ModifiersState::CONTROL;
+        assert!(
+            bridge.consumes_repeat(1, &ch("r"), &phys, ctrl),
+            "host 조합 반복"
+        );
+        assert!(
+            bridge.consumes_repeat(1, &ch("c"), &phys, alt_mod()),
+            "편집 바인딩 반복"
+        );
+        assert!(
+            bridge.take_pending().is_empty(),
+            "반복은 host 큐에 넣지 않는다"
+        );
+        assert!(!bridge.consumes_repeat(1, &ch("q"), &phys, alt_mod()));
+        // Windows는 Ctrl+V를 엔진에 두므로 반복도 엔진으로 간다. Linux는 Copy를 Tasty가 실행하므로 반복을 막는다.
+        assert_eq!(
+            bridge.consumes_repeat(1, &ch("v"), &phys, ctrl),
+            cfg!(target_os = "macos")
+        );
+        assert_eq!(
+            bridge.consumes_repeat(1, &ch("c"), &phys, ctrl),
+            !cfg!(windows)
+        );
+        bridge.set_modal_open(true);
+        assert!(
+            bridge.consumes_repeat(1, &ch("v"), &phys, ctrl),
+            "입력을 막은 동안에는 엔진 키 반복도 막는다"
+        );
+        assert!(!bridge.consumes_repeat(1, &ch("q"), &phys, alt_mod()));
     }
 
     #[test]

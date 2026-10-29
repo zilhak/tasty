@@ -11,6 +11,7 @@ mod refresh_tests;
 #[cfg(test)]
 mod tests;
 mod webview_claims;
+mod webview_edit;
 mod window_control;
 mod zoom;
 

@@ -13,6 +13,7 @@ mod explorer_show_in_folder;
 mod file_drag;
 mod file_drop;
 mod fullscreen_window;
+mod html_address_keys;
 mod html_content;
 mod keyboard;
 mod link_menu;
@@ -455,7 +456,10 @@ impl MainView {
             (false, false)
         } else if is_keyboard_event {
             if overlay_open || egui_surface {
-                self.base.gpu.handle_egui_event(&self.base.winit, &event)
+                let from = self.base.gpu.egui_input_events_mut().len();
+                let result = self.base.gpu.handle_egui_event(&self.base.winit, &event);
+                self.remap_html_address_keys(engine, &event, from);
+                result
             } else {
                 (false, false)
             }

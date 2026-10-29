@@ -130,9 +130,20 @@ impl ViewRegistry {
 
     pub(crate) fn set_active_modal(&mut self, id: WindowId, kind: ModalKind) {
         self.active_modal = Some(ActiveModal { id, kind });
+        self.note_modal_to_webviews(true);
     }
 
     pub(crate) fn take_active_modal(&mut self) -> Option<ActiveModal> {
+        self.note_modal_to_webviews(false);
         self.active_modal.take()
+    }
+
+    /// native WebView 콜백은 host 큐보다 먼저 편집 키를 실행하므로 모달 상태를 바로 알린다.
+    fn note_modal_to_webviews(&mut self, open: bool) {
+        for view in self.views.values_mut() {
+            if let Some(main) = view.as_main_mut() {
+                main.webview_key_bridge.set_modal_open(open);
+            }
+        }
     }
 }

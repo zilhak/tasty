@@ -363,3 +363,84 @@ fn idle_editing_and_mirror_values_use_their_own_ink_roles() {
         theme.input_readonly_fg().to_egui()
     );
 }
+
+/// 읽기 전용 mirror의 긴 주소는 말줄임 라벨이 아니라 원문 전체를 첫 포커스 프레임부터 복사한다.
+/// 붙여넣기·Enter는 값을 바꾸거나 이동하지 않는다.
+#[test]
+fn a_long_mirror_address_copies_the_full_original_from_the_first_click() {
+    let address = "https://example.com/문서/아주/긴/경로/with%20space/and/more/segments/report.html?q=한국어&x=1#section-끝";
+    let mut v = view();
+    v.kind = HtmlAddressKind::Mirror;
+    v.address = address;
+    v.committed_address = address;
+    let ctx = egui::Context::default();
+    let mut s = HtmlAddressState::default();
+    let out = frame(&ctx, &mut s, &v, 460.0, vec![]);
+    let p = out.field_rect.unwrap().center();
+    let copied = |events: Vec<egui::Event>, s: &mut HtmlAddressState| {
+        let output = ctx.run(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(800.0, 300.0),
+                )),
+                events,
+                ..Default::default()
+            },
+            |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    html_address_bar(
+                        ui,
+                        &tasty_themes::mocha_fallback(),
+                        egui::Id::new("address"),
+                        LogicalPx(460.0),
+                        s,
+                        &v,
+                    );
+                });
+            },
+        );
+        output
+            .platform_output
+            .commands
+            .iter()
+            .find_map(|c| match c {
+                egui::OutputCommand::CopyText(t) => Some(t.clone()),
+                _ => None,
+            })
+    };
+    let press = |pressed| egui::Event::PointerButton {
+        pos: p,
+        button: egui::PointerButton::Primary,
+        pressed,
+        modifiers: egui::Modifiers::NONE,
+    };
+    assert_eq!(
+        copied(vec![egui::Event::PointerMoved(p), press(true)], &mut s),
+        None
+    );
+    let select_all = egui::Event::Key {
+        key: egui::Key::A,
+        physical_key: None,
+        pressed: true,
+        repeat: false,
+        modifiers: egui::Modifiers::COMMAND,
+    };
+    assert_eq!(
+        copied(vec![press(false), select_all, egui::Event::Copy], &mut s).as_deref(),
+        Some(address)
+    );
+    let out = frame(
+        &ctx,
+        &mut s,
+        &v,
+        460.0,
+        vec![
+            egui::Event::Paste("https://other.example".into()),
+            egui::Event::Cut,
+            key(egui::Key::Enter),
+        ],
+    );
+    assert_eq!(s.buffer, address);
+    assert_eq!(out.action, HtmlAddressAction::None);
+}

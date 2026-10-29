@@ -30,6 +30,7 @@ fn document(source: &str) -> String {
     let tr = Translator::default();
     render_document(DocumentInput {
         find_bindings: &[],
+        address_bindings: &[],
         theme: &theme,
         tr: &tr,
         file_path: "/a/current.md",
@@ -197,6 +198,7 @@ fn remote_document(failure: Option<AddrFailure>) -> String {
     let tr = Translator::default();
     render_document(DocumentInput {
         find_bindings: &[],
+        address_bindings: &[],
         theme: &theme,
         tr: &tr,
         file_path: "/home/deploy/agents-prod/docs/very/long/folder/names/RUNBOOK.md",
