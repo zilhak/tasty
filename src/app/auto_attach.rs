@@ -77,7 +77,7 @@ impl App {
     /// 워크스페이스가 닫혔거나 매핑이 지워지거나 바뀐 anchor의 첫 attach 재시도 기록을 지운다.
     /// 창과 parked engine을 모두 본다.
     fn prune_first_attach_retries(&mut self) {
-        if self.remote.attach_retry.is_empty() {
+        if self.remote.attach_retry.is_empty() && self.remote.closed_mappings.is_empty() {
             return;
         }
         let live: std::collections::HashMap<u32, crate::model::WorkspaceAttachMapping> = self
@@ -92,6 +92,7 @@ impl App {
             })
             .collect();
         retain_live_first_attach_retries(&mut self.remote, |anchor| live.get(&anchor));
+        retain_live_closed_mappings(&mut self.remote, |anchor| live.get(&anchor));
     }
 
     /// 타이머만 등록·해제한다. 중단 상태를 담은 재연결 슬롯은 보존한다.
@@ -140,23 +141,7 @@ impl App {
             }
         };
         let (anchor, mapping) = candidate?;
-        // 재연결이 맡은 anchor에 새 mirror를 중복 생성하지 않는다.
-        if self
-            .remote
-            .sessions
-            .iter()
-            .any(|s| s.anchor_ws_id() == Some(anchor) && s.state() == SessionState::Reconnecting)
-        {
-            return None;
-        }
-        let pending_reactivation = self.remote.pending_reactivation.contains(&anchor);
-        if !is_attach_trigger_allowed(pending_reactivation, current_ws_id, prev_active) {
-            return None;
-        }
-        if self.remote.active.contains(&anchor) {
-            return None;
-        }
-        if self.remote.refusals.holds(anchor, &mapping) {
+        if !anchor_may_attach(&self.remote, anchor, &mapping, current_ws_id, prev_active) {
             return None;
         }
         // 해석에 실패한 매핑은 간격을 두고 다시 시도한다. 사용자가 이 워크스페이스로 돌아오면 바로 시도한다.
@@ -724,6 +709,40 @@ fn retain_live_first_attach_retries<'a>(
         .retain(|anchor, retry| current(*anchor) == Some(&retry.mapping));
 }
 
+/// 서버에서 닫은 기록은 그 anchor의 매핑이 그대로일 때만 남긴다. 매핑을 바꾸거나 지우면 다시 후보가 된다.
+fn retain_live_closed_mappings<'a>(
+    remote: &mut tasty_remote::outbound::Remote,
+    current: impl Fn(u32) -> Option<&'a crate::model::WorkspaceAttachMapping>,
+) {
+    remote
+        .closed_mappings
+        .retain(|anchor, mapping| current(*anchor) == Some(&*mapping));
+}
+
+/// 연결 상태 쪽에서 이 anchor의 자동 attach를 막는 이유가 없는지 판정한다.
+fn anchor_may_attach(
+    remote: &tasty_remote::outbound::Remote,
+    anchor: u32,
+    mapping: &crate::model::WorkspaceAttachMapping,
+    current_ws_id: Option<u32>,
+    prev_active: Option<u32>,
+) -> bool {
+    // 재연결이 맡은 anchor에 새 mirror를 중복 생성하지 않는다.
+    if remote
+        .sessions
+        .iter()
+        .any(|s| s.anchor_ws_id() == Some(anchor) && s.state() == SessionState::Reconnecting)
+    {
+        return false;
+    }
+    let pending_reactivation = remote.pending_reactivation.contains(&anchor);
+    is_attach_trigger_allowed(pending_reactivation, current_ws_id, prev_active)
+        && !remote.active.contains(&anchor)
+        && !remote.refusals.holds(anchor, mapping)
+        // 사용자가 서버에서 닫은 workspace를 다시 열려고 하지 않는다.
+        && remote.closed_mappings.get(&anchor) != Some(mapping)
+}
+
 /// 첫 자동 attach를 아직 미뤄야 하는지. 재활성화 직후에는 기다리지 않는다.
 fn first_attach_waits(
     retry: Option<&tasty_remote::outbound::AttachRetry>,
@@ -816,6 +835,62 @@ mod tests {
     fn disconnected_anchor_waits_for_transition_before_retrigger() {
         assert!(!is_attach_trigger_allowed(true, Some(1), Some(1)));
         assert!(is_attach_trigger_allowed(true, Some(1), Some(2)));
+    }
+
+    fn mapping(remote_workspace: u32) -> crate::model::WorkspaceAttachMapping {
+        crate::model::WorkspaceAttachMapping::profile("srv", Some(remote_workspace))
+    }
+
+    /// 서버에서 닫은 매핑은 같은 anchor로 돌아와도 다시 attach하지 않는다. 매핑을 바꾸면 다시 후보가 되고,
+    /// 매핑이 바뀌거나 사라지면 기록도 지운다.
+    #[test]
+    fn a_mapping_closed_on_the_server_is_not_attached_again() {
+        let mut remote = tasty_remote::outbound::Remote::new();
+        remote.closed_mappings.insert(5, mapping(514));
+        assert!(!anchor_may_attach(
+            &remote,
+            5,
+            &mapping(514),
+            Some(5),
+            Some(1)
+        ));
+        assert!(anchor_may_attach(
+            &remote,
+            5,
+            &mapping(515),
+            Some(5),
+            Some(1)
+        ));
+
+        let same = mapping(514);
+        retain_live_closed_mappings(&mut remote, |_| Some(&same));
+        assert!(remote.closed_mappings.contains_key(&5));
+        let changed = mapping(515);
+        retain_live_closed_mappings(&mut remote, |_| Some(&changed));
+        assert!(remote.closed_mappings.is_empty());
+    }
+
+    /// 연결을 끊은 뒤 정리로 선택이 anchor에 머물러도 그 프레임은 전환이 아니다. 다른 workspace를 거쳐
+    /// 돌아올 때만 다시 attach한다.
+    #[test]
+    fn a_disconnected_anchor_waits_for_the_users_next_switch() {
+        let mut remote = tasty_remote::outbound::Remote::new();
+        remote.pending_reactivation.insert(5);
+        // 정리 뒤 last_active_ws를 현재 활성(anchor)으로 맞춘 상태.
+        assert!(!anchor_may_attach(
+            &remote,
+            5,
+            &mapping(514),
+            Some(5),
+            Some(5)
+        ));
+        assert!(anchor_may_attach(
+            &remote,
+            5,
+            &mapping(514),
+            Some(5),
+            Some(1)
+        ));
     }
 
     #[test]

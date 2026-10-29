@@ -536,6 +536,11 @@ impl App {
             .0;
         let wire = remote_structural_op(op, remote_anchor, &session.state.remote_to_local)
             .ok_or_else(|| anyhow::anyhow!("structural target is outside the original mirror"))?;
+        let closes_workspace = matches!(op, StructuralOp::CloseWorkspace { .. });
+        if closes_workspace {
+            super::workspace_close::refusal_of(session)
+                .map_or(Ok(()), |refusal| Err(anyhow::anyhow!(refusal.reason())))?;
+        }
         let op_id = session.state.op_seq;
         session.state.op_seq = op_id
             .checked_add(1)
@@ -558,6 +563,7 @@ impl App {
             payload,
             focus,
             silent_failure: !user,
+            closes_workspace,
             completion: None,
         })
     }

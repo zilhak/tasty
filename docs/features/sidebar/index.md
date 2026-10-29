@@ -71,7 +71,8 @@ full 의 폭은 `appearance.ui_scale` 이 정한다(small 150 · medium 180 · l
 - Given 카테고리 normal에 a0 a1, 다음 섹션에 b0 b1이 있다 When a0를 normal의 마지막 카드 아래에 놓는다 Then 표시선은 normal 안의 a1 아래에 있고 normal 순서는 a1 a0가 된다. 슬롯 후보는 포인터가 속한 섹션의 카드만 사용한다.
 - Given 빈·접힌 카테고리에 카드를 드래그한다 When 그 섹션에 포인터가 있다 Then 표시선은 해당 헤더 아래에 있다. 다른 카테고리로의 드롭은 기존 소속 변경·전역 인덱스 유지 계약을 따른다.
 - 워크스페이스 이름·부제 변경 팝업이 열린 동안 에이전트가 다른 Workspace 를 닫거나 옮겨 인덱스가 바뀌어도, 저장한 값은 팝업을 연 Workspace 에 적용된다. 그 Workspace 가 닫히면 팝업이 닫힌다.
-- Given 워크스페이스 우클릭 메뉴가 열림 When 에이전트가 다른 Workspace 를 닫거나 옮겨 인덱스가 바뀐다 Then 고른 항목(이름 변경·이동·프리셋 저장·닫기·카테고리 이동)은 메뉴를 연 Workspace 에 적용된다. 그 Workspace 가 먼저 닫혔으면 아무것도 하지 않는다.
+- Given 워크스페이스 우클릭 메뉴가 열림 When 에이전트가 다른 Workspace 를 닫거나 옮겨 인덱스가 바뀐다 Then 고른 항목(이름 변경·이동·프리셋 저장·닫기·연결 끊기·카테고리 이동)은 메뉴를 연 Workspace 에 적용된다. 그 Workspace 가 먼저 닫혔으면 아무것도 하지 않는다.
+- Given 원격 mirror 카드 When 우클릭 Then 맨 아래 묶음에 **워크스페이스 연결 끊기**(로컬 mirror 만 정리)와 **워크스페이스 닫기**(원격 서버에서 닫기)가 함께 있다. 로컬 카드에는 닫기만 있다([원격 attach](../remote-attach/index.md#mirror-닫기와-연결-끊기)).
 - 카테고리 토글 off: New workspace 버튼으로 새 Workspace 가 생성된다 (우클릭 시 프리셋).
 - 카테고리 토글 on: New workspace 버튼이 full/collapsed 모두에서 숨고, 워크스페이스 영역이 카테고리 섹션으로 그룹 렌더된다 (섹션·생성 경로의 세부 AC 는 [`features/workspace-category/`](../workspace-category/index.md)).
 - 다른 client 가 점유 중인 Workspace 카드에 점유 인디케이터가 표시된다.

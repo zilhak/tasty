@@ -93,6 +93,9 @@ pub enum Intent {
     /// mirror 크기 동기화 실패 배너의 버튼. App이 그 mirror 세션에 적용한다.
     #[cfg(feature = "gui")]
     AttachSizeSync(AttachSizeSyncAction),
+    /// mirror 워크스페이스의 로컬 연결만 끊는다. 서버 워크스페이스와 프로세스는 유지한다.
+    #[cfg(feature = "gui")]
+    DisconnectMirror { workspace_id: u32 },
     #[cfg(feature = "gui")]
     PatchSettings(crate::app::engine_action::SettingsPatch),
     /// 일반 명령. 일반 dispatch만 실행한다.

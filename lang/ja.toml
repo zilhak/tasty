@@ -786,6 +786,7 @@ rename_subtitle = "サブタイトルの変更"
 move_up = "上へ移動"
 move_down = "下へ移動"
 close_workspace = "ワークスペースを閉じる"
+disconnect_workspace = "ワークスペースの接続を切る"
 add_remote_workspace = "リモートワークスペースを追加"
 
 [rename_dialog]
@@ -1866,6 +1867,16 @@ mirror_reconnected = "リモートワークスペースに再接続しました�
 mirror_desynced = "リモート画面の一部を取りこぼしました。取り直しています…"
 # 자동 재시도는 끝났지만 워크스페이스를 다시 선택하면 재시도할 수 있다.
 mirror_reconnect_giveup = "何度か試しましたが再接続できませんでした。このワークスペースを離れてから戻ると再試行します。"
+# サーバーがミラーしたワークスペースとそのプロセスを閉じ、ローカルのミラーも片付けた。
+workspace_closed_on_server = "リモートの Tasty でワークスペースを閉じました。"
+# 接続がないか再接続中なので閉じる要求を送っていない。サーバーは変わっていない。
+workspace_close_reconnecting = "リモート接続を使えないため、サーバーのワークスペースを閉じませんでした。"
+# リモートの Tasty がワークスペースを閉じる機能を持たない古い版。何も送っていない。
+workspace_close_unsupported = "リモートの Tasty はワークスペースを閉じる操作に対応していません。リモートの Tasty を更新するか、ワークスペースの接続を切るを使ってください。"
+# 同じワークスペースを閉じる要求がサーバーの応答を待っている。
+workspace_close_pending = "このワークスペースを閉じる要求はすでにサーバーの応答を待っています。"
+# サーバーが応答する前に接続が切れたため、閉じたかどうか分からない。
+workspace_close_unknown = "サーバーが閉じたことを確認する前に接続が切れました。サーバーではワークスペースがまだ動いている可能性があります。"
 
 [transfer.progress]
 # 수신하는 쪽에서 보여 주는 제목이다.
@@ -6862,6 +6873,7 @@ split_pane = "ペインを分割"
 close_surface = "サーフェスを閉じる"
 close_tab = "タブを閉じる"
 close_pane = "ペインを閉じる"
+close_workspace = "ワークスペースを閉じる"
 move_tab = "タブを移動"
 move_surface = "サーフェスを移動"
 restore = "閉じた項目を開く"

@@ -962,6 +962,20 @@ impl MainView {
                         this.request_close();
                     }
                 }
+                Some(8) => {
+                    // 메뉴를 연 mirror의 로컬 연결만 끊는다. 서버 워크스페이스와 프로세스는 유지한다.
+                    let ws = engine
+                        .workspace_at(ws_idx)
+                        .expect("workspace index is valid");
+                    if ws.mirror {
+                        this.state.dispatch_intent(
+                            crate::intent::Intent::DisconnectMirror {
+                                workspace_id: ws.id,
+                            }
+                            .from_user_context_menu(),
+                        );
+                    }
+                }
                 Some(7) => {
                     // 확인 팝업을 기다리는 동안 인덱스가 바뀔 수 있으므로 ID를 보관한다.
                     let ws_id = engine
@@ -1078,10 +1092,8 @@ impl MainView {
         }
 
         // 카테고리 토글 상태와 무관하게 "닫기"는 항상 최하단.
-        items.push(MenuItem::separator());
-        items.push(MenuItem::new(
-            6,
-            crate::i18n::t("context_menu.close_workspace"),
+        items.extend(workspace_close_menu_items(
+            engine.workspace_at(ws_idx).is_some_and(|ws| ws.mirror),
         ));
 
         (items, move_targets)
@@ -1984,6 +1996,23 @@ impl MainView {
     }
 }
 
+/// workspace 메뉴의 마지막 묶음. mirror에는 서버를 유지하는 연결 끊기(8)를 서버 닫기(6) 위에 둔다.
+fn workspace_close_menu_items(mirror: bool) -> Vec<crate::platform::native_menu::MenuItem> {
+    use crate::platform::native_menu::MenuItem;
+    let mut items = vec![MenuItem::separator()];
+    if mirror {
+        items.push(MenuItem::new(
+            8,
+            crate::i18n::t("context_menu.disconnect_workspace"),
+        ));
+    }
+    items.push(MenuItem::new(
+        6,
+        crate::i18n::t("context_menu.close_workspace"),
+    ));
+    items
+}
+
 /// 카테고리 헤더 메뉴를 구성한다. 기본 카테고리만 이름 변경·삭제를 제외한다.
 /// 구성과 순서는 아래 단위 테스트로 확인한다.
 fn category_header_menu_items(is_normal: bool) -> Vec<crate::platform::native_menu::MenuItem> {
@@ -2015,8 +2044,8 @@ fn category_header_menu_items(is_normal: bool) -> Vec<crate::platform::native_me
 
 #[cfg(test)]
 mod tests {
-    use super::category_header_menu_items;
     use super::{MAX_WEBVIEW_CREATE_ATTEMPTS, next_webview_attempts, should_attempt_webview};
+    use super::{category_header_menu_items, workspace_close_menu_items};
     use super::{
         host_window_has_os_focus, take_hidden_webview_focus_targets,
         webview_release_candidate_is_live,
@@ -2241,6 +2270,32 @@ mod tests {
                 Some(100)
             ]
         );
+    }
+
+    /// mirror 카드만 서버 닫기와 함께 연결 끊기를 보이고, 로컬 카드에는 닫기만 둔다.
+    #[test]
+    fn only_a_mirror_card_offers_disconnect_beside_close() {
+        assert_eq!(
+            shape(&workspace_close_menu_items(true)),
+            vec![None, Some(8), Some(6)]
+        );
+        assert_eq!(
+            shape(&workspace_close_menu_items(false)),
+            vec![None, Some(6)]
+        );
+        let labels: Vec<String> = workspace_close_menu_items(true)
+            .iter()
+            .filter(|item| !item.is_separator())
+            .map(|item| item.label.clone())
+            .collect();
+        assert_eq!(
+            labels,
+            vec![
+                crate::i18n::t("context_menu.disconnect_workspace").to_string(),
+                crate::i18n::t("context_menu.close_workspace").to_string()
+            ]
+        );
+        assert_ne!(labels[0], labels[1]);
     }
 
     #[test]

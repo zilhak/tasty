@@ -215,6 +215,7 @@ Core의 결과 ID를 App의 공통 구조 adapter가 받아 navigation을 보정
 
 workspace.close는 마지막 workspace, mirror workspace, hard 점유 surface가 포함된 workspace를 거절한다.
 호출자 자신을 포함한 대상도 자기 닫기 보호를 따른다. mirror는 attach 해제로 정리한다.
+GUI 사용자가 mirror 카드에서 닫기를 고르면 서버 workspace 닫기로 forward하고, 연결 끊기는 로컬 mirror만 정리한다([원격 attach](../../features/remote-attach/index.md#mirror-닫기와-연결-끊기)).
 GUI 창 종료는 window.close를 사용하되 headless에는 이 API가 없어 마지막 workspace를 닫을 수 없다.
 확인용 force 플래그는 요구하지 않지만 되돌릴 수 없는 동작임을 도움말과 사용자 문서에 표시한다.
 일부 점유 surface만 남기는 부분 workspace.close는 수행하지 않는다.

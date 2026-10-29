@@ -95,7 +95,7 @@ impl Request {
             normalized.params = serde_json::json!({});
             normalized.params[field] = serde_json::json!(value);
             let mut resolved = if matches!(target, tasty_core::CloseTarget::Workspace(_)) {
-                Self::workspace(&normalized, session, true)?
+                Self::workspace(&normalized, session, true, cause)?
             } else {
                 Self::resolve(&normalized, session, cause)?
             };
@@ -120,7 +120,7 @@ impl Request {
             return Ok(resolved);
         }
         if request.method == "workspace.close" {
-            return Self::workspace(request, session, false);
+            return Self::workspace(request, session, false, cause);
         }
         use crate::ipc::handler::params;
         use tasty_core::CloseTarget as T;
@@ -258,10 +258,13 @@ impl Request {
             omitted_history: None,
         })
     }
+    /// 원격 holder의 닫기는 그 holder가 점유한 workspace만 닫는다. 그 holder 자신의 점유는 닫기를 막지 않지만
+    /// 다른 client의 hard 점유는 막는다. 서버의 마지막 workspace를 닫으면 서버 창을 비우지 않도록 새 workspace로 대체한다.
     pub fn workspace(
         request: &JsonRpcRequest,
         session: &EngineSession,
         allow_last: bool,
+        cause: Cause,
     ) -> Result<Self, JsonRpcResponse> {
         use crate::ipc::handler::params;
         let engine = session.as_ref();
@@ -291,11 +294,31 @@ impl Request {
         if workspace.mirror {
             return Err(bad("Workspace is a mirror of a remote attach session — detach it from that session instead of closing it here".into()));
         }
-        if let Some(surface) = workspace
-            .all_surface_ids()
-            .into_iter()
-            .find(|id| engine.live.occupancy.is_hard_occupied(*id))
-        {
+        let remote_holder = match cause {
+            Cause::RemoteHolder {
+                client,
+                workspace: held,
+            } => {
+                if engine.live.occupancy.workspace_holder(held) != Some(client) {
+                    return Err(bad("remote workspace holder changed".into()));
+                }
+                if workspace.id != held {
+                    return Err(bad(
+                        "remote close target is outside its held workspace".into()
+                    ));
+                }
+                Some(client)
+            }
+            _ => None,
+        };
+        if let Some(surface) = workspace.all_surface_ids().into_iter().find(|id| {
+            engine.live.occupancy.is_hard_occupied(*id)
+                && remote_holder.is_none_or(|client| {
+                    engine.live.occupancy.occupancy_of(*id).is_none_or(|lock| {
+                        lock.holder != crate::core::attach::Holder::StreamClient(client)
+                    })
+                })
+        }) {
             return Err(bad(format!(
                 "Workspace holds surface {surface}, which is occupied by a remote attach session (hard-occupied) — someone is working in that terminal right now. Release it from the attaching instance first."
             )));
@@ -323,7 +346,7 @@ impl Request {
             is_user_close: false,
             remote_user_close: false,
             input_ref: None,
-            replacement: false,
+            replacement: remote_holder.is_some() && engine.workspaces().len() == 1,
             undo: None,
             expected: workspace
                 .all_surface_ids()

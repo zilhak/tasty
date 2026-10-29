@@ -98,6 +98,7 @@ pub(crate) fn test_session_with_frames(
             frame_tx: tx,
             tunnel: None,
             explorer_write: true,
+            workspace_close: true,
             explorer_inbox: Vec::new(),
             html: Default::default(),
         },
@@ -122,6 +123,7 @@ pub(crate) fn test_session_with_frames(
             markdown_locals: HashSet::new(),
             resync_pending: None,
             resync_awaiting_window: false,
+            workspace_close: Default::default(),
         },
     };
     (session, rx)

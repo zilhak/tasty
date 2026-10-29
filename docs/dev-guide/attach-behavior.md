@@ -614,9 +614,30 @@ client 가 mirror 를 걷어내면 원격에 `Detach` 를 보내 원격 점유(h
   - **anchor 있는 세션(매핑된 워크스페이스)**: `cleanup_mirror_workspace` 를 부르지 않고 `enter_reconnecting` 으로 전이(위 "재연결 시 세션 상태 보존" 참고) — mirror workspace/터미널을 살려둔 채 `Reconnecting` 상태로 두고 backoff 재연결에 맡긴다.
   - **anchor 없는 세션(임시 mirror, IPC `remote.attach` 등)**: 기존과 동일하게 세션 제거 + `cleanup_mirror_workspace(sess, from_disconnect=true)`. 그 mirror 가 창의 유일한 워크스페이스였으면 정리 뒤 기본 터미널 워크스페이스를 다시 만든다(`MainViewState::recreate_workspace_if_empty`) — 창을 닫지도, 워크스페이스 0 개로 남기지도 않는다(이 문서).
   - 이미 `Reconnecting` 상태인 세션(재연결 시도 자체가 실패해 다시 disconnected 로 관측되는 경우)은 이 분기에 다시 들어오지 않는다 — `disconnected && state == Connected` 조건이라 진입 시 이미 걸러진다.
-- **로컬발 종료(사용자 close)**: `close_workspace_at`으로 mirror 워크스페이스를 닫으면
-  로컬 워크스페이스는 즉시 사라지지만, 세션과 소켓은 남아 원격 점유가 바로 해제되지는 않는다.
-  `Connected`와 `Reconnecting` 모두 같은 정리가 필요하다.
+- **로컬발 종료(사용자 연결 끊기)**: mirror 카드의 **워크스페이스 연결 끊기**가 `Intent::DisconnectMirror`로
+  `App::disconnect_mirror_workspace`(`attach_client/workspace_close.rs`)를 부른다. `Connected`와 `Reconnecting`
+  모두 같은 경로다. 먼저 `cancel_mirror_attempts`가 `reconnect`가 그 mirror를 가리키는 endpoint·connection 시도를
+  취소하고(run은 `cancelled`), 세션을 vec에서 뺀 뒤 `end_mirror_locally`가 `cleanup_mirror_workspace(.., false)`로
+  정리하고 transport를 drop해 socket·worker·소유 터널을 retirement에 넘긴다. anchor는 `pending_reactivation`에 다시
+  넣고 `Remote.last_active_ws`를 정리 뒤의 활성 workspace로 맞춘다. 정리로 선택이 anchor로 옮겨져도 그 프레임이
+  전환 엣지가 되지 않아, 사용자가 다른 workspace를 거쳐 anchor로 돌아올 때만 다시 attach한다.
+  mirror의 **워크스페이스 닫기**는 이 경로가 아니라 아래 "서버 workspace 닫기"다.
+- **서버 workspace 닫기**: `build_mirror_forward_op`가 `DomainIntent::CloseWorkspace`를 `StructuralOp::CloseWorkspace`로 바꾼다.
+  `apply_domain_intent`는 admission 전에 `workspace_close_refusal`로 연결(`Connected`·활성 epoch)·capability
+  (`ipc.stream.workspace-close`, `ClientTransport.workspace_close`)·대기 중 닫기를 확인하고, 거절이면 보내지 않고 안내한다.
+  `prepare_journal_forward`가 같은 판정을 다시 하고, 실제 전송 성공 때 세션이 `WorkspaceClose::Pending(op_id)`가 된다.
+  준비 단계 판정은 아직 보내지 않은 닫기를 모르므로 `execute_journal_forwards`가 전송 직전에 `send_refusal`로 `Idle`이 아닌
+  세션의 닫기 draft를 `Cancelled`로 끝낸다. 전송은 이 루프에서 하나씩 일어나 두 번째 닫기가 기다리던 op id를 덮어쓰지 않는다.
+  그 op의 `StructuralSucceeded`만 `Closed`로, `StructuralFailed`는 `Idle`로 바꾼다. 출력 루프의 `session_end`는 `Closed`를
+  설치 continuation과 단절 판정보다 먼저 보고 `ServerClosed`로 정리한다. 서버는 성공 회신 뒤 `force_detach_workspace`로
+  `force_detached`와 EOF를 보내므로 그 EOF가 같은 묶음이든 다음 tick이든 재연결로 가지 않는다(`output/close_order_tests.rs`).
+  `Pending`인 채로 단절이 처리되면 결과를 모른다는 안내를 띄우고 기존 단절 처리를 따른다. 재연결 설치는 `Idle`로 초기화한다.
+  정리는 연결 끊기와 같은 `end_mirror_locally`이며, 그 전에 `remember_closed_mapping`이 anchor 매핑을 `Remote.closed_mappings`에
+  기록해 `auto_attach_candidate`가 같은 매핑으로 다시 attach하지 않게 한다. 매핑이 바뀌거나 사라지면 `prune_first_attach_retries`가 지운다.
+  - 서버의 `resolve_remote_request`는 op를 `intent.close` + `CloseTarget::Workspace(held)`로 바꾼다. `close.rs::Request::workspace`는
+    `Cause::RemoteHolder`이면 holder와 대상 workspace를 확인하고, 그 holder 자신의 hard 점유는 허용하되 다른 client의 hard 점유는
+    거절한다. 서버의 마지막 workspace면 replacement workspace를 만든다. 서버 로컬 IPC `workspace.close`의 거절(점유·마지막)은 그대로다.
+  - `deliver_result`는 workspace 닫기 회신이 `closed:false`면 실패로 돌려준다. 그 밖의 성공 회신은 기존 순서(결과 → 강제 분리)를 따른다.
 
   `App::detach_orphaned_mirror_sessions`는 `about_to_wait`에서 세션의 `local_workspace`를
   가진 engine이 있는지 `mirror_workspace_engine_alive`로 확인한다.
@@ -690,7 +711,8 @@ client 가 mirror 를 걷어내면 원격에 `Detach` 를 보내 원격 점유(h
   (docs/features/remote-attach/index.md) — 원격 explorer 의 파일 작업(새 폴더·새 파일·이름 변경·휴지통·복사·이동·되돌리기·남은
   원본 지우기). 조회와 달리 서버 파일을 바꾸므로 서버가 descriptor 의 `stream_capabilities` 에
   `ipc.stream.explorer-write`(버전 1)를 알리고, client 는 그 목록이 있는 연결에만 보낸다. 구 서버는
-  이 event 를 조용히 버려 응답이 오지 않기 때문이다.
+  이 event 를 조용히 버려 응답이 오지 않기 때문이다. workspace 전체 닫기 op 도 같은 이유로
+  `ipc.stream.workspace-close` 가 있는 연결에만 보낸다(위 "서버 workspace 닫기").
   - **실행**: 서버는 로컬 explorer 와 같은 작업 엔진(`src/app/file_jobs/`)을 작업 스레드에서 돌린다
     (`file_jobs::remote::RemoteJobs`). gui·headless 서버 모두 같다. 연결마다 한 번에 하나만 실행하고,
     실행 중에 온 요청은 `busy` 로 거절한다. client 가 결과를 받은 뒤 다음 요청을 보낸다.

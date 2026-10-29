@@ -62,6 +62,7 @@ pub(super) fn apply_one_mirror_event(
             }
         }
         MirrorEvent::StructuralFailed(op_id, reason) => {
+            sess.state.workspace_close.settle(op_id, false);
             let epoch = sess.transport.frame_tx.epoch();
             user_waits::structural_failed(&host.state.attach_pending, &epoch, op_id, &reason);
             agent_origin::apply_structural_failed(
@@ -72,6 +73,8 @@ pub(super) fn apply_one_mirror_event(
             );
         }
         MirrorEvent::StructuralSucceeded(op_id, created, history_omitted) => {
+            // 서버가 workspace를 닫았다고 회신한 연결만 닫힘으로 표시한다. 정리는 이벤트 적용 뒤 출력 루프가 한다.
+            sess.state.workspace_close.settle(op_id, true);
             // 결과 정산이 receipt를 바꾸기 전에 원 요청 View를 확인한다.
             if history_omitted > 0
                 && let Some(view) = user_waits::unanswered_request_view(

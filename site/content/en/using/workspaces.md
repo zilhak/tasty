@@ -1,4 +1,4 @@
-<!-- source-hash: a270028f48cb -->
+<!-- source-hash: b7b21475e1a1 -->
 # Workspaces
 
 Give each project or task its own workspace. Keep its terminals and layout together, then use names and categories to find it easily. If the window structure is new to you, start with [A first look](../getting-started/first-look.md).
@@ -66,6 +66,7 @@ When the sidebar is collapsed (**Collapse**, `Ctrl+B`) the cards become square i
 ## Closing and restoring
 
 - Right-click a card > **Close Workspace**, or `Alt+Shift+W`.
+- A remote mirror card also shows **Disconnect Workspace**. On a mirror, **Close Workspace** closes the Workspace on the remote computer, while Disconnect leaves the remote running and closes only your mirror ([Closing and disconnecting a mirror](../remote/attach.md#closing-and-disconnecting-a-mirror)).
 - `Ctrl+W` is **Close active** — if only one Tab is left it closes the Pane, and if only one Pane is left it closes the Workspace.
 
 A workspace holding a terminal someone is using over a remote attach will not close; you

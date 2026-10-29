@@ -78,6 +78,8 @@ pub struct Remote {
     /// 첫 자동 attach 실패의 재시도 간격(anchor별). 재연결은 `reconnect`가 맡는다.
     pub attach_retry: std::collections::HashMap<u32, AttachRetry>,
     pub refusals: crate::refusal::Refusals,
+    /// 이 client가 서버에서 닫은 원격 workspace를 가리키는 anchor 매핑. 매핑이 같은 동안 자동 attach하지 않는다.
+    pub closed_mappings: std::collections::HashMap<u32, tasty_model::WorkspaceAttachMapping>,
     next_attempt_id: u64,
     pub tx: std::sync::mpsc::Sender<AutoAttachOutcome>,
     pub rx: std::sync::mpsc::Receiver<AutoAttachOutcome>,
@@ -126,6 +128,7 @@ impl Remote {
             pending_reactivation: Default::default(),
             reconnect: Default::default(),
             attach_retry: Default::default(),
+            closed_mappings: Default::default(),
             refusals: Default::default(),
             next_attempt_id: 1,
             tx,

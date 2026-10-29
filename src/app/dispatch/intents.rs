@@ -138,6 +138,7 @@ impl App {
             intent.body,
             Intent::RemoteBrowser(_)
                 | Intent::AttachSizeSync(_)
+                | Intent::DisconnectMirror { .. }
                 | Intent::PatchSettings(_)
                 | Intent::ForwardMirror { .. }
                 | Intent::Domain(_)
@@ -306,6 +307,7 @@ impl App {
             Intent::CapturePreset { .. }
             | Intent::RemoteBrowser(_)
             | Intent::AttachSizeSync(_)
+            | Intent::DisconnectMirror { .. }
             | Intent::PatchSettings(_)
             | Intent::ForwardMirror { .. }
             | Intent::Domain(_)

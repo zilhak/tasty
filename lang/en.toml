@@ -793,6 +793,7 @@ rename_subtitle = "Change Subtitle"
 move_up = "Move Up"
 move_down = "Move Down"
 close_workspace = "Close Workspace"
+disconnect_workspace = "Disconnect Workspace"
 add_remote_workspace = "Add remote workspace"
 
 [rename_dialog]
@@ -1922,6 +1923,16 @@ mirror_reconnected = "Reconnected to the remote workspace."
 mirror_desynced = "Part of the remote screen was lost. Fetching it again…"
 # 자동 재시도는 끝났지만 워크스페이스를 다시 선택하면 재시도할 수 있다.
 mirror_reconnect_giveup = "Couldn't reconnect after several attempts. Switch away and back to this workspace to retry."
+# The server closed the mirrored workspace and its processes; the local mirror was removed.
+workspace_closed_on_server = "Closed the workspace on the remote Tasty."
+# The connection is down or reconnecting, so the close was not sent. Nothing changed on the server.
+workspace_close_reconnecting = "The remote connection is not available, so the workspace was not closed on the server."
+# The remote Tasty is an older version without workspace close. Nothing was sent.
+workspace_close_unsupported = "The remote Tasty does not support closing a workspace. Update it, or use Disconnect Workspace."
+# A close of the same workspace is still waiting for the server's answer.
+workspace_close_pending = "Already waiting for the server to close this workspace."
+# The connection ended before the server answered; whether the workspace closed is unknown.
+workspace_close_unknown = "The connection ended before the server confirmed the close. The workspace may still be running on the server."
 
 [transfer.progress]
 # 수신하는 쪽에서 보여 주는 제목이다.
@@ -6930,6 +6941,7 @@ split_pane = "Split pane"
 close_surface = "Close surface"
 close_tab = "Close tab"
 close_pane = "Close pane"
+close_workspace = "Close workspace"
 move_tab = "Move tab"
 move_surface = "Move surface"
 restore = "Reopen closed item"

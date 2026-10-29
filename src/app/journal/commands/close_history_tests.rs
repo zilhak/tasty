@@ -9,7 +9,7 @@ const SMALL_MARKER: &str = "small-terminal-history";
 /// Disk scrollback file header: 4-byte magic and 4-byte version.
 const DISK_HEADER: u64 = 8;
 
-fn boot() -> (EngineSession, JournalApplication) {
+pub(super) fn boot() -> (EngineSession, JournalApplication) {
     let mut settings = crate::settings::Settings::default();
     crate::app::journal::test_shell::use_quiet_shell(&mut settings);
     settings.general.restore_layout = true;
@@ -47,7 +47,7 @@ fn boot() -> (EngineSession, JournalApplication) {
     (session, journal)
 }
 
-fn request(method: &str, params: serde_json::Value, id: u64) -> JsonRpcRequest {
+pub(super) fn request(method: &str, params: serde_json::Value, id: u64) -> JsonRpcRequest {
     serde_json::from_value(
         serde_json::json!({"jsonrpc":"2.0","method":method,"params":params,"id":id}),
     )
@@ -85,7 +85,7 @@ fn public(
 
 /// The first workspace gets a second terminal tab; a second workspace keeps the engine open.
 /// Returns the first workspace and its terminals in creation order.
-fn workspace_with_terminals(
+pub(super) fn workspace_with_terminals(
     journal: &mut JournalApplication,
     session: &mut EngineSession,
     extra: usize,
@@ -469,6 +469,7 @@ fn a_remote_user_close_takes_the_same_history_budget() {
                 binding: std::sync::Weak::new(),
                 user,
                 restore: false,
+                closes_workspace: false,
                 converted: None,
             });
         assert_eq!(resolve(&mut journal, &mut session), ticket);

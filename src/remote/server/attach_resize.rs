@@ -262,6 +262,7 @@ mod tests {
             serde_json::json!([
                 tasty_ipc::stream::RESIZE_ACK_CAPABILITY,
                 tasty_ipc::stream::INPUT_ACK_CAPABILITY,
+                tasty_ipc::stream::WORKSPACE_CLOSE_CAPABILITY,
                 tasty_ipc::explorer_op::CAPABILITY,
                 tasty_ipc::html_transfer::CAPABILITY,
                 tasty_ipc::html_transfer::VIEWER_CAPABILITY,

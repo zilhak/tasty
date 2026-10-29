@@ -274,9 +274,24 @@ mirror 워크스페이스는 "통째로 원격" 인 원격 워크스페이스의
 - **터미널 재시작·PTY 입양은 forward 하지 않고 로컬에서 거부한다**: mirror surface 대상 `RespawnTerminal`(`surface.respawn_terminal`·`terminal.respawn`)과 mirror pane 대상 `AdoptTerminal`(`pty.attach_surface`)은 App의 mirror 구조 요청 해소가 거부한다. 둘 다 로컬 PTY 를 mirror 트리에 넣는 동작이라 원격 트리와 어긋나고, 대응 `StructuralOp` 가 없어 원격으로 보내지 않는다. IPC 응답은 mirror 사유를 담은 오류이며 트리·PTY registry 는 바뀌지 않는다.
 - **탭·페인 preset 적용은 forward 하지 않고 로컬에서 거부한다**: tab preset 의 대상 pane(생략하면 활성 workspace)이나 pane preset 의 대상 workspace(생략하면 활성 workspace)가 mirror 면 `preset.apply` 와 preset 팝업의 적용은 탭·pane 을 만들기 전에 `MirrorStructuralBlocked` 로 거부한다. terminal leaf 면 로컬 셸을 mirror 트리에 넣게 되고, preset 은 대응 `StructuralOp` 가 없어 원격으로 보낼 수 없다. IPC 응답은 mirror 사유를 담은 오류이고, 사용자가 적용했으면 차단 toast(`attach.toast.mirror_structural_blocked`)가 뜬다. workspace preset 은 새 로컬 workspace 를 만들므로 거부하지 않는다.
 
-**현재 범위**: surface split / pane split / 새 탭 / surface·tab·pane 닫기 / 탭 순서 변경(`MoveTab` — 탭 헤더 메뉴의 교체 이동 `탭 이동`과 다르다) / 닫은 항목 복원 / surface convert(kind 변환, `markdown.navigate`/`image.open`/host convert 팝업이 모두 이 경로를 탄다 — 변환 결과의 cwd 는 op 의 `cwd` 필드로 전달되고, 비어 있으면 원격이 대상 surface 의 실제 PTY 에서 직접 resolve 한다.
+**현재 범위**: surface split / pane split / 새 탭 / surface·tab·pane 닫기 / workspace 전체 닫기(사이드바 메뉴·단축키, 아래 "mirror 닫기와 연결 끊기") / 탭 순서 변경(`MoveTab` — 탭 헤더 메뉴의 교체 이동 `탭 이동`과 다르다) / 닫은 항목 복원 / surface convert(kind 변환, `markdown.navigate`/`image.open`/host convert 팝업이 모두 이 경로를 탄다 — 변환 결과의 cwd 는 op 의 `cwd` 필드로 전달되고, 비어 있으면 원격이 대상 surface 의 실제 PTY 에서 직접 resolve 한다.
 [surface-cwd invariant §3-1](../../design/policies/cwd.md#3-1-mirror원격-attach-forward-경로도-같은-불변식-대상)) / surface 이동(move-surface)이 forward 대상이며, 성공 시 원격 실행 결과가 mirror 트리에 역반영된다.
 move-surface 는 **source/target 이 같은 mirror workspace 안에 있을 때만** forward 된다 — 로컬(비-mirror) workspace 와의 경계를 넘는 이동은 로컬 전용 surface_id 를 원격에 그대로 보내는 꼴이 되어(원격 트리의 무관한 surface 와 id 가 우연히 겹칠 위험) 여전히 로컬 차단 toast(`mirror_structural_blocked`)를 유지한다. 같은 workspace 안의 이동도 client 는 source 와 target 을 **둘 다** 같은 mirror 세션의 매핑으로 원격 ID 로 바꿔 보내고, target 의 원격 ID 를 모르면 보내지 않는다. 서버는 target 도 점유된 같은 workspace 안의 살아 있는 surface 인지 다시 확인하고, 아니면 `no live surface N (named by 'structural_op.move_surface')` 로 거절해 다른 workspace 의 surface 를 덮어쓰지 않는다([attach 동작](../../dev-guide/attach-behavior.md)).
+
+### mirror 닫기와 연결 끊기
+
+mirror 카드의 우클릭 메뉴는 마지막 묶음에 **워크스페이스 연결 끊기**(메뉴 id 8)와 **워크스페이스 닫기**(id 6)를 함께 둔다. 로컬 카드에는 닫기만 있다. 두 항목은 메뉴를 연 workspace ID로 대상을 다시 찾으며, 그 사이 대상이 사라졌으면 아무것도 하지 않는다. 서버 쪽 **강제 끊기**(id 7, 이 인스턴스의 workspace를 점유한 다른 client를 내보낸다)와 다르다.
+
+- **워크스페이스 닫기(서버 닫기)**: 사이드바 메뉴뿐 아니라 `close_workspace` 단축키와, 마지막 surface·pane에서 workspace 닫기로 넘어가는 `close_surface`·`close_pane`·`close_active` 단축키(더블 탭 포함)도 같은 서버 닫기다. 로컬 workspace의 "마지막 것을 닫으면 workspace가 닫힌다"와 같은 규칙을 따르며, 서버를 유지하려면 연결 끊기를 쓴다. `DomainIntent::CloseWorkspace`가 mirror를 가리키면 `StructuralOp::CloseWorkspace{anchor_surface_id}`로 forward한다. 서버는 그 연결이 점유한 workspace를 `intent.close`의 workspace 대상으로 닫고 PTY를 끝낸다. 사용자 요청이면 서버의 닫은 항목 기록에 남는다.
+  - 보내기 전에 연결을 확인한다. 연결이 없거나 재연결 중이면 `attach.toast.workspace_close_reconnecting`, 서버 descriptor에 `ipc.stream.workspace-close`가 없으면 `attach.toast.workspace_close_unsupported`, 같은 mirror의 닫기가 회신을 기다리면 `attach.toast.workspace_close_pending`을 띄우고 보내지 않는다.
+  - 같은 mirror의 닫기 두 개가 첫 전송 전에 함께 준비돼도(키 반복·메뉴와 단축키) `execute_journal_forwards`가 전송 직전에 `workspace_close::send_refusal`로 다시 보고 두 번째를 보내지 않고 취소한다. 기다리던 op id가 덮어써지지 않아 첫 성공 회신이 mirror를 정리한다.
+  - client는 그 op의 성공 회신을 받은 뒤에만 mirror·세션을 정리한다. 성공 안내는 `attach.toast.workspace_closed_on_server`다. 서버 거절은 기존 구조 변경 실패 안내로 끝나며 mirror를 남긴다. 회신 전에 연결이 끝나면 `attach.toast.workspace_close_unknown`을 띄우고 기존 단절 처리(anchor 있으면 재연결, 없으면 정리)를 따른다.
+  - 서버의 마지막 workspace를 닫으면 서버는 빈 창 대신 새 터미널 workspace를 만든다. 서버 로컬 사용자의 마지막 workspace 닫기(창 닫기)와 구분한다.
+  - 성공한 anchor mirror는 재연결하지 않는다. 그 anchor의 매핑은 지우지 않고, 같은 매핑으로는 자동 attach하지 않는다(`Remote.closed_mappings`). 매핑을 바꾸거나 지우면 다시 후보가 된다.
+- **워크스페이스 연결 끊기**: `Intent::DisconnectMirror{workspace_id}`를 App이 처리한다. 그 mirror의 재연결 endpoint·connection 시도를 취소하고 사용자 종료 정리(`cleanup_mirror_workspace(.., false)`)로 mirror·문서 surface·heartbeat를 정리한 뒤 transport를 놓아 socket·worker·소유 터널을 회수한다. 서버 workspace와 프로세스는 남고 서버 점유는 `Detach`(전달하지 못하면 EOF/TTL)로 풀린다. 다른 mirror 세션은 유지한다.
+  - 재연결 중에도 끊을 수 있다. 늦게 도착한 재연결 결과는 세션·epoch가 없어 설치되지 않는다.
+  - anchor 매핑은 남긴다. anchor는 재진입 대기(`pending_reactivation`)로 두고, 정리로 바뀐 선택을 전환으로 읽지 않도록 직전 활성 workspace를 맞춘다. 사용자가 다른 workspace로 갔다가 anchor로 돌아오면 다시 연결한다. 네트워크 단절의 자동 재연결은 그대로다.
+  - 마지막 workspace였으면 창을 닫지 않고 기본 터미널 workspace를 만든다. 사용자의 닫은 항목 기록에는 넣지 않는다.
 
 ### 서버(피점유)측 비-holder 구조 변경 차단
 
@@ -472,6 +487,10 @@ bulk 파일 전송과 mirror 터미널 이미지 붙여넣기 업로드에 대�
 - Given 점유 상태 When 로컬 사용자가 점유 테두리의 강제 끊기 버튼을 누르거나 사이드바 확인 팝업에서 확인 Then holder 가 종료되고 대상이 일반 surface 로 복귀한다.
 - Given release 빌드 When 어떤 호출자든 `attach.force_detach`·`attach.force_detach_workspace` 를 보내거나 `tasty remote attach --force-detach` 를 실행 Then 알 수 없는 메서드·인자 오류로 끝나고 점유는 유지된다.
 - Given workspace 가 점유된 상태 When 로컬 사용자가 사이드바에서 그 행을 우클릭 Then **강제 끊기** 항목이 보인다.
+- Given 연결된 mirror 카드와 로컬 카드 When 각각 우클릭 Then mirror 에는 **워크스페이스 연결 끊기** 와 **워크스페이스 닫기** 가 함께 있고 로컬 카드에는 연결 끊기가 없다.
+- Given 연결된 mirror R When **워크스페이스 닫기** Then 서버 목록에서 R 만 사라지고 R 의 프로세스가 끝나며, 성공 회신 뒤 client 의 R mirror 와 세션이 정리된다. 다른 서버 workspace 와 로컬 workspace 는 유지된다.
+- Given 서버가 닫기를 거절하거나 capability 가 없는 구 서버 When **워크스페이스 닫기** Then mirror 는 남고 실패·미지원 안내가 뜬다. 회신 전에 연결이 끝나면 결과를 모른다고 안내하며 성공으로 표시하지 않는다.
+- Given 연결된 mirror R When **워크스페이스 연결 끊기** Then client 의 R mirror 만 사라지고 서버의 R 과 프로세스는 같은 ID 로 남으며 서버 점유가 풀린다. anchor 로 다시 전환하거나 다시 attach 하면 같은 workspace 와 출력에 접근한다.
 - Given 그 항목을 누른 상태 When 확인 팝업이 떠 있다 Then 점유는 아직 유지되고, 취소·Escape·바깥 클릭 어느 쪽으로 닫아도 점유가 그대로 남는다.
 - Given 확인 팝업이 떠 있는 동안 원격이 스스로 끊었다 When 다음 프레임 Then 팝업은 즉시 닫힌다(대상 없는 확인을 남기지 않는다).
 - Given client 연결 종료(EOF) Then 점유 lock 이 자동 free 된다.

@@ -199,6 +199,7 @@ impl App {
                 html_locals,
                 resync_pending: None,
                 resync_awaiting_window: false,
+                workspace_close: Default::default(),
             },
         });
         tracing::info!(
@@ -371,6 +372,8 @@ impl App {
         let abandoned_captures = std::mem::take(&mut sess.state.capture_uploads);
         sess.state.resync_pending = None;
         sess.state.resync_awaiting_window = false;
+        // 옛 연결의 닫기 회신은 오지 않는다. 결과를 모르는 요청은 enter_reconnecting이 이미 알렸다.
+        sess.state.workspace_close = Default::default();
         sess.state.phase = SessionState::Connected;
         sess.state.remote_label = format!("127.0.0.1:{port}");
         // 원문은 바로 다시 받지 않는다. 변경 신호를 보내 플러그인이 재요청이나 stale 표시를 선택하게 한다.

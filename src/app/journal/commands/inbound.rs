@@ -12,6 +12,8 @@ pub(crate) struct RemoteReply {
     pub binding: std::sync::Weak<()>,
     pub user: bool,
     pub restore: bool,
+    /// 전체 workspace 닫기. 서버가 닫지 않았다는 회신(`closed:false`)은 실패로 돌려준다.
+    pub closes_workspace: bool,
     pub converted: Option<u32>,
 }
 /// 원격 홀더가 보낸 구조 변경 요청 하나. `PumpOutcome::structural_ops` 의 항목이
@@ -69,6 +71,7 @@ impl JournalApplication {
             binding,
             user: origin == ForwardOrigin::User,
             restore: matches!(op, StructuralOp::RestoreClosedItem { .. }),
+            closes_workspace: matches!(op, StructuralOp::CloseWorkspace { .. }),
             converted: match &op {
                 StructuralOp::ConvertSurface { surface_id, .. } => Some(*surface_id),
                 _ => None,
@@ -213,6 +216,10 @@ impl JournalApplication {
                 } => {
                     request.method = "tab.move".into();
                     request.params = serde_json::json!({"pane_id":pane,"from_index":from_index,"to_index":to_index});
+                }
+                StructuralOp::CloseWorkspace { .. } => {
+                    request.method = "intent.close".into();
+                    request.params = close(tasty_core::CloseTarget::Workspace(remote.workspace));
                 }
                 StructuralOp::RestoreClosedItem { .. } => {
                     request.method = "intent.restore-closed".into();
@@ -399,6 +406,20 @@ pub(crate) fn deliver_result(
             remote.op_id,
             false,
             Some(tasty_ipc::stream::STRUCTURAL_REASON_RESTORE_EMPTY.into()),
+        );
+        return;
+    }
+    if remote.closes_workspace
+        && response.result.as_ref().is_some_and(|value| {
+            value.get("closed").and_then(|value| value.as_bool()) == Some(false)
+        })
+    {
+        reply(
+            hub,
+            remote.client,
+            remote.op_id,
+            false,
+            Some("workspace was not closed".into()),
         );
         return;
     }

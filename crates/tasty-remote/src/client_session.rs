@@ -310,6 +310,8 @@ pub struct ClientTransport {
     pub tunnel: Option<tasty_ssh::SshTunnel>,
     /// 서버가 원격 explorer 파일 작업을 받는다. 구 서버 descriptor 에는 이 기능이 없다.
     pub explorer_write: bool,
+    /// 서버가 점유한 workspace 전체 닫기를 받는다. 구 서버 descriptor 에는 이 기능이 없다.
+    pub workspace_close: bool,
     /// 받은 원격 explorer 작업 통지. 작업 상태를 가진 App 이 도착 순서대로 꺼낸다.
     pub explorer_inbox: Vec<Value>,
     pub html: crate::html_document::HtmlSession,
@@ -358,6 +360,33 @@ pub struct ClientSessionState {
     pub resync_pending: Option<u64>,
     /// parked 상태에서는 재attach할 창이 없어 Detach 전송을 미룬다. 창이 생기면 이어서 처리한다.
     pub resync_awaiting_window: bool,
+    /// 이 연결로 보낸 서버 workspace 닫기의 진행.
+    pub workspace_close: WorkspaceClose,
+}
+
+/// 서버 workspace 닫기 요청의 진행. 한 연결에서 하나만 기다린다.
+/// 성공 회신을 받은 연결만 `Closed`가 되며, 회신 전 단절은 결과를 모르는 것으로 본다.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum WorkspaceClose {
+    #[default]
+    Idle,
+    /// 보낸 op_id의 회신을 기다린다.
+    Pending(u64),
+    /// 서버가 workspace를 닫았다고 회신했다. 이 mirror는 재연결하지 않고 정리한다.
+    Closed,
+}
+
+impl WorkspaceClose {
+    /// 구조 변경 회신을 반영한다. 기다리던 op가 아니면 바뀌지 않는다.
+    pub fn settle(&mut self, op_id: u64, ok: bool) {
+        if *self == WorkspaceClose::Pending(op_id) {
+            *self = if ok {
+                WorkspaceClose::Closed
+            } else {
+                WorkspaceClose::Idle
+            };
+        }
+    }
 }
 
 impl AttachClientSession {

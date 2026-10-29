@@ -65,6 +65,7 @@ tasty list workspaces
 ## 닫기와 복원
 
 - 카드 우클릭 > **워크스페이스 닫기** <!-- en: Close Workspace -->, 또는 `Alt+Shift+W`.
+- 원격 mirror 카드에는 **워크스페이스 연결 끊기** <!-- en: Disconnect Workspace --> 도 함께 나옵니다. mirror 에서 **워크스페이스 닫기** 는 원격 컴퓨터의 워크스페이스를 닫고, 연결 끊기는 원격은 그대로 둔 채 내 쪽 mirror 만 닫습니다 ([mirror 닫기와 연결 끊기](../remote/attach.md#mirror-닫기와-연결-끊기)).
 - `Ctrl+W` 는 **활성 항목 닫기** <!-- en: Close active --> 입니다 — 탭이 하나 남았으면 페인을, 페인도 하나면 워크스페이스를 닫습니다.
 
 원격에서 attach 해 쓰고 있는 터미널이 들어 있으면 닫히지 않고 안내가 뜹니다. 그 터미널

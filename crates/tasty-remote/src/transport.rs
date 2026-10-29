@@ -46,6 +46,7 @@ pub fn attach_handshake(
         input_acks: descriptor_has_capability(&ctrl, stream::INPUT_ACK_CAPABILITY),
         html,
         explorer_write: descriptor_has_capability(&ctrl, tasty_ipc::explorer_op::CAPABILITY),
+        workspace_close: descriptor_has_capability(&ctrl, stream::WORKSPACE_CLOSE_CAPABILITY),
         conn,
         client_id,
         write_half,
@@ -68,6 +69,8 @@ pub struct AttachHandshake {
     pub input_acks: bool,
     /// 서버가 원격 explorer 파일 작업을 받는다.
     pub explorer_write: bool,
+    /// 서버가 점유한 workspace 전체 닫기를 받는다.
+    pub workspace_close: bool,
     pub html: super::html_document::HtmlSession,
 }
 
@@ -402,6 +405,7 @@ impl PreparedConnection {
             resize_acks,
             input_acks,
             explorer_write,
+            workspace_close,
             html,
         } = attach_handshake(port, workspace, "remote pending connection", &cancel)?;
         let control = write_half.try_clone()?;
@@ -438,6 +442,7 @@ impl PreparedConnection {
                 frame_tx,
                 tunnel,
                 explorer_write,
+                workspace_close,
                 explorer_inbox: Vec::new(),
                 html,
             },

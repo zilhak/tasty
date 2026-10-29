@@ -23,6 +23,9 @@ pub const RESIZE_ACK_VERSION: u32 = 1;
 /// Main-loop receipt of all Data/MeshInput frames preceding an input checkpoint.
 /// This does not acknowledge shell consumption, command completion, or rendering.
 pub const INPUT_ACK_CAPABILITY: &str = "ipc.stream.input-ack";
+/// 서버가 [`StructuralOp::CloseWorkspace`]로 점유한 workspace 전체를 닫고 결과를 회신한다는 capability 이름.
+/// 이 기능이 없는 구 서버는 모르는 op를 회신 없이 버리므로 client는 보내지 않고 미지원으로 알린다.
+pub const WORKSPACE_CLOSE_CAPABILITY: &str = "ipc.stream.workspace-close";
 /// workspace attach descriptor에서 이 연결의 서버 기능 이름 목록을 담는 키.
 /// 구 서버는 이 키를 보내지 않으므로 없으면 빈 목록으로 읽는다.
 pub const DESCRIPTOR_CAPABILITIES: &str = "stream_capabilities";
@@ -443,6 +446,10 @@ pub enum StructuralOp {
     /// anchor의 workspace 복원 스택에서 마지막 항목을 복원한다.
     /// 클라이언트가 종류·내용을 정하지 않으며 서버가 저장된 스크롤백과 PTY를 복원한다.
     RestoreClosedItem { anchor_surface_id: u32 },
+    /// Close the whole held workspace that contains the anchor surface on the server,
+    /// ending its PTYs. Sent only to a server whose descriptor carries
+    /// [`WORKSPACE_CLOSE_CAPABILITY`]; an older server drops unknown ops without a reply.
+    CloseWorkspace { anchor_surface_id: u32 },
 }
 
 /// 전달된 구조 변경의 호출 주체. 서버의 복원 기록과 사용자 탭 선택에 사용한다.
@@ -502,6 +509,7 @@ impl StructuralOp {
             | StructuralOp::CloseTab { anchor_surface_id }
             | StructuralOp::ClosePane { anchor_surface_id }
             | StructuralOp::RestoreClosedItem { anchor_surface_id }
+            | StructuralOp::CloseWorkspace { anchor_surface_id }
             | StructuralOp::MoveTab {
                 anchor_surface_id, ..
             } => *anchor_surface_id,
@@ -526,6 +534,7 @@ impl StructuralOp {
             StructuralOp::ConvertSurface { .. } => "convert_surface",
             StructuralOp::MoveSurface { .. } => "move_surface",
             StructuralOp::RestoreClosedItem { .. } => "restore_closed_item",
+            StructuralOp::CloseWorkspace { .. } => "close_workspace",
         }
     }
 
@@ -549,6 +558,7 @@ impl StructuralOp {
             | StructuralOp::CloseTab { anchor_surface_id }
             | StructuralOp::ClosePane { anchor_surface_id }
             | StructuralOp::RestoreClosedItem { anchor_surface_id }
+            | StructuralOp::CloseWorkspace { anchor_surface_id }
             | StructuralOp::MoveTab {
                 anchor_surface_id, ..
             } => *anchor_surface_id = remote,
@@ -1179,6 +1189,9 @@ mod tests {
                 target_surface_id: 2,
             },
             StructuralOp::RestoreClosedItem {
+                anchor_surface_id: 1,
+            },
+            StructuralOp::CloseWorkspace {
                 anchor_surface_id: 1,
             },
         ];

@@ -63,6 +63,10 @@ impl App {
             self.apply_attach_size_sync_action(*action, std::time::Instant::now());
             return Ok(());
         }
+        if let Intent::DisconnectMirror { workspace_id } = &dispatched.body {
+            self.disconnect_mirror_workspace(*workspace_id);
+            return Ok(());
+        }
         if let Intent::CapturePreset {
             kind,
             source: target,
@@ -174,6 +178,10 @@ impl App {
             && let Some(op) =
                 crate::app::services::impl_mirror::build_mirror_forward_op(session.core, &intent)
         {
+            if let Some(refusal) = self.workspace_close_refusal(&op) {
+                self.report_workspace_close_refusal(id, &origin, refusal);
+                return Ok(());
+            }
             self.admit_forwarded_request(
                 id,
                 op,

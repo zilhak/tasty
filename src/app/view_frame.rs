@@ -15,6 +15,12 @@ impl App {
         let Some(session) = self.engines.session_mut(engine) else {
             return;
         };
+        // 마지막 mirror 정리처럼 창을 유지한 채 workspace가 0개가 되면 기본 workspace가 journal을 거쳐
+        // 생길 때까지 그리지 않는다. 화면 계산은 활성 workspace가 있다고 가정한다.
+        if session.core_state.workspaces().is_empty() {
+            tracing::debug!(window = ?id, "redraw deferred: the window has no workspace yet");
+            return;
+        }
         let Some(view) = self
             .view
             .views

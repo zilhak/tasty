@@ -207,6 +207,7 @@ fn a_halt_keeps_a_ready_forward_from_being_sent() {
         payload: b"{}".to_vec(),
         focus: None,
         silent_failure: true,
+        closes_workspace: false,
         completion: Some(crate::request_runs::RunGuard::new(
             run,
             super::forward::FORWARD_ENDED,

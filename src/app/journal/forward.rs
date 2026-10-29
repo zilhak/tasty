@@ -14,6 +14,8 @@ pub(crate) struct Draft {
     pub payload: Vec<u8>,
     pub focus: Option<tasty_remote::client_session::PendingOpFocus>,
     pub silent_failure: bool,
+    /// 서버 workspace 전체 닫기. 보낸 뒤 세션이 그 회신을 기다린다.
+    pub closes_workspace: bool,
     /// 원격 결과를 기다리는 intent 요청의 run. 보내지 못하거나 결과 없이 사라지면 여기서 끝난다.
     #[cfg(feature = "gui")]
     pub completion: Option<crate::request_runs::RunGuard>,
@@ -290,6 +292,22 @@ impl crate::app::App {
                     reason: "committed remote instruction differs from its exact connection lease"
                         .into(),
                 }
+            } else if let Some(refusal) = draft
+                .closes_workspace
+                .then(|| {
+                    self.remote
+                        .sessions
+                        .iter()
+                        .find(|session| session.state.local_workspace == draft.target.workspace)
+                        .and_then(crate::app::attach_client::workspace_close::send_refusal)
+                })
+                .flatten()
+            {
+                // 준비 단계의 검사는 아직 보내지 않은 닫기를 모른다. 같은 mirror의 두 닫기가 함께 준비돼도
+                // 전송은 이 루프에서 하나씩 일어나므로 여기서 두 번째를 막는다.
+                OperationOutcome::Cancelled {
+                    reason: refusal.reason().into(),
+                }
             } else {
                 match draft
                     .target
@@ -314,6 +332,12 @@ impl crate::app::App {
                                 .state
                                 .agent_requests
                                 .note_structural(draft.silent_failure, draft.op_id);
+                            if draft.closes_workspace {
+                                crate::app::attach_client::workspace_close::note_sent(
+                                    session,
+                                    draft.op_id,
+                                );
+                            }
                         }
                         if let Some(run) = completion.clone() {
                             crate::app::attach_client::op_runs::watch(

@@ -7,6 +7,8 @@ mod capture_tests;
 #[cfg(test)]
 mod close_history_tests;
 #[cfg(test)]
+mod close_order_tests;
+#[cfg(test)]
 mod home_probe_tests;
 #[cfg(test)]
 mod http_tests;
@@ -50,6 +52,8 @@ impl App {
             return;
         }
         let mut dead: Vec<usize> = Vec::new();
+        let mut closed: Vec<usize> = Vec::new();
+        let mut unknown_close: Vec<u32> = Vec::new();
         let mut reconnecting: Vec<usize> = Vec::new();
         let mut resyncing: Vec<usize> = Vec::new();
         for idx in 0..self.remote.sessions.len() {
@@ -101,24 +105,25 @@ impl App {
             }
             // 같은 묶음에 손실 통지와 EOF가 올 수 있어 이벤트 적용 뒤 재attach 여부를 확인한다.
             let sess = &self.remote.sessions[idx];
-            // A handshake/ID reservation continuation owns this epoch until installation or failure.
-            // Its original transport (including the tunnel) must not be taken a second time.
-            if self
+            let installing = self
                 .state
                 .mirror_attempts
-                .installing_epoch(sess.state.local_workspace, &sess.transport.frame_tx.epoch())
-            {
-                continue;
-            }
-            match disconnect_disposition(
+                .installing_epoch(sess.state.local_workspace, &sess.transport.frame_tx.epoch());
+            let (disposition, unknown) = decide_session_end(
+                sess,
                 disconnected,
                 state,
-                sess.resync_released(),
                 anchor_ws_id.is_some(),
-            ) {
+                installing,
+            );
+            if unknown {
+                unknown_close.push(sess.state.local_workspace);
+            }
+            match disposition {
                 DisconnectDisposition::Resync => resyncing.push(idx),
                 DisconnectDisposition::Reconnect => reconnecting.push(idx),
                 DisconnectDisposition::Cleanup => dead.push(idx),
+                DisconnectDisposition::ServerClosed => closed.push(idx),
                 DisconnectDisposition::None => {}
             }
         }
@@ -131,16 +136,36 @@ impl App {
                 }
             }
         }
+        self.notify_unknown_closes(unknown_close);
         for &idx in &reconnecting {
             self.enter_reconnecting(idx);
         }
-        dead.sort_unstable();
-        for &idx in dead.iter().rev() {
-            let sess = self.remote.sessions.remove(idx);
-            self.cleanup_mirror_workspace(&sess, true);
-        }
+        self.end_sessions(&dead, &closed);
     }
 }
+/// 이벤트를 적용한 뒤 세션의 끝을 정한다. 단절·phase·anchor는 이벤트 적용 전에 읽은 값이다.
+/// 두 번째 값은 회신 없이 끝난 서버 닫기가 있어 결과를 모른다고 알려야 하는지다.
+fn decide_session_end(
+    sess: &AttachClientSession,
+    disconnected: bool,
+    phase: SessionState,
+    anchored: bool,
+    installing: bool,
+) -> (DisconnectDisposition, bool) {
+    let disposition = session_end(
+        sess.state.workspace_close,
+        installing,
+        disconnect_disposition(disconnected, phase, sess.resync_released(), anchored),
+    );
+    let unknown = matches!(
+        disposition,
+        DisconnectDisposition::Resync
+            | DisconnectDisposition::Reconnect
+            | DisconnectDisposition::Cleanup
+    ) && super::workspace_close::close_result_unknown(sess);
+    (disposition, unknown)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum MirrorOutputHost {
     Window(winit::window::WindowId),
@@ -166,6 +191,26 @@ enum DisconnectDisposition {
     Resync,
     Reconnect,
     Cleanup,
+    /// 서버가 workspace를 닫았다고 회신했다. 재연결 없이 로컬에서 정리한다.
+    ServerClosed,
+}
+
+/// 이벤트를 적용한 뒤 세션의 처리를 정한다. 서버 닫기 성공 회신은 같은 묶음의 EOF나 뒤따를 EOF,
+/// 진행 중인 재연결 설치보다 우선한다. 그 밖에 설치 continuation이 이 epoch를 소유하면 기다린다.
+fn session_end(
+    close: tasty_remote::client_session::WorkspaceClose,
+    installing: bool,
+    disconnect: DisconnectDisposition,
+) -> DisconnectDisposition {
+    if close == tasty_remote::client_session::WorkspaceClose::Closed {
+        DisconnectDisposition::ServerClosed
+    } else if installing {
+        // A handshake/ID reservation continuation owns this epoch until installation or failure.
+        // Its original transport (including the tunnel) must not be taken a second time.
+        DisconnectDisposition::None
+    } else {
+        disconnect
+    }
 }
 
 /// 연결별 종료 신호에는 한 번만 반응한다. 손실로 Detach를 보낸 세션은 anchor 없이도 재attach한다.

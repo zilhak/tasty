@@ -1,4 +1,4 @@
-<!-- source-hash: 98365e7d872c -->
+<!-- source-hash: 37836f5f8156 -->
 <a id="remote-attach"></a>
 
 # Working remotely (attach)
@@ -178,6 +178,22 @@ tasty set workspace --id 5 --clear-mapping                              # remove
 - Restarting the shell of a mirror surface (`tasty surface respawn-terminal`, `tasty terminal respawn`) or attaching a background PTY as a tab inside a mirror (`tasty pty attach-surface`) is also refused, because it would put a local shell where the remote terminal is. Run them directly on the remote instance.
 - Applying a Tab or Pane preset to a mirror Workspace (the preset popup, `tasty preset apply`) is refused for the same reason. A Workspace preset creates a new Workspace, so it still works.
 - Closing the last terminal of a mirror removes the remote Workspace itself and disconnects.
+
+## Closing and disconnecting a mirror
+
+Right-clicking a mirror card shows two items together. Your own regular Workspace cards only have **Close Workspace**.
+
+- **Close Workspace** — actually closes that Workspace on the remote computer. All its tabs, panes and terminals, and the programs running in them, end on the remote side. Only after the remote answers that it closed does your mirror disappear, with **Closed the workspace on the remote Tasty.** If the remote refuses, the mirror stays and a failure notice appears. The closed Workspace can be brought back with Restore closed in the remote window (running programs do not come back).
+  - Closing the Workspace with a shortcut does the same. Closing a mirror's last tab, pane or terminal with a shortcut, which falls back to closing the Workspace, also closes the remote Workspace. To keep the remote running, use **Disconnect Workspace**.
+  - If it was the remote's last Workspace, the remote window does not close; a new terminal Workspace opens in its place.
+  - While the connection is down or reconnecting, the close is not sent and only a notice appears. It is not sent either when the remote Tasty is an older version without this feature. In that case update the remote, or use **Disconnect Workspace**.
+  - If the connection ends before the remote answers, you are told that whether it closed is unknown. The Workspace may still be running on the remote, so reconnect and check.
+  - When you close a mapped mirror on the remote, the same mapping does not reconnect automatically. The mapping is not deleted; point it at another remote Workspace or clear it yourself.
+- **Disconnect Workspace** — closes only your mirror and ends the connection. The remote Workspace and its programs keep running, and the remote side can type again. It works while reconnecting too, and then also stops the reconnect attempts. If it was the last Workspace, the window does not close and a new terminal Workspace opens.
+  - A mapped mirror keeps its mapping but does not attach again right away. Go to another Workspace and come back to the mapped one to reconnect. For a mirror attached without a mapping, attach again with **Add remote workspace** to see the same Workspace and output.
+  - A drop caused by the network still reconnects automatically as before. Only a disconnect you chose stops it.
+
+These two items differ from **Force detach** in the remote window. Force detach removes someone else's connection on the remote computer; Disconnect closes the mirror you attached, from your side.
 
 ## Releasing the occupation (on the remote side)
 

@@ -18,6 +18,7 @@ mod resources;
 mod survivors;
 mod user_waits;
 mod wire;
+pub(crate) mod workspace_close;
 
 #[cfg(test)]
 pub(crate) mod tests;

@@ -73,6 +73,13 @@ pub(crate) fn build_mirror_forward_op(
             surface_kind: kind.clone(),
             params: surface_params.clone(),
         }),
+        // 서버는 anchor가 속한 workspace가 이 연결이 점유한 workspace인지 확인한 뒤 전체를 닫는다.
+        D::CloseWorkspace { workspace_id } => Some(StructuralOp::CloseWorkspace {
+            anchor_surface_id: engine
+                .find_workspace_index_for_id(*workspace_id)
+                .and_then(|index| engine.workspace_at(index))
+                .and_then(|workspace| workspace.all_surface_ids().first().copied())?,
+        }),
         D::CloseSurface { surface_id, .. } => Some(StructuralOp::CloseSurface {
             surface_id: *surface_id,
         }),
@@ -142,5 +149,39 @@ pub(crate) fn build_mirror_forward_op(
         | D::RenameCategory { .. }
         | D::DeleteCategory { .. } => None,
         _ => None,
+    }
+}
+
+#[cfg(all(test, feature = "gui"))]
+mod tests {
+    use super::*;
+
+    /// workspace 닫기는 그 workspace의 surface 하나를 anchor로 보낸다. 없는 workspace는 보내지 않는다.
+    #[test]
+    fn a_workspace_close_is_anchored_on_one_of_its_surfaces() {
+        let (_, session) = crate::state::tests::test_state();
+        let workspace = session.core_state.local_workspaces()[0].id;
+        let surfaces = session.core_state.local_workspaces()[0].all_surface_ids();
+        let op = build_mirror_forward_op(
+            &session.core_state,
+            &DomainIntent::CloseWorkspace {
+                workspace_id: workspace,
+            },
+        );
+        assert_eq!(
+            op,
+            Some(tasty_ipc::stream::StructuralOp::CloseWorkspace {
+                anchor_surface_id: surfaces[0],
+            })
+        );
+        assert_eq!(
+            build_mirror_forward_op(
+                &session.core_state,
+                &DomainIntent::CloseWorkspace {
+                    workspace_id: workspace + 1000,
+                },
+            ),
+            None
+        );
     }
 }
