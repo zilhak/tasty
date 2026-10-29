@@ -88,45 +88,29 @@ impl App {
         id: winit::window::WindowId,
         ev: crate::webview::WebViewKeyEvent,
     ) {
+        // winit 경로의 modal_blocks_input·입력 게이트와 같이, modal 창이나 overlay·전체화면 무대가
+        // 열린 동안에는 plugin·새로고침·host 단축키 어느 것도 처리하지 않는다.
+        let gates = engines_mut!(self).window_pair(id).map(|(main, _)| {
+            (
+                main.state.keyboard_overlay_open(),
+                main.state.fullscreen_stage_active(),
+            )
+        });
+        let (overlay_open, fullscreen) = gates.unwrap_or((false, false));
+        if !forwarded_key_may_dispatch(self.view.is_modal_active(), overlay_open, fullscreen) {
+            return;
+        }
         if self.dispatch_plugin_shortcut_key(id, &ev.key, ev.mods) {
             return;
         }
-        let Some((main, engine)) = engines_mut!(self).window_pair(id) else {
+        let Some((main, mut engine)) = engines_mut!(self).window_pair(id) else {
             return;
         };
         // 플러그인 단축키에서 처리하지 않은 키는 원래 webview가 사라졌으면 버린다.
         if !main.webviews.contains_key(&ev.surface_id) {
             return;
         }
-        if main.state.keyboard_overlay_open() || main.state.fullscreen_stage_active() {
-            return;
-        }
-        // 공통 새로고침은 모델 포커스가 아니라 키를 받은 페이지를 대상으로 한다. 정책이 이미 이 키를
-        // 페이지에서 가져왔으므로, 그 페이지를 대상으로 잡지 못해도 다른 surface 로 넘기지 않고 버린다.
-        if tasty_key_match::matches_any_binding(
-            &engine.runtime.settings.keybindings.refresh,
-            &ev.key,
-            ev.mods,
-        ) {
-            if crate::adapters::ui::input::shortcuts::request_surface_refresh(
-                &mut main.state,
-                &engine.read(),
-                ev.surface_id,
-                crate::intent::RefreshTrigger::Shortcut,
-            ) {
-                tracing::debug!(
-                    target: "tasty::refresh",
-                    "native webview key requested a refresh of surface {}",
-                    ev.surface_id
-                );
-                main.after_shortcut_consumed(&engine.read());
-            } else {
-                tracing::debug!(
-                    target: "tasty::refresh",
-                    "native webview refresh key dropped: surface {} cannot be targeted",
-                    ev.surface_id
-                );
-            }
+        if dispatch_native_refresh_key(main, &mut engine, &ev) {
             return;
         }
         if main.handle_shortcut(&engine.read(), &ev.key, ev.mods) {
@@ -161,6 +145,46 @@ fn webview_poll_needed(
         && crate::view::main::redraw::host_window_has_os_focus(winit_focused, webview_holds)
 }
 
+/// native WebView 가 넘긴 키를 plugin·새로고침·host 단축키로 처리해도 되는지. winit 경로가 막는
+/// 상태(modal 창, keyboard overlay, 전체화면 무대)에서는 모두 처리하지 않는다.
+fn forwarded_key_may_dispatch(modal_active: bool, overlay_open: bool, fullscreen: bool) -> bool {
+    !modal_active && !overlay_open && !fullscreen
+}
+
+/// 공통 새로고침은 모델 포커스가 아니라 키를 받은 페이지를 대상으로 한다. 정책이 이미 이 키를
+/// 페이지에서 가져왔으므로, 그 페이지를 대상으로 잡지 못하면 다른 surface 로 넘기지 않고 버린다.
+/// 새로고침 키였으면 true.
+fn dispatch_native_refresh_key(
+    main: &mut crate::view::main::MainView,
+    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
+    ev: &crate::webview::WebViewKeyEvent,
+) -> bool {
+    if !tasty_key_match::matches_any_binding(
+        &engine.runtime.settings.keybindings.refresh,
+        &ev.key,
+        ev.mods,
+    ) {
+        return false;
+    }
+    let outcome = if crate::adapters::ui::input::shortcuts::request_surface_refresh(
+        &mut main.state,
+        &engine.read(),
+        ev.surface_id,
+        crate::intent::RefreshTrigger::Shortcut,
+    ) {
+        main.after_shortcut_consumed(&engine.read());
+        "requested"
+    } else {
+        "dropped: the page cannot be targeted"
+    };
+    tracing::debug!(
+        target: "tasty::refresh",
+        "native webview refresh key for surface {}: {outcome}",
+        ev.surface_id
+    );
+    true
+}
+
 #[cfg(test)]
 mod tests {
     use super::webview_poll_needed;
@@ -184,5 +208,14 @@ mod tests {
         assert!(!webview_poll_needed(false, false, false, ask));
         assert!(!webview_poll_needed(true, true, false, ask));
         assert!(!asked.get());
+    }
+
+    /// modal 창·overlay·전체화면 무대 가운데 하나라도 열려 있으면 넘어온 키를 처리하지 않는다.
+    #[test]
+    fn forwarded_keys_wait_for_every_gate() {
+        assert!(super::forwarded_key_may_dispatch(false, false, false));
+        assert!(!super::forwarded_key_may_dispatch(true, false, false));
+        assert!(!super::forwarded_key_may_dispatch(false, true, false));
+        assert!(!super::forwarded_key_may_dispatch(false, false, true));
     }
 }
