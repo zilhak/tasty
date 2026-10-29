@@ -76,7 +76,10 @@ pub(crate) fn lock_mirror(
     crate::poison::recover_mutex(mirror.lock(), "remote HTML mirror", &MIRROR_POISONED)
 }
 pub(super) fn viewer_available() -> bool {
-    cfg!(all(feature = "gui", any(target_os = "linux", windows)))
+    cfg!(all(
+        feature = "gui",
+        any(target_os = "linux", target_os = "macos", windows)
+    ))
 }
 
 #[cfg(test)]

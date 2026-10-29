@@ -1,6 +1,6 @@
 # HTML entry 전송 계약
 
-attach 서버의 HTML 전송과 client entry viewer를 설명한다. Linux·Windows GUI client는 파일 entry 본문과 협상된 같은 root의 하위 파일을 받아 별도 native context에서 표시한다. HTTP(S) 실행은 지원하지 않으며 client 파일·네트워크로 대체하지 않는다. [HTML surface](../surfaces/html/index.md), [attach 동작](attach-behavior.md)을 함께 본다.
+attach 서버의 HTML 전송과 client entry viewer를 설명한다. Linux·Windows·macOS GUI client는 파일 entry 본문과 협상된 같은 root의 하위 파일을 받아 별도 native context에서 표시한다. HTTP(S) 실행은 지원하지 않으며 client 파일·네트워크로 대체하지 않는다. [HTML surface](../surfaces/html/index.md), [attach 동작](attach-behavior.md)을 함께 본다.
 
 ## source와 협상
 
@@ -61,7 +61,7 @@ completed body만 `Resource::body`로 제공한다. 완료 시 수신 buffer의 
 
 ## Host 연결과 원격 파일 열기
 
-`com.tasty.html`이 등록되지 않은 client에서는 deferred placeholder를 유지한다. 등록 뒤 같은 leaf를 원격 모드로 생성하며 원격 source를 client file URI로 변환하지 않는다. 현재 viewer 광고는 Linux GUI에 한정한다. macOS·Windows의 native 응답 어댑터는 구현되어 있지만 전체 host 컴파일·native 실행 증거와 구분한다. macOS 11–13의 HTTP 미지원 계약은 파일 entry mirror와 별개이며 최소 OS 버전을 올리지 않는다.
+`com.tasty.html`이 등록되지 않은 client에서는 deferred placeholder를 유지한다. 등록 뒤 같은 leaf를 원격 모드로 생성하며 원격 source를 client file URI로 변환하지 않는다. 현재 viewer는 Linux·Windows·macOS GUI가 광고한다. OS별 native 응답 어댑터와 실행 확인 범위는 [WebView 호스트 계약](../design/systems/webview.md)에 있다. macOS 11–13의 HTTP 미지원 계약은 파일 entry mirror와 별개이며 최소 OS 버전을 올리지 않는다.
 
 주소 띠는 원격 경로를 축약 없이 읽기 전용으로 보이고 Reload만 제공한다. 크기 배너, 스크립트 배너, 페이지 순서로 하나의 inset을 적용한다. 큰 entry는 수신 전에 Allow·Decline을 기다리며 Decline 뒤에는 receiving을 종료하고 skipped tag를 표시한다. 완료한 body는 disconnect 중에도 보존하고 Reload를 비활성화한다. reconnect는 새 connection epoch로 다시 받는다.
 
