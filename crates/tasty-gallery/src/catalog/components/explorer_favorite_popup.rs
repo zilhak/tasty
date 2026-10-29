@@ -32,7 +32,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("frame", "360 × ui scale · dialog-bg · 1px border-strong"),
             ("title", "heading semibold"),
             ("input", "28 · input-bg · seeded folder name"),
-            ("footer", "right — Cancel · Add (primary)"),
+            ("footer", "right — Cancel · Add (primary) · button sm"),
         ],
         &[
             TokenChip::new("dialog-bg", "frame", theme.dialog_bg().to_egui()),

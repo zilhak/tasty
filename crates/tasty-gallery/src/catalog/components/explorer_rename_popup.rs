@@ -32,14 +32,14 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("frame", "360 × ui scale · dialog-bg · 1px border-strong"),
             ("title", "heading semibold"),
             ("input", "28 · input-bg · seeded current name"),
-            ("footer", "right — Cancel · Rename (primary)"),
+            ("footer", "right — Cancel · Save (primary) · button sm"),
         ],
         &[
             TokenChip::new("dialog-bg", "frame", theme.dialog_bg().to_egui()),
             TokenChip::new("input-bg", "input", theme.input_bg().to_egui()),
             TokenChip::new(
                 "accent-primary",
-                "Rename button",
+                "Save button",
                 theme.accent_primary().to_egui(),
             ),
             TokenChip::without_color("shadow-modal", "popup lift"),
