@@ -10,6 +10,7 @@
 
 mod addr_nav;
 mod browse;
+mod mirror_events;
 mod popup;
 mod refresh;
 mod render;
@@ -729,22 +730,6 @@ impl Plugin for MarkdownPlugin {
 }
 
 impl MarkdownPlugin {
-    /// `markdown_mirror.content_result` — 대기 중인 요청의 회신이면 문서에 반영하고 다시 그린다.
-    fn on_mirror_content_result(&mut self, payload: Value) {
-        let Ok(reply) = serde_json::from_value::<MirrorContentResultWire>(payload) else {
-            tracing::warn!("markdown: malformed {MIRROR_CONTENT_RESULT_EVENT} event");
-            return;
-        };
-        let surface_id = reply.surface_id;
-        if self
-            .docs
-            .get_mut(&surface_id)
-            .is_some_and(|doc| doc.apply_remote_result(reply))
-        {
-            self.reload_webview(surface_id);
-        }
-    }
-
     /// mirror 문서 주소창의 직접 이동. 접수되면 `run.result` 를 별도 스레드에서 기다렸다가
     /// [`ADDR_RESULT_METHOD`] 자기 호출로 결과를 돌려받는다. 사용자 출처 증명을 싣지 않으므로 host 는
     /// 실패 toast 를 띄우지 않고, 실패는 주소창 오류 상태로 보인다.
@@ -784,30 +769,6 @@ impl MarkdownPlugin {
                     AddrOutcome::Failed(render::AddrFailureKind::Internal),
                     false,
                 );
-            }
-        }
-    }
-
-    /// `markdown_mirror.changed` — 원문을 보여 주는 문서는 stale 표시만 켜고, 끊김·실패를
-    /// 보여 주는 문서는 다시 요청한다([`MdDoc::on_remote_changed`]).
-    fn on_mirror_changed(&mut self, payload: &Value) {
-        let Some(surface_id) = payload
-            .get("surface_id")
-            .and_then(|v| v.as_u64())
-            .map(|v| v as u32)
-        else {
-            tracing::warn!("markdown: malformed {MIRROR_CHANGED_EVENT} event");
-            return;
-        };
-        let change = self
-            .docs
-            .get_mut(&surface_id)
-            .map_or(RemoteChange::Ignore, MdDoc::on_remote_changed);
-        match change {
-            RemoteChange::Ignore => {}
-            RemoteChange::Redraw => self.reload_webview(surface_id),
-            RemoteChange::Refetch => {
-                self.request_remote_content(surface_id, RemoteRequester::Plugin)
             }
         }
     }
@@ -940,7 +901,12 @@ impl MarkdownPlugin {
             return;
         };
         match outcome {
-            Ok(request_id) => remote.pending = Some(request_id),
+            Ok(request_id) => {
+                tracing::debug!(
+                    "markdown surface {surface_id}: remote content request {request_id} sent ({requester:?})"
+                );
+                remote.pending = Some(request_id);
+            }
             Err(e) => {
                 tracing::warn!("markdown surface {surface_id}: remote content request failed: {e}");
                 remote.pending = None;
