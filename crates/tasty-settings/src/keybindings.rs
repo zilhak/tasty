@@ -155,6 +155,9 @@ pub struct KeybindingSettings {
     pub cut: Vec<String>,
     /// Select all files (Explorer only).
     pub select_all: Vec<String>,
+    /// 포커스된 surface 에 새로고침 요청 신호를 보낸다. 갱신 여부와 의미는 그 surface 의 처리자가 정한다.
+    /// `explorer_refresh` 와 같은 조합을 써도 충돌로 보지 않는다([`KeybindingSettings::SHARED_COMBO_PAIRS`]).
+    pub refresh: Vec<String>,
     /// Reload the focused Explorer directory listing.
     pub explorer_refresh: Vec<String>,
     /// Navigate the focused Explorer to the parent directory.

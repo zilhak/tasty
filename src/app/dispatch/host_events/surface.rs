@@ -2,7 +2,7 @@
 
 use tasty_plugin_protocol::EventScope;
 use tasty_plugin_protocol::events::payloads::{
-    SurfaceCreated, SurfaceCreatedBy, SurfaceFocused, SurfaceTitleChanged,
+    SurfaceCreated, SurfaceCreatedBy, SurfaceFocused, SurfaceRefreshRequested, SurfaceTitleChanged,
 };
 
 use crate::hooks::lua::AutofireCtx;
@@ -19,6 +19,20 @@ pub(super) fn emit_focused(mgr: &mut PluginManager, surface_id: u32, prev_surfac
 pub(super) fn emit_title_changed(mgr: &mut PluginManager, surface_id: u32, title: String) {
     let payload = SurfaceTitleChanged { surface_id, title };
     mgr.emit_host_event("surface.title_changed", &payload, EventScope::Surface);
+}
+
+pub(super) fn emit_refresh_requested(
+    mgr: &mut PluginManager,
+    surface_id: u32,
+    kind: String,
+    trigger: &'static str,
+) {
+    let payload = SurfaceRefreshRequested {
+        surface_id,
+        kind,
+        trigger: trigger.to_string(),
+    };
+    mgr.emit_host_event("surface.refresh_requested", &payload, EventScope::Surface);
 }
 
 #[allow(clippy::too_many_arguments)] // reason: host event payload 전체 컨텍스트

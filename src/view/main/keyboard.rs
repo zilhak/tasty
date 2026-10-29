@@ -102,6 +102,9 @@ impl MainView {
         if !overlay_open && self.try_consume_shortcut_key(engine, event) {
             return;
         }
+        if overlay_open && self.try_consume_address_refresh_key(engine, event) {
+            return;
+        }
 
         // vi-style 키보드 복사 모드가 활성이면 키를 가로채 PTY 로 보내지 않는다.
         if self.vi_copy.is_some() && self.try_consume_vi_key(engine, event) {
@@ -250,6 +253,45 @@ impl MainView {
             return true;
         }
         false
+    }
+
+    /// html 주소 띠만 키보드 포커스를 가졌으면 공통 새로고침 키를 그 띠의 surface 로 보낸다.
+    /// 다른 입력 게이트가 열렸으면 처리하지 않는다. 띠의 입력 문자·커서·IME 는 egui 가 그대로 받는다.
+    fn try_consume_address_refresh_key(
+        &mut self,
+        engine: &EngineRead<'_>,
+        event: &winit::event::KeyEvent,
+    ) -> bool {
+        let Some(sid) = self.state.html_address.focused_surface() else {
+            return false;
+        };
+        if self.state.keyboard_overlay_open_besides_html_address()
+            || self.state.fullscreen_stage_active()
+        {
+            return false;
+        }
+        let key = self.shortcut_lookup_key(event);
+        if !tasty_key_match::matches_any_binding(
+            &engine.settings.keybindings.refresh,
+            &key,
+            self.base.state.modifiers,
+        ) {
+            return false;
+        }
+        if !crate::adapters::ui::input::shortcuts::request_surface_refresh(
+            &mut self.state,
+            engine,
+            sid,
+            crate::intent::RefreshTrigger::Shortcut,
+        ) {
+            return false;
+        }
+        tracing::debug!(
+            target: "tasty::refresh",
+            "html address band key requested a refresh of surface {sid}"
+        );
+        self.mark_dirty();
+        true
     }
 
     /// winit과 native webview가 단축키 처리 뒤 함께 사용하는 후처리.

@@ -267,6 +267,7 @@ self-loop·backoff로 건너뛸 hook은 시작하지 않고 소유자 기동 실
 ### 이벤트 구독 / 윈도우 / 확장
 
 - **event_subscribe** — `event_subscribe = ["surface.closed"]` + `on_start` 에서 `bus.subscribe(...)`. `on_event` 로 envelope 수신(`reason`: user/ipc/crash). 예: [claude](../plugins/claude/index.md)/[codex](../plugins/codex/index.md).
+  - **공통 새로고침 받기**: 사용자의 새로고침 키를 자기 surface 의 갱신에 쓰려면 `event_subscribe` 에 `surface.refresh_requested` 를 넣고 `on_start` 에서 구독한다. 신호는 구독자 모두에게 가므로 `on_event` 에서 payload 의 `surface_id` 가 자기가 연 surface 인지(필요하면 `kind` 도) 확인한 뒤에만 갱신한다. 신호는 사용자 요청이므로 사용자 출처로 처리한다. 예는 markdown plugin 의 `on_refresh_requested` 이고, 계약은 [공통 새로고침](../features/keybindings/index.md#공통-새로고침--refresh)에 있다. 단축키를 따로 `[[contributes.commands]]` 로 등록할 필요는 없다. 같은 키를 plugin 명령으로 등록하면 plugin 명령이 먼저 가져가 신호가 나지 않는다.
   - **`event.dispatch` 에 응답하라.** 호스트는 그 응답을 기다리지 않지만, 응답이 오기 전까지 그 dispatch 의 hop 을 기억해 그 사이 이 plugin 이 publish 하는 사건의 hop 하한으로 쓴다. 응답하지 않으면 그 기억이 재시작 전까지 남아, hop 이 높은 사건을 한 번 받은 뒤의 publish 가 무엇이든 `MAX_HOP` 으로 거절될 수 있다. SDK 는 `on_event` 를 마친 뒤 자동으로 응답한다 — SDK 없이 프로토콜을 직접 구현할 때의 계약이다. 근거는 [Event Bus 1.0 카탈로그](../reference/event-catalog.md).
 - **window** — `[[contributes.window]]`(`window.spawn`). 현재는 schema + 등록 stub 까지(실 spawn 은 별도 영역).
 - **extension** — 다른 플러그인의 IPC/event 흐름을 가로채기. `[extends]` + `ext:<target>` 권한 + `handle_extension_hook`. mode: `transform`/`filter`/`observe`. target 당 활성 1개(나머지 `Conflict`). fail-open(timeout/에러 시 원래 값 사용).

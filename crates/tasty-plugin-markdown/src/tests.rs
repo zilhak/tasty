@@ -1448,3 +1448,81 @@ fn waiting_for_a_remote_navigate_stays_under_the_slow_loop_warning() {
         at.last()
     );
 }
+
+/// 공통 새로고침 신호는 대상 문서 하나만 다시 읽는다. 다른 문서·다른 kind·모르는 surface 는 그대로다.
+#[test]
+fn a_refresh_signal_rereads_only_its_own_local_document() {
+    let dir = tempfile::tempdir().unwrap();
+    let a = dir.path().join("a.md");
+    let b = dir.path().join("b.md");
+    std::fs::write(&a, "before-a").unwrap();
+    std::fs::write(&b, "before-b").unwrap();
+    let mut p = MarkdownPlugin::new(Translator::default());
+    p.docs
+        .insert(1, MdDoc::new(Some(a.to_string_lossy().into_owned())));
+    p.docs
+        .insert(2, MdDoc::new(Some(b.to_string_lossy().into_owned())));
+    std::fs::write(&a, "after-a").unwrap();
+    std::fs::write(&b, "after-b").unwrap();
+
+    // kind 가 다르거나 이 plugin 이 모르는 surface 면 아무것도 읽지 않는다.
+    p.on_refresh_requested(&json!({ "surface_id": 1, "kind": "html", "trigger": "shortcut" }));
+    p.on_refresh_requested(&json!({ "surface_id": 9, "kind": "markdown", "trigger": "shortcut" }));
+    p.on_refresh_requested(&json!({ "kind": "markdown" }));
+    assert_eq!(p.docs[&1].content, "before-a");
+
+    p.on_refresh_requested(&json!({ "surface_id": 1, "kind": "markdown", "trigger": "shortcut" }));
+    assert_eq!(p.docs[&1].content, "after-a");
+    assert_eq!(
+        p.docs[&2].content, "before-b",
+        "다른 문서는 갱신하지 않는다"
+    );
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// 원격 문서는 서버 원문을 사용자 출처로 다시 요청하고, 로컬 파일을 읽지 않는다.
+#[test]
+fn a_refresh_signal_on_a_mirror_document_asks_the_server_as_the_user() {
+    let remote = MdDoc::new_remote("/r/notes.md".into());
+    let target = RefreshTarget {
+        surface_id: 3,
+        kind: "markdown",
+    };
+    assert_eq!(refresh_action(target, Some(&remote)), RefreshAction::Remote);
+    assert_eq!(
+        refresh_action(target, Some(&MdDoc::new(None))),
+        RefreshAction::Local
+    );
+    assert_eq!(refresh_action(target, None), RefreshAction::Ignore);
+    assert_eq!(
+        mirror_content_request_params(3, RemoteRequester::User),
+        json!({ "surface_id": 3, "user_initiated": true })
+    );
+}
+
+/// 대용량 파일은 공통 새로고침에서도 문서 안 새로고침과 같은 확인을 거치며 확인 대기 중에는 겹쳐 묻지 않는다.
+#[test]
+fn a_refresh_signal_on_a_large_local_file_waits_for_the_same_confirm() {
+    let doc = MdDoc::new(None);
+    assert_eq!(
+        reload_step(
+            &doc,
+            ReloadOrigin::Explicit,
+            Some(LARGE_FILE_LIMIT_BYTES + 1),
+            true
+        ),
+        ReloadStep::Ask(LARGE_FILE_LIMIT_BYTES + 1)
+    );
+    let mut waiting = MdDoc::new(None);
+    waiting.pending_large = true;
+    waiting.confirm_requested = true;
+    assert_eq!(
+        reload_step(
+            &waiting,
+            ReloadOrigin::Explicit,
+            Some(LARGE_FILE_LIMIT_BYTES + 1),
+            true
+        ),
+        ReloadStep::Skip
+    );
+}

@@ -64,6 +64,18 @@ pub struct SurfaceTitleChanged {
     pub title: String,
 }
 
+/// `surface.refresh_requested` 페이로드. scope=Surface.
+/// 사용자가 이 surface 를 대상으로 공통 새로고침을 실행했다. 발행은 요청 접수일 뿐 갱신 성공이 아니며,
+/// 구독한 plugin 모두에게 가므로 수신자는 `surface_id` 가 자기 문서인지 확인한다.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct SurfaceRefreshRequested {
+    pub surface_id: u32,
+    /// 키를 누른 시점의 surface kind. 전달 직전에도 같은 kind 임을 host 가 확인했다.
+    pub kind: String,
+    /// 사용자 입력 경로. `shortcut` 또는 `palette`. 에이전트·IPC 는 이 이벤트를 만들지 않는다.
+    pub trigger: String,
+}
+
 // ── Tab ──────────────────────────────────────────────────────────────────────
 
 /// `tab.created` 페이로드. scope=System.

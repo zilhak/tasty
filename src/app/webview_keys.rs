@@ -101,6 +101,34 @@ impl App {
         if main.state.keyboard_overlay_open() || main.state.fullscreen_stage_active() {
             return;
         }
+        // 공통 새로고침은 모델 포커스가 아니라 키를 받은 페이지를 대상으로 한다. 정책이 이미 이 키를
+        // 페이지에서 가져왔으므로, 그 페이지를 대상으로 잡지 못해도 다른 surface 로 넘기지 않고 버린다.
+        if tasty_key_match::matches_any_binding(
+            &engine.runtime.settings.keybindings.refresh,
+            &ev.key,
+            ev.mods,
+        ) {
+            if crate::adapters::ui::input::shortcuts::request_surface_refresh(
+                &mut main.state,
+                &engine.read(),
+                ev.surface_id,
+                crate::intent::RefreshTrigger::Shortcut,
+            ) {
+                tracing::debug!(
+                    target: "tasty::refresh",
+                    "native webview key requested a refresh of surface {}",
+                    ev.surface_id
+                );
+                main.after_shortcut_consumed(&engine.read());
+            } else {
+                tracing::debug!(
+                    target: "tasty::refresh",
+                    "native webview refresh key dropped: surface {} cannot be targeted",
+                    ev.surface_id
+                );
+            }
+            return;
+        }
         if main.handle_shortcut(&engine.read(), &ev.key, ev.mods) {
             main.after_shortcut_consumed(&engine.read());
         }

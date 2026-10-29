@@ -11,6 +11,7 @@
 mod addr_nav;
 mod browse;
 mod popup;
+mod refresh;
 mod render;
 
 /// 팝업 아이콘의 빌드 시점 SVG 변환 결과. 0..24 좌표의 경로를
@@ -40,6 +41,8 @@ use popup::{
     FILE_PICKER_RESULT_EVENT, FileOpenState, FilePickerResultWire, LargeFileConfirm, PickerStart,
     basename, format_size,
 };
+#[cfg(test)]
+use refresh::{RefreshAction, RefreshTarget, refresh_action};
 #[cfg(any(unix, windows))]
 use tasty_plugin_sdk::EguiMeshPopup;
 
@@ -60,6 +63,10 @@ const LARGE_FILE_EVENT_KEY: &str = "com.tasty.markdown.large_file_confirm";
 const THEME_CHANGED_EVENT: &str = "theme.changed";
 /// host 동작의 단축키가 바뀌면 발행된다. 문서에 넣은 검색 조합을 다시 만든다.
 const HOST_SHORTCUT_CHANGED_EVENT: &str = "command.host_shortcut_changed";
+/// 사용자가 공통 새로고침을 실행했다. 모든 구독자에게 가므로 자기 문서인 surface 만 처리한다.
+const REFRESH_REQUESTED_EVENT: &str = "surface.refresh_requested";
+/// debug 빌드에서 값이 있으면 파일 감시 워커를 띄우지 않는다. 검증 전용이며 release 는 이 값을 읽지 않는다.
+const DEBUG_NO_WATCH_ENV: &str = "TASTY_DEBUG_MARKDOWN_NO_WATCH";
 /// 문서 내 검색 바를 여는 host 단축키 동작.
 const FIND_ACTION: &str = "find";
 
@@ -103,7 +110,7 @@ const MIRROR_ABANDON_REQUEST_ID: u64 = 0;
 /// 로컬 문서를 다시 읽으라는 요청의 출처.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ReloadOrigin {
-    /// 에이전트·CLI의 `markdown.reload`.
+    /// 에이전트·CLI의 `markdown.reload`, 사용자의 공통 새로고침, 대용량 대기 문서의 열기 버튼.
     Explicit,
     /// SDK 파일 감시의 자기 호출.
     Watch,
@@ -467,6 +474,23 @@ impl MarkdownPlugin {
     }
 }
 
+fn subscribe_events(bus: &BusHandle) {
+    for key in [
+        THEME_CHANGED_EVENT,
+        HOST_SHORTCUT_CHANGED_EVENT,
+        REFRESH_REQUESTED_EVENT,
+    ] {
+        if let Err(e) = bus.subscribe(key) {
+            tracing::warn!("markdown: {key} subscribe failed: {e}");
+        }
+    }
+}
+
+/// debug 빌드 검증에서 감시의 자동 갱신과 명시적 갱신을 구별하려고 감시를 끌 수 있다. release 는 항상 false.
+fn debug_watch_disabled() -> bool {
+    cfg!(debug_assertions) && std::env::var_os(DEBUG_NO_WATCH_ENV).is_some_and(|v| !v.is_empty())
+}
+
 impl Plugin for MarkdownPlugin {
     fn id(&self) -> &str {
         PLUGIN_ID
@@ -478,15 +502,15 @@ impl Plugin for MarkdownPlugin {
 
     fn on_start(&mut self, host: HostHandle, bus: BusHandle) {
         // large-file 확인 이벤트 발행 + `theme.changed` 구독에 Event Bus 핸들이 필요하다.
-        for key in [THEME_CHANGED_EVENT, HOST_SHORTCUT_CHANGED_EVENT] {
-            if let Err(e) = bus.subscribe(key) {
-                tracing::warn!("markdown: {key} subscribe failed: {e}");
-            }
-        }
+        subscribe_events(&bus);
         self.bus = Some(bus);
         // HostHandle이 없는 콜백에서도 사용할 수 있도록 보관한다.
         self.host = Some(host.clone());
 
+        if debug_watch_disabled() {
+            tracing::warn!("markdown: {DEBUG_NO_WATCH_ENV} is set — idle auto-reload disabled");
+            return;
+        }
         // 파일 감시 워커는 ContentDigest로 파일을 읽어 변경 여부를 확인한다.
         // 변경되면 markdown.reload를 호출해 문서를 다시 읽고 렌더한다.
         // WebView는 paint 콜백을 받지 않으므로 별도 워커에서 감시한다.
@@ -652,6 +676,7 @@ impl Plugin for MarkdownPlugin {
             HOST_SHORTCUT_CHANGED_EVENT if shortcut_change_touches_find(&ctx.envelope.payload) => {
                 self.reload_all_webviews()
             }
+            REFRESH_REQUESTED_EVENT => self.on_refresh_requested(&ctx.envelope.payload),
             MIRROR_CONTENT_RESULT_EVENT => self.on_mirror_content_result(ctx.envelope.payload),
             MIRROR_CHANGED_EVENT => self.on_mirror_changed(&ctx.envelope.payload),
             _ => {}

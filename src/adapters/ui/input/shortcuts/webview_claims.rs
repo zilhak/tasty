@@ -36,6 +36,7 @@ pub(crate) fn webview_shortcut_policy(
             .get_bindings("explorer_focus_address")
             .unwrap_or(&[])
             .to_vec(),
+        refresh: kb.refresh.clone(),
     })
 }
 
@@ -268,5 +269,47 @@ mod tests {
             "expected {expected} in policy: {:?}",
             policy.combos()
         );
+    }
+
+    /// 공통 새로고침의 F5 는 보조키가 없어도 webview 위에서 host 가 가져간다. 키를 바꾸면 새 키만,
+    /// 해제하면 아무것도 가져가지 않는다. 보조키 없는 문자 키로 바꾸면 페이지에 남긴다.
+    #[test]
+    fn the_refresh_function_key_is_claimed_and_follows_a_rebind() {
+        use winit::keyboard::NamedKey;
+        let f5 = Key::Named(NamedKey::F5);
+        let none = ModifiersState::empty();
+        let mut kb = kb();
+        // 탐색기 F5 는 webview 위에서 동작하지 않으므로 공통 키만 남겨 둔다.
+        kb.explorer_refresh.clear();
+        assert!(webview_shortcut_policy(&kb, Vec::new()).claims(&f5, none));
+
+        assert!(kb.set_field("refresh", "ctrl+alt+r"));
+        let policy = webview_shortcut_policy(&kb, Vec::new());
+        assert!(!policy.claims(&f5, none), "{:?}", policy.combos());
+        assert!(policy.claims(
+            &Key::Character("r".into()),
+            ModifiersState::CONTROL | alt_mod()
+        ));
+
+        assert!(kb.set_field("refresh", "r"));
+        let policy = webview_shortcut_policy(&kb, Vec::new());
+        assert!(!policy.claims(&Key::Character("r".into()), none));
+
+        assert!(kb.clear_field("refresh"));
+        let policy = webview_shortcut_policy(&kb, Vec::new());
+        assert!(!policy.claims(&f5, none));
+    }
+
+    /// 기능키 예외는 공통 새로고침에만 있다. 다른 host 동작의 보조키 없는 F 키는 페이지에 남긴다.
+    #[test]
+    fn other_modifierless_function_keys_stay_with_the_page() {
+        let mut kb = kb();
+        kb.refresh.clear();
+        assert!(kb.set_field("toggle_settings", "f9"));
+        let policy = webview_shortcut_policy(&kb, Vec::new());
+        assert!(!policy.claims(
+            &Key::Named(winit::keyboard::NamedKey::F9),
+            ModifiersState::empty()
+        ));
     }
 }

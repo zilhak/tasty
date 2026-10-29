@@ -92,6 +92,15 @@ impl MainView {
         if Self::match_rename_bindings(state, engine, kb, key, mods) {
             return true;
         }
+        if matches_any_binding(&kb.refresh, key, mods)
+            && super::request_focused_surface_refresh(
+                state,
+                engine,
+                crate::intent::RefreshTrigger::Shortcut,
+            )
+        {
+            return true;
+        }
         if Self::match_explorer_bindings(state, engine, kb, key, mods) {
             return true;
         }

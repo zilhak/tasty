@@ -14,7 +14,7 @@ use crate::app::window_access::engines_mut;
 use crate::runtime::engine_access::{EngineMut, EngineRef};
 use crate::state::PendingHostEvent;
 
-fn take_current_host_events(engine: &mut EngineMut<'_>) -> Vec<PendingHostEvent> {
+pub(crate) fn take_current_host_events(engine: &mut EngineMut<'_>) -> Vec<PendingHostEvent> {
     let mut events = engine.take_pending_host_events();
     events.retain(|event| match event {
         PendingHostEvent::SurfaceTitleChanged {
@@ -25,6 +25,9 @@ fn take_current_host_events(engine: &mut EngineMut<'_>) -> Vec<PendingHostEvent>
             .runtime
             .terminals
             .matches_generation(*surface_id, *generation),
+        PendingHostEvent::SurfaceRefreshRequested { target, kind, .. } => {
+            crate::core::host_event::refresh_target_current(&engine.as_ref(), target, kind)
+        }
         _ => true,
     });
     events
@@ -205,6 +208,11 @@ impl App {
                     plugin_id,
                     window_id,
                 } => misc::emit_plugin_window_declared(mgr, plugin_id, window_id),
+                PendingHostEvent::SurfaceRefreshRequested {
+                    target,
+                    kind,
+                    trigger,
+                } => surface::emit_refresh_requested(mgr, target.surface_id(), kind, trigger),
             }
         }
     }

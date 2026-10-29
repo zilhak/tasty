@@ -340,6 +340,13 @@ impl MainView {
                     }
                 }
             }
+            "refresh" => {
+                super::request_focused_surface_refresh(
+                    state,
+                    engine,
+                    crate::intent::RefreshTrigger::Palette,
+                );
+            }
             "explorer_refresh" => {
                 if state.focused_surface_type(engine).is_kind("explorer")
                     && let Some(sid) = focused_explorer_surface_id(state, engine)

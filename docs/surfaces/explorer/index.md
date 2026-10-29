@@ -375,6 +375,8 @@ Grid 셀은 모두 `explorer_grid_thumb_size`(40) 슬롯을 잡아 썸네일 유
 | 찾기 | `find` | `Ctrl+F` / `Alt+F` |
 | explorer 로 변환 | `convert_to_explorer` | (기본 미할당) |
 
+공통 새로고침(`refresh`, 기본 `F5`)도 탐색기에 포커스가 있으면 목록을 다시 읽는다. 공통 키를 먼저 검사하므로 두 필드가 같은 키여도 한 번만 다시 읽는다([공통 새로고침](../../features/keybindings/index.md#공통-새로고침--refresh)).
+
 뒤로·앞으로·주소창으로 이동·새 폴더·새 파일은 네 프리셋이 같은 `alt+left`·`alt+right`·`alt+l`·`f7`·`shift+f4` 다. 탐색기 키는 전역 단축키와 quick-switch 보다 먼저 키를 보므로, 기본값은 어느 프리셋에서도 다른 바인딩이나 quick-switch 조합과 겹치지 않는 것으로 골랐다(`Cmd+[`·`Cmd+]` 는 `focus_surface_prev`·`focus_surface_next`, `Ctrl+L` 은 탭 quick-switch 의 다음 탭, `Ctrl+Shift+N`·`Cmd+Shift+N` 은 `new_window` 다). `F7`·`Shift+F4` 는 파일 관리자(Total Commander·Far Manager)의 새 폴더·새 파일 키다. macOS 의 기본 설정에서는 F 키가 미디어 키라 `Fn` 을 함께 눌러야 한다. 주소창으로 이동은 다음에 주소창을 그릴 때 입력칸에 포커스를 주고 경로 전체를 고른다(`PathField::focus`). 그다음은 주소창을 눌렀을 때와 같다. 뒤로·앞으로는 툴바의 뒤로·앞으로 버튼과 같은 `GoBack`·`GoForward` 다.
 
 실행 취소·다시 실행의 다른 프리셋 기본은 Mac `Alt+Z`(⌘Z)·`Alt+Shift+Z`(⌘⇧Z), Windows·Linux `Ctrl+Z`·`Ctrl+Shift+Z`/`Ctrl+Y` 다. 이 둘은 explorer 에 포커스가 있을 때만 키를 받으므로 터미널의 `Ctrl+Z`·`Ctrl+Y` 와 부딪치지 않는다.

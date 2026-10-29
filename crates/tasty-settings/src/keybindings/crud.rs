@@ -136,6 +136,7 @@ impl KeybindingSettings {
             "enter_copy_mode",
             "settings.keybindings.enter_copy_mode_label",
         ),
+        ("refresh", "settings.keybindings.refresh_label"),
         (
             "explorer_refresh",
             "settings.keybindings.explorer_refresh_label",
@@ -321,6 +322,18 @@ impl KeybindingSettings {
             .chain(Self::EXPLORER_LIST_BINDING_FIELDS)
     }
 
+    /// 같은 조합을 써도 충돌로 보지 않는 필드 쌍. 공통 `refresh` 는 탐색기 포커스에서 먼저 검사돼
+    /// 탐색기를 한 번만 새로고침하므로 `explorer_refresh` 와 F5 를 함께 써도 한 번의 동작이 된다.
+    pub const SHARED_COMBO_PAIRS: &'static [(&'static str, &'static str)] =
+        &[("refresh", "explorer_refresh")];
+
+    /// 두 필드가 같은 조합을 공유해도 되는가. 순서는 무관하다.
+    pub fn may_share_combo(a: &str, b: &str) -> bool {
+        Self::SHARED_COMBO_PAIRS
+            .iter()
+            .any(|(x, y)| (*x == a && *y == b) || (*x == b && *y == a))
+    }
+
     /// 필드가 속한 충돌 검사 범위. 알 수 없는 id 는 전역으로 본다.
     fn conflict_scope(field_id: &str) -> &'static [(&'static str, &'static str)] {
         [
@@ -381,6 +394,7 @@ impl KeybindingSettings {
             "cut" => self.cut.as_slice(),
             "select_all" => self.select_all.as_slice(),
             "enter_copy_mode" => self.enter_copy_mode.as_slice(),
+            "refresh" => self.refresh.as_slice(),
             "explorer_refresh" => self.explorer_refresh.as_slice(),
             "explorer_go_up" => self.explorer_go_up.as_slice(),
             "explorer_back" => self.explorer_back.as_slice(),
@@ -481,6 +495,7 @@ impl KeybindingSettings {
             "cut" => &mut self.cut,
             "select_all" => &mut self.select_all,
             "enter_copy_mode" => &mut self.enter_copy_mode,
+            "refresh" => &mut self.refresh,
             "explorer_refresh" => &mut self.explorer_refresh,
             "explorer_go_up" => &mut self.explorer_go_up,
             "explorer_back" => &mut self.explorer_back,
@@ -617,7 +632,7 @@ impl KeybindingSettings {
             return None;
         }
         for (id, _label) in Self::conflict_scope(field_id) {
-            if *id == field_id {
+            if *id == field_id || Self::may_share_combo(id, field_id) {
                 continue;
             }
             if let Some(bindings) = self.get_bindings(id)
@@ -649,14 +664,15 @@ impl KeybindingSettings {
         scope: &[(&'static str, &'static str)],
         existing_keys: &HashSet<String>,
     ) {
-        let mut user_combos: HashSet<String> = HashSet::new();
+        // 조합마다 그것을 쓰는 사용자 필드를 기억해 공유 허용 쌍이면 기본값을 지우지 않는다.
+        let mut user_combos: Vec<(&'static str, String)> = Vec::new();
         for (field_id, _) in scope {
             if existing_keys.contains(*field_id)
                 && let Some(bindings) = self.get_bindings(field_id)
             {
                 for combo in bindings {
                     if !combo.is_empty() {
-                        user_combos.insert(combo.clone());
+                        user_combos.push((field_id, combo.clone()));
                     }
                 }
             }
@@ -666,9 +682,15 @@ impl KeybindingSettings {
             if existing_keys.contains(*field_id) {
                 continue;
             }
+            let field_id: &'static str = field_id;
+            let taken: HashSet<String> = user_combos
+                .iter()
+                .filter(|(owner, _)| !Self::may_share_combo(owner, field_id))
+                .map(|(_, combo)| combo.clone())
+                .collect();
             if let Some(vec) = self.get_bindings_mut(field_id) {
                 let before = vec.len();
-                vec.retain(|combo| !user_combos.contains(combo));
+                vec.retain(|combo| !taken.contains(combo));
                 let removed = before - vec.len();
                 if removed > 0 {
                     tracing::info!(

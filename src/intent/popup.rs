@@ -66,12 +66,51 @@ pub fn handle(
                     open(state, id, mode, intent.origin.is_user());
                 }
             }
+            UiIntent::RequestSurfaceRefresh {
+                target,
+                kind,
+                trigger,
+            } => {
+                if intent.origin.is_user() {
+                    enqueue_refresh(engine, target, kind, *trigger);
+                }
+            }
         }
     }
     #[cfg(not(feature = "gui"))]
     {
         let _ = (state, engine, intent); // reason: 헤드리스에서는 팝업 요청을 처리하지 않는다.
     }
+}
+
+/// 키를 누른 뒤 대상이 닫혔거나 다른 kind 로 바뀌었거나 다시 만들어졌으면 신호를 내지 않는다.
+#[cfg(feature = "gui")]
+fn enqueue_refresh(
+    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
+    target: &crate::runtime::surface_binding::SurfaceBinding,
+    kind: &str,
+    trigger: super::RefreshTrigger,
+) {
+    if !crate::core::host_event::refresh_target_current(&engine.as_ref(), target, kind) {
+        tracing::debug!(
+            "refresh request for surface {} dropped: the target changed",
+            target.surface_id()
+        );
+        return;
+    }
+    tracing::debug!(
+        target: "tasty::refresh",
+        "refresh request for surface {} ({kind}) accepted",
+        target.surface_id()
+    );
+    engine.enqueue_host_event(crate::state::PendingHostEvent::SurfaceRefreshRequested {
+        target: target.clone(),
+        kind: kind.to_string(),
+        trigger: match trigger {
+            super::RefreshTrigger::Shortcut => "shortcut",
+            super::RefreshTrigger::Palette => "palette",
+        },
+    });
 }
 
 #[cfg(feature = "gui")]

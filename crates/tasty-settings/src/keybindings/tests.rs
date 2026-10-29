@@ -152,7 +152,7 @@ fn set_field_unknown_returns_false() {
 
 #[test]
 fn general_binding_fields_count() {
-    assert_eq!(KeybindingSettings::GENERAL_BINDING_FIELDS.len(), 72);
+    assert_eq!(KeybindingSettings::GENERAL_BINDING_FIELDS.len(), 73);
 }
 
 #[test]
@@ -651,7 +651,7 @@ fn quick_switch_fields_not_in_general_bindings() {
         );
     }
     // count 는 여전히 전체 개수와 같다.
-    assert_eq!(KeybindingSettings::GENERAL_BINDING_FIELDS.len(), 72);
+    assert_eq!(KeybindingSettings::GENERAL_BINDING_FIELDS.len(), 73);
 }
 
 /// 네 프리셋의 카테고리 다음·이전 기본값을 확인한다.
@@ -1133,4 +1133,53 @@ fn quick_switch_options_keep_a_value_from_the_config_file_before_individual() {
         KeybindingSettings::INDIVIDUAL_SWITCH_MODIFIER
     );
     assert_eq!(n, quick_switch_modifier_options("ctrl").len() + 1);
+}
+
+/// 공통 새로고침은 네 프리셋 모두 F5 이며 탐색기 새로고침과 같은 키를 충돌 없이 공유한다.
+#[test]
+fn common_refresh_defaults_to_f5_and_shares_it_with_explorer_refresh() {
+    for name in KeybindingSettings::preset_names() {
+        let kb = KeybindingSettings::preset_by_name(name).unwrap();
+        assert_eq!(kb.refresh, vec!["f5".to_string()], "{name}");
+        assert_eq!(kb.find_conflict("refresh", "f5"), None, "{name}");
+        assert_eq!(kb.find_conflict("explorer_refresh", "f5"), None, "{name}");
+    }
+    // 공유 허용은 그 쌍에만 적용된다. 다른 동작과 겹치면 여전히 충돌이다.
+    let kb = KeybindingSettings::preset_tasty();
+    let close = kb.close_pane[0].clone();
+    assert_eq!(kb.find_conflict("refresh", &close), Some(("close_pane", 0)));
+}
+
+/// 저장된 설정에 `refresh` 가 없고 `explorer_refresh = ["f5"]` 만 있어도 기본 F5 를 지우지 않는다.
+/// 다른 동작에 사용자가 F5 를 줬다면 기본 F5 를 걷어 낸다.
+#[test]
+fn a_stored_explorer_refresh_keeps_the_default_common_refresh() {
+    let kb: KeybindingSettings = toml::from_str("explorer_refresh = [\"f5\"]").unwrap();
+    let mut kb = kb;
+    let existing = std::collections::HashSet::from(["explorer_refresh".to_string()]);
+    kb.remove_conflicts_from_defaults(&existing);
+    assert_eq!(kb.refresh, vec!["f5".to_string()]);
+    assert_eq!(kb.explorer_refresh, vec!["f5".to_string()]);
+
+    let mut kb: KeybindingSettings = toml::from_str("close_pane = [\"f5\"]").unwrap();
+    let existing = std::collections::HashSet::from(["close_pane".to_string()]);
+    kb.remove_conflicts_from_defaults(&existing);
+    assert!(kb.refresh.is_empty(), "{:?}", kb.refresh);
+}
+
+/// 키 변경·해제가 저장 형식으로 그대로 오간다.
+#[test]
+fn common_refresh_rebind_and_unbind_round_trip() {
+    let mut kb = KeybindingSettings::preset_tasty();
+    assert!(kb.set_field("refresh", "ctrl+alt+r"));
+    let text = toml::to_string(&kb).unwrap();
+    let back: KeybindingSettings = toml::from_str(&text).unwrap();
+    assert_eq!(back.refresh, vec!["ctrl+alt+r".to_string()]);
+    assert!(kb.clear_field("refresh"));
+    let back: KeybindingSettings = toml::from_str(&toml::to_string(&kb).unwrap()).unwrap();
+    assert!(back.refresh.is_empty());
+    assert_eq!(
+        KeybindingSettings::label_key_for("refresh"),
+        Some("settings.keybindings.refresh_label")
+    );
 }

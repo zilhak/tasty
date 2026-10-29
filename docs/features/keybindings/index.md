@@ -50,6 +50,19 @@ plugin 도구의 단축키는 `[[contributes.commands]]`로 선언하고 Plugins
 
 `open_preset_window`(도구 메뉴의 **프리셋** 윈도우 열기)와 `apply_workspace_preset`/`apply_tab_preset`/`apply_pane_preset`(레이아웃 프리셋 **적용** picker)은 다른 것이다. 이름이 비슷해 섞기 쉬우므로 설정 화면에서도 서브탭이 갈린다 — 앞은 General, 뒤 셋은 대상 스코프를 따라 Workspace/Tab/Pane 이다.
 
+### 공통 새로고침 — `refresh`
+
+`refresh` 는 특정 surface 구현에 묶이지 않은 전역 동작이다. 네 프리셋 모두 기본값은 `f5` 이며 설정의 **Surface** 서브탭에 있다. 키를 누르면 host 가 그 시점의 대상 surface 로 [`surface.refresh_requested`](../../reference/event-catalog.md#surface-scopesurface) 신호를 한 번 발행한다. 신호 발행은 요청 접수이고, 갱신할지와 무엇을 갱신할지는 그 surface 의 처리자가 정한다.
+
+- **대상**: winit 경로는 모델 포커스 surface, native WebView 경로는 키를 받은 WebView 의 surface 다. 대상은 키를 누른 시점의 surface ID·kind·세대(`SurfaceBinding` — activation·PTY 자원·mirror projection 세대)로 고정해 `UiIntent::RequestSurfaceRefresh` 로 넘긴다. Intent 처리와 plugin 전달 직전에 같은 세대·kind 인지 다시 확인하고, 그 사이 닫혔거나 다른 kind 로 변환됐거나 다시 만들어졌으면 버린다. 나중에 포커스가 옮겨도 새 포커스 surface 로 보내지 않는다.
+- **처리자**: Markdown 이 첫 소비자다([Markdown 새로고침](../../surfaces/markdown/index.md)). 탐색기는 host 가 처리자라 같은 키 처리 안에서 목록을 한 번 다시 읽고 신호도 낸다. 터미널은 아무것도 하지 않는다 — 키는 공통 동작으로 소비되므로 PTY 로 F5 제어 시퀀스가 가지 않고 화면·PTY·셸에 변화가 없다. 따라서 기본값 `f5` 가 있는 동안 터미널 안 프로그램(mc·htop·vim 매핑 등)은 F5 를 받지 못한다. 이 프로그램에 F5 를 쓰려면 `refresh` 를 해제하거나 다른 키로 바꾼다. 해제하면 F5 는 다시 PTY 로 간다. 다른 kind(html 등)는 신호만 발행되고 처리자가 없으면 아무 일도 없다. host 는 "갱신 성공" 을 표시하지 않는다.
+- **탐색기 전용 키와의 공존**: `explorer_refresh` 는 그대로 남는다. 공통 키 검사가 탐색기 전용 키보다 먼저라, 두 필드가 같은 조합(기본 `f5`)이어도 탐색기에서는 한 번만 새로고침한다. 두 필드는 `SHARED_COMBO_PAIRS` 로 같은 조합을 충돌 없이 공유한다. 기존 설정 파일에 `refresh` 가 없고 `explorer_refresh = ["f5"]` 가 있어도 기본 `f5` 는 지워지지 않는다. 다른 동작에 사용자가 `f5` 를 줬다면 기존 규칙대로 기본값에서 걷어 낸다. 탐색기 이름 변경·주소 입력 중에는 입력이 우선이라 두 키 모두 처리하지 않는다.
+- **바인딩 변경·해제**: 키를 바꾸면 새 키만 신호를 내고 이전 키는 원래 경로(터미널이면 PTY 입력)로 돌아간다. 빈 목록이면 신호를 내지 않는다.
+- **중복 방지와 우선순위**: 한 번의 press 는 한 경로에서만 처리된다. 순서는 페이지 예약 편집 동작(`find`·`copy`·`cut`·`paste`·`select_all`) > plugin 명령 > 공통 새로고침·다른 host 동작이다. 설정의 충돌 검사가 예약 동작과 같은 조합을 막고, WebView 정책도 예약 조합과 같은 새로고침 조합은 가져가지 않는다. plugin 명령이 같은 키를 쓰면 plugin 명령이 먼저 가져가고 공통 신호는 내지 않는다. native WebView 가 가져간 새로고침 키의 대상 페이지를 잡지 못하면(그 사이 surface 가 사라진 경우) 모델 포커스 surface 로 넘기지 않고 버린다. WebView 에서 host 가 가져간 키는 페이지에 전달되지 않으므로 엔진 기본 reload 와 겹치지 않는다. 명령 팔레트의 **refresh** 는 같은 함수를 호출하며 payload 의 `trigger` 만 `palette` 다. OS 메뉴에는 이 항목이 없다. 키를 누르고 있을 때의 반복(auto-repeat)은 경로마다 다르다. host 키 입력(winit — 터미널·탐색기·html 주소 띠)과 Linux native WebView(WebKitGTK)는 반복 이벤트도 각각 하나의 press 로 처리해 반복 수만큼 신호가 난다. Windows(`WasKeyDown`)·macOS(`isARepeat`) native WebView 는 반복을 bridge 에서 걸러 첫 press 만 신호가 되고, 반복분은 페이지로 간다(아래 auto-repeat 필터 항목). 처리 중 재요청은 처리자가 정리한다(Markdown mirror 는 새 요청이 이전 요청의 회신을 대신한다).
+- **입력 게이트**: 설정·입력 대화상자·포커스된 popup·plugin popup·전체화면 무대가 열려 있으면 다른 단축키와 같이 처리하지 않는다. Markdown 의 주소칸·검색칸은 WebView 안의 DOM 입력이라 native 키 계층이 먼저 가져가므로 그 Surface 로 전달된다. 단 Markdown 의 갱신은 문서 HTML 을 통째로 다시 싣는다(`load_html`). 그래서 주소칸에 입력하던 draft, 열린 검색 바와 검색어, 선택, 진행 중이던 IME 조합은 초기화되고 스크롤 위치만 best-effort 로 복원된다. 문서 안 Reload 버튼·파일 감시 갱신·`markdown.reload` 와 같은 결과다. html 의 host 주소 띠(egui)는 포커스를 가진 동안 다른 단축키를 막지만, 다른 게이트가 열려 있지 않으면 공통 새로고침 키만 그 띠의 surface 로 보낸다(`try_consume_address_refresh_key`). 띠의 입력 draft·커서·선택은 바꾸지 않는다. 탐색기의 이름 변경·주소 입력 중에는 기존 탐색기 새로고침과 같이 입력이 우선이라 처리하지 않는다. 키 자체는 문자를 만들지 않는다(WebView 에서는 기능키만 가져간다). 입력이 초기화되는지는 처리자의 갱신 방식이 정한다.
+- **WebView 위의 보조키 없는 키**: 다른 host 동작과 달리 `refresh` 의 조합이 `f1`~`f24` 기능키면 보조키가 없어도 host 가 가져간다. 보조키 없는 문자 키(`r` 등)로 바꾸면 WebView 위에서는 페이지에 남는다.
+- **외부 자동화**: 이 신호는 사용자 입력에서만 만든다. 에이전트용 IPC·CLI 는 없다(Markdown 은 기존 `markdown.reload` 가 있다).
+
 ### 탭/워크스페이스/카테고리 quick-switch (raw 키 + 축별 modifier 조합)
 
 번호 전환·다음/이전 이동은 **콤보가 아니라 raw 키 하나**만 저장하는 별도 필드로 다룬다(단, "개별 지정" 모드 예외 — 아래 참조).
@@ -205,7 +218,8 @@ Option 시퀀스·튜플 원소와 중첩 Option의 Some(None)은 표현을 다�
   (`shortcuts::physical_key_to_logical`)로 치환한다. 치환은 `ctrl`/`super`/`alt` 중 하나
   이상이 눌린 경우에만 — 수식 없는 키는 페이지 타이핑·IME 조합 그대로다.
 - **페이지에 남기는 것** 세 가지: ① `ctrl`/`alt`/`option` 중 하나도 없는 콤보(무수식·shift
-  전용) — 문서 안 타이핑·IME 조합·폼 내비게이션·페이지의 Esc 를 건드리지 않기 위함.
+  전용) — 문서 안 타이핑·IME 조합·폼 내비게이션·페이지의 Esc 를 건드리지 않기 위함. 공통
+  새로고침(`refresh`)의 `f1`~`f24` 기능키만 예외로 가져간다([공통 새로고침](#공통-새로고침--refresh)).
   ② 페이지 예약 액션 `find`·`copy`·`cut`·`paste`·`select_all` — 페이지가 자체로 같은 의미를
   구현한다(markdown 의 문서 내 검색 등). markdown 문서 내 검색은 사용자의 `find` 바인딩을
   `settings.get_keybinding` 으로 읽어 문서 스크립트에 넣으므로 단축키 탭에서 바꾼 조합을 따른다

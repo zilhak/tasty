@@ -1,5 +1,5 @@
 //! native WebView 키를 공통 정책으로 판정해 host 요청 큐에 넣는다. 실제 실행은 큐를 읽는 호출자가 맡는다.
-//! modifier 없는 입력과 shift만 있는 입력은 페이지에 남긴다. plugin 조합은 페이지 예약 키와도 비교한다.
+//! modifier 없는 입력과 shift만 있는 입력은 페이지에 남긴다. 공통 새로고침의 기능키만 예외다. plugin 조합은 페이지 예약 키와도 비교한다.
 //! modifier 조합은 물리 US 배열 문자를 우선하고 물리 위치를 모르면 레이아웃 문자를 사용한다.
 //! repeat 제외는 플랫폼별로 다르며 Linux의 키 press는 반복 이벤트도 전달한다.
 
@@ -30,6 +30,8 @@ pub struct ShortcutSources {
     pub plugin: Vec<String>,
     /// 주소 띠가 있는 html 페이지에서만 host가 가져갈 조합(주소창 포커스).
     pub address: Vec<String>,
+    /// 공통 새로고침 조합. modifier 가 없어도 F1~F24 기능키면 host 가 가져간다. 문자 키는 페이지에 남긴다.
+    pub refresh: Vec<String>,
 }
 
 /// 설정에서 만든 host 키 조합의 사본. 호출자가 변경 시 교체해야 한다.
@@ -47,16 +49,30 @@ impl HostShortcutPolicy {
             page_reserved,
             plugin,
             address,
+            refresh,
         } = sources;
         let mut combos: Vec<String> = Vec::new();
-        let mut push = |combo: String| {
-            if tasty_key_match::binding_has_modifier(&combo) && !combos.contains(&combo) {
+        // `function_key_ok` 이면 modifier 가 없어도 F1~F24 기능키를 담는다(공통 새로고침 전용).
+        let mut push = |combo: String, function_key_ok: bool| {
+            let claimable = tasty_key_match::binding_has_modifier(&combo)
+                || (function_key_ok && tasty_key_match::binding_is_function_key(&combo));
+            if claimable && !combos.contains(&combo) {
                 combos.push(combo);
             }
         };
 
         for combo in host {
-            push(combo);
+            push(combo, false);
+        }
+        // 페이지 예약 편집 조합이 먼저다. 같은 조합의 새로고침은 페이지에 남긴다.
+        for combo in refresh {
+            if page_reserved
+                .iter()
+                .any(|r| tasty_key_match::bindings_equivalent(r, &combo))
+            {
+                continue;
+            }
+            push(combo, true);
         }
 
         for combo in plugin {
@@ -67,7 +83,7 @@ impl HostShortcutPolicy {
             {
                 continue;
             }
-            push(combo);
+            push(combo, false);
         }
 
         let address = address
@@ -195,6 +211,7 @@ mod tests {
             page_reserved: strings(page_reserved),
             plugin: strings(plugin),
             address: Vec::new(),
+            refresh: Vec::new(),
         })
     }
 
@@ -308,6 +325,7 @@ mod tests {
             page_reserved: strings(&reserved),
             plugin: variants.clone(),
             address: Vec::new(),
+            refresh: Vec::new(),
         });
         assert!(
             p.combos().is_empty(),
@@ -320,6 +338,7 @@ mod tests {
             page_reserved: strings(&reserved),
             plugin: strings(&["ctrl+shift+h"]),
             address: Vec::new(),
+            refresh: Vec::new(),
         });
         assert_eq!(p.combos(), ["ctrl+shift+h"]);
     }
@@ -369,5 +388,18 @@ mod tests {
         bridge.note_focus(5);
         assert_eq!(bridge.take_focus_requests(), vec![3, 5]);
         assert!(bridge.take_focus_requests().is_empty());
+    }
+
+    /// 새로고침은 modifier 없는 기능키만 예외로 가져가고, 페이지 예약 조합과 같으면 페이지에 남긴다.
+    #[test]
+    fn refresh_claims_function_keys_but_yields_to_page_reserved_combos() {
+        let p = HostShortcutPolicy::new(ShortcutSources {
+            host: Vec::new(),
+            page_reserved: strings(&["ctrl+c", "f3"]),
+            plugin: Vec::new(),
+            address: Vec::new(),
+            refresh: strings(&["f5", "r", "CTRL+C", "F3", "ctrl+alt+r"]),
+        });
+        assert_eq!(p.combos(), ["f5", "ctrl+alt+r"]);
     }
 }

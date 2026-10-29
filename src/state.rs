@@ -473,10 +473,20 @@ impl RequestContext {
     #[cfg(any(feature = "gui", debug_assertions))]
     pub(crate) fn keyboard_overlay_open(&self) -> bool {
         #[cfg(feature = "gui")]
+        let address = self.html_address.has_keyboard_focus();
+        #[cfg(not(feature = "gui"))]
+        let address = false;
+        address || self.keyboard_overlay_open_besides_html_address()
+    }
+
+    /// html 주소 띠를 뺀 나머지 입력 게이트(설정·입력 대화상자·popup·plugin popup 등)가 열렸는지.
+    /// 주소 띠만 포커스를 가졌을 때 공통 새로고침을 그 surface 로 보낼지 정할 때 쓴다.
+    #[cfg(any(feature = "gui", debug_assertions))]
+    pub(crate) fn keyboard_overlay_open_besides_html_address(&self) -> bool {
+        #[cfg(feature = "gui")]
         let host_popup_focused = self.popups.has_focused()
             || (self.tutorial.active.is_some() && self.tutorial.keyboard_focus)
-            || self.restore_notices.has_keyboard_focus()
-            || self.html_address.has_keyboard_focus();
+            || self.restore_notices.has_keyboard_focus();
         #[cfg(not(feature = "gui"))]
         let host_popup_focused = false;
         keyboard_overlay_open(

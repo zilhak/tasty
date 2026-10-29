@@ -167,4 +167,26 @@ pub enum PendingHostEvent {
         plugin_id: String,
         window_id: String,
     },
+    /// 사용자가 surface 에 보낸 새로고침 요청. 전달 직전에 같은 세대·kind 인지 다시 확인한다.
+    #[cfg(feature = "gui")]
+    SurfaceRefreshRequested {
+        target: crate::runtime::surface_binding::SurfaceBinding,
+        kind: String,
+        /// `shortcut` 또는 `palette`.
+        trigger: &'static str,
+    },
+}
+
+/// 새로고침 대상이 키를 누른 시점의 세대·kind 그대로인가. 닫기·변환·재생성 뒤에는 거짓이다.
+#[cfg(feature = "gui")]
+pub(crate) fn refresh_target_current(
+    engine: &crate::runtime::engine_access::EngineRef<'_>,
+    target: &crate::runtime::surface_binding::SurfaceBinding,
+    kind: &str,
+) -> bool {
+    target.current(engine)
+        && engine
+            .core
+            .find_surface_by_id(target.surface_id())
+            .is_some_and(|descriptor| descriptor.kind() == kind)
 }

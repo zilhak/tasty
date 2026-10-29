@@ -7,6 +7,8 @@ mod keybinding;
 pub(crate) mod modifier_hint;
 mod numeric;
 #[cfg(test)]
+mod refresh_tests;
+#[cfg(test)]
 mod tests;
 mod webview_claims;
 mod window_control;
@@ -177,6 +179,59 @@ fn focused_explorer_typing(
     focused_explorer_surface_id(state, engine)
         .and_then(|sid| state.explorer_views.get(sid))
         .is_some_and(|v| v.text_input_active())
+}
+
+/// 포커스된 surface 에 공통 새로고침 요청을 보낸다. 탐색기 이름·주소 입력 중이면 입력이 우선이라
+/// 처리하지 않는다. 대상 surface 가 없으면 false 를 돌려 키를 다른 경로에 남긴다.
+pub(super) fn request_focused_surface_refresh(
+    state: &mut crate::state::MainViewState,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
+    trigger: crate::intent::RefreshTrigger,
+) -> bool {
+    if focused_explorer_typing(state, engine) {
+        return false;
+    }
+    let Some(sid) = state.focused_surface_id(engine) else {
+        return false;
+    };
+    request_surface_refresh(state, engine, sid, trigger)
+}
+
+/// `sid` 에 공통 새로고침 요청을 보낸다. 대상은 지금의 세대·kind 로 고정해 Intent 로 넘긴다.
+/// 탐색기는 host 가 처리자라 여기서 한 번 새로고침한다. surface 가 없으면 false 다.
+pub(crate) fn request_surface_refresh(
+    state: &mut crate::state::MainViewState,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
+    sid: u32,
+    trigger: crate::intent::RefreshTrigger,
+) -> bool {
+    let Some(kind) = engine
+        .core
+        .find_surface_by_id(sid)
+        .map(|s| s.kind().to_string())
+    else {
+        return false;
+    };
+    let Some(target) = crate::runtime::surface_binding::SurfaceBinding::capture(engine, sid) else {
+        return false;
+    };
+    if kind == "explorer" {
+        crate::adapters::ui::egui_panels::apply_explorer_action(
+            state,
+            engine,
+            sid,
+            crate::explorer_ui::ExplorerAction::Refresh,
+        );
+    }
+    state.dispatch_intent(
+        crate::intent::UiIntent::RequestSurfaceRefresh {
+            target,
+            kind,
+            trigger,
+        }
+        .from_user_shortcut("refresh"),
+    );
+    true
 }
 
 /// 키보드 붙여넣기는 포커스된 탐색기의 현재 폴더를 대상으로 한다.

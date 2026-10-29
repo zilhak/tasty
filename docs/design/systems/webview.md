@@ -173,11 +173,11 @@ WebViewKeySink에 보내고 공통 bridge가 소비 여부를 동기 반환한�
 
 backend는 Rc<dyn WebViewKeySink>만 받는다. 정책 교체와 큐 관리는 구체 bridge가 맡는다.
 callback은 main thread에서 실행하므로 Rc·RefCell을 사용한다.
-HostShortcutPolicy는 ShortcutSources의 host·page_reserved·plugin·address 목록을 받는다.
+HostShortcutPolicy는 ShortcutSources의 host·page_reserved·plugin·address·refresh 목록을 받는다.
 address(주소창 포커스 `explorer_focus_address`)는 bridge가 받은 주소 띠 surface 목록(mirror가 아닌 html)에서만 가져가고, markdown 같은 다른 WebView 페이지에는 남긴다.
 설정 field·quick-switch·사용자 script·활성 plugin의 effective binding 생성은 webview_claims가 맡는다.
 
-modifier 없는 키와 Shift 전용 키는 페이지 입력에 남긴다.
+modifier 없는 키와 Shift 전용 키는 페이지 입력에 남긴다. 예외는 ShortcutSources의 refresh(공통 새로고침) 조합 중 F1~F24 기능키다. 문자를 만들지 않는 키라 입력·IME를 방해하지 않는다. host가 가져간 refresh 키는 모델 focus가 아니라 키를 받은 WebView surface를 대상으로 한다([공통 새로고침](../../features/keybindings/index.md#공통-새로고침--refresh)).
 find·copy·cut·paste·select_all은 host 액션 field에서 제외하고 이 예약 조합과 동등한 plugin 조합도 제외한다.
 예약 조합은 사용자의 현재 바인딩이다. markdown 페이지는 `find` 바인딩을 `settings.get_keybinding`으로 읽어 문서에 넣고
 `command.host_shortcut_changed`를 받으면 문서를 다시 만든다. html 표면의 사용자 페이지는 이 정보를 받지 않는다.

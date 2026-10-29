@@ -251,12 +251,41 @@ pub enum Intent {
 )]
 #[derive(Debug, Clone)]
 pub enum UiIntent {
-    SetCategoryCollapsed { id: u32, collapsed: bool },
-    ToggleCategoryCollapsed { id: u32 },
+    SetCategoryCollapsed {
+        id: u32,
+        collapsed: bool,
+    },
+    ToggleCategoryCollapsed {
+        id: u32,
+    },
     ToggleAllCategoriesCollapsed,
-    OpenPopup { id: PopupId, mode: OpenPopupMode },
-    ClosePopup { id: PopupId },
-    TogglePopup { id: PopupId, mode: OpenPopupMode },
+    OpenPopup {
+        id: PopupId,
+        mode: OpenPopupMode,
+    },
+    ClosePopup {
+        id: PopupId,
+    },
+    TogglePopup {
+        id: PopupId,
+        mode: OpenPopupMode,
+    },
+    /// 사용자가 고른 surface 에 새로고침 요청 신호를 보낸다. 대상과 kind 는 키를 누른 시점에 고정한다.
+    /// 처리 시점에 같은 세대·kind 가 아니면 버린다(닫기·변환 뒤 다른 대상에 보내지 않는다).
+    #[cfg(feature = "gui")]
+    RequestSurfaceRefresh {
+        target: crate::runtime::surface_binding::SurfaceBinding,
+        kind: String,
+        trigger: RefreshTrigger,
+    },
+}
+
+/// 새로고침 요청을 만든 사용자 입력 경로. 이벤트 payload 의 `trigger` 로 나간다.
+#[cfg(feature = "gui")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RefreshTrigger {
+    Shortcut,
+    Palette,
 }
 
 #[cfg(feature = "gui")]

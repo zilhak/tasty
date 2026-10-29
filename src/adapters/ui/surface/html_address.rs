@@ -298,6 +298,11 @@ impl HtmlAddressBands {
         self.focused.is_some()
     }
 
+    /// 키보드 포커스를 가진 띠의 surface. 공통 새로고침이 그 surface 를 대상으로 삼는다.
+    pub(crate) fn focused_surface(&self) -> Option<u32> {
+        self.focused.map(|(s, _)| s)
+    }
+
     /// `sid` 의 띠가 키보드 포커스를 가졌는지. 페이지 입력 shape를 바꾸는 Linux 경로만 쓴다.
     #[cfg(any(target_os = "linux", test))]
     pub(crate) fn has_keyboard_focus_on(&self, sid: u32) -> bool {

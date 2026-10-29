@@ -180,6 +180,20 @@ pub fn binding_has_modifier(binding: &str) -> bool {
     }
 }
 
+/// 키 토큰이 F1~F24 기능키인지 확인한다. modifier 는 보지 않는다. 문자·IME 입력을 만들지 않는 키라
+/// webview 가 보조키 없는 조합 중 예외적으로 host 로 넘길 수 있는 범위를 정할 때 쓴다.
+pub fn binding_is_function_key(binding: &str) -> bool {
+    let Some(parsed) = parse_binding(binding) else {
+        return false;
+    };
+    let token = parsed.key.to_ascii_lowercase();
+    token
+        .strip_prefix('f')
+        .and_then(|n| n.parse::<u8>().ok())
+        .is_some_and(|n| (1..=24).contains(&n))
+        && NAMED_KEY_TOKENS.iter().any(|(_, name)| *name == token)
+}
+
 /// Parse a binding string like "ctrl+shift+n" and check if it matches
 /// the given key + modifiers. Returns false for empty bindings.
 pub fn matches_binding(binding: &str, key: &Key, mods: ModifiersState) -> bool {
@@ -818,6 +832,17 @@ mod tests {
                 matches_binding(name, &Key::Named(*named), ModifiersState::empty()),
                 "{name}"
             );
+        }
+    }
+
+    /// 기능키만 참이다. 문자·이름 키·잘못된 표기는 거짓이고 modifier 는 판정에 쓰지 않는다.
+    #[test]
+    fn only_f1_to_f24_count_as_function_keys() {
+        for b in ["f5", "F5", "f1", "f24", "shift+f5", "ctrl+f12"] {
+            assert!(binding_is_function_key(b), "{b}");
+        }
+        for b in ["f", "f0", "f25", "r", "ctrl+r", "enter", "escape", "", "fx"] {
+            assert!(!binding_is_function_key(b), "{b}");
         }
     }
 }

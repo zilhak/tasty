@@ -166,6 +166,11 @@ const ENTRY_PLACEMENT: &[(&str, KeybindingsSubTab, Option<&str>)] = &[
     ("convert_surface", KeybindingsSubTab::Surface, None),
     ("convert_to_markdown", KeybindingsSubTab::Surface, None),
     ("convert_to_explorer", KeybindingsSubTab::Surface, None),
+    (
+        "refresh",
+        KeybindingsSubTab::Surface,
+        Some("settings.keybindings.refresh_desc"),
+    ),
     ("find", KeybindingsSubTab::Surface, None),
     ("explorer_focus_address", KeybindingsSubTab::Surface, None),
     ("close_surface", KeybindingsSubTab::Surface, None),

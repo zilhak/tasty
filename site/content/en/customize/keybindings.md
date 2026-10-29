@@ -1,4 +1,4 @@
-<!-- source-hash: ddcf2b9b2485 -->
+<!-- source-hash: 2e83c9af22b9 -->
 # Keybindings
 
 Use Tasty with shortcuts that feel familiar. Choose a preset or assign your preferred keys to actions you use often. Open **Settings** > **Keybindings** to get started.
@@ -74,6 +74,7 @@ Category keybindings work only when **Settings** > **General** > **Workspace cat
 | Copy link (link under the mouse) | None | None |
 | Cut (explorer) | `Ctrl+X` · `Alt+X` | `Ctrl+X` · `Cmd+X` |
 | Select all (explorer) | `Ctrl+A` · `Alt+A` | `Ctrl+A` · `Cmd+A` |
+| Refresh (the surface you are looking at) | `F5` | `F5` |
 | Refresh · go to parent folder (explorer) | `F5` · `Alt+↑` | `F5` · `Cmd+↑` |
 | Back · forward (explorer) | `Alt+←` · `Alt+→` | `Cmd+←` · `Cmd+→` |
 | Go to the address bar (explorer · HTML) | `Alt+L` | `Cmd+L` |
@@ -85,6 +86,8 @@ Category keybindings work only when **Settings** > **General** > **Workspace cat
 | Redo (explorer) | `Ctrl+Shift+Z` · `Ctrl+Y` · `Alt+Shift+Z` | `Ctrl+Shift+Z` · `Ctrl+Y` · `Cmd+Shift+Z` |
 | Show or hide hidden files (explorer) | `Ctrl+Shift+.` · `Alt+Shift+.` | `Ctrl+Shift+.` · `Cmd+Shift+.` |
 | Zoom in · zoom out · reset zoom | `Ctrl+=` · `Ctrl+-` · `Ctrl+0` (`Alt` also works) | `Ctrl+=` · `Ctrl+-` · `Ctrl+0` (`Cmd` also works) |
+
+**Refresh** asks the surface you are looking at to refresh. Markdown re-reads its file (or the original on the remote), the explorer re-reads its folder, and a terminal does nothing. Even when it shares a key with the explorer's own Refresh, the folder is read once. Over a Markdown or HTML page, the only keys without modifiers it takes are function keys such as `F5`; if you assign a letter such as `R`, that page keeps it as typing. While Refresh has `F5`, programs inside a terminal (mc, htop and so on) do not receive `F5`. To use `F5` in a terminal program, clear this Refresh key or change it under **Settings** > **Keybindings** > **Surface**.
 
 `Ctrl+C` copies when there is selected text; otherwise it interrupts the running program as usual.
 
