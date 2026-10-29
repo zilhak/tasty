@@ -137,16 +137,20 @@ struct HtmlSurfaces {
 fn hosts_webview(view: &MainView, surface: &dyn crate::model::Surface, sid: u32) -> bool {
     if let Some(remote) = surface.as_any().downcast_ref::<RemoteSurface>() {
         #[cfg(any(target_os = "linux", windows))]
-        if remote
-            .http_session
-            .as_ref()
-            .is_some_and(|session| session.is_current() || session.entry_body().is_some())
+        if let Some(session) = remote.http_session.as_ref()
+            && (session.is_current() || session.entry_body().is_some())
         {
             return true;
         }
-        return remote
-            .lock_html_mirror()
-            .is_some_and(|mirror| mirror.body_store().current().is_some());
+        // 원격 문서(entry·HTTP mirror)는 위 조건이나 받은 본문이 있을 때만 만든다.
+        // 로컬 plugin 문서(markdown·html)는 아래 URL 판정으로 간다.
+        if let Some(mirror) = remote.lock_html_mirror() {
+            return mirror.body_store().current().is_some();
+        }
+        #[cfg(any(target_os = "linux", windows))]
+        if remote.http_session.is_some() {
+            return false;
+        }
     }
     surface.webview_url().is_some()
         || (surface.kind() == "html"
