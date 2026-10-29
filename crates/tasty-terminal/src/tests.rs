@@ -1309,8 +1309,10 @@ fn alive_check_throttled_within_window() {
 #[test]
 fn process_exited_eventually_emitted() {
     // wake를 기다리되 ALIVE_CHECK_INTERVAL마다 process를 호출해 종료를 다시 확인한다.
-    // 셸 기동과 initial_input 수신 여부는 환경에 따라 달라질 수 있다. 실패 시
-    // 호출 횟수·마지막 alive 판정·화면 꼬리를 함께 남긴다. waker는 블로킹하지 않는다.
+    // 실패 시 호출 횟수·마지막 alive 판정·화면 꼬리를 함께 남긴다. waker는 블로킹하지 않는다.
+    // 사용자 셸($SHELL)의 기동은 initial_input을 먹을 수 있다. 예를 들어 시작 파일이 없는 HOME의
+    // zsh는 zsh-newuser-install이 첫 키("e")를 읽어 "xit"만 남는다. 그래서 Unix는 그런 대화형
+    // 설정 단계가 없는 `sh`를 쓴다. Windows는 `sh`가 없어 기본 셸을 쓴다.
     let (tx, rx) = std::sync::mpsc::sync_channel::<()>(1);
     let waker: Waker = Arc::new(move || {
         // 버퍼(1)가 이미 차 있으면 깨우기 신호가 대기 중이라는 뜻이라, 이번 send 실패는 무시해도
@@ -1321,7 +1323,7 @@ fn process_exited_eventually_emitted() {
         TerminalConfig {
             cols: 80,
             rows: 24,
-            shell: None,
+            shell: if cfg!(unix) { Some("sh") } else { None },
             args: &[],
             surface_id: 0,
             working_dir: None,
