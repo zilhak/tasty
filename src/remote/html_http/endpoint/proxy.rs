@@ -207,6 +207,8 @@ async fn refuse<S: AsyncRead + AsyncWrite + Unpin, T>(io: &mut S, error: Error) 
 }
 
 /// Only after preparing response-aware HTTP/TLS handling; never a blind tunnel.
+/// The only caller is the native WebView listener; test-only builds of this module have none.
+#[cfg(all(feature = "gui", any(target_os = "linux", windows)))]
 pub async fn accept_tunnel<S: AsyncWrite + Unpin>(io: &mut S) -> Result<()> {
     send(io, b"HTTP/1.1 200 Connection Established\r\n\r\n").await
 }
