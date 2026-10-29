@@ -287,6 +287,8 @@ macOS에는 엔진 기본 키가 없으므로 `page_undo`·`page_redo` 바인딩
 
 host 창이 키를 받았거나(native 자식이 포커스를 갖지 않은 상태) 명령 팔레트에서 편집 액션을 실행하면 포커스
 surface의 WebView에 같은 명령을 실행한다(`run_webview_edit`). 터미널 붙여넣기나 다른 surface의 남은 선택으로 넘기지 않는다.
+포커스 surface에 WebView가 없으면 `copy`·`cut`·`paste`·`select_all`은 host 동작을 실행하고, `page_undo`·`page_redo`는 대상이 없어
+아무것도 실행하지 않는다.
 
 host 모달이 열려 있거나 키보드를 가져가는 host overlay(popup·dialog)나 전체화면 무대가 열린 동안에는 native 자식이 OS 포커스를
 가졌어도 편집 바인딩 키와, 바인딩에 없더라도 엔진이 스스로 편집으로 처리하는 키(Windows·Linux의 Ctrl+C/X/V/A,

@@ -972,7 +972,55 @@ fn match_arm_names(src: &str, fn_name: &str, scrutinee: &str) -> Vec<String> {
 
 fn dispatchable_action_ids() -> Vec<String> {
     const SRC: &str = include_str!("dispatch.rs");
-    match_arm_names(SRC, "dispatch_action_by_id", "action_id")
+    let mut out = match_arm_names(SRC, "dispatch_action_by_id", "action_id");
+    out.extend(webview_edit_routed_ids(SRC));
+    out
+}
+
+/// match 앞에서 WebView 편집 액션으로 실행되는 ID. 그 분기가 실제로 `run_webview_edit`를 부르고
+/// 그 함수가 WebView에 명령을 실행할 때만 센다. 둘 중 하나라도 없으면 빈 목록이다.
+fn webview_edit_routed_ids(dispatch_src: &str) -> Vec<String> {
+    use tasty_doc_guards::match_arms::{Source, matching_close};
+    const EDIT_SRC: &str = include_str!("webview_edit.rs");
+    let edit = Source::new(EDIT_SRC);
+    let executes = edit
+        .fn_bodies("run_webview_edit")
+        .iter()
+        .any(|b| edit.code[b.clone()].contains(".execute_edit(action)"));
+
+    let s = Source::new(dispatch_src);
+    let routes = s.fn_bodies("dispatch_action_by_id").iter().any(|b| {
+        let body = &s.code[b.clone()];
+        let dispatch_match = body.find("match action_id {").unwrap_or(body.len());
+        let head = "WebViewEditAction::from_field_id(action_id) {";
+        body[..dispatch_match].find(head).is_some_and(|k| {
+            let open = b.start + k + head.len() - 1;
+            matching_close(&s.code, open).is_some_and(|close| {
+                s.code[open..close].contains("self.run_webview_edit(engine, action)")
+            })
+        })
+    });
+    if !(executes && routes) {
+        return Vec::new();
+    }
+    crate::webview::WebViewEditAction::ALL
+        .into_iter()
+        .map(|a| a.field_id().to_string())
+        .collect()
+}
+
+/// 편집 경로 판정은 실행 호출이 빠진 분기를 세지 않는다.
+#[test]
+fn webview_edit_route_requires_the_executing_call() {
+    const SRC: &str = include_str!("dispatch.rs");
+    assert!(webview_edit_routed_ids(SRC).contains(&"page_undo".to_string()));
+    let without_call = SRC.replacen(
+        "self.run_webview_edit(engine, action)",
+        "self.has_webview_edit(engine, action)",
+        1,
+    );
+    assert_ne!(without_call, SRC, "변이 대상 호출을 찾지 못했다");
+    assert!(webview_edit_routed_ids(&without_call).is_empty());
 }
 
 // 등록된 액션이 실행 경로에도 있는지 확인한다.

@@ -36,10 +36,15 @@ impl MainView {
         use crate::model::SplitDirection;
 
         // WebView가 포커스면 편집 액션은 그 페이지의 포커스 대상에만 실행한다.
-        if let Some(action) = crate::webview::WebViewEditAction::from_field_id(action_id)
-            && self.run_webview_edit(engine, action)
-        {
-            return true;
+        if let Some(action) = crate::webview::WebViewEditAction::from_field_id(action_id) {
+            if self.run_webview_edit(engine, action) {
+                return true;
+            }
+            // 페이지 실행 취소·다시 실행은 WebView 밖에 대상이 없다. 알 수 없는 ID 경고로 남기지 않는다.
+            use crate::webview::WebViewEditAction::{Redo, Undo};
+            if matches!(action, Undo | Redo) {
+                return false;
+            }
         }
 
         let terminal_rect = self.compute_terminal_rect();
