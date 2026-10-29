@@ -130,3 +130,62 @@ fn a_remote_close_of_the_servers_last_workspace_gets_a_replacement() {
         .unwrap_or_else(|response| panic!("{response:?}"));
     assert!(!local.replacement);
 }
+
+/// A workspace close that the server answered without closing (`closed:false`) is returned to the
+/// client as a failure, so the mirror is not ended. A close that did happen is returned as a success.
+#[test]
+fn a_workspace_close_that_did_not_close_is_returned_as_a_failure() {
+    use tasty_ipc::stream::StreamControl;
+    let (mut session, _journal) = boot();
+    let hub = tasty_ipc::stream_hub::StreamHub::new();
+    let client = hub.alloc_id();
+    let rx = hub.register(client);
+    let engine = session.id;
+    let reply = |op_id| inbound::RemoteReply {
+        engine,
+        ticket: op_id,
+        client,
+        op_id,
+        workspace: 77,
+        binding: hub.client_binding(client).expect("registered client"),
+        user: true,
+        restore: false,
+        closes_workspace: true,
+        converted: None,
+    };
+    let outcome = |rx: &tasty_ipc::stream_hub::SinkReceiver| {
+        let frame = rx.recv().expect("structural result");
+        match serde_json::from_slice::<StreamControl>(&frame.payload).expect("control frame") {
+            StreamControl::StructuralResult {
+                op_id, ok, reason, ..
+            } => (op_id, ok, reason),
+            other => panic!("unexpected control {other:?}"),
+        }
+    };
+
+    let not_closed = reply(1);
+    inbound::deliver_result(
+        not_closed,
+        JsonRpcResponse::success(
+            serde_json::Value::Null,
+            serde_json::json!({"closed": false}),
+        ),
+        &mut session.borrow_mut(),
+        None,
+        &hub,
+    );
+    assert_eq!(
+        outcome(&rx),
+        (1, false, Some("workspace was not closed".into()))
+    );
+
+    let closed = reply(2);
+    inbound::deliver_result(
+        closed,
+        JsonRpcResponse::success(serde_json::Value::Null, serde_json::json!({"closed": true})),
+        &mut session.borrow_mut(),
+        None,
+        &hub,
+    );
+    assert_eq!(outcome(&rx), (2, true, None));
+}
