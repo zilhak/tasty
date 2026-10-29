@@ -545,7 +545,7 @@ debounce, `compositionend` 시 즉시)마다 이전 `<mark>` 를 먼저 원문�
 단축키는 동작한다 — 세 백엔드가 native 키를 가로채 host 로 올린다
 ([WebView 호스트 계약](../../../design/systems/webview.md),
 [features/keybindings](../../../features/keybindings/index.md)). 그 포워딩은 **`find` 를
-포함한 페이지 예약 액션(`find`·`copy`·`cut`·`paste`·`select_all`)을 애초에 가져가지
+포함한 페이지 예약 액션(`find`·`copy`·`cut`·`paste`·`select_all`·`page_undo`·`page_redo`)을 애초에 가져가지
 않으므로**, 사용자의 `find` 조합은 위 kind 게이트 이전에 이미 페이지로 간다. 페이지 스크립트도
 같은 `find` 바인딩을 판정하므로 둘은 같은 조합을 본다. `find` 에서 뺀 조합(예: `ctrl+f`)을 다른 host
 동작에 주면 host 가 그 조합을 가져가고 페이지는 더 이상 그 조합으로 검색 바를 열지 않는다. 한 조합을
