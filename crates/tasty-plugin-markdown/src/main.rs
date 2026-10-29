@@ -897,21 +897,8 @@ impl MarkdownPlugin {
         let Some(doc) = self.docs.get_mut(&surface_id) else {
             return;
         };
-        let Some(remote) = doc.remote.as_mut() else {
+        if !doc.record_remote_request(surface_id, requester, outcome) {
             return;
-        };
-        match outcome {
-            Ok(request_id) => {
-                tracing::debug!(
-                    "markdown surface {surface_id}: remote content request {request_id} sent ({requester:?})"
-                );
-                remote.pending = Some(request_id);
-            }
-            Err(e) => {
-                tracing::warn!("markdown surface {surface_id}: remote content request failed: {e}");
-                remote.pending = None;
-                doc.load_error = Some(e);
-            }
         }
         self.reload_webview(surface_id);
     }

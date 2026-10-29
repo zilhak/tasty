@@ -54,3 +54,32 @@ impl MarkdownPlugin {
         }
     }
 }
+
+impl MdDoc {
+    /// 원문 요청 결과를 기록한다. 받은 id 를 대기 요청으로 두고, 실패면 사유를 실패 상태로 둔다.
+    /// mirror 문서가 아니면 false.
+    pub(crate) fn record_remote_request(
+        &mut self,
+        surface_id: u32,
+        requester: RemoteRequester,
+        outcome: Result<u64, String>,
+    ) -> bool {
+        let Some(remote) = self.remote.as_mut() else {
+            return false;
+        };
+        match outcome {
+            Ok(request_id) => {
+                tracing::debug!(
+                    "markdown surface {surface_id}: remote content request {request_id} sent ({requester:?})"
+                );
+                remote.pending = Some(request_id);
+            }
+            Err(e) => {
+                tracing::warn!("markdown surface {surface_id}: remote content request failed: {e}");
+                remote.pending = None;
+                self.load_error = Some(e);
+            }
+        }
+        true
+    }
+}
