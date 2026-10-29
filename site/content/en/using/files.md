@@ -1,4 +1,4 @@
-<!-- source-hash: 2447bc1a4a89 -->
+<!-- source-hash: c2db07246642 -->
 # Opening files
 
 Read a README or check an image beside your terminal. Tasty can open an Explorer, Markdown documents, images, and HTML pages, with a Git viewer for reviewing changes.
@@ -277,6 +277,7 @@ The top of an HTML view has an address bar: the **Back** · **Forward** · **Rel
 - A relative path is resolved against the current document: the folder of a local file, or the address of a web document. In an empty HTML tab it uses the tab's working folder; without any base, Tasty does not open it and tells you why.
 - A file that does not exist is not opened, and **File not found** appears under the field. The page you were viewing and what you typed stay; the notice goes away on your next keystroke or `Esc`.
 - `Esc` while editing cancels your input and returns to the current document's address. While you type in the address field, keys go neither to the page nor to the terminal or Tasty shortcuts.
+- In the address field, `Tab` and `Shift+Tab` move in turn between the address field and whichever of **Back**, **Forward** and **Reload** can be pressed, and the focused button shows an outline. `Enter` or `Space` presses that button, and `Esc` leaves. Moving to a button returns what you typed to the current address, and coming back to the address field selects the whole address. If the pressed button dims or turns into the loading indicator, the button loses focus.
 - `Alt+L` (macOS `Cmd+L`) goes to the address field of the HTML view that has the focus, with the whole address selected. It works even while you are typing inside the page. Change the key under **Settings** > **Keybindings** > **Surface** at **Focus the address bar**; the Explorer's address bar uses the same key.
 - While a page loads, a spinner takes the Reload button's place; if it fails to load, the field keeps the address you tried to open.
 - Back is dimmed at the start of the history and Forward at its end. When the HTML view is narrower than 440px, the Forward button is hidden.

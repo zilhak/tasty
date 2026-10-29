@@ -14,7 +14,7 @@ use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{
     HtmlAddressAction, HtmlAddressKind, HtmlAddressLabels, HtmlAddressState, HtmlAddressView,
-    html_address_bar, html_address_field_id,
+    html_address_bar, html_address_field_id, html_address_surrender_focus,
 };
 use tasty_utils::html_address::{
     AddressError, AddressTarget, LocalFileStatus, resolve_html_address,
@@ -357,7 +357,7 @@ impl HtmlAddressBands {
             kind
         };
         if self.drop_focus.take_if(|s| *s == sid).is_some() {
-            ui.memory_mut(|m| m.surrender_focus(field_id));
+            html_address_surrender_focus(ui, id);
             if band.field.error.is_none() {
                 band.field.revert(&committed_display);
             }

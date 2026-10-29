@@ -133,6 +133,14 @@ fn nav(
         .show(ui, theme, &|ui, rect, color| {
             icon.image(rect.height(), color).paint_at(ui, rect);
         });
+    if resp.has_focus() {
+        ui.painter().rect_stroke(
+            resp.rect,
+            theme.icon_button_radius().value(),
+            egui::Stroke::new(theme.focus_ring_width.value(), theme.border_focus()),
+            egui::StrokeKind::Outside,
+        );
+    }
     if tooltip_hover_delay_elapsed(ui.ctx(), theme, resp.id, resp.hovered()) {
         Tooltip::new(label)
             .placement(TooltipPlacement::Top)
@@ -178,6 +186,18 @@ pub fn html_address_field_id(id: egui::Id) -> egui::Id {
     id.with("address")
 }
 
+/// Gives up keyboard focus held by the field or a button of the band `id`.
+pub fn html_address_surrender_focus(ui: &egui::Ui, id: egui::Id) {
+    let focusable: Vec<egui::Id> = ui
+        .data(|d| d.get_temp(id.with("focusable")))
+        .unwrap_or_else(|| vec![html_address_field_id(id)]);
+    ui.memory_mut(|m| {
+        if let Some(f) = m.focused().filter(|f| focusable.contains(f)) {
+            m.surrender_focus(f);
+        }
+    });
+}
+
 /// Uses the same Input box as PathField, without its Go/completion composite. Explicit
 /// child rectangles keep nav cells fixed even below the minimum supported field width.
 pub fn html_address_bar(
@@ -210,7 +230,8 @@ pub fn html_address_bar(
     ui.painter()
         .rect_filled(rect, 0.0, theme.html_address_bar_bg().to_egui());
     let row_height = theme.html_address_bar_height();
-    let mut x = nav_buttons(ui, theme, id, rect, view, forward, &mut out);
+    let focused_at_start = ui.memory(|m| m.focused());
+    let (mut x, mut focusable) = nav_buttons(ui, theme, id, rect, view, forward, &mut out);
     x += theme.html_address_bar_gap() - theme.html_address_bar_nav_gap();
     let field_width = (LogicalPx(rect.right()) - theme.html_address_bar_padding_x() - x)
         .max(theme.html_address_field_min_width());
@@ -346,8 +367,22 @@ pub fn html_address_bar(
             state.revert(view.committed_address);
         }
     }
-    out.has_keyboard_focus = ui.memory(|m| m.has_focus(field_id));
-    ui.data_mut(|d| d.insert_temp(field_id.with("previous_focus"), out.has_keyboard_focus));
+    focusable.push(field_id);
+    let band_focus = cycle_band_focus(
+        ui,
+        state,
+        field_id,
+        mirror,
+        focused_at_start,
+        &focusable,
+        view.committed_address,
+    );
+    let field_focused = ui.memory(|m| m.has_focus(field_id));
+    out.has_keyboard_focus = band_focus.is_some();
+    ui.data_mut(|d| {
+        d.insert_temp(field_id.with("previous_focus"), field_focused);
+        d.insert_temp(id.with("focusable"), focusable);
+    });
     if let Some(error) = &state.error {
         error_row(ui, theme, rect, error);
     }
@@ -408,8 +443,75 @@ fn select_all(ui: &egui::Ui, field_id: egui::Id, chars: usize) {
     }
 }
 
+/// Tab and Shift+Tab cycle through the enabled buttons and the field inside the band
+/// instead of leaving for other host widgets, so keys keep reaching the band. Returns the
+/// band widget holding keyboard focus.
+fn cycle_band_focus(
+    ui: &egui::Ui,
+    state: &mut HtmlAddressState,
+    field_id: egui::Id,
+    mirror: bool,
+    focused_at_start: Option<egui::Id>,
+    focusable: &[egui::Id],
+    committed_address: &str,
+) -> Option<egui::Id> {
+    let tab = ui.input(|i| {
+        i.events.iter().find_map(|e| match e {
+            egui::Event::Key {
+                key: egui::Key::Tab,
+                pressed: true,
+                modifiers,
+                ..
+            } if !modifiers.ctrl && !modifiers.command && !modifiers.mac_cmd && !modifiers.alt => {
+                Some(modifiers.shift)
+            }
+            _ => None,
+        })
+    });
+    let from = focused_at_start.and_then(|f| focusable.iter().position(|b| *b == f));
+    if let (Some(back), Some(from)) = (tab, from) {
+        let n = focusable.len();
+        let next = focusable[if back {
+            (from + n - 1) % n
+        } else {
+            (from + 1) % n
+        }];
+        ui.memory_mut(|m| m.request_focus(next));
+        // Focus moves within this frame, so the field never sees lost_focus. Leave it the
+        // way losing focus elsewhere does: an unrejected draft returns to the address.
+        if focusable[from] == field_id && next != field_id && !mirror && state.error.is_none() {
+            state.revert(committed_address);
+        }
+        if next == field_id && !mirror {
+            state.editing = true;
+            select_all(ui, field_id, state.buffer.chars().count());
+        }
+        // The lock filter below applies only after a frame of focus. Draw that frame now so
+        // the next Tab is not taken by egui's own traversal out of the band.
+        ui.ctx().request_repaint();
+    }
+    let band_focus = ui.memory(|m| m.focused().filter(|f| focusable.contains(f)));
+    if let Some(f) = band_focus {
+        // Every band widget keeps Tab for the cycle above and the arrows, so egui's own
+        // traversal never moves focus to a host widget outside the band.
+        ui.memory_mut(|m| {
+            m.set_focus_lock_filter(
+                f,
+                egui::EventFilter {
+                    tab: true,
+                    horizontal_arrows: true,
+                    vertical_arrows: true,
+                    escape: false,
+                },
+            )
+        });
+    }
+    band_focus
+}
+
 /// Back, Forward and Reload cells from the left padding. Returns the x after the last cell
-/// and its nav gap. Loading shows a Spinner in the Reload cell instead of the button.
+/// and its nav gap, with the ids of the enabled buttons in order. Loading shows a Spinner
+/// in the Reload cell instead of the button.
 fn nav_buttons(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -418,12 +520,13 @@ fn nav_buttons(
     view: &HtmlAddressView<'_>,
     forward: bool,
     out: &mut HtmlAddressOutput,
-) -> LogicalPx {
+) -> (LogicalPx, Vec<egui::Id>) {
     let mirror = view.kind == HtmlAddressKind::Mirror;
     let row_height = theme.html_address_bar_height();
     let side = LogicalPx(ControlSize::Sm.height(theme));
     let mut x = LogicalPx(rect.left()) + theme.html_address_bar_padding_x();
     let y = LogicalPx(rect.top()) + (row_height - side) / 2.0;
+    let mut focusable = Vec::new();
     let buttons = [
         (
             tasty_icons::CHEVRON_LEFT,
@@ -474,10 +577,16 @@ fn nav_buttons(
                 theme,
                 egui::Rect::from_center_size(cell.center(), egui::vec2(spin.value(), spin.value())),
             );
-        } else if nav(&mut child, theme, icon, enabled, label).clicked() {
-            out.action = action;
+        } else {
+            let resp = nav(&mut child, theme, icon, enabled, label);
+            if enabled {
+                focusable.push(resp.id);
+            }
+            if resp.clicked() {
+                out.action = action;
+            }
         }
         x += side + theme.html_address_bar_nav_gap();
     }
-    x
+    (x, focusable)
 }

@@ -444,3 +444,184 @@ fn a_long_mirror_address_copies_the_full_original_from_the_first_click() {
     assert_eq!(s.buffer, address);
     assert_eq!(out.action, HtmlAddressAction::None);
 }
+/// Tab과 Shift+Tab은 띠 안의 사용 가능한 버튼과 주소 입력만 돈다. 버튼에 포커스가 있는 동안에도 띠가
+/// 키보드를 가지며 Enter·Space가 그 버튼을 누른다. 비활성 뒤로 버튼은 건너뛴다.
+#[test]
+fn tab_cycles_through_enabled_buttons_and_the_field() {
+    let ctx = egui::Context::default();
+    let mut s = HtmlAddressState::default();
+    let mut v = view();
+    let field = html_address_field_id(egui::Id::new("address"));
+    let focused = |ctx: &egui::Context| ctx.memory(|m| m.focused());
+    let tab = |shift: bool| egui::Event::Key {
+        key: egui::Key::Tab,
+        physical_key: None,
+        pressed: true,
+        repeat: false,
+        modifiers: if shift {
+            egui::Modifiers::SHIFT
+        } else {
+            egui::Modifiers::NONE
+        },
+    };
+    v.focus = true;
+    frame(&ctx, &mut s, &v, 460.0, vec![]);
+    v.focus = false;
+    assert_eq!(focused(&ctx), Some(field));
+    frame(
+        &ctx,
+        &mut s,
+        &v,
+        460.0,
+        vec![egui::Event::Text("draft".into())],
+    );
+    assert!(s.editing);
+
+    let out = frame(&ctx, &mut s, &v, 460.0, vec![tab(true)]);
+    assert!(out.has_keyboard_focus, "버튼 포커스도 띠의 포커스다");
+    assert!(!s.editing, "주소 입력을 떠나면 편집 표시를 끈다");
+    assert_eq!(
+        s.buffer, v.committed_address,
+        "거절되지 않은 초안은 주소로 돌아간다"
+    );
+    let reload = focused(&ctx).expect("Shift+Tab은 새로고침 버튼으로 간다");
+    assert_ne!(reload, field);
+    let out = frame(&ctx, &mut s, &v, 460.0, vec![key(egui::Key::Enter)]);
+    assert_eq!(out.action, HtmlAddressAction::Reload);
+
+    frame(&ctx, &mut s, &v, 460.0, vec![tab(true)]);
+    let forward = focused(&ctx).expect("앞으로 버튼");
+    assert_ne!(forward, reload);
+    let out = frame(&ctx, &mut s, &v, 460.0, vec![key(egui::Key::Space)]);
+    assert_eq!(out.action, HtmlAddressAction::Forward);
+
+    let out = frame(&ctx, &mut s, &v, 460.0, vec![tab(true)]);
+    assert_eq!(
+        focused(&ctx),
+        Some(field),
+        "비활성 뒤로를 건너뛰고 주소로 돈다"
+    );
+    assert!(out.has_keyboard_focus);
+    frame(&ctx, &mut s, &v, 460.0, vec![tab(false)]);
+    assert_eq!(
+        focused(&ctx),
+        Some(forward),
+        "주소에서 Tab은 첫 버튼으로 돈다"
+    );
+    frame(&ctx, &mut s, &v, 460.0, vec![tab(false)]);
+    assert_eq!(focused(&ctx), Some(reload));
+    frame(&ctx, &mut s, &v, 460.0, vec![tab(false)]);
+    assert_eq!(focused(&ctx), Some(field));
+
+    frame(&ctx, &mut s, &v, 460.0, vec![tab(true)]);
+    let out = frame(&ctx, &mut s, &v, 460.0, vec![key(egui::Key::Escape)]);
+    assert!(!out.has_keyboard_focus, "Escape는 버튼 포커스도 놓는다");
+}
+/// 띠 위아래에 다른 host 버튼이 있는 프레임. 띠 밖으로 포커스가 새는지 본다.
+fn framed_with_neighbors(
+    ctx: &egui::Context,
+    state: &mut HtmlAddressState,
+    view: &HtmlAddressView<'_>,
+    events: Vec<egui::Event>,
+) -> HtmlAddressOutput {
+    let mut result = None;
+    drop(ctx.run(
+        egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(800.0, 300.0),
+            )),
+            events,
+            ..Default::default()
+        },
+        |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                drop(ui.button("above"));
+                result = Some(html_address_bar(
+                    ui,
+                    &tasty_themes::mocha_fallback(),
+                    egui::Id::new("address"),
+                    LogicalPx(460.0),
+                    state,
+                    view,
+                ));
+                drop(ui.button("below"));
+            });
+        },
+    ));
+    result.unwrap()
+}
+fn with_mods(key: egui::Key, modifiers: egui::Modifiers) -> egui::Event {
+    egui::Event::Key {
+        key,
+        physical_key: None,
+        pressed: true,
+        repeat: false,
+        modifiers,
+    }
+}
+/// 버튼이나 주소 입력에 포커스가 있을 때 방향키가 띠 밖 host 위젯으로 포커스를 옮기지 않는다.
+/// Ctrl·Alt·Cmd를 함께 누른 Tab은 띠를 돌지 않는다(macOS의 Ctrl은 command가 아니다).
+#[test]
+fn arrows_and_modified_tab_keep_focus_where_it_is() {
+    let ctx = egui::Context::default();
+    let mut s = HtmlAddressState::default();
+    let mut v = view();
+    v.can_back = true;
+    let field = html_address_field_id(egui::Id::new("address"));
+    let focused = |ctx: &egui::Context| ctx.memory(|m| m.focused());
+    v.focus = true;
+    framed_with_neighbors(&ctx, &mut s, &v, vec![]);
+    v.focus = false;
+    framed_with_neighbors(&ctx, &mut s, &v, vec![]);
+    for mods in [
+        egui::Modifiers::CTRL,
+        egui::Modifiers::ALT,
+        egui::Modifiers::MAC_CMD,
+        egui::Modifiers::COMMAND,
+    ] {
+        framed_with_neighbors(&ctx, &mut s, &v, vec![with_mods(egui::Key::Tab, mods)]);
+        framed_with_neighbors(&ctx, &mut s, &v, vec![]);
+        assert_eq!(focused(&ctx), Some(field), "{mods:?}+Tab은 돌지 않는다");
+    }
+    framed_with_neighbors(
+        &ctx,
+        &mut s,
+        &v,
+        vec![with_mods(egui::Key::Tab, egui::Modifiers::SHIFT)],
+    );
+    framed_with_neighbors(&ctx, &mut s, &v, vec![]);
+    let reload = focused(&ctx).unwrap();
+    assert_ne!(reload, field);
+    for arrow in [
+        egui::Key::ArrowUp,
+        egui::Key::ArrowDown,
+        egui::Key::ArrowLeft,
+        egui::Key::ArrowRight,
+    ] {
+        let out = framed_with_neighbors(&ctx, &mut s, &v, vec![key(arrow)]);
+        framed_with_neighbors(&ctx, &mut s, &v, vec![]);
+        assert_eq!(focused(&ctx), Some(reload), "{arrow:?}");
+        assert!(out.has_keyboard_focus);
+    }
+}
+/// 미러는 버튼과 읽기 전용 주소 사이를 돌지만 주소로 돌아와도 편집 상태가 되지 않는다.
+#[test]
+fn mirror_cycles_without_editing() {
+    let ctx = egui::Context::default();
+    let mut s = HtmlAddressState::default();
+    let mut v = view();
+    v.kind = HtmlAddressKind::Mirror;
+    let field = html_address_field_id(egui::Id::new("address"));
+    let out = frame(&ctx, &mut s, &v, 460.0, vec![]);
+    click(&ctx, &mut s, &v, out.field_rect.unwrap().center());
+    assert_eq!(ctx.memory(|m| m.focused()), Some(field));
+    let shift_tab = with_mods(egui::Key::Tab, egui::Modifiers::SHIFT);
+    let out = frame(&ctx, &mut s, &v, 460.0, vec![shift_tab.clone()]);
+    assert!(out.has_keyboard_focus);
+    assert_ne!(ctx.memory(|m| m.focused()), Some(field));
+    frame(&ctx, &mut s, &v, 460.0, vec![key(egui::Key::Tab)]);
+    assert_eq!(ctx.memory(|m| m.focused()), Some(field));
+    assert!(!s.editing);
+    assert_eq!(s.buffer, v.address);
+}
