@@ -270,12 +270,14 @@ impl MainView {
         {
             return false;
         }
+        // 같은 키가 편집이나 주소창 포커스에도 묶였으면 그쪽이 이기고 새로고침하지 않는다.
         let key = self.shortcut_lookup_key(event);
-        if !tasty_key_match::matches_any_binding(
-            &engine.settings.keybindings.refresh,
+        if super::html_address_keys::address_key_action(
+            &engine.settings.keybindings,
             &key,
             self.base.state.modifiers,
-        ) {
+        ) != Some(super::html_address_keys::AddressKeyAction::Refresh)
+        {
             return false;
         }
         if !crate::adapters::ui::input::shortcuts::request_surface_refresh(

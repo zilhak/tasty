@@ -824,6 +824,7 @@ mod tests {
             plugin: Vec::new(),
             address: Vec::new(),
             refresh: strings(&["f5", "r", "CTRL+C", "F3", "ctrl+alt+r"]),
+            edit: Vec::new(),
         });
         assert_eq!(p.combos(), ["f5", "ctrl+alt+r"]);
     }

@@ -65,7 +65,11 @@ fn host_combos(kb: &KeybindingSettings) -> Vec<String> {
     let mut combos: Vec<String> = Vec::new();
 
     for (field_id, _label) in KeybindingSettings::GENERAL_BINDING_FIELDS {
-        if PAGE_RESERVED_FIELDS.contains(field_id) || EXPLORER_ONLY_FIELDS.contains(field_id) {
+        // 공통 새로고침은 `ShortcutSources::refresh`로만 넣는다. 여기서 넣으면 페이지 예약 조합 검사를 건너뛴다.
+        if PAGE_RESERVED_FIELDS.contains(field_id)
+            || EXPLORER_ONLY_FIELDS.contains(field_id)
+            || *field_id == "refresh"
+        {
             continue;
         }
         combos.extend(kb.get_bindings(field_id).unwrap_or(&[]).iter().cloned());
@@ -346,6 +350,31 @@ mod tests {
         assert!(kb.clear_field("refresh"));
         let policy = webview_shortcut_policy(&kb, Vec::new());
         assert!(!policy.claims(&f5, none));
+    }
+
+    /// 새로고침을 페이지 편집 조합(엔진 기본 Paste인 Ctrl+V)에 묶어도 host가 가져가지 않는다.
+    /// 그 키는 엔진 붙여넣기로 페이지에 남는다. 다른 host 조합 경로로 새로고침이 들어가지 않는다.
+    #[test]
+    fn a_refresh_binding_on_a_page_edit_key_stays_with_the_page() {
+        let mut kb = kb();
+        kb.paste = vec!["ctrl+v".into()];
+        kb.refresh = vec!["ctrl+v".into()];
+        let policy = webview_shortcut_policy(&kb, Vec::new());
+        let v = Key::Character("v".into());
+        assert!(
+            !policy.claims(&v, ModifiersState::CONTROL),
+            "{:?}",
+            policy.combos()
+        );
+        assert!(!host_combos(&kb).iter().any(|c| c == "ctrl+v"));
+        if !cfg!(target_os = "macos") {
+            assert_eq!(
+                policy.edit_action(&v, ModifiersState::CONTROL),
+                None,
+                "엔진 기본 Paste는 엔진이 처리한다"
+            );
+        }
+        assert!(policy.matches_edit_binding(&v, ModifiersState::CONTROL));
     }
 
     /// 기능키 예외는 공통 새로고침에만 있다. 다른 host 동작의 보조키 없는 F 키는 페이지에 남긴다.

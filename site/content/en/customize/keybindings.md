@@ -1,4 +1,4 @@
-<!-- source-hash: 950341b774ab -->
+<!-- source-hash: a3dab2a14f6b -->
 # Keybindings
 
 Use Tasty with shortcuts that feel familiar. Choose a preset or assign your preferred keys to actions you use often. Open **Settings** > **Keybindings** to get started.
@@ -89,7 +89,7 @@ Category keybindings work only when **Settings** > **General** > **Workspace cat
 | Show or hide hidden files (explorer) | `Ctrl+Shift+.` · `Alt+Shift+.` | `Ctrl+Shift+.` · `Cmd+Shift+.` |
 | Zoom in · zoom out · reset zoom | `Ctrl+=` · `Ctrl+-` · `Ctrl+0` (`Alt` also works) | `Ctrl+=` · `Ctrl+-` · `Ctrl+0` (`Cmd` also works) |
 
-**Refresh** asks the surface you are looking at to refresh. Markdown re-reads its file (or the original on the remote), the explorer re-reads its folder, and a terminal does nothing. Even when it shares a key with the explorer's own Refresh, the folder is read once. Over a Markdown or HTML page, the only keys without modifiers it takes are function keys such as `F5`; if you assign a letter such as `R`, that page keeps it as typing. While Refresh has `F5`, programs inside a terminal (mc, htop and so on) do not receive `F5`. To use `F5` in a terminal program, clear this Refresh key or change it under **Settings** > **Keybindings** > **Surface**.
+**Refresh** asks the surface you are looking at to refresh. Markdown re-reads its file (or the original on the remote), the explorer re-reads its folder, and a terminal does nothing. Even when it shares a key with the explorer's own Refresh, the folder is read once. Over a Markdown or HTML page, the only keys without modifiers it takes are function keys such as `F5`; if you assign a letter such as `R`, that page keeps it as typing. If the Refresh key is also assigned to an editing key such as Copy or Paste, or to **Focus the address bar**, a web page and the HTML address field run only that edit or move and do not refresh. While Refresh has `F5`, programs inside a terminal (mc, htop and so on) do not receive `F5`. To use `F5` in a terminal program, clear this Refresh key or change it under **Settings** > **Keybindings** > **Surface**.
 
 `Ctrl+C` copies when there is selected text; otherwise it interrupts the running program as usual.
 

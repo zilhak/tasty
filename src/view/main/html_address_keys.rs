@@ -11,9 +11,31 @@ use crate::webview::WebViewEditAction;
 
 /// 주소 입력에서 사용자 바인딩이 가리키는 동작.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum AddressKeyAction {
+pub(super) enum AddressKeyAction {
     Edit(WebViewEditAction),
     FocusAddress,
+    Refresh,
+}
+
+/// 주소 입력이 포커스를 가진 동안 한 키가 실행할 동작 하나. 여러 바인딩이 겹치면 편집, 주소창 포커스,
+/// 공통 새로고침 순으로 하나만 고른다. 이벤트 바꾸기와 새로고침 키 처리가 같은 판정을 쓴다.
+pub(super) fn address_key_action(
+    kb: &crate::settings::KeybindingSettings,
+    key: &winit::keyboard::Key,
+    mods: winit::keyboard::ModifiersState,
+) -> Option<AddressKeyAction> {
+    let matches = |field: &str| {
+        crate::shortcuts::matches_any_binding(kb.get_bindings(field).unwrap_or(&[]), key, mods)
+    };
+    WebViewEditAction::ALL
+        .into_iter()
+        .find(|a| matches(a.field_id()))
+        .map(AddressKeyAction::Edit)
+        .or_else(|| matches("explorer_focus_address").then_some(AddressKeyAction::FocusAddress))
+        .or_else(|| {
+            crate::shortcuts::matches_any_binding(&kb.refresh, key, mods)
+                .then_some(AddressKeyAction::Refresh)
+        })
 }
 
 impl MainView {
@@ -36,23 +58,10 @@ impl MainView {
         let mods = self.base.state.modifiers;
         let lookup =
             crate::shortcuts::shortcut_lookup_key(&key.logical_key, &key.physical_key, mods);
-        let kb = &engine.settings.keybindings;
-        let matches = |field: &str| {
-            crate::shortcuts::matches_any_binding(
-                kb.get_bindings(field).unwrap_or(&[]),
-                &lookup,
-                mods,
-            )
-        };
-        let action = WebViewEditAction::ALL
-            .into_iter()
-            .find(|a| matches(a.field_id()))
-            .map(AddressKeyAction::Edit)
-            .or_else(|| {
-                matches("explorer_focus_address").then_some(AddressKeyAction::FocusAddress)
-            });
-        let Some(action) = action else {
-            return;
+        // 새로고침은 키 처리 단계(`try_consume_address_refresh_key`)가 실행하고 egui 효과는 그대로 둔다.
+        let action = match address_key_action(&engine.settings.keybindings, &lookup, mods) {
+            None | Some(AddressKeyAction::Refresh) => return,
+            Some(action) => action,
         };
         if action == AddressKeyAction::FocusAddress {
             self.state.html_address.request_focus(sid);
@@ -127,6 +136,38 @@ mod tests {
         remap_events(&mut ev, 1, action, clip.map(str::to_string));
         assert_eq!(ev[0], egui::Event::PointerGone, "이전 이벤트는 그대로 둔다");
         ev.split_off(1)
+    }
+
+    /// 새로고침과 겹친 편집·주소창 포커스 키는 그쪽 하나만 실행하고, 겹치지 않은 F5는 새로고침이다.
+    #[test]
+    fn an_overlapping_key_resolves_to_edit_or_focus_before_refresh() {
+        use winit::keyboard::{Key, ModifiersState, NamedKey};
+        let f5 = Key::Named(NamedKey::F5);
+        let none = ModifiersState::empty();
+        let mut kb = crate::settings::KeybindingSettings {
+            refresh: vec!["f5".into()],
+            explorer_refresh: Vec::new(),
+            ..Default::default()
+        };
+        assert_eq!(
+            address_key_action(&kb, &f5, none),
+            Some(AddressKeyAction::Refresh)
+        );
+        kb.copy = vec!["f5".into()];
+        assert_eq!(
+            address_key_action(&kb, &f5, none),
+            Some(AddressKeyAction::Edit(WebViewEditAction::Copy))
+        );
+        kb.copy.clear();
+        kb.explorer_focus_address = vec!["f5".into()];
+        assert_eq!(
+            address_key_action(&kb, &f5, none),
+            Some(AddressKeyAction::FocusAddress)
+        );
+        assert_eq!(
+            address_key_action(&kb, &Key::Character("q".into()), none),
+            None
+        );
     }
 
     /// egui 기본 키(Ctrl+C)에 같은 copy 바인딩이면 Copy 한 번만 남는다.

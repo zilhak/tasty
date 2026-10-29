@@ -186,8 +186,10 @@ find·copy·cut·paste·select_all·page_undo·page_redo는 host 액션 field에
 `copy`·`cut`·`paste`·`select_all`·`page_undo`·`page_redo`의 현재 바인딩은 `ShortcutSources::edit`로 들어간다. backend는 `capture_key`보다
 먼저 `edit_action`을 묻고, 편집 액션이면 키를 받은 그 WebView에 엔진 편집 명령을 callback 안에서 요청한 뒤
 페이지 전달을 막는다. host 큐를 거치지 않고 그 native WebView 객체에 바로 요청하므로 나중에 다른 WebView나 닫힌
-surface로 옮겨 가지 않는다. macOS와 Linux 대부분은 요청이 callback 안에서 끝난다. Linux의 Copy·Cut과
-Windows의 DevTools 명령은 같은 WebView에 비동기로 이어지며 아래 규칙을 따른다. 대상 frame·편집 가능
+surface로 옮겨 가지 않는다. macOS는 요청이 callback 안에서 끝난다. Linux의 바인딩 키는 키를 WebKit 입력 큐에 넘기고,
+web process 확장이 그 키를 입력 순서대로 받았다고 알린 뒤 실행한다(아래 순서 경로, 비동기). 순서 경로를 쓸 수 없을 때만
+Copy·Cut이 아닌 명령을 callback 안에서 바로 실행한다. Windows의 DevTools 명령은 같은 WebView에 비동기로 이어진다.
+모두 아래 규칙을 따른다. 대상 frame·편집 가능
 여부는 엔진이 정한다: 포커스된 입력란·textarea·contenteditable·하위 frame이 대상이고, 입력란이 없으면 본문
 선택·문서 전체 선택이다. 선택 없는 복사·잘라내기는 클립보드를 바꾸지 않고, 읽기 전용 입력과 본문은 잘라내기·붙여넣기로
 바뀌지 않는다. 페이지 스크립트 허용과 무관하다. Windows에서는 페이지 keydown 취소가 명령을 막는다(아래).
@@ -241,8 +243,14 @@ WebKitGTK의 기본 Copy는 선택이 없어도 빈 내용으로 클립보드를
     UI는 실패한 무장 하나만 지우고, 키 답을 받았을 때만 그보다 앞선 무장을 버린다. UI 쪽 기록도 64개까지이며 넘으면
     가장 오래된 기록을 버려 그 명령은 실행되지 않는다.
   - UI는 그 메시지를 받으면 명령을 실행한다. web process는 keydown을 처리하는 동안(이벤트 ack 전) 메시지를 보내므로
-    편집 명령은 다음 키보다 먼저 간다. 그래서 앞서 입력한 드래그·Shift 선택 키·Ctrl+A 뒤의 Copy와 Copy 뒤의
-    Ctrl+V·사용자 Paste·Undo 바인딩이 입력 순서대로 실행되며, UI에서 키를 보류하지 않는다.
+    편집 명령은 다음 키보다 먼저 간다. 그래서 앞서 입력한 Shift 선택 키·Ctrl+A 뒤의 Copy와 Copy 뒤의
+    Ctrl+V·사용자 Paste·Undo 바인딩이 키 입력 순서대로 실행되며, UI에서 키를 보류하지 않는다.
+  - 이 순서는 키 사이의 순서다. WebKit의 키 큐와 포인터 큐는 따로라서 드래그와 키 사이의 순서는 보장하지 않는다.
+    드래그를 끝낸 뒤 누른 Copy는 그 선택을 복사한다(측정). 드래그와 바인딩 Copy가 한 묶음으로 바로 이어 들어오면
+    (측정: xdotool 한 번의 호출로 드래그 직후 Ctrl+C) 키가 드래그의 선택보다 먼저 처리되는 경우가 있고, 그때는 선택이
+    없으므로 실행하지 않고 클립보드를 그대로 둔다. 같은 회차에 통과한 경우도 있어 시점에 따라 다르다. 같은 묶음에서
+    바인딩하지 않은 엔진 Ctrl+C도 선택을 보지 못하고 빈 내용을 복사했으므로(측정) 엔진의 경계와 같다. 이 경계를 위한
+    별도 동작은 두지 않는다.
 - 판정: 활성 요소가 iframe·frame이면 포커스가 있는 문서까지 내려가고, 그 문서의 native DOM selection 종류가 `Range`일 때만
   선택이 있다. 입력란(email·number처럼 `selectionStart`가 없는 종류 포함)·읽기 전용 입력·textarea·이미지만 고른 범위도
   같다. 다른 출처 frame도 읽는다. 페이지 스크립트를 실행하지 않으므로 스크립트 허용 여부와 결과가 같다. WebKitDOM은

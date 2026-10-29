@@ -193,8 +193,8 @@ fn command_name(action: WebViewEditAction) -> &'static str {
 
 /// 사용자 편집 바인딩 키를 처리한다. 확장이 이 문서에 준비돼 있으면 키를 무장하고 WebKit 입력 큐로
 /// 보낸다(Proceed). 확장의 keydown 리스너가 그 키를 입력 순서대로 받아 기본 동작을 막고 답하면
-/// [`on_view_message`]가 명령을 실행한다. 그래서 앞서 입력한 선택 키·드래그와 뒤의 키 사이에서 순서가
-/// 지켜진다. 준비되지 않았거나 키를 keyCode로 옮길 수 없으면 Copy·Cut은 실행하지 않고(엔진의 빈 복사를
+/// [`on_view_message`]가 명령을 실행한다. 그래서 앞서 입력한 선택 키와 뒤의 키 사이에서 순서가 지켜진다.
+/// 포인터 입력은 WebKit의 다른 큐라서 같은 묶음의 드래그와의 순서는 보장하지 않는다. 준비되지 않았거나 키를 keyCode로 옮길 수 없으면 Copy·Cut은 실행하지 않고(엔진의 빈 복사를
 /// 막도록 키를 소비한다), 다른 명령은 바로 실행한다.
 pub(super) fn run_key_action(
     webview: &WebView,
