@@ -73,6 +73,7 @@ mod popup_title;
 mod ports_table;
 mod rail_marks;
 mod remote_tool;
+mod rename_popup;
 mod resize_grip;
 mod restore_notice;
 mod script_confirm;
@@ -276,6 +277,10 @@ pub use remote_tool::{
     filter_dropdown_content_width, ghost_button, primary_button, remote_list_row,
     remote_row_actions_width, remote_row_title, secondary_button, selectable_label,
     selectable_text, warn_badge, warn_badge_width,
+};
+pub use rename_popup::{
+    RenamePopupAction, RenamePopupLayout, RenamePopupView, rename_pad_x, rename_popup,
+    rename_popup_base_height,
 };
 pub use resize_grip::{modhint_resize_grip, resize_grip_segments};
 pub use restore_notice::{

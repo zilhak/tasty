@@ -10,34 +10,21 @@ use crate::catalog::icons::{CHEVRON_DOWN, EDIT, MockGlyph, PLUS, TRASH};
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 use crate::catalog::widgets::dialog as kit;
 
-const EDIT_WIDTH: LogicalPx = LogicalPx(360.0);
 const DELETE_WIDTH: LogicalPx = LogicalPx(380.0);
 const POPUP_WIDTH: LogicalPx = LogicalPx(176.0);
 
 /// 생성/이름변경 다이얼로그 — `error` 가 `Some` 이면 검증 에러 상태(확인 비활성).
+/// 카테고리 만들기·이름 변경 팝업. 본체와 같은 공용 rename view 다.
 fn edit_dialog(ui: &mut egui::Ui, theme: &Theme, value: &str, error: Option<&str>) {
-    kit::frame_card(ui, theme, EDIT_WIDTH, kit::dialog_fill(theme), |ui| {
-        kit::region_sym(ui, theme.spacing_md, theme.spacing_md, |ui| {
-            ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
-            kit::title(ui, theme, "New category");
-            kit::field(ui, theme, None, value, value.is_empty(), false);
-            if let Some(err) = error {
-                ui.colored_label(theme.accent_danger().to_egui(), err);
-            }
-            ui.horizontal(|ui| {
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let mut create = Button::new("Create").variant(ButtonVariant::Primary);
-                    if error.is_some() {
-                        create = create.enabled(false);
-                    }
-                    create.show(ui, theme);
-                    Button::new("Cancel")
-                        .variant(ButtonVariant::Ghost)
-                        .show(ui, theme);
-                });
-            });
-        });
-    });
+    super::rename_popup::card(
+        ui,
+        theme,
+        tasty_ui_widgets::RenamePopupLayout::Dialog,
+        crate::i18n::t("rename_dialog.new_category_heading"),
+        value,
+        error,
+        None,
+    );
 }
 
 fn delete_confirm(ui: &mut egui::Ui, theme: &Theme) {
@@ -359,7 +346,10 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ui,
         theme,
         &[
-            ("edit", "360px · single field + inline validation"),
+            (
+                "edit",
+                "shared rename view · 360 × ui scale · inline validation",
+            ),
             ("delete", "380px · destructive · trash glyph"),
             ("rail popup", "176px · name header + actions"),
             (

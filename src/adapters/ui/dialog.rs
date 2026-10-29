@@ -1,5 +1,5 @@
-//! 이름 변경 팝업. view는 입력값과 버퍼를 받아 액션을 반환하고
-//! 호출자가 실제 대상 변경을 적용한다. 갤러리도 같은 view를 사용한다.
+//! 이름 변경 팝업. 콘텐츠는 갤러리 예제와 같은 `tasty_ui_widgets::rename_popup` 이 그리고,
+//! 이 모듈은 대상 검사·원격 대기·실제 이름 변경을 맡는다.
 
 use crate::adapters::ui::popup::{self, PopupAction};
 use crate::i18n::t;
@@ -7,24 +7,53 @@ use crate::state::{MainViewState, RenameTarget};
 use crate::theme;
 use crate::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
-use tasty_ui_widgets::margin_sym;
-use tasty_ui_widgets::tokens::{STRUCT_GAP_2, STRUCT_GAP_4};
-use tasty_ui_widgets::vspace;
-use tasty_ui_widgets::{Button, ButtonVariant};
+use tasty_ui_widgets::{
+    RenamePopupAction, RenamePopupLayout, RenamePopupView, rename_popup, rename_popup_base_height,
+};
 
-/// 오류 줄이 있으면 직전 프레임에 잰 그 높이만큼 기본 크기보다 높인다.
+/// 배율 전 기본 폭. 시안 `RenameFrame`·`RenamePending` 의 `size-360` 이며 역할 토큰이 없는 화면 전용
+/// 고정 치수라 UI 배율만 곱한다(docs/design/systems/theme.md).
+const POPUP_WIDTH: LogicalPx = LogicalPx(360.0);
+
+/// 폭은 기본 폭에 UI 배율을 곱한 값이다. 높이는 직전 프레임에 그린 콘텐츠 높이에 타이틀바를 더한다.
+/// 콘텐츠 여백은 공용 view 가 넣어 잰 높이에 들어 있으므로 공통 내부 여백은 이 popup 에 적용하지
+/// 않는다(`content_rect`). 아직 재지 않은 첫 프레임은 오류·대기 줄이 없는 콘텐츠 높이를 쓴다.
 pub fn rename_popup_sizer(
     state: &MainViewState,
     _engine: &crate::runtime::engine_read::EngineRead<'_>,
 ) -> egui::Vec2 {
-    rename_popup_default_size() + egui::vec2(0.0, state.dialogs.rename_error_height)
+    let layout = state
+        .dialogs
+        .rename
+        .as_ref()
+        .map_or(RenamePopupLayout::Dialog, |(target, _)| {
+            rename_layout(target)
+        });
+    rename_popup_size(&theme::theme(), state.dialogs.rename_content_height, layout)
 }
 
 pub fn rename_popup_default_size() -> egui::Vec2 {
-    egui::vec2(
-        280.0,
-        (popup::title_bar_height() + popup::content_margin().scaled(2.0) + LogicalPx(64.0)).value(),
-    )
+    rename_popup_size(&theme::theme(), None, RenamePopupLayout::Dialog)
+}
+
+/// 탐색기 항목·즐겨찾기 추가는 시안 `RenamePending`, 나머지는 `RenameFrame`·`CategoryEditFrame` 치수다.
+fn rename_layout(target: &RenameTarget) -> RenamePopupLayout {
+    match target {
+        RenameTarget::ExplorerEntry { .. } | RenameTarget::ExplorerAddFavorite { .. } => {
+            RenamePopupLayout::Explorer
+        }
+        _ => RenamePopupLayout::Dialog,
+    }
+}
+
+fn rename_popup_size(
+    th: &Theme,
+    content: Option<LogicalPx>,
+    layout: RenamePopupLayout,
+) -> egui::Vec2 {
+    let width = crate::adapters::ui::zoomed_px(th, POPUP_WIDTH);
+    let content = content.unwrap_or_else(|| rename_popup_base_height(th, layout));
+    egui::vec2(width.value(), (popup::title_bar_height() + content).value())
 }
 
 pub fn rename_popup_title(
@@ -39,33 +68,6 @@ pub fn rename_popup_title(
         .unwrap_or_else(|| t("rename_dialog.tab_heading").to_string())
 }
 
-/// view 입력. 앱 상태 대신 전달된 텍스트 버퍼를 직접 편집한다.
-pub struct RenamePopupProps<'a> {
-    pub theme: &'a Theme,
-    pub buffer: &'a mut String,
-    pub save_label: &'a str,
-    pub cancel_label: &'a str,
-    pub body_font_size: f32,
-    /// 인라인 검증 에러 메시지(카테고리 생성/이름변경). `Some` 이면 필드 아래 danger
-    /// 라인으로 표시. 비카테고리 대상은 항상 `None`.
-    pub error: Option<&'a str>,
-    /// false이면 Save와 Enter 확정을 모두 막는다.
-    pub save_enabled: bool,
-    /// view 가 채우는 값. 이번 프레임에 그린 오류 줄이나 대기 줄(앞 간격 포함)의 높이이고 없으면 0 이다.
-    /// 호출자가 팝업 높이를 이만큼 늘려 버튼 줄이 잘리지 않게 한다.
-    pub error_height: f32,
-    /// 원격의 답을 기다리는 동안의 대기 줄 문구("Renaming on {host}…"). `Some` 이면 입력을 읽기 전용으로
-    /// 두고 Spinner 줄을 보이며, 두 버튼과 Enter·Esc 를 막는다.
-    pub waiting: Option<&'a str>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum RenamePopupAction {
-    None,
-    Cancel,
-    Confirm(String),
-}
-
 /// 어떤 경로로 닫혀도 대상과 입력 버퍼를 정리한다.
 pub fn on_close_rename_popup(
     _ctx: &egui::Context,
@@ -73,7 +75,7 @@ pub fn on_close_rename_popup(
     _engine: &crate::runtime::engine_read::EngineRead<'_>,
 ) {
     state.dialogs.rename = None;
-    state.dialogs.rename_error_height = 0.0;
+    state.dialogs.rename_content_height = None;
     state.dialogs.rename_waiting = None;
 }
 
@@ -117,40 +119,30 @@ pub fn draw_rename_popup(
         }
     };
 
-    let margin = 8.0;
-    let available = ui.available_rect_before_wrap();
-    let inner_rect = available.shrink2(egui::vec2(margin, 2.0));
-    let mut child_ui = ui.new_child(egui::UiBuilder::new().max_rect(inner_rect));
-    let inner = &mut child_ui;
-
     let save_label = if is_add_favorite {
         t("explorer.popup.add_favorite.add")
     } else {
         t("button.save")
     };
-    let cancel_label = t("button.cancel");
-
-    let action = {
-        let buffer = &mut state.dialogs.rename.as_mut().unwrap().1;
-        let mut props = RenamePopupProps {
-            theme: &th,
-            buffer,
-            save_label,
-            cancel_label,
-            body_font_size: th.font_size_body.value(),
-            error: validation_error.as_deref(),
-            save_enabled,
-            error_height: 0.0,
-            waiting: waiting.as_deref(),
-        };
-        let action = draw_rename_popup_view(inner, &mut props);
-        let error_height = props.error_height;
-        (action, error_height)
+    let view = RenamePopupView {
+        layout: rename_layout(target),
+        save: save_label,
+        cancel: t("button.cancel"),
+        error: validation_error.as_deref(),
+        save_enabled,
+        waiting: waiting.as_deref(),
+        autofocus: true,
     };
-    let (action, error_height) = action;
-    state.dialogs.rename_error_height = error_height;
+    let buffer = &mut state.dialogs.rename.as_mut().unwrap().1;
+    let drawn = ui.scope(|ui| rename_popup(ui, &th, &view, buffer));
+    let measured = Some(LogicalPx(drawn.response.rect.height()));
+    // 오류·대기 줄이 생기거나 사라진 프레임은 직전 높이로 잘려 있으므로 새 높이로 바로 다시 그린다.
+    if state.dialogs.rename_content_height != measured {
+        ui.ctx().request_repaint();
+    }
+    state.dialogs.rename_content_height = measured;
 
-    match action {
+    match drawn.inner {
         RenamePopupAction::None => PopupAction::None,
         RenamePopupAction::Cancel => {
             state.dialogs.rename = None;
@@ -174,159 +166,6 @@ pub fn draw_rename_popup(
             PopupAction::Close
         }
     }
-}
-
-/// Enter/Save는 확정, Escape/Cancel은 취소다. Enter는 입력 필드 포커스가 필요하다.
-/// 같은 프레임에 둘 다 발생하면 확정을 우선한다.
-pub fn draw_rename_popup_view(
-    ui: &mut egui::Ui,
-    props: &mut RenamePopupProps<'_>,
-) -> RenamePopupAction {
-    let ctx = ui.ctx().clone();
-    let waiting = props.waiting.is_some();
-    if !waiting && ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
-        return RenamePopupAction::Cancel;
-    }
-
-    // 칸은 Input 상자 토큰으로 직접 그린다(egui 기본 프레임은 토큰 값이 아니다). 기다리는 동안에는 보낸
-    // 이름을 Input readOnly 모양으로 보이고 고치지 못하게 한다. 칸 높이는 평소 rename 입력 그대로다.
-    let mut sent = props.buffer.as_str();
-    let bed = ui.painter().add(egui::Shape::Noop);
-    let field = if waiting {
-        egui::TextEdit::singleline(&mut sent)
-            .frame(false)
-            .text_color(props.theme.input_readonly_fg().to_egui())
-    } else {
-        egui::TextEdit::singleline(props.buffer)
-            .frame(false)
-            .text_color(props.theme.input_fg().to_egui())
-    };
-    let resp = ui.add_sized(
-        [ui.available_width(), 22.0],
-        field
-            .font(egui::FontId::proportional(props.body_font_size))
-            // 입력 위젯 안의 위치 보정이며 레이아웃 간격 토큰과는 별개다.
-            .margin(margin_sym(STRUCT_GAP_4, STRUCT_GAP_2)),
-    );
-
-    let (fill, border) = rename_field_box(props.theme, waiting, resp.has_focus());
-    let radius = props.theme.input_radius().value();
-    ui.painter().set(
-        bed,
-        egui::Shape::rect_filled(resp.rect, radius, fill.to_egui()),
-    );
-    ui.painter().rect_stroke(
-        resp.rect,
-        radius,
-        egui::Stroke::new(props.theme.border_width.value(), border.to_egui()),
-        egui::StrokeKind::Inside,
-    );
-
-    if !resp.has_focus() {
-        resp.request_focus();
-    }
-
-    if resp.gained_focus()
-        && let Some(mut text_state) = egui::TextEdit::load_state(&ctx, resp.id)
-    {
-        let len = props.buffer.chars().count();
-        text_state
-            .cursor
-            .set_char_range(Some(egui::text::CCursorRange::two(
-                egui::text::CCursor::new(0),
-                egui::text::CCursor::new(len),
-            )));
-        text_state.store(&ctx, resp.id);
-    }
-
-    let mut confirm = false;
-    let mut cancel = false;
-
-    if !waiting
-        && props.save_enabled
-        && resp.has_focus()
-        && ui.input(|i| i.key_pressed(egui::Key::Enter))
-    {
-        confirm = true;
-    }
-
-    props.error_height = 0.0;
-    if let Some(text) = props.waiting {
-        let top = ui.cursor().top();
-        vspace(ui, props.theme.spacing_sm);
-        waiting_line(ui, props.theme, text);
-        props.error_height = ui.cursor().top() - top;
-    } else if let Some(err) = props.error {
-        let top = ui.cursor().top();
-        vspace(ui, props.theme.spacing_xs);
-        ui.colored_label(props.theme.accent_danger(), err);
-        props.error_height = ui.cursor().top() - top;
-    }
-
-    vspace(ui, props.theme.spacing_sm);
-    ui.horizontal(|ui| {
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if Button::new(props.save_label)
-                .variant(ButtonVariant::Primary)
-                .enabled(props.save_enabled && !waiting)
-                .show(ui, props.theme)
-                .clicked()
-            {
-                confirm = true;
-            }
-            if Button::new(props.cancel_label)
-                .variant(ButtonVariant::Ghost)
-                .enabled(!waiting)
-                .show(ui, props.theme)
-                .clicked()
-            {
-                cancel = true;
-            }
-        });
-    });
-
-    if confirm {
-        return RenamePopupAction::Confirm(props.buffer.clone());
-    }
-    if cancel {
-        return RenamePopupAction::Cancel;
-    }
-    RenamePopupAction::None
-}
-
-/// rename 칸의 상자 칠과 테두리. 팝업 바탕(dialog-bg) 위의 기본 Input 토큰이다: 기다리는 동안
-/// input-readonly-*, 평소 input-bg 와 쉬는 input-border · 포커스 input-border-focus.
-fn rename_field_box(
-    theme: &Theme,
-    waiting: bool,
-    focused: bool,
-) -> (
-    tasty_type_appearance::color::HexColor,
-    tasty_type_appearance::color::HexColor,
-) {
-    if waiting {
-        (theme.input_readonly_bg(), theme.input_readonly_border())
-    } else if focused {
-        (theme.input_bg(), theme.input_border_focus())
-    } else {
-        (theme.input_bg(), theme.input_border())
-    }
-}
-
-/// 대기 줄: `icon-size-sm` Spinner 와 caption text-muted 문구를 `space-sm` 간격으로 둔다.
-fn waiting_line(ui: &mut egui::Ui, theme: &Theme, text: &str) {
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
-        tasty_ui_widgets::Spinner::new()
-            .size(theme.icon_glyph_size_sm.value())
-            .show(ui, theme);
-        ui.label(
-            egui::RichText::new(text)
-                .size(theme.font_size_caption.value())
-                .color(theme.text_muted().to_egui()),
-        );
-    });
-    ui.ctx().request_repaint();
 }
 
 /// 원격 탐색기 항목의 이름 변경이면 요청을 넣는다. 원격이 아니면 None 이고 호출자가 로컬과 같이
@@ -631,287 +470,14 @@ fn apply_rename_category_name(
 mod tests {
     use super::*;
 
-    fn test_theme() -> Theme {
-        tasty_themes::mocha_fallback()
-    }
-
-    fn run_with_input(raw: egui::RawInput, initial_buffer: &str) -> (RenamePopupAction, String) {
-        let ctx = egui::Context::default();
-        let mut out = RenamePopupAction::None;
-        let theme = test_theme();
-        let mut buffer = initial_buffer.to_string();
-        drop(ctx.run(raw, |ctx| {
-            egui::CentralPanel::default().show(ctx, |ui| {
-                let mut props = RenamePopupProps {
-                    theme: &theme,
-                    buffer: &mut buffer,
-                    save_label: "Save",
-                    cancel_label: "Cancel",
-                    body_font_size: 12.0,
-                    error: None,
-                    save_enabled: true,
-                    error_height: 0.0,
-                    waiting: None,
-                };
-                out = draw_rename_popup_view(ui, &mut props);
-            });
-        }));
-        (out, buffer)
-    }
-
-    /// 글자 `text`를 감싸는 사각형들의 채움색과 테두리색. 같은 색을 쓰는 다른 위젯(꺼진 버튼)은 뺀다.
-    fn box_colors(
-        output: &egui::FullOutput,
-        text: &str,
-    ) -> (Vec<egui::Color32>, Vec<egui::Color32>) {
-        let at = output
-            .shapes
-            .iter()
-            .find_map(|c| match &c.shape {
-                egui::Shape::Text(t) if t.galley.text() == text => {
-                    Some(t.visual_bounding_rect().center())
-                }
-                _ => None,
-            })
-            .expect("the text is drawn");
-        let rects = || {
-            output.shapes.iter().filter_map(move |c| match &c.shape {
-                egui::Shape::Rect(r) if r.rect.contains(at) => Some(r),
-                _ => None,
-            })
-        };
-        (
-            rects().map(|r| r.fill).collect(),
-            rects()
-                .filter(|r| r.stroke.width > 0.0)
-                .map(|r| r.stroke.color)
-                .collect(),
-        )
-    }
-
-    fn key_event(key: egui::Key) -> egui::Event {
-        egui::Event::Key {
-            key,
-            physical_key: Some(key),
-            pressed: true,
-            repeat: false,
-            modifiers: egui::Modifiers::NONE,
-        }
-    }
-
-    /// 내용 높이와 view 가 알린 오류 줄 높이를 잰다.
-    fn measured(error: Option<&str>) -> (f32, f32) {
-        let ctx = egui::Context::default();
-        let theme = test_theme();
-        let mut buffer = "note.md ".to_string();
-        let mut out = (0.0, 0.0);
-        drop(ctx.run(egui::RawInput::default(), |ctx| {
-            egui::CentralPanel::default().show(ctx, |ui| {
-                ui.set_width(200.0);
-                let top = ui.cursor().top();
-                let mut props = RenamePopupProps {
-                    theme: &theme,
-                    buffer: &mut buffer,
-                    save_label: "Save",
-                    cancel_label: "Cancel",
-                    body_font_size: 12.0,
-                    error,
-                    save_enabled: error.is_none(),
-                    error_height: 0.0,
-                    waiting: None,
-                };
-                let _ = draw_rename_popup_view(ui, &mut props); // 높이만 잰다 — action 무시.
-                out = (ui.cursor().top() - top, props.error_height);
-            });
-        }));
-        out
-    }
-
-    #[test]
-    fn an_error_line_grows_the_popup_by_its_height_so_the_buttons_stay_inside() {
-        let (plain, none) = measured(None);
-        assert_eq!(none, 0.0);
-        let (with_error, error_h) = measured(Some("Names can't start or end with a space."));
-        assert!(error_h > 0.0);
-        assert_eq!(
-            with_error,
-            plain + error_h,
-            "the error line is the only thing that pushes the button row down"
-        );
-        // 기본 크기는 오류가 없는 내용이 들어가는 높이다. sizer 는 오류 줄만큼 더한다.
-        let content = LogicalPx(64.0).value();
-        assert!(plain <= content, "{plain} > {content}");
-        assert!(with_error <= content + error_h);
-    }
-
-    #[test]
-    fn rename_view_no_input_yields_none() {
-        let (action, _) = run_with_input(egui::RawInput::default(), "hello");
-        assert_eq!(action, RenamePopupAction::None);
-    }
-
-    #[test]
-    fn rename_view_escape_yields_cancel() {
-        let mut raw = egui::RawInput::default();
-        raw.events.push(key_event(egui::Key::Escape));
-        let (action, _) = run_with_input(raw, "hello");
-        assert_eq!(action, RenamePopupAction::Cancel);
-    }
-
-    #[test]
-    fn rename_view_enter_yields_confirm_with_buffer() {
-        // 첫 프레임에 포커스를 얻고 다음 프레임에 Enter를 보내 실제 입력 조건을 맞춘다.
-        let ctx = egui::Context::default();
-        let theme = test_theme();
-        let mut buffer = String::from("renamed");
-        let mut last: RenamePopupAction = RenamePopupAction::None;
-
-        drop(ctx.run(egui::RawInput::default(), |ctx| {
-            egui::CentralPanel::default().show(ctx, |ui| {
-                let mut props = RenamePopupProps {
-                    theme: &theme,
-                    buffer: &mut buffer,
-                    save_label: "Save",
-                    cancel_label: "Cancel",
-                    body_font_size: 12.0,
-                    error: None,
-                    save_enabled: true,
-                    error_height: 0.0,
-                    waiting: None,
-                };
-                let _ = draw_rename_popup_view(ui, &mut props); // focus priming frame — action 무시.
-            });
-        }));
-
-        let mut raw = egui::RawInput::default();
-        raw.events.push(key_event(egui::Key::Enter));
-        drop(ctx.run(raw, |ctx| {
-            egui::CentralPanel::default().show(ctx, |ui| {
-                let mut props = RenamePopupProps {
-                    theme: &theme,
-                    buffer: &mut buffer,
-                    save_label: "Save",
-                    cancel_label: "Cancel",
-                    body_font_size: 12.0,
-                    error: None,
-                    save_enabled: true,
-                    error_height: 0.0,
-                    waiting: None,
-                };
-                last = draw_rename_popup_view(ui, &mut props);
-            });
-        }));
-
-        assert_eq!(last, RenamePopupAction::Confirm("renamed".to_string()));
-    }
-
-    #[test]
-    fn a_waiting_rename_keeps_the_name_and_ignores_keys_until_the_remote_answers() {
-        let ctx = egui::Context::default();
-        let theme = test_theme();
-        let mut buffer = String::from("report-final.pdf");
-        let mut actions = Vec::new();
-        let mut heights = Vec::new();
-        let mut output = egui::FullOutput::default();
-        let frames = [
-            vec![],
-            vec![key_event(egui::Key::Escape)],
-            vec![egui::Event::Text("x".into())],
-            vec![key_event(egui::Key::Enter)],
-        ];
-        for events in frames {
-            let raw = egui::RawInput {
-                events,
-                ..Default::default()
-            };
-            output = ctx.run(raw, |ctx| {
-                egui::CentralPanel::default().show(ctx, |ui| {
-                    ui.set_width(200.0);
-                    let top = ui.cursor().top();
-                    let mut props = RenamePopupProps {
-                        theme: &theme,
-                        buffer: &mut buffer,
-                        save_label: "Save",
-                        cancel_label: "Cancel",
-                        body_font_size: 12.0,
-                        error: None,
-                        save_enabled: true,
-                        error_height: 0.0,
-                        waiting: Some("Renaming on build-eu…"),
-                    };
-                    actions.push(draw_rename_popup_view(ui, &mut props));
-                    heights.push((ui.cursor().top() - top, props.error_height));
-                });
-            });
-        }
-        assert!(
-            actions.iter().all(|a| *a == RenamePopupAction::None),
-            "{actions:?}"
-        );
-        assert_eq!(buffer, "report-final.pdf");
-        // 보낸 이름 칸은 시안 Input readOnly처럼 readonly 바탕과 테두리를 둔다.
-        let (fills, strokes) = box_colors(&output, "report-final.pdf");
-        assert!(
-            fills.contains(&theme.input_readonly_bg().to_egui()),
-            "{fills:?}"
-        );
-        assert!(
-            strokes.contains(&theme.input_readonly_border().to_egui()),
-            "{strokes:?}"
-        );
-        // 대기 줄이 팝업을 그만큼 늘려 버튼 줄이 안에 남는다.
-        let (plain, _) = measured(None);
-        let (content, wait_h) = heights[0];
-        assert!(wait_h > 0.0);
-        assert_eq!(content, plain + wait_h);
-    }
-
-    /// 고칠 수 있는 이름 칸도 egui 기본 프레임(crust) 대신 Input 상자 토큰으로 그린다. 포커스를 받은 칸이다.
-    #[test]
-    fn an_editable_rename_field_draws_the_input_box() {
-        let ctx = egui::Context::default();
-        let theme = test_theme();
-        let mut buffer = String::from("tasty-core");
-        let mut output = egui::FullOutput::default();
-        for _ in 0..2 {
-            output = ctx.run(egui::RawInput::default(), |ctx| {
-                egui::CentralPanel::default().show(ctx, |ui| {
-                    ui.set_width(200.0);
-                    let mut props = RenamePopupProps {
-                        theme: &theme,
-                        buffer: &mut buffer,
-                        save_label: "Save",
-                        cancel_label: "Cancel",
-                        body_font_size: 12.0,
-                        error: None,
-                        save_enabled: true,
-                        error_height: 0.0,
-                        waiting: None,
-                    };
-                    draw_rename_popup_view(ui, &mut props);
-                });
-            });
-        }
-        let (fills, strokes) = box_colors(&output, "tasty-core");
-        assert!(fills.contains(&theme.input_bg().to_egui()), "{fills:?}");
-        assert!(
-            !fills.contains(&ctx.style().visuals.extreme_bg_color),
-            "{fills:?}"
-        );
-        assert!(
-            strokes.contains(&theme.input_border_focus().to_egui()),
-            "{strokes:?}"
-        );
-    }
-
-    #[test]
-    fn rename_view_renders_empty_buffer_without_panic() {
-        let (action, buffer) = run_with_input(egui::RawInput::default(), "");
-        assert_eq!(action, RenamePopupAction::None);
-        assert_eq!(buffer, "");
-    }
-
     fn engine() -> crate::runtime::engine_session::EngineSession {
+        engine_with_state().1
+    }
+
+    fn engine_with_state() -> (
+        crate::state::RequestContext,
+        crate::runtime::engine_session::EngineSession,
+    ) {
         use tasty_core::DomainEvent as E;
         crate::state::tests::test_state_from_model(crate::state::tests::test_model(vec![
             E::CategoryCreated {
@@ -930,7 +496,6 @@ mod tests {
                 index: 2,
             },
         ]))
-        .1
     }
 
     #[test]
@@ -966,15 +531,168 @@ mod tests {
         assert!(!ok && err.is_some());
     }
 
+    /// 그린 콘텐츠 높이가 다음 프레임 popup 높이가 된다: 오류 줄이 생기면 늘고 사라지면 돌아온다.
+    /// popup 콘텐츠 영역(공통 여백 없음)이 이 높이라 버튼 줄이 잘리지 않는다.
     #[test]
-    fn the_rename_sizer_adds_the_last_error_line_height() {
-        let (mut state, session) = crate::state::tests::test_state();
-        let base = rename_popup_sizer(&state, &session.read());
-        assert_eq!(base, rename_popup_default_size());
-        state.dialogs.rename_error_height = 18.0;
+    fn the_rename_popup_height_follows_the_drawn_content() {
+        crate::i18n::init("en");
+        let (mut state, session) = engine_with_state();
+        let th = theme::theme();
+        let draw = |state: &mut crate::state::RequestContext,
+                    session: &crate::runtime::engine_session::EngineSession| {
+            let ctx = egui::Context::default();
+            for _ in 0..2 {
+                drop(ctx.run(egui::RawInput::default(), |ctx| {
+                    egui::CentralPanel::default().show(ctx, |ui| {
+                        ui.set_width(rename_popup_default_size().x);
+                        draw_rename_popup(ui, state, &session.read());
+                    });
+                }));
+            }
+            state.dialogs.rename_content_height.expect("measured")
+        };
         assert_eq!(
             rename_popup_sizer(&state, &session.read()),
-            base + egui::vec2(0.0, 18.0)
+            rename_popup_default_size(),
+            "unmeasured: base content"
+        );
+        assert_eq!(
+            rename_popup_default_size().x,
+            crate::adapters::ui::zoomed_px(&th, POPUP_WIDTH).value()
+        );
+
+        state.dialogs.rename = Some((RenameTarget::NewCategory, "Ops".into()));
+        let plain = draw(&mut state, &session);
+        assert_eq!(
+            plain,
+            rename_popup_base_height(&th, RenamePopupLayout::Dialog)
+        );
+        state.dialogs.rename = Some((RenameTarget::NewCategory, "normal".into()));
+        let error = draw(&mut state, &session);
+        assert!(error > plain, "{error:?} > {plain:?}");
+        assert_eq!(
+            rename_popup_sizer(&state, &session.read()).y,
+            (popup::title_bar_height() + error).value()
+        );
+        state.dialogs.rename = Some((RenameTarget::NewCategory, "Web".into()));
+        assert_eq!(draw(&mut state, &session), plain, "no leftover room");
+    }
+
+    fn text_center(out: &egui::FullOutput, text: &str) -> egui::Pos2 {
+        out.shapes
+            .iter()
+            .find_map(|c| match &c.shape {
+                egui::Shape::Text(g) if g.galley.text() == text => {
+                    Some(g.visual_bounding_rect().center())
+                }
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("{text} drawn"))
+    }
+
+    /// 실제 popup 경로(`draw_popups` → `content_rect` clip)에서 여러 프레임을 그린다. 높이는 프레임마다
+    /// 자라지 않고, 오류 줄을 더하고 빼도 저장/취소 글자와 버튼이 popup 의 실제 clip 안에 그대로 보인다.
+    #[test]
+    fn the_real_popup_clip_keeps_the_footer_through_error_changes() {
+        use crate::model::{PhysicalPx, PhysicalRect};
+        crate::i18n::init("en");
+        let (mut state, mut session) = crate::state::tests::test_state();
+        let engine = session.borrow_mut();
+        let ctx = egui::Context::default();
+        let term = PhysicalRect {
+            x: PhysicalPx(0.0),
+            y: PhysicalPx(0.0),
+            width: PhysicalPx(1920.0),
+            height: PhysicalPx(1080.0),
+        };
+        state.dialogs.rename = Some((RenameTarget::NewCategory, "Ops".into()));
+        state
+            .popups
+            .open_at_focused("rename", egui::pos2(100.0, 100.0));
+        let frame = |state: &mut crate::state::RequestContext| {
+            let out = ctx.run(egui::RawInput::default(), |ctx| {
+                crate::adapters::ui::draw_popups(ctx, state, &engine.read(), &[], term, 1.0);
+            });
+            let size = state.popups.get_mut("rename").expect("open").size;
+            let repaint = out
+                .viewport_output
+                .get(&egui::ViewportId::ROOT)
+                .is_some_and(|v| v.repaint_delay.is_zero());
+            (out, size, repaint)
+        };
+        // 각 단계: 그린 모든 버튼 글자가 clip 에 잘리지 않고, 몇 프레임 뒤 높이가 멈춘다.
+        let settle = |state: &mut crate::state::RequestContext, label: &str| {
+            let mut sizes = Vec::new();
+            let mut last = None;
+            for _ in 0..5 {
+                let (out, size, _) = frame(state);
+                sizes.push(size);
+                last = Some(out);
+            }
+            assert!(
+                sizes[2..].windows(2).all(|w| w[0] == w[1]),
+                "{label}: height keeps changing {sizes:?}"
+            );
+            let out = last.unwrap();
+            for text in [t("button.save"), t("button.cancel")] {
+                let (r, clip) = out
+                    .shapes
+                    .iter()
+                    .find_map(|c| match &c.shape {
+                        egui::Shape::Text(g) if g.galley.text() == text => {
+                            Some((g.visual_bounding_rect(), c.clip_rect))
+                        }
+                        _ => None,
+                    })
+                    .unwrap_or_else(|| panic!("{label}: {text} drawn"));
+                assert!(
+                    clip.contains_rect(r),
+                    "{label}: {text} {r:?} clipped by {clip:?}"
+                );
+            }
+            // 저장 버튼 상자 전체와 그 아래 하단 여백(space-md)이 실제 clip 안에 남는다.
+            let save = text_center(&out, t("button.save"));
+            let (button, clip) = out
+                .shapes
+                .iter()
+                .filter_map(|c| match &c.shape {
+                    egui::Shape::Rect(r) if r.fill.a() > 0 && r.rect.contains(save) => {
+                        Some((r.rect, c.clip_rect))
+                    }
+                    _ => None,
+                })
+                .min_by(|a, b| a.0.area().total_cmp(&b.0.area()))
+                .expect("the primary button box is drawn");
+            assert!(
+                clip.bottom() - button.bottom() >= theme::theme().spacing_md.value(),
+                "{label}: no room under the button {button:?} in {clip:?}"
+            );
+            *sizes.last().unwrap()
+        };
+        let plain = settle(&mut state, "plain");
+        let title = popup::title_bar_height().value();
+        assert_eq!(
+            plain.y,
+            title + rename_popup_base_height(&theme::theme(), RenamePopupLayout::Dialog).value()
+        );
+
+        state.dialogs.rename = Some((RenameTarget::NewCategory, "normal".into()));
+        let (_, stale, repaint) = frame(&mut state);
+        assert_eq!(
+            stale, plain,
+            "the first error frame still uses the old height"
+        );
+        assert!(repaint, "the grown content asks for an immediate repaint");
+        let error = settle(&mut state, "error");
+        assert!(error.y > plain.y);
+
+        state.dialogs.rename = Some((RenameTarget::NewCategory, "Web".into()));
+        let (_, _, repaint) = frame(&mut state);
+        assert!(repaint, "the shrunk content asks for an immediate repaint");
+        assert_eq!(
+            settle(&mut state, "error removed"),
+            plain,
+            "no leftover room"
         );
     }
 

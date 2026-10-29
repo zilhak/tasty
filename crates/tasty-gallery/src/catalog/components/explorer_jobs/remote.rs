@@ -6,10 +6,9 @@ use tasty_type_appearance::theme::Theme;
 use tasty_type_appearance::toast_kind::ToastKind;
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{
-    Button, ButtonVariant, DragChipProps, DragOp, ExplorerNameEdit, ExplorerNameLayout,
-    ExplorerNameOptions, HostMark, Input, MenuItemVariant, OpStatusProps, QueueHeader,
-    QueueRowProps, ResultCardProps, Spinner, drag_chip, explorer_name_row_in, menu_item,
-    menu_separator, op_queue_popover, op_status_line, result_card,
+    DragChipProps, DragOp, ExplorerNameEdit, ExplorerNameLayout, ExplorerNameOptions, HostMark,
+    MenuItemVariant, OpStatusProps, QueueHeader, QueueRowProps, ResultCardProps, drag_chip,
+    explorer_name_row_in, menu_item, menu_separator, op_queue_popover, op_status_line, result_card,
 };
 
 use super::{BODY_H, CELL_W, QUEUE_BODY_H, cell, glyph_painter};
@@ -225,9 +224,6 @@ pub fn draw_write_refused(ui: &mut egui::Ui, theme: &Theme) {
     );
 }
 
-/// 시안 이름 변경 대기 팝업 폭(`--tasty-size-360`). 역할 토큰이 없어 전시 치수로 둔다.
-const RENAME_W: LogicalPx = LogicalPx(360.0);
-
 /// D2 — 원격의 답을 기다리는 동안 새 항목 줄은 제자리에 읽기 전용으로 남고 Spinner 를 단다.
 /// 이름 변경 팝업은 열린 채 입력과 두 버튼을 막고 대기 줄을 보인다.
 pub fn draw_remote_waiting(ui: &mut egui::Ui, theme: &Theme) {
@@ -294,48 +290,18 @@ pub fn draw_remote_waiting(ui: &mut egui::Ui, theme: &Theme) {
     );
 }
 
-/// 본체 rename 팝업과 같은 구성의 예제 한 장. 바탕은 dialog-bg 다. `waiting` 이 있으면 이름 칸을
-/// 읽기 전용으로 두고 Spinner 대기 줄을 보이며 두 버튼을 끈다. 칸의 상자는 두 상태 모두 기본 바탕용
-/// Input 토큰이다(평소 input-bg·input-border, 읽기 전용 input-readonly-*).
+/// 본체 rename 팝업과 같은 공용 view 의 예제 한 장. 바탕은 dialog-bg 다. `waiting` 이 있으면 이름 칸을
+/// 읽기 전용으로 두고 Spinner 대기 줄을 보이며 두 버튼을 끈다.
 fn rename_card(ui: &mut egui::Ui, theme: &Theme, waiting: Option<&str>) {
-    use crate::catalog::widgets::dialog as kit;
-    kit::frame_card(ui, theme, RENAME_W, kit::dialog_fill(theme), |ui| {
-        kit::region_sym(ui, theme.spacing_md, theme.spacing_md, |ui| {
-            ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
-            kit::title(ui, theme, t("explorer.popup.rename.title"));
-            let mut name = String::from("report-final.pdf");
-            Input::new()
-                .read_only(waiting.is_some())
-                .width(ui.available_width())
-                .show(ui, theme, &mut name);
-            if let Some(text) = waiting {
-                ui.horizontal(|ui| {
-                    ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
-                    Spinner::new()
-                        .size(theme.icon_glyph_size_sm.value())
-                        .show(ui, theme);
-                    ui.label(
-                        egui::RichText::new(text)
-                            .size(theme.font_size_caption.value())
-                            .color(theme.text_muted().to_egui()),
-                    );
-                });
-            }
-            ui.horizontal(|ui| {
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
-                    Button::new(t("button.save"))
-                        .variant(ButtonVariant::Primary)
-                        .enabled(waiting.is_none())
-                        .show(ui, theme);
-                    Button::new(t("button.cancel"))
-                        .variant(ButtonVariant::Ghost)
-                        .enabled(waiting.is_none())
-                        .show(ui, theme);
-                });
-            });
-        });
-    });
+    crate::catalog::components::rename_popup::card(
+        ui,
+        theme,
+        tasty_ui_widgets::RenamePopupLayout::Explorer,
+        t("explorer.popup.rename.title"),
+        "report-final.pdf",
+        None,
+        waiting,
+    );
 }
 
 /// rename 팝업 바탕 — 평소와 원격 대기 중을 나란히 둔다. 팝업은 dialog 라 바탕이 dialog-bg(bg-panel)이고,

@@ -1,38 +1,113 @@
-//! 워크스페이스·탭·부제 이름 변경 팝업의 정적 예제.
+//! 워크스페이스·탭·부제·카테고리 이름 변경 팝업 예제.
+//! 콘텐츠는 본체 popup 과 같은 `tasty_ui_widgets::rename_popup` 이 그린다. 제목 줄만 예제가 그린다.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
-use tasty_ui_widgets::{Button, ButtonVariant};
+use tasty_ui_widgets::{
+    RenamePopupLayout, RenamePopupView, margin_sym, rename_pad_x, rename_popup,
+};
 
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 use crate::catalog::widgets::dialog as kit;
+use crate::i18n::t;
 
-const WIDTH: LogicalPx = LogicalPx(360.0);
+/// `dialog.rs::rename_popup_sizer` 의 배율 전 기본 폭(시안 `size-360`).
+pub(crate) const POPUP_WIDTH: LogicalPx = LogicalPx(360.0);
+
+/// 예제 rename 팝업 한 장. 입력은 예제끼리 포커스를 다투지 않도록 자동 포커스를 끄고,
+/// 고친 값은 다음 프레임에 처음 값으로 돌아간다.
+pub(crate) fn card(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    layout: RenamePopupLayout,
+    title: &str,
+    name: &str,
+    error: Option<&str>,
+    waiting: Option<&str>,
+) {
+    let width = LogicalPx((POPUP_WIDTH.value() * theme.ui_zoom).round());
+    // 제목 띠의 위 여백은 그 시안의 콘텐츠 위 여백과 같다.
+    let top = match layout {
+        RenamePopupLayout::Dialog => rename_pad_x(theme),
+        RenamePopupLayout::Explorer => theme.spacing_md,
+    };
+    kit::frame_card(ui, theme, width, kit::dialog_fill(theme), |ui| {
+        kit::region(
+            ui,
+            egui::Margin {
+                bottom: 0,
+                ..margin_sym(rename_pad_x(theme), top)
+            },
+            |ui| kit::title(ui, theme, title),
+        );
+        let mut buffer = name.to_owned();
+        rename_popup(
+            ui,
+            theme,
+            &RenamePopupView {
+                layout,
+                save: t("button.save"),
+                cancel: t("button.cancel"),
+                error,
+                save_enabled: error.is_none(),
+                waiting,
+                autofocus: false,
+            },
+            &mut buffer,
+        );
+    });
+}
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
-        kit::frame_card(ui, theme, WIDTH, kit::dialog_fill(theme), |ui| {
-            kit::region_sym(ui, theme.spacing_md, theme.spacing_md, |ui| {
-                ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
-                ui.horizontal(|ui| {
-                    kit::title(ui, theme, "Rename workspace");
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        kit::caption(ui, theme, "Press ↵ to confirm, Esc to cancel.", false);
-                    });
-                });
-                // 예제끼리 포커스를 다투지 않도록 입력값은 정적으로 그린다.
-                kit::field(ui, theme, None, "tasty-core", false, false);
-                ui.horizontal(|ui| {
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        Button::new("Rename")
-                            .variant(ButtonVariant::Primary)
-                            .show(ui, theme);
-                        Button::new("Cancel")
-                            .variant(ButtonVariant::Ghost)
-                            .show(ui, theme);
-                    });
-                });
-            });
+        spec::cluster(ui, theme, "Workspace", |ui| {
+            card(
+                ui,
+                theme,
+                RenamePopupLayout::Dialog,
+                t("rename_dialog.title_heading"),
+                "Planning",
+                None,
+                None,
+            )
+        });
+        spec::cluster(ui, theme, "Long name (scrolls inside the padding)", |ui| {
+            card(
+                ui,
+                theme,
+                RenamePopupLayout::Dialog,
+                t("rename_dialog.tab_heading"),
+                "a-very-long-tab-name-that-scrolls-inside-the-field",
+                None,
+                None,
+            )
+        });
+        let latte = Theme::with_colors_and_zoom(
+            crate::host_shell::latte_theme().to_colors(),
+            true,
+            theme.ui_zoom,
+        );
+        spec::cluster(ui, theme, "Latte", |ui| {
+            card(
+                ui,
+                &latte,
+                RenamePopupLayout::Dialog,
+                t("rename_dialog.subtitle_heading"),
+                "기획 문서",
+                None,
+                None,
+            )
+        });
+        spec::cluster(ui, theme, "Validation error (wraps)", |ui| {
+            card(
+                ui,
+                theme,
+                RenamePopupLayout::Dialog,
+                t("rename_dialog.tab_heading"),
+                "normal",
+                Some(t("workspace_category.error.reserved")),
+                None,
+            )
         });
     });
 
@@ -40,23 +115,37 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ui,
         theme,
         &[
-            ("frame", "360px · dialog-bg"),
-            ("title", "14px semibold"),
-            ("hint", "↵ rename · Esc cancel"),
-            ("input", "block · autofocused + selected"),
-            ("footer", "Cancel · Rename"),
+            ("frame", "360px × ui scale · dialog-bg"),
+            (
+                "padding",
+                "explorer-props-padding-x (14) all sides and above the footer",
+            ),
+            (
+                "input",
+                "Input block · input-height 28 · autofocused + selected",
+            ),
+            (
+                "error",
+                "caption accent-danger · space-xs above (design 6, no role token)",
+            ),
+            ("footer", "Cancel · Save · button md"),
         ],
         &[
             TokenChip::new("dialog-bg", "frame", theme.dialog_bg().to_egui()),
             TokenChip::new("input-bg", "input", theme.input_bg().to_egui()),
-            TokenChip::new("border-focus", "focus ring", theme.border_focus().to_egui()),
+            TokenChip::new(
+                "input-border-invalid",
+                "invalid edge",
+                theme.input_border_invalid().to_egui(),
+            ),
         ],
     );
 
     spec::note(
         ui,
         theme,
-        "One view serves workspace, subtitle, and tab renames — only the title and \
-         buffer differ. The field autofocuses with the text selected; Enter commits.",
+        "One view serves workspace, subtitle, tab, category and explorer renames — only the \
+         title, buffer and validation differ. The popup height is the drawn content, so the \
+         footer stays inside at every UI scale and with an error or waiting line.",
     );
 }
