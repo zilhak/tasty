@@ -88,14 +88,16 @@ fn task_key(task: &ProtocolObject<dyn WKURLSchemeTask>) -> usize {
 impl EntryHandler {
     fn fail(&self, key: usize, task: &ProtocolObject<dyn WKURLSchemeTask>) {
         if self.ivars().active.borrow_mut().remove(&key) {
-            // SAFETY: active tasks have not stopped/finished; remove before reentrant callbacks.
-            unsafe {
-                task.didFailWithError(&NSError::errorWithDomain_code_userInfo(
+            // SAFETY: plain main-thread NSError construction with a live domain string.
+            let error = unsafe {
+                NSError::errorWithDomain_code_userInfo(
                     &NSString::from_str("TastyRemoteEntry"),
                     1,
                     None,
-                ));
-            }
+                )
+            };
+            // SAFETY: active tasks have not stopped/finished; remove before reentrant callbacks.
+            unsafe { task.didFailWithError(&error) };
         }
     }
     pub(in crate::host_api::webview) fn poll(&self) {

@@ -355,7 +355,9 @@ define_class!(
             // A cached child must still become a new received/scanned document when main.
             if let Some(source) = &self.ivars().entry_source {
                 // SAFETY: live navigation action on the WebKit main thread.
-                let main = unsafe { navigation_action.targetFrame().map(|f| f.isMainFrame()) };
+                let frame = unsafe { navigation_action.targetFrame() };
+                // SAFETY: frame info retained for this main-thread delegate call.
+                let main = frame.map(|f| unsafe { f.isMainFrame() });
                 let denied = url.as_deref().is_none_or(|uri| match main {
                     Some(true) => source.main_resource(uri),
                     Some(false) => !source.allows_uri(uri),
