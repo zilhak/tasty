@@ -14,7 +14,7 @@ fn reload_with_native(
     sid: u32,
     mark_origin: fn(&mut tasty_model::html_script::HtmlScriptState),
 ) {
-    #[cfg(any(target_os = "linux", windows))]
+    #[cfg(any(target_os = "linux", target_os = "macos", windows))]
     if remote.http_session.is_some() {
         if !remote
             .lock_html_mirror()
@@ -35,8 +35,8 @@ fn reload_with_native(
             }
         }
     }
-    // macOS has no retained HTTP native continuation.
-    #[cfg(not(any(target_os = "linux", windows)))]
+    // Platforms without a native HTTP viewer reload the received entry only.
+    #[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
     let _ = (view, sid);
     reload_received_entry(remote, mark_origin);
 }

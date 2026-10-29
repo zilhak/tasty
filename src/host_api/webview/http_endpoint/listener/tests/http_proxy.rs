@@ -260,3 +260,67 @@ async fn successor_rebinds_the_joined_address_with_fresh_credentials() {
     assert_eq!(calls.load(Ordering::Acquire), 0);
     second.join().await.unwrap();
 }
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn loopback_alias_tunnel_reaches_the_handler_as_the_remote_loopback_host() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let seen = calls.clone();
+    let handler: Handler = Arc::new(move |request| {
+        seen.fetch_add(1, Ordering::AcqRel);
+        Box::pin(async move {
+            assert_eq!(request.logical_url, "http://localhost:8080/doc");
+            let header = |name: &str| {
+                request
+                    .headers
+                    .iter()
+                    .find(|h| h.name.eq_ignore_ascii_case(name))
+                    .map(|h| h.value.clone())
+            };
+            assert_eq!(
+                header("host").as_deref(),
+                Some(b"localhost:8080".as_slice())
+            );
+            assert_eq!(
+                header("origin").as_deref(),
+                Some(b"http://localhost:8080".as_slice())
+            );
+            Ok(reply(request))
+        })
+    });
+    let budget = EndpointBudget::new();
+    let mut config = config_with(
+        "http://localhost:8080/doc".into(),
+        handler,
+        Transport::HttpProxy,
+    );
+    config.loopback_alias = true;
+    let endpoint = Endpoint::start(Handle::current(), config, budget.clone())
+        .await
+        .unwrap_or_else(|_| panic!("endpoint"));
+    let auth = authorization(&endpoint);
+    let tunnel = format!(
+        "CONNECT localhost.tasty.localhost:8080 HTTP/1.1\r\nHost: localhost.tasty.localhost:8080\r\n{auth}\r\nGET /doc HTTP/1.1\r\nHost: localhost.tasty.localhost:8080\r\nOrigin: http://localhost.tasty.localhost:8080\r\n\r\n"
+    );
+    let bytes = exchange(&endpoint, tunnel.as_bytes()).await;
+    assert!(bytes.starts_with(b"HTTP/1.1 200 Connection Established\r\n\r\nHTTP/1.1 200 \r\n"));
+    assert!(bytes.ends_with(b"REMOTE body"));
+    // Another loopback host is a different origin.
+    let other = format!(
+        "CONNECT 127-0-0-1.tasty.localhost:8080 HTTP/1.1\r\nHost: 127-0-0-1.tasty.localhost:8080\r\n{auth}\r\n"
+    );
+    let bytes = exchange(&endpoint, other.as_bytes()).await;
+    assert!(bytes.starts_with(b"HTTP/1.1 403 Forbidden\r\n"));
+    assert_eq!(calls.load(Ordering::Acquire), 1);
+    endpoint.join().await.unwrap();
+    // Without aliasing the alias is only a foreign host name.
+    let endpoint = start("http://localhost:8080/doc", counting(&calls), &budget).await;
+    let auth = authorization(&endpoint);
+    let bytes = exchange(
+        &endpoint,
+        format!("CONNECT localhost.tasty.localhost:8080 HTTP/1.1\r\nHost: localhost.tasty.localhost:8080\r\n{auth}\r\n").as_bytes(),
+    )
+    .await;
+    assert!(bytes.starts_with(b"HTTP/1.1 403 Forbidden\r\n"));
+    assert_eq!(calls.load(Ordering::Acquire), 1);
+    endpoint.join().await.unwrap();
+    assert_eq!(budget.active_connections(), 0);
+}

@@ -629,7 +629,10 @@ mod port_scans;
 
 #[cfg(feature = "gui")]
 pub(crate) mod html_runtime;
-#[cfg(all(feature = "gui", any(target_os = "linux", windows)))]
+#[cfg(all(
+    feature = "gui",
+    any(target_os = "linux", target_os = "macos", windows)
+))]
 pub(crate) mod http_session;
 #[cfg(feature = "gui")]
 pub(crate) mod webview_sync;

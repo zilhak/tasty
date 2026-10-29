@@ -71,10 +71,10 @@ fn construct(
     active_html: &std::collections::HashMap<u32, crate::webview::WebViewBounds>,
     scale_factor: f64,
 ) -> Result<Option<crate::webview::PlatformWebView>, crate::webview::WebViewCreateError> {
-    #[cfg(any(target_os = "linux", windows))]
+    #[cfg(any(target_os = "linux", target_os = "macos", windows))]
     let http =
         find_remote_surface(view, engine, sid).and_then(|remote| remote.http_session.clone());
-    #[cfg(any(target_os = "linux", windows))]
+    #[cfg(any(target_os = "linux", target_os = "macos", windows))]
     let prepared = if let Some(session) = http {
         let pending = view
             .http_preparing
@@ -94,7 +94,7 @@ fn construct(
     } else {
         None
     };
-    #[cfg(any(target_os = "linux", windows))]
+    #[cfg(any(target_os = "linux", target_os = "macos", windows))]
     let result = if let Some(document) = prepared {
         crate::webview::PlatformWebView::new_http(
             view.base.winit.as_ref(),
@@ -119,7 +119,7 @@ fn construct(
                 }),
         )
     };
-    #[cfg(not(any(target_os = "linux", windows)))]
+    #[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
     let result = crate::webview::PlatformWebView::new(
         view.base.winit.as_ref(),
         active_html.get(&sid).copied().unwrap_or(default_bounds()),

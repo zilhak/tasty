@@ -90,6 +90,7 @@ async fn deliveries(runtime: NativeRuntime) {
     let config = EndpointConfig {
         transport: crate::host_api::webview::http_endpoint::listener::Transport::Socks,
         port: 0,
+        loopback_alias: false,
         identity: DocumentIdentity {
             epoch: 1,
             surface: 42,

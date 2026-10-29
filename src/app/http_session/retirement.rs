@@ -19,7 +19,7 @@ impl HttpSession {
             *retained = Some(body);
         }
         self.bodies.retire();
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "macos"))]
         self.script.clear();
         self.close_reload();
         // Mint the exact terminal Close while the old captured document is still current.

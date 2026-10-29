@@ -54,6 +54,59 @@ async fn binary_upload_and_raw_headers_bind_authenticated_destination() {
     assert_eq!(budget.used(), 0);
 }
 #[tokio::test]
+async fn wire_host_reads_as_the_destination_and_rewrites_same_origin_headers() {
+    let budget = NativeBudget::new(1_000_000);
+    let destination = Destination::new("http", "localhost", 8080)
+        .unwrap()
+        .with_wire_host("localhost.tasty.localhost")
+        .unwrap();
+    let read = |bytes: &'static [u8]| {
+        let destination = &destination;
+        let budget = &budget;
+        async move {
+            let (mut io, mut peer) = tokio::io::duplex(bytes.len() + 1);
+            peer.write_all(bytes).await.unwrap();
+            peer.shutdown().await.unwrap();
+            read_request(&mut io, destination, limits(), budget, &|| true).await
+        }
+    };
+    let request = read(b"POST /a?b HTTP/1.1\r\nHost: localhost.tasty.localhost:8080\r\nOrigin: http://localhost.tasty.localhost:8080\r\nReferer: http://localhost.tasty.localhost:8080/p?q\r\nContent-Length: 0\r\n\r\n")
+        .await
+        .unwrap_or_else(|_| panic!("aliased request"));
+    assert_eq!(request.logical_url, "http://localhost:8080/a?b");
+    let header = |name: &str| {
+        request
+            .headers
+            .iter()
+            .find(|h| h.name.eq_ignore_ascii_case(name))
+            .map(|h| String::from_utf8(h.value.clone()).unwrap())
+    };
+    assert_eq!(header("host").as_deref(), Some("localhost:8080"));
+    assert_eq!(header("origin").as_deref(), Some("http://localhost:8080"));
+    assert_eq!(
+        header("referer").as_deref(),
+        Some("http://localhost:8080/p?q")
+    );
+    // Absolute-form targets on the wire host are the destination; other origins stay as sent.
+    let request = read(b"GET http://localhost.tasty.localhost:8080/x HTTP/1.1\r\nHost: localhost:8080\r\nOrigin: http://other.test\r\n\r\n")
+        .await
+        .unwrap_or_else(|_| panic!("absolute aliased request"));
+    assert_eq!(request.logical_url, "http://localhost:8080/x");
+    assert!(
+        request
+            .headers
+            .iter()
+            .any(|h| h.name == "Origin" && h.value == b"http://other.test")
+    );
+    for refused in [
+        b"GET / HTTP/1.1\r\nHost: localhost.tasty.localhost:9090\r\n\r\n".as_slice(),
+        b"GET / HTTP/1.1\r\nHost: other.tasty.localhost:8080\r\n\r\n",
+        b"GET http://localhost.tasty.localhost:9090/ HTTP/1.1\r\nHost: localhost:8080\r\n\r\n",
+    ] {
+        assert!(read(refused).await.is_err());
+    }
+}
+#[tokio::test]
 async fn finite_chunked_upload_is_dechunked_without_changing_payload() {
     let budget = NativeBudget::new(1_000_000);
     let request = read(b"POST / HTTP/1.1\r\nHost: example.test:8080\r\nTransfer-Encoding: chunked\r\n\r\n2\r\n\0x\r\n1;owned=yes\r\n\xff\r\n0\r\n\r\n", &budget).await.unwrap_or_else(|_| panic!("chunked"));

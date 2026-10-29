@@ -64,7 +64,10 @@ pub(super) fn retain(sess: &mut AttachClientSession, surfaces: &[serde_json::Val
     });
 }
 
-#[cfg(all(feature = "gui", any(target_os = "linux", windows)))]
+#[cfg(all(
+    feature = "gui",
+    any(target_os = "linux", target_os = "macos", windows)
+))]
 pub(super) mod http;
 pub(super) mod resources;
 mod viewer;

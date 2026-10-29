@@ -106,14 +106,18 @@ pub(crate) enum Transport {
 }
 /// Values a native HTTP proxy authentication handler needs; never logged or persisted.
 #[cfg_attr(
-    not(any(windows, test)),
+    not(any(windows, target_os = "macos", test)),
     expect(
         dead_code,
-        reason = "only the WebView2 adapter authenticates through the HTTP proxy front"
+        reason = "only the WebView2 and WebKit adapters authenticate through the HTTP proxy front"
     )
 )]
 pub(crate) struct ProxyCredentials {
     pub uri: String,
+    #[cfg_attr(
+        all(target_os = "macos", not(test)),
+        expect(dead_code, reason = "WebKit reports no proxy realm to compare")
+    )]
     pub challenge: String,
     pub user: &'static str,
     pub password: String,
@@ -123,6 +127,8 @@ pub(crate) struct EndpointConfig {
     /// Loopback port to bind; 0 picks a free one. A WebView2 view fixes its proxy address at
     /// creation, so its retained Reload binds the port of the document it replaces.
     pub port: u16,
+    /// Read alias hosts back as the remote loopback hosts they stand for (WebKit on macOS).
+    pub loopback_alias: bool,
     pub identity: DocumentIdentity,
     pub entry_url: String,
     pub allow_remote_content: bool,
@@ -269,10 +275,10 @@ impl Endpoint {
         self.proxy_uri.clone()
     }
     #[cfg_attr(
-        not(any(windows, test)),
+        not(any(windows, target_os = "macos", test)),
         expect(
             dead_code,
-            reason = "only the WebView2 adapter keeps its proxy port across a Reload"
+            reason = "only the WebView2 and WebKit adapters keep their proxy port across a Reload"
         )
     )]
     pub(crate) fn port(&self) -> u16 {
@@ -280,10 +286,10 @@ impl Endpoint {
     }
     /// Basic proxy credentials for the HttpProxy transport; None for SOCKS.
     #[cfg_attr(
-        not(any(windows, test)),
+        not(any(windows, target_os = "macos", test)),
         expect(
             dead_code,
-            reason = "only the WebView2 adapter authenticates through the HTTP proxy front"
+            reason = "only the WebView2 and WebKit adapters authenticate through the HTTP proxy front"
         )
     )]
     pub(crate) fn proxy_credentials(&self) -> Option<ProxyCredentials> {
@@ -389,9 +395,8 @@ async fn connection(state: Arc<State>, socket: TcpStream) -> Result<(), Endpoint
     let route = endpoint::authenticate(&mut io, &state.token, deadline)
         .await
         .map_err(|_| EndpointError::Auth)?;
-    let authority =
-        Authority::new(&route.host, route.port).map_err(|_| EndpointError::Destination)?;
-    if !(state.current)() || !state.policy.candidate(&authority) {
+    let route = Route::new(&state, &route.host, route.port)?;
+    if !(state.current)() || !state.policy.candidate(&route.logical) {
         endpoint::reject_route(&mut io)
             .await
             .map_err(|_| EndpointError::Io)?;
@@ -400,7 +405,29 @@ async fn connection(state: Arc<State>, socket: TcpStream) -> Result<(), Endpoint
     endpoint::accept_route(&mut io)
         .await
         .map_err(|_| EndpointError::Io)?;
-    routed(state, io, authority).await
+    routed(state, io, route).await
+}
+/// The authority the native engine addressed and the remote authority it stands for. They
+/// differ only for a loopback alias.
+#[derive(Clone)]
+pub(super) struct Route {
+    pub wire: Authority,
+    pub logical: Authority,
+}
+impl Route {
+    fn new(state: &State, host: &str, port: u16) -> Result<Self, EndpointError> {
+        let wire = Authority::new(host, port).map_err(|_| EndpointError::Destination)?;
+        let logical = match state
+            .config
+            .loopback_alias
+            .then(|| super::alias::logical_host(wire.host()))
+            .flatten()
+        {
+            Some(host) => Authority::new(&host, port).map_err(|_| EndpointError::Destination)?,
+            None => wire.clone(),
+        };
+        Ok(Self { wire, logical })
+    }
 }
 async fn proxy_connection(
     state: Arc<State>,
@@ -414,11 +441,10 @@ async fn proxy_connection(
         ProxyRoute::Tunnel(route) => (route, None),
         ProxyRoute::Forward { authority, head } => (authority, Some(head)),
     };
-    let authority =
-        Authority::new(&route.host, route.port).map_err(|_| EndpointError::Destination)?;
+    let route = Route::new(&state, &route.host, route.port)?;
     let admitted = match head {
-        None => state.policy.candidate(&authority),
-        Some(_) => state.policy.permits("http", &authority),
+        None => state.policy.candidate(&route.logical),
+        Some(_) => state.policy.permits("http", &route.logical),
     };
     if !(state.current)() || !admitted {
         proxy::reject_proxy_route(&mut io)
@@ -427,17 +453,17 @@ async fn proxy_connection(
         return Err(EndpointError::Destination);
     }
     if let Some(head) = head {
-        return request::serve(state, Prefixed::new(head, io), authority, "http").await;
+        return request::serve(state, Prefixed::new(head, io), route, "http").await;
     }
     proxy::accept_tunnel(&mut io)
         .await
         .map_err(|_| EndpointError::Io)?;
-    routed(state, io, authority).await
+    routed(state, io, route).await
 }
 async fn routed(
     state: Arc<State>,
     io: CurrentConnection<TcpStream>,
-    authority: Authority,
+    route: Route,
 ) -> Result<(), EndpointError> {
     let deadline = state.config.limits.io_timeout;
     let first = tokio::time::timeout(deadline, io.first_byte())
@@ -445,42 +471,43 @@ async fn routed(
         .map_err(|_| EndpointError::Io)?
         .map_err(|_| EndpointError::Io)?;
     let scheme = if first == 22 { "https" } else { "http" };
-    if !(state.current)() || !state.policy.permits(scheme, &authority) {
+    if !(state.current)() || !state.policy.permits(scheme, &route.logical) {
         return Err(EndpointError::Destination);
     }
     if scheme == "https" {
+        // The leaf names the host the native engine addressed and checks.
         let certificate = state
             .certificates
-            .certificate(authority.clone())
+            .certificate(route.wire.clone())
             .await
             .map_err(|_| EndpointError::Tls)?;
         if let Some(trust) = &state.trust {
-            let io = trust::hello::capture(io, &authority, deadline).await?;
+            let io = trust::hello::capture(io, &route.wire, deadline).await?;
             trust
-                .wait(&state, authority.clone(), certificate.clone())
+                .wait(&state, route.wire.clone(), certificate.clone())
                 .await?;
-            serve_tls(state, io, authority, certificate).await
+            serve_tls(state, io, route, certificate).await
         } else {
-            serve_tls(state, io, authority, certificate).await
+            serve_tls(state, io, route, certificate).await
         }
     } else {
-        request::serve(state, io, authority, scheme).await
+        request::serve(state, io, route, scheme).await
     }
 }
 async fn serve_tls<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin>(
     state: Arc<State>,
     io: S,
-    authority: Authority,
+    route: Route,
     certificate: Arc<super::certificates::AuthorityTls>,
 ) -> Result<(), EndpointError> {
     let io = certificate
         .accept(io, state.config.limits.io_timeout)
         .await
         .map_err(|_| EndpointError::Tls)?;
-    if !sni_matches(&authority, io.server_name()) {
+    if !sni_matches(&route.wire, io.server_name()) {
         return Err(EndpointError::Destination);
     }
-    request::serve(state, io, authority, "https").await
+    request::serve(state, io, route, "https").await
 }
 fn sni_matches(authority: &Authority, sni: Option<&str>) -> bool {
     match sni {

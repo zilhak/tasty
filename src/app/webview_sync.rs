@@ -31,7 +31,7 @@ pub(crate) fn synchronize(
     plugins: Option<&PluginManager>,
     proofs: &super::html_runtime::NavigationProofs,
 ) {
-    #[cfg(any(target_os = "linux", windows))]
+    #[cfg(any(target_os = "linux", target_os = "macos", windows))]
     {
         let mut replaced = Vec::new();
         for (sid, wv) in &view.webviews {
@@ -62,7 +62,7 @@ pub(crate) fn synchronize(
         .copied()
         .filter(|surface| {
             !view.webview_runtime.get(surface).is_some_and(|binding| {
-                #[cfg(any(target_os = "linux", windows))]
+                #[cfg(any(target_os = "linux", target_os = "macos", windows))]
                 if view
                     .webviews
                     .get(surface)
@@ -82,7 +82,7 @@ pub(crate) fn synchronize(
         view.webview_create_attempts.remove(&surface);
         proofs.invalidate(&view.state.webview_identity, surface);
     }
-    #[cfg(any(target_os = "linux", windows))]
+    #[cfg(any(target_os = "linux", target_os = "macos", windows))]
     view.http_preparing.retain(|_, pending| pending.current());
     sync_webviews(view, &engine.as_ref(), plugins, proofs);
     if view.base.state.dirty && view.base.surface_ready() {
@@ -136,7 +136,7 @@ struct HtmlSurfaces {
 /// surface다. 빈 html 탭은 사용자가 처음 주소를 열 때(사용자 탐색 큐에 들어올 때) 만들고 그 뒤로 둔다.
 fn hosts_webview(view: &MainView, surface: &dyn crate::model::Surface, sid: u32) -> bool {
     if let Some(remote) = surface.as_any().downcast_ref::<RemoteSurface>() {
-        #[cfg(any(target_os = "linux", windows))]
+        #[cfg(any(target_os = "linux", target_os = "macos", windows))]
         if let Some(session) = remote.http_session.as_ref()
             && (session.is_current() || session.entry_body().is_some())
         {
@@ -147,7 +147,7 @@ fn hosts_webview(view: &MainView, surface: &dyn crate::model::Surface, sid: u32)
         if let Some(mirror) = remote.lock_html_mirror() {
             return mirror.body_store().current().is_some();
         }
-        #[cfg(any(target_os = "linux", windows))]
+        #[cfg(any(target_os = "linux", target_os = "macos", windows))]
         if remote.http_session.is_some() {
             return false;
         }
@@ -342,9 +342,9 @@ fn apply_webview_requests(
             .is_some_and(|rs| rs.with_html_script(|st| st.take_reload_request()));
         if reload {
             tracing::debug!("WebView surface {sid}: reloading after the script allowance");
-            #[cfg(any(target_os = "linux", windows))]
+            #[cfg(any(target_os = "linux", target_os = "macos", windows))]
             wv.reload_after_script_allow();
-            #[cfg(not(any(target_os = "linux", windows)))]
+            #[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
             wv.reload();
         }
     }

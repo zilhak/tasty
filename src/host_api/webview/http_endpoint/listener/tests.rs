@@ -36,6 +36,7 @@ fn config_with(url: String, handler: Handler, transport: Transport) -> EndpointC
     EndpointConfig {
         transport,
         port: 0,
+        loopback_alias: false,
         identity: identity(),
         entry_url: url,
         allow_remote_content: false,

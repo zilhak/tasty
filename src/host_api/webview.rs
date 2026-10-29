@@ -5,12 +5,12 @@ pub(crate) mod entry_response;
 mod file_stamp;
 #[cfg(target_os = "linux")]
 pub(crate) mod http_context;
-#[cfg(any(target_os = "linux", windows))]
+#[cfg(any(target_os = "linux", target_os = "macos", windows))]
 pub(crate) mod http_endpoint;
 #[cfg(target_os = "linux")]
 pub(crate) mod http_native;
-#[cfg(windows)]
-#[path = "webview/http_native/windows.rs"]
+#[cfg(any(windows, target_os = "macos"))]
+#[path = "webview/http_native/proxy_front.rs"]
 pub(crate) mod http_native;
 pub mod keys;
 mod load_generation;
@@ -166,9 +166,10 @@ pub(crate) fn http_viewer_available(window: &winit::window::Window) -> bool {
 pub(crate) fn http_viewer_available(_window: &winit::window::Window) -> bool {
     true
 }
+/// WebKit routes a data store through the document endpoint only from macOS 14.
 #[cfg(target_os = "macos")]
 pub(crate) fn http_viewer_available(_window: &winit::window::Window) -> bool {
-    false
+    macos::http_available()
 }
 
 #[cfg(test)]

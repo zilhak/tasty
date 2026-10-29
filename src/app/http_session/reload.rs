@@ -11,12 +11,12 @@ pub(crate) struct ReloadSetup {
 pub(crate) struct Successor {
     receipt: ReloadAuthority,
     native: Weak<()>,
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     front: Option<Front>,
 }
-/// The loopback proxy address a WebView2 environment fixed at creation. The successor binds
+/// The loopback proxy address a WebView2 environment or WebKit data store fixed at creation. The successor binds
 /// it only after the predecessor's endpoint has released it.
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 #[derive(Clone)]
 struct Front {
     port: u16,
@@ -28,9 +28,9 @@ pub(super) struct ReloadState {
     native: Mutex<Weak<()>>,
     captured: Mutex<Option<ReloadAuthority>>,
     successor: Mutex<Option<ReloadAuthority>>,
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     inherited: Option<Front>,
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     retained_port: Mutex<Option<u16>>,
 }
 impl ReloadSetup {
@@ -41,7 +41,7 @@ impl ReloadSetup {
         current: Current,
         wake: Arc<dyn Fn() + Send + Sync>,
     ) -> Result<(Arc<HttpBridge>, ReloadState), String> {
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "macos"))]
         let inherited = self
             .predecessor
             .as_ref()
@@ -73,9 +73,9 @@ impl ReloadSetup {
                 native: Mutex::new(native),
                 captured: Mutex::default(),
                 successor: Mutex::default(),
-                #[cfg(windows)]
+                #[cfg(any(windows, target_os = "macos"))]
                 inherited,
-                #[cfg(windows)]
+                #[cfg(any(windows, target_os = "macos"))]
                 retained_port: Mutex::default(),
             },
         ))
@@ -182,7 +182,7 @@ impl HttpSession {
             .lock()
             .map_err(|_| "native lifetime poisoned")?
             .clone();
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "macos"))]
         let front = self
             .reload
             .retained_port
@@ -195,13 +195,13 @@ impl HttpSession {
         Ok(receipt.map(|receipt| Successor {
             receipt,
             native,
-            #[cfg(windows)]
+            #[cfg(any(windows, target_os = "macos"))]
             front,
         }))
     }
     /// The port this session's endpoint binds: the inherited proxy address, or any free port.
     pub(super) fn endpoint_port(&self) -> u16 {
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "macos"))]
         if let Some(front) = &self.reload.inherited {
             return front.port;
         }
@@ -209,7 +209,7 @@ impl HttpSession {
     }
     /// Whether the endpoint may bind now. An inherited address waits for its predecessor's join.
     pub(super) fn endpoint_admitted(&self) -> Result<bool, String> {
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "macos"))]
         if let Some(front) = &self.reload.inherited {
             return match front.joined.load(Ordering::Acquire) {
                 0 => Ok(false),
@@ -219,8 +219,8 @@ impl HttpSession {
         }
         Ok(true)
     }
-    /// A retained WebView2 view keeps this endpoint's proxy address for its successor.
-    #[cfg(windows)]
+    /// A retained WebView2 or WebKit view keeps this endpoint's proxy address for its successor.
+    #[cfg(any(windows, target_os = "macos"))]
     pub(crate) fn retain_proxy_port(&self, port: u16) -> Result<(), String> {
         *self
             .reload
@@ -230,7 +230,7 @@ impl HttpSession {
         Ok(())
     }
     /// Whether a main response captured a Reload receipt that a successor can continue.
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     pub(crate) fn reload_captured(&self) -> bool {
         self.reload
             .captured

@@ -169,14 +169,20 @@ pub(in crate::app::attach_client) fn synchronize(
             // HTTP presentation belongs to its actual native/model session. The legacy file
             // metadata receiver deliberately cannot transfer HTTP bodies; its terminal state
             // must not erase the current HTTP document's actionable script banner.
-            #[cfg(all(feature = "gui", any(target_os = "linux", windows)))]
+            #[cfg(all(
+                feature = "gui",
+                any(target_os = "linux", target_os = "macos", windows)
+            ))]
             if surface.http_session.is_some() {
                 continue;
             }
             surface.with_html_script(|state| state.on_load_failed());
         }
     }
-    #[cfg(all(feature = "gui", any(target_os = "linux", windows)))]
+    #[cfg(all(
+        feature = "gui",
+        any(target_os = "linux", target_os = "macos", windows)
+    ))]
     {
         changed |= super::http::synchronize(sess, engine);
     }

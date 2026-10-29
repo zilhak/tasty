@@ -1,4 +1,4 @@
-//! WebView2 fixes script enablement when a navigation starts, before any response exists.
+//! WebView2 and macOS WebKit fix script enablement when a navigation starts, before any response exists.
 //! The verified main response scan decides instead, and a document whose scripts are not
 //! allowed receives a client-local script-blocking policy on every response.
 use super::*;
@@ -55,7 +55,7 @@ impl HttpSession {
             }
         }
     }
-    /// A commit before the endpoint served the expected main response is WebView2's own page,
+    /// A commit before the endpoint served the expected main response is the engine's own page,
     /// such as the proxy challenge attempt or an error page, not a remote document.
     pub(crate) fn awaiting_main_response(&self) -> bool {
         self.script

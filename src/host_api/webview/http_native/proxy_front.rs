@@ -1,5 +1,5 @@
-//! WebView2 publication of one native HTTP document. Its view authenticates to the document
-//! endpoint as a Basic HTTP proxy; the credentials never leave this process.
+//! WebView2 or WebKit publication of one native HTTP document. Its view authenticates to the
+//! document endpoint as a Basic HTTP proxy; the credentials never leave this process.
 use super::http_endpoint::listener::{Endpoint, ProxyCredentials};
 use crate::app::http_session::HttpSession;
 use std::{
@@ -10,7 +10,7 @@ use std::{
 pub(crate) struct PendingNative {
     session: Arc<HttpSession>,
 }
-/// One WebView2 context across retained Reloads. Each Reload swaps in the successor session,
+/// One native view context across retained Reloads. Each Reload swaps in the successor session,
 /// whose endpoint binds the same loopback proxy address with fresh credentials.
 pub(crate) struct NativeDocument {
     native_owner: Arc<()>,
@@ -64,12 +64,13 @@ impl NativeDocument {
     pub(crate) fn session(&self) -> Arc<HttpSession> {
         self.session.borrow().clone()
     }
-    /// The proxy URI the WebView2 environment was created with; it never changes.
+    /// The proxy URI the view was created with; it never changes.
     pub(crate) fn proxy_uri(&self) -> String {
         self.credentials.borrow().uri.clone()
     }
     /// Whether `uri` and `challenge` name the current endpoint's own challenge, and its
     /// user name and password if so.
+    #[cfg(windows)]
     pub(crate) fn answer(&self, uri: &str, challenge: &str) -> Option<(&'static str, String)> {
         if !self.session().is_current() {
             return None;
@@ -77,6 +78,16 @@ impl NativeDocument {
         let credentials = self.credentials.borrow();
         (uri == credentials.uri && challenge == credentials.challenge)
             .then(|| (credentials.user, credentials.password.clone()))
+    }
+    /// WebKit reports no proxy realm, so the endpoint address alone names its challenge. The
+    /// server removes Proxy-Authorization before forwarding, so a remote 407 cannot obtain it.
+    #[cfg(target_os = "macos")]
+    pub(crate) fn answer_proxy(&self, uri: &str) -> Option<(&'static str, String)> {
+        if !self.session().is_current() {
+            return None;
+        }
+        let credentials = self.credentials.borrow();
+        (uri == credentials.uri).then(|| (credentials.user, credentials.password.clone()))
     }
     /// The exact leaf the endpoint presented for this authority, if it is still current.
     pub(crate) fn expected_leaf(&self, host: &str, port: u16) -> Option<[u8; 32]> {

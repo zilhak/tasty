@@ -12,6 +12,8 @@ use url::Url;
 /// The endpoint captures this authority after authentication, before accepting a SOCKS route.
 pub struct Destination {
     url: Url,
+    /// The host the native engine addresses instead of this destination, when they differ.
+    wire: Option<Url>,
 }
 impl Destination {
     pub fn new(scheme: &str, host: &str, port: u16) -> Result<Self> {
@@ -35,14 +37,56 @@ impl Destination {
         {
             return Err(NativeError::Destination);
         }
-        Ok(Self { url })
+        Ok(Self { url, wire: None })
+    }
+    /// Accept `host` on this destination's port as the name the native engine uses for it. The
+    /// request target, Host and same-origin Origin/Referer values are read as this destination.
+    pub fn with_wire_host(mut self, host: &str) -> Result<Self> {
+        let wire = Self::new(
+            self.url.scheme(),
+            host,
+            self.url
+                .port_or_known_default()
+                .ok_or(NativeError::Destination)?,
+        )?
+        .url;
+        self.wire = (wire.host() != self.url.host()).then_some(wire);
+        Ok(self)
     }
     fn same(&self, url: &Url) -> bool {
-        url.scheme() == self.url.scheme()
-            && url.host() == self.url.host()
-            && url.port_or_known_default() == self.url.port_or_known_default()
+        Self::same_origin(&self.url, url)
+    }
+    fn same_origin(origin: &Url, url: &Url) -> bool {
+        url.scheme() == origin.scheme()
+            && url.host() == origin.host()
+            && url.port_or_known_default() == origin.port_or_known_default()
             && url.username().is_empty()
             && url.password().is_none()
+    }
+    /// A URL on the wire host, read as the same URL on this destination.
+    fn logical(&self, mut url: Url) -> Url {
+        if let Some(wire) = &self.wire
+            && Self::same_origin(wire, &url)
+            && url.set_host(self.url.host_str()).is_ok()
+        {
+            // The ports are equal; the default port stays implicit either way.
+            return url;
+        }
+        url
+    }
+    /// A same-origin Origin or Referer value from the wire host, rewritten to this destination.
+    fn logical_header(&self, origin: bool, value: &[u8]) -> Option<Vec<u8>> {
+        let wire = self.wire.as_ref()?;
+        let url = Url::parse(std::str::from_utf8(value).ok()?).ok()?;
+        if !Self::same_origin(wire, &url) {
+            return None;
+        }
+        let url = self.logical(url);
+        Some(if origin {
+            url.origin().ascii_serialization().into_bytes()
+        } else {
+            url.to_string().into_bytes()
+        })
     }
     fn target(&self, target: &str) -> Result<Url> {
         if target.len() > URL_BYTES || target.contains('#') || target.starts_with("//") {
@@ -54,14 +98,38 @@ impl Destination {
             Url::parse(target)
         }
         .map_err(|_| NativeError::Destination)?;
+        let url = self.logical(url);
         (self.same(&url) && url.as_str().len() <= URL_BYTES)
             .then_some(url)
             .ok_or(NativeError::Destination)
+    }
+    /// The Host value naming this destination when the native engine sent the wire host.
+    fn logical_host(&self, host: &[u8]) -> Option<Vec<u8>> {
+        let wire = self.wire.as_ref()?;
+        let url = Url::parse(&format!(
+            "{}://{}/",
+            wire.scheme(),
+            std::str::from_utf8(host).ok()?
+        ))
+        .ok()?;
+        if !Self::same_origin(wire, &url) {
+            return None;
+        }
+        let url = self.logical(url);
+        let host = url.host_str()?;
+        Some(
+            match url.port() {
+                Some(port) => format!("{host}:{port}"),
+                None => host.to_owned(),
+            }
+            .into_bytes(),
+        )
     }
     fn host(&self, host: &[u8]) -> Result<()> {
         let host = std::str::from_utf8(host).map_err(|_| NativeError::Destination)?;
         let url = Url::parse(&format!("{}://{host}/", self.url.scheme()))
             .map_err(|_| NativeError::Destination)?;
+        let url = self.logical(url);
         if !self.same(&url)
             || url.path() != "/"
             || url.query().is_some()
@@ -167,9 +235,20 @@ fn parse(bytes: &[u8], destination: &Destination) -> Result<Head> {
         .headers
         .iter()
         .filter(|h| !h.name.eq_ignore_ascii_case("expect"))
-        .map(|h| Header {
-            name: h.name.to_owned(),
-            value: h.value.to_vec(),
+        .map(|h| {
+            let value = if h.name.eq_ignore_ascii_case("host") {
+                destination.logical_host(h.value)
+            } else if h.name.eq_ignore_ascii_case("origin") {
+                destination.logical_header(true, h.value)
+            } else if h.name.eq_ignore_ascii_case("referer") {
+                destination.logical_header(false, h.value)
+            } else {
+                None
+            };
+            Header {
+                name: h.name.to_owned(),
+                value: value.unwrap_or_else(|| h.value.to_vec()),
+            }
         })
         .collect();
     Ok(Head {

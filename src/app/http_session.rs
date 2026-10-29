@@ -33,7 +33,7 @@ pub(crate) use native_store::NativeStore;
 mod receive;
 mod reload;
 mod retirement;
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 mod script_policy;
 pub(crate) use receive::Observation;
 pub(crate) use reload::ReloadSetup;
@@ -41,10 +41,11 @@ type EndpointReceipt = mpsc::Receiver<Result<(Endpoint, Option<NativeTrust>), En
 type Notices =
     std::collections::HashMap<tasty_ipc::html_transfer::TransferId, (String, Option<u64>, u64)>;
 type Current = Arc<dyn Fn() -> bool + Send + Sync>;
-/// WebKitGTK authenticates RFC1929 SOCKS; Chromium-based WebView2 only supports HTTP proxy auth.
+/// WebKitGTK authenticates RFC1929 SOCKS. Chromium-based WebView2 only supports HTTP proxy auth,
+/// and macOS WebKit answers an HTTP proxy challenge through its navigation delegate.
 #[cfg(target_os = "linux")]
 const NATIVE_TRANSPORT: Transport = Transport::Socks;
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 const NATIVE_TRANSPORT: Transport = Transport::HttpProxy;
 struct State {
     setup: Option<Setup>,
@@ -75,9 +76,9 @@ pub(crate) struct HttpSession {
     wake: Arc<dyn Fn() + Send + Sync>,
     deliveries: Arc<delivery::Deliveries>,
     notices: Mutex<Notices>,
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     script: script_policy::ScriptPolicy,
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     me: std::sync::Weak<Self>,
 }
 impl HttpSession {
@@ -138,9 +139,9 @@ impl HttpSession {
         let setup = Setup::start(current.clone(), wake.clone())
             .map_err(|error| format!("native HTTP runtime: {error:?}"))?;
         Ok(Arc::new_cyclic(|_me| Self {
-            #[cfg(windows)]
+            #[cfg(any(windows, target_os = "macos"))]
             script: script_policy::ScriptPolicy::default(),
-            #[cfg(windows)]
+            #[cfg(any(windows, target_os = "macos"))]
             me: _me.clone(),
             source,
             view,
@@ -200,6 +201,7 @@ impl HttpSession {
             let config = EndpointConfig {
                 transport: NATIVE_TRANSPORT,
                 port: self.endpoint_port(),
+                loopback_alias: cfg!(target_os = "macos"),
                 identity: DocumentIdentity {
                     epoch: id.epoch,
                     surface: id.surface_id,
@@ -292,7 +294,7 @@ impl HttpSession {
         }
         Ok(())
     }
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     fn local_policy(&self) -> Option<delivery::LocalPolicy> {
         let session = self.me.clone();
         Some(Arc::new(move |request| {
@@ -302,7 +304,7 @@ impl HttpSession {
                 .local_headers(request)
         }))
     }
-    #[cfg(not(windows))]
+    #[cfg(not(any(windows, target_os = "macos")))]
     fn local_policy(&self) -> Option<delivery::LocalPolicy> {
         None
     }

@@ -5,9 +5,10 @@ use tokio::io::{AsyncRead, AsyncWrite};
 pub(super) async fn serve<S: AsyncRead + AsyncWrite + Unpin>(
     state: Arc<State>,
     mut io: S,
-    authority: Authority,
+    route: Route,
     scheme: &str,
 ) -> Result<(), EndpointError> {
+    let authority = route.logical;
     let current = {
         let state = state.clone();
         let authority = authority.clone();
@@ -15,6 +16,7 @@ pub(super) async fn serve<S: AsyncRead + AsyncWrite + Unpin>(
         move || (state.current)() && state.policy.permits(&scheme, &authority)
     };
     let destination = Destination::new(scheme, authority.host(), authority.port())
+        .and_then(|destination| destination.with_wire_host(route.wire.host()))
         .map_err(|_| EndpointError::Destination)?;
     let request = Arc::new(
         read_request(

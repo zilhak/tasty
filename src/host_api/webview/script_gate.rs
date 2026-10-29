@@ -34,7 +34,7 @@ pub struct ScriptGate {
     state: Arc<Mutex<HtmlScriptState>>,
     notify: Option<ScanNotify>,
     received: Option<EntryResponseSource>,
-    #[cfg(any(target_os = "linux", windows))]
+    #[cfg(any(target_os = "linux", target_os = "macos", windows))]
     http: Option<Arc<crate::app::http_session::HttpSession>>,
 }
 
@@ -150,7 +150,7 @@ impl ScriptGate {
             state,
             notify: None,
             received: None,
-            #[cfg(any(target_os = "linux", windows))]
+            #[cfg(any(target_os = "linux", target_os = "macos", windows))]
             http: None,
         }
     }
@@ -166,7 +166,7 @@ impl ScriptGate {
         self
     }
 
-    #[cfg(any(target_os = "linux", windows))]
+    #[cfg(any(target_os = "linux", target_os = "macos", windows))]
     pub(crate) fn with_http_session(
         mut self,
         session: Arc<crate::app::http_session::HttpSession>,
@@ -176,7 +176,7 @@ impl ScriptGate {
     }
 
     fn received_current(&self) -> bool {
-        #[cfg(any(target_os = "linux", windows))]
+        #[cfg(any(target_os = "linux", target_os = "macos", windows))]
         if let Some(session) = &self.http {
             return session.is_current();
         }
@@ -286,7 +286,7 @@ impl ScriptGate {
     }
 
     fn respond(&self, url: &str) -> Response {
-        #[cfg(any(target_os = "linux", windows))]
+        #[cfg(any(target_os = "linux", target_os = "macos", windows))]
         if self.http.is_some() {
             return Response::Decided(false);
         }

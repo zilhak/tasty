@@ -2,13 +2,19 @@
 //! Reference: wry/src/wkwebview/mod.rs (MIT license, Tauri)
 
 mod content_rules;
+mod delegate_state;
+mod http;
 mod keyboard;
+mod overlay_backend;
+
+pub(crate) use http::available as http_available;
 
 use content_rules::apply_block_state;
+use delegate_state::PendingDecision;
 
 use std::cell::{Cell, RefCell};
 use std::ptr::NonNull;
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 
 use block2::{DynBlock, RcBlock};
 use objc2::rc::Retained;
@@ -17,7 +23,10 @@ use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, Message, define_clas
 use objc2_app_kit::{
     NSAppearance, NSAppearanceNameAqua, NSAppearanceNameDarkAqua, NSEvent, NSResponder, NSView,
 };
-use objc2_foundation::{NSError, NSPoint, NSRect, NSSize, NSString, NSURL};
+use objc2_foundation::{
+    NSError, NSPoint, NSRect, NSSize, NSString, NSURL, NSURLAuthenticationChallenge,
+    NSURLCredential, NSURLSessionAuthChallengeDisposition,
+};
 use objc2_web_kit::{
     WKContentRuleList, WKContentRuleListStore, WKNavigation, WKNavigationAction,
     WKNavigationActionPolicy, WKNavigationDelegate, WKNavigationType, WKWebView,
@@ -28,36 +37,17 @@ use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use self::keyboard::{macos_keycode_to_physical, ns_chars_to_winit_key, nsevent_mods_to_winit};
 use super::entry_response::EntryResponseSource;
 use super::keys::WebViewKeySink;
-use super::load_generation::{CancelledDecisions, is_current_load, nav_state_after_end};
-use super::overlay::{OverlayApplyError, OverlayRequest};
-use super::script_gate::{DeferredScan, ReadSlot, Response, ScriptGate};
+use super::load_generation::CancelledDecisions;
+use super::script_gate::{Response, ScriptGate};
 use super::{NavState, PendingNavigation, WebViewBounds};
-use crate::state::webview_overlay::{OverlayMode, OverlayPaintSource};
-
-/// WebKit의 정책 결정 handler. 보류한 결정을 콜백 밖에서 끝내려고 복사해 둔다.
-type DecisionHandler = RcBlock<dyn Fn(WKNavigationActionPolicy, NonNull<WKWebpagePreferences>)>;
-
-/// 스캔 결과를 기다리며 보류한 main frame 정책 결정. 메인 스레드에만 있고 작업 스레드에는
-/// 경로와 표만 넘어간다. handler는 Allow나 Cancel로 정확히 한 번 부른다.
-struct PendingDecision {
-    scan: DeferredScan,
-    read: ReadSlot,
-    handler: DecisionHandler,
-    preferences: Retained<WKWebpagePreferences>,
-}
-
-/// 보류한 결정을 끝낸다. 결정마다 정확히 한 번 부른다.
-fn complete_decision(
-    handler: &DecisionHandler,
-    preferences: &WKWebpagePreferences,
-    policy: WKNavigationActionPolicy,
-) {
-    handler.call((policy, NonNull::from(preferences)));
-}
 
 struct NavDelegateIvars {
     surface_id: u32,
     entry_source: Option<EntryResponseSource>,
+    /// The remote HTTP document this view shows through its endpoint proxy.
+    http: Option<Weak<super::http_native::NativeDocument>>,
+    /// A navigation cancelled to continue on its loopback alias; its interruption is no failure.
+    alias_cancelled: Cell<bool>,
     nav_state: Rc<Cell<NavState>>,
     /// 차단 여부와 별도로 기록한 탐색 시도 큐.
     pending_navigations: Rc<RefCell<Vec<PendingNavigation>>>,
@@ -78,151 +68,6 @@ struct NavDelegateIvars {
     pending_decision: RefCell<Option<PendingDecision>>,
     /// Cancel로 끝낸 결정의 늦은 실패 신호를 새 로드의 실패로 보지 않게 센다.
     cancelled_decisions: RefCell<CancelledDecisions>,
-}
-
-/// 세대 비교용 WKNavigation 식별 값. 알 수 없으면 None이다.
-fn navigation_key(navigation: Option<&WKNavigation>) -> Option<u64> {
-    navigation.map(|n| std::ptr::from_ref(n) as usize as u64)
-}
-
-impl NavDelegateIvars {
-    /// 신호가 게이트가 시작한 마지막 로드의 것인지. 어느 쪽이든 WKNavigation을 알 수 없으면
-    /// 현재 로드로 본다(Windows와 같은 규칙).
-    fn is_current_navigation(&self, navigation: Option<&WKNavigation>) -> bool {
-        let current = navigation_key(self.gate_navigation.borrow().as_deref());
-        is_current_load(current, navigation_key(navigation))
-    }
-
-    /// 보류한 결정을 Cancel로 끝낸다. 새 탐색·로드 요청·webview 종료가 앞 결정을 무효화할 때 부른다.
-    fn cancel_pending_decision(&self) {
-        let Some(pending) = self.pending_decision.borrow_mut().take() else {
-            return;
-        };
-        tracing::debug!(
-            "WebView surface {}: cancelling the navigation that waited for its scan",
-            self.surface_id
-        );
-        pending.scan.abandon();
-        self.cancelled_decisions.borrow_mut().cancelled();
-        complete_decision(
-            &pending.handler,
-            &pending.preferences,
-            WKNavigationActionPolicy::Cancel,
-        );
-    }
-
-    /// 실패 신호가 Tasty가 Cancel한 결정의 것이면 소비하고 `true`를 준다. 그 신호는 chrome과
-    /// 게이트를 건드리지 않는다. 귀속 규칙은 `load_generation::CancelledDecisions`에 있다.
-    fn absorbs_cancelled_failure(
-        &self,
-        navigation: Option<&WKNavigation>,
-        error: &NSError,
-    ) -> bool {
-        // WebKitErrorFrameLoadInterruptedByPolicyChange(102). 상수 이름의 기능 플래그 없이 값으로 비교한다.
-        let interrupted_by_policy =
-            error.domain().to_string().as_str() == "WebKitErrorDomain" && error.code() == 102;
-        let current = navigation_key(self.gate_navigation.borrow().as_deref());
-        if !self
-            .cancelled_decisions
-            .borrow_mut()
-            .absorbs_failure(interrupted_by_policy, current)
-        {
-            return false;
-        }
-        tracing::debug!(
-            "WebView surface {}: ignoring the failure of a decision Tasty cancelled ({:?})",
-            self.surface_id,
-            navigation_key(navigation)
-        );
-        true
-    }
-
-    /// 읽기가 끝났으면 보류한 결정을 끝낸다. 표가 아직 현재 로드의 것일 때만 JS를 적용해 Allow하고,
-    /// 낡았으면 Cancel한다. 읽는 중이면 아무것도 하지 않는다.
-    fn resume_pending_decision(&self) {
-        let read = match self.pending_decision.borrow().as_ref() {
-            Some(pending) => pending.read.take(),
-            None => return,
-        };
-        let Some(read) = read else {
-            return;
-        };
-        let Some(pending) = self.pending_decision.borrow_mut().take() else {
-            return;
-        };
-        // 표 확인과 상태 반영은 결정을 넘기기 직전 이 메인 스레드 호출 안에서 한다.
-        let policy = match pending.scan.apply(read) {
-            Some(js) => {
-                // SAFETY: main thread. preferences는 이 결정이 붙잡아 둔 Retained 값이다.
-                unsafe { pending.preferences.setAllowsContentJavaScript(js) };
-                WKNavigationActionPolicy::Allow
-            }
-            None => {
-                self.cancelled_decisions.borrow_mut().cancelled();
-                WKNavigationActionPolicy::Cancel
-            }
-        };
-        complete_decision(&pending.handler, &pending.preferences, policy);
-    }
-
-    /// 종료 신호가 게이트가 시작한 마지막 로드의 것일 때만 [`Self::gate_finished`]를 부른다.
-    fn gate_navigation_ended(&self, navigation: Option<&WKNavigation>) {
-        if self.is_current_navigation(navigation) {
-            self.gate_finished();
-        } else {
-            tracing::debug!(
-                "WebView surface {}: ignoring the end of a superseded load",
-                self.surface_id
-            );
-        }
-    }
-
-    /// 로드 종료를 chrome 상태에 반영한다. 마지막에 시작한 navigation의 종료일 때만 바꾸고,
-    /// 앞 로드의 늦은 종료는 새 로드의 Loading을 덮지 않는다.
-    fn chrome_navigation_ended(&self, navigation: Option<&WKNavigation>, success: bool) {
-        let started = navigation_key(self.chrome_navigation.borrow().as_deref());
-        match nav_state_after_end(started, navigation_key(navigation), success) {
-            Some(state) => self.nav_state.set(state),
-            None => tracing::debug!(
-                "WebView surface {}: keeping the chrome state of the newer load",
-                self.surface_id
-            ),
-        }
-    }
-
-    /// 로드가 실패했다. 게이트가 시작한 마지막 로드의 실패일 때만 다음 commit까지 배너와 탭
-    /// 표지를 내린 뒤 로드를 끝낸다. 앞 로드가 늦게 취소된 실패는 새 로드의 게이트를 건드리지 않는다.
-    fn gate_navigation_failed(&self, navigation: Option<&WKNavigation>) {
-        if self.is_current_navigation(navigation) {
-            self.gate_failed();
-        }
-        self.gate_navigation_ended(navigation);
-    }
-
-    /// 로드가 실패했다. 다음 commit까지 배너와 탭 표지를 내린다.
-    fn gate_failed(&self) {
-        if let Some(gate) = self.script_gate.borrow().as_ref() {
-            gate.failed();
-        }
-    }
-
-    /// 로드가 commit 없이 끝났을 때 게이트 상태를 되돌린다. 화면 문서의 JS는 탐색 단위라 그대로다.
-    /// provisional 시작 없이 끝난 로드의 대기 표시도 내려, 뒤에 오는 무관한 provisional 시작을
-    /// 게이트 로드의 세대로 기록하지 않게 한다.
-    fn gate_finished(&self) {
-        self.gate_load_pending.set(false);
-        if let Some(js) = self
-            .script_gate
-            .borrow()
-            .as_ref()
-            .and_then(|g| g.finished())
-        {
-            tracing::debug!(
-                "WebView surface {}: the load ended without a commit; the next navigation decides js (now {js})",
-                self.surface_id
-            );
-        }
-    }
 }
 
 define_class!(
@@ -266,7 +111,17 @@ define_class!(
             // SAFETY: main thread WebKit delegate 호출. URL()은 Retained 값을 반환한다.
             let url =
                 unsafe { web_view.URL().and_then(|u| u.absoluteString()) }.map(|u| u.to_string());
+            let http = self.ivars().http.as_ref().and_then(Weak::upgrade);
+            let url = if http.is_some() {
+                url.as_deref().map(http::logical)
+            } else {
+                url
+            };
             *self.ivars().committed_url.borrow_mut() = url.clone();
+            // A commit before the endpoint served the main response is WebKit's own page.
+            if http.is_some_and(|document| document.session().awaiting_main_response()) {
+                return;
+            }
             if let Some(gate) = self.ivars().script_gate.borrow().as_ref() {
                 let js = gate.committed(url.as_deref());
                 tracing::debug!(
@@ -288,9 +143,12 @@ define_class!(
                 self.ivars().surface_id,
                 error.localizedDescription()
             );
-            if self.ivars().absorbs_cancelled_failure(navigation, error) {
+            if self.ivars().absorbs_cancelled_failure(navigation, error)
+                || self.ivars().absorbs_alias_cancel(error)
+            {
                 return;
             }
+            self.ivars().http_load_failed(navigation);
             self.ivars().chrome_navigation_ended(navigation, false);
             self.ivars().gate_navigation_failed(navigation);
         }
@@ -307,9 +165,12 @@ define_class!(
                 self.ivars().surface_id,
                 error.localizedDescription()
             );
-            if self.ivars().absorbs_cancelled_failure(navigation, error) {
+            if self.ivars().absorbs_cancelled_failure(navigation, error)
+                || self.ivars().absorbs_alias_cancel(error)
+            {
                 return;
             }
+            self.ivars().http_load_failed(navigation);
             self.ivars().chrome_navigation_ended(navigation, false);
             self.ivars().gate_navigation_failed(navigation);
         }
@@ -326,6 +187,23 @@ define_class!(
             self.ivars().cancel_pending_decision();
             self.ivars().gate_failed();
             self.ivars().gate_finished();
+        }
+
+        /// Only a remote HTTP view answers challenges; other views keep WebKit's handling.
+        #[unsafe(method(webView:didReceiveAuthenticationChallenge:completionHandler:))]
+        fn challenge(
+            &self,
+            _web_view: &WKWebView,
+            challenge: &NSURLAuthenticationChallenge,
+            done: &DynBlock<dyn Fn(NSURLSessionAuthChallengeDisposition, *mut NSURLCredential)>,
+        ) {
+            match &self.ivars().http {
+                Some(document) => http::respond(document, self.ivars().surface_id, challenge, done),
+                None => done.call((
+                    NSURLSessionAuthChallengeDisposition::PerformDefaultHandling,
+                    std::ptr::null_mut(),
+                )),
+            }
         }
 
         /// 탐색 시도를 기록하고 Allow로 응답한다. 원격 차단은 별도 content rule에 맡긴다.
@@ -351,6 +229,17 @@ define_class!(
                     .and_then(|u| u.absoluteString())
             };
             let url = url.map(|u| u.to_string());
+            if let Some(document) = self.ivars().http.as_ref().and_then(Weak::upgrade) {
+                self.decide_http(
+                    _web_view,
+                    navigation_action,
+                    preferences,
+                    decision_handler,
+                    &document,
+                    url,
+                );
+                return;
+            }
             // Native targetFrame distinguishes main navigation from iframe loads.
             // A cached child must still become a new received/scanned document when main.
             if let Some(source) = &self.ivars().entry_source {
@@ -428,6 +317,56 @@ define_class!(
 );
 
 impl NavDelegate {
+    /// The endpoint decides scripts from the verified main response with a response policy, so
+    /// every frame runs with scripts enabled natively. A main-frame navigation to a remote
+    /// loopback address continues on its alias.
+    fn decide_http(
+        &self,
+        web_view: &WKWebView,
+        navigation_action: &WKNavigationAction,
+        preferences: &WKWebpagePreferences,
+        decision_handler: &DynBlock<
+            dyn Fn(WKNavigationActionPolicy, NonNull<WKWebpagePreferences>),
+        >,
+        document: &super::http_native::NativeDocument,
+        url: Option<String>,
+    ) {
+        // SAFETY: main thread WebKit delegate call; reads the live navigation action.
+        #[allow(clippy::multiple_unsafe_ops_per_block)]
+        let (main, reload, request) = unsafe {
+            (
+                navigation_action.targetFrame().map(|f| f.isMainFrame()),
+                navigation_action.navigationType() == WKNavigationType::Reload,
+                navigation_action.request(),
+            )
+        };
+        if main == Some(true)
+            && let Some(url) = &url
+            && http::redirect_to_alias(web_view, &request, url)
+        {
+            self.ivars().alias_cancelled.set(true);
+            decision_handler.call((WKNavigationActionPolicy::Cancel, NonNull::from(preferences)));
+            return;
+        }
+        // SAFETY: main thread WebKit delegate call; preferences are valid for this call.
+        unsafe { preferences.setAllowsContentJavaScript(true) };
+        let url = url.as_deref().map(http::logical);
+        if main == Some(true)
+            && let (Some(gate), Some(url)) = (self.ivars().script_gate.borrow().as_ref(), &url)
+            && (reload || !gate.is_fragment_move(url))
+        {
+            gate.load_started();
+            self.ivars().cancel_pending_decision();
+            self.ivars().gate_load_pending.set(true);
+            *self.ivars().gate_navigation.borrow_mut() = None;
+            document.session().expect_main_response(url);
+        }
+        if let Some(url) = url {
+            self.record_navigation(url);
+        }
+        decision_handler.call((WKNavigationActionPolicy::Allow, NonNull::from(preferences)));
+    }
+
     fn record_navigation(&self, url: String) {
         self.ivars()
             .pending_navigations
@@ -447,10 +386,13 @@ impl NavDelegate {
         pending_navigations: Rc<RefCell<Vec<PendingNavigation>>>,
         script_gate: Rc<RefCell<Option<ScriptGate>>>,
         entry_source: Option<EntryResponseSource>,
+        http: Option<Weak<super::http_native::NativeDocument>>,
     ) -> Retained<Self> {
         let this = Self::alloc(mtm).set_ivars(NavDelegateIvars {
             surface_id,
             entry_source,
+            http,
+            alias_cancelled: Cell::new(false),
             nav_state,
             pending_navigations,
             script_gate,
@@ -663,6 +605,9 @@ const REMOTE_BLOCK_RULE_JSON: &str =
     r#"[{"trigger":{"url-filter":"^https?://"},"action":{"type":"block"}}]"#;
 
 pub struct PlatformWebView {
+    surface_id: u32,
+    /// The remote HTTP document this view shows through its endpoint proxy.
+    http: Option<http::HttpView>,
     entry_handler: Option<Retained<super::entry_response::macos::EntryHandler>>,
     entry_source: Option<EntryResponseSource>,
     webview: Retained<KeyWebView>,
@@ -705,6 +650,45 @@ impl PlatformWebView {
         key_bridge: Rc<dyn WebViewKeySink>,
         entry_source: Option<super::entry_response::EntryResponseSource>,
     ) -> Result<Self, super::WebViewCreateError> {
+        Self::create(
+            window,
+            bounds,
+            scale_factor,
+            surface_id,
+            key_bridge,
+            entry_source,
+            None,
+        )
+    }
+
+    pub(crate) fn new_http(
+        window: &impl HasWindowHandle,
+        bounds: WebViewBounds,
+        scale_factor: f64,
+        surface_id: u32,
+        key_bridge: Rc<dyn WebViewKeySink>,
+        document: super::http_native::NativeDocument,
+    ) -> Result<Self, super::WebViewCreateError> {
+        Self::create(
+            window,
+            bounds,
+            scale_factor,
+            surface_id,
+            key_bridge,
+            None,
+            Some(document),
+        )
+    }
+
+    fn create(
+        window: &impl HasWindowHandle,
+        bounds: WebViewBounds,
+        scale_factor: f64,
+        surface_id: u32,
+        key_bridge: Rc<dyn WebViewKeySink>,
+        entry_source: Option<super::entry_response::EntryResponseSource>,
+        document: Option<super::http_native::NativeDocument>,
+    ) -> Result<Self, super::WebViewCreateError> {
         let mtm = MainThreadMarker::new().ok_or_else(|| perm("Must be called from main thread"))?;
 
         let ns_view_ptr = match window.window_handle().map_err(perm)?.as_raw() {
@@ -724,6 +708,10 @@ impl PlatformWebView {
             let entry_handler = entry_source.as_ref().map(|source| {
                 super::entry_response::macos::configure(&config, source.clone(), mtm)
             });
+            let http = document
+                .map(|document| http::HttpView::configure(&config, document, mtm))
+                .transpose()
+                .map_err(perm)?;
 
             let prefs = config.preferences();
             let key = NSString::from_str("defaultTextEncodingName");
@@ -748,6 +736,7 @@ impl PlatformWebView {
                 pending_navigations.clone(),
                 script_gate.clone(),
                 entry_source.clone(),
+                http.as_ref().map(|http| Rc::downgrade(&http.document)),
             );
             let nav_proto = ProtocolObject::from_ref(&*nav_delegate);
             webview.setNavigationDelegate(Some(nav_proto));
@@ -756,7 +745,10 @@ impl PlatformWebView {
             let content_rule_list: Rc<RefCell<Option<Retained<WKContentRuleList>>>> =
                 Rc::new(RefCell::new(None));
             let block_remote = Rc::new(Cell::new(true));
-            if let Some(store) = WKContentRuleListStore::defaultStore(mtm) {
+            if let Some(http) = &http {
+                // The endpoint decides remote content; only direct loopback loads are refused.
+                http.install_rules(&webview, surface_id, mtm);
+            } else if let Some(store) = WKContentRuleListStore::defaultStore(mtm) {
                 let webview_cb = webview.clone();
                 let rule_cb = content_rule_list.clone();
                 let block_cb = block_remote.clone();
@@ -792,6 +784,8 @@ impl PlatformWebView {
             }
 
             Ok(Self {
+                surface_id,
+                http,
                 entry_handler,
                 entry_source,
                 webview,
@@ -983,6 +977,13 @@ impl PlatformWebView {
     }
 
     pub fn load_url(&self, url: &str) {
+        if let Some(http) = &self.http {
+            self.begin_load();
+            if !http.load_url(&self.webview, url) {
+                self.nav_state.set(NavState::Failed);
+            }
+            return;
+        }
         if self
             .entry_source
             .as_ref()
@@ -1051,6 +1052,9 @@ impl PlatformWebView {
     /// 문서 단위 스크립트 허용을 붙인다. 첫 로드 전에 호출한다.
     pub fn attach_script_gate(&self, gate: ScriptGate) {
         self.set_global_javascript(true);
+        if let Some(http) = &self.http {
+            http.session().attach_script_gate(gate.clone());
+        }
         *self.script_gate.borrow_mut() = Some(gate);
     }
 
@@ -1098,6 +1102,10 @@ impl PlatformWebView {
                 self.webview.canGoForward(),
             )
         };
+        let live = match (&self.http, live) {
+            (Some(_), Some(url)) => Some(http::logical(&url)),
+            (_, live) => live,
+        };
         crate::model::WebViewNavInfo {
             url: crate::model::committed_document_url(
                 self.nav_state.get(),
@@ -1134,6 +1142,10 @@ impl PlatformWebView {
 
     /// 비동기 규칙이 준비되면 http(s) 차단 여부를 반영한다. 미준비·컴파일 실패 동안의 차단을 보장하지 않는다.
     pub fn set_remote_content_allowed(&self, allowed: bool) {
+        // The endpoint applies this setting to a remote HTTP document; its loopback rule stays.
+        if self.http.is_some() {
+            return;
+        }
         self.block_remote
             .set(self.entry_source.is_some() || !allowed);
         apply_block_state(
@@ -1144,7 +1156,7 @@ impl PlatformWebView {
     }
 
     pub fn load_html(&self, html: &str) {
-        if self.entry_source.is_some() {
+        if self.entry_source.is_some() || self.http.is_some() {
             self.nav_state.set(NavState::Failed);
             return;
         }
@@ -1169,6 +1181,12 @@ impl Drop for PlatformWebView {
         }
         // WebKit은 부르지 않은 채 해제된 결정 handler를 오류로 본다.
         self._nav_delegate.ivars().cancel_pending_decision();
+        if self.http.is_some() {
+            // SAFETY: main thread WKWebView API.
+            unsafe { self.webview.stopLoading() };
+            // Revoke endpoint and body authority before the native view goes away.
+            drop(self.http.take());
+        }
         self.webview.removeFromSuperview();
     }
 }
@@ -1195,60 +1213,6 @@ unsafe fn logical_to_nsrect(parent: &NSView, bounds: WebViewBounds, _scale_facto
     NSRect {
         origin: NSPoint::new(bounds.x, origin_y),
         size: NSSize::new(bounds.width, bounds.height),
-    }
-}
-
-/// 불투명 모드는 팝업 상자를 layer mask 구멍으로 빼 주 표면이 그린 팝업을 보인다(그림 위치 주 표면). 투명
-/// 모드는 창 단위 오버레이 host(형제 NSView)에 그린다. 두 모드 모두 대상 팝업이 보이는 동안 뷰 전체 포인터를
-/// host 로 보낸다. host 가 다시 보일 때 지난 그림을 지우지 못해(측정) 투명 모드는 보고하지 않는다.
-/// 계약: docs/design/systems/webview.md 의 "egui 오버레이와 native WebView" 절.
-impl super::overlay::WebViewOverlayBackend for PlatformWebView {
-    fn overlay_support(&self) -> OverlayMode {
-        OverlayMode::Opaque
-    }
-
-    fn overlay_paint_source(&self, mode: OverlayMode) -> OverlayPaintSource {
-        if mode == OverlayMode::Opaque {
-            OverlayPaintSource::MainSurface
-        } else {
-            OverlayPaintSource::OverlaySurface
-        }
-    }
-
-    fn apply_overlay(&self, request: &OverlayRequest<'_>) -> Result<(), OverlayApplyError> {
-        let overlay = if request.mode == OverlayMode::Opaque {
-            request
-                .regions
-                .iter()
-                .map(|r| [r.x, r.y, r.width, r.height].map(|v| v.value().round() as i32))
-                .collect()
-        } else {
-            Vec::new()
-        };
-        {
-            let mut mask = self.mask.borrow_mut();
-            mask.overlay = overlay;
-            mask.scale_factor = request.scale_factor;
-        }
-        self.webview
-            .ivars()
-            .host_pointer
-            .set(request.host_takes_pointer);
-        if self.apply_mask() {
-            Ok(())
-        } else {
-            Err(OverlayApplyError::Failed(
-                "the web view has no backing layer for the popup cutout".into(),
-            ))
-        }
-    }
-
-    fn clear_overlay(&self) {
-        self.webview.ivars().host_pointer.set(false);
-        self.mask.borrow_mut().overlay.clear();
-        if !self.apply_mask() {
-            tracing::warn!("webview: no backing layer while clearing the popup cutout");
-        }
     }
 }
 

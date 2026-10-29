@@ -12,7 +12,7 @@ pub(crate) struct NativeWebviewBinding {
     source: Weak<Mutex<Option<String>>>,
     mirror: Option<Weak<Mutex<tasty_remote::html_mirror::HtmlMirror>>>,
     document: Option<tasty_remote::html_body::NativeViewBinding>,
-    #[cfg(any(target_os = "linux", windows))]
+    #[cfg(any(target_os = "linux", target_os = "macos", windows))]
     http: Option<Weak<crate::app::http_session::HttpSession>>,
 }
 impl NativeWebviewBinding {
@@ -23,7 +23,7 @@ impl NativeWebviewBinding {
             .downcast_ref::<RemoteSurface>()?;
         Some(Self {
             target: SurfaceBinding::capture(&engine.read(), surface)?,
-            #[cfg(any(target_os = "linux", windows))]
+            #[cfg(any(target_os = "linux", target_os = "macos", windows))]
             http: remote.http_session.as_ref().map(Arc::downgrade),
             surface,
             source: Arc::downgrade(&remote.webview_url),
@@ -34,7 +34,7 @@ impl NativeWebviewBinding {
         })
     }
     pub(crate) fn current(&self, engine: &crate::runtime::engine_access::EngineRef<'_>) -> bool {
-        #[cfg(any(target_os = "linux", windows))]
+        #[cfg(any(target_os = "linux", target_os = "macos", windows))]
         if let Some(owner) = &self.http {
             let Some(session) = owner.upgrade() else {
                 return false;
