@@ -1506,6 +1506,8 @@ html{{height:100%;margin:0;padding:0;}}
 body{{min-height:100%;margin:0;padding:0;background:var(--md-bg);color:var(--md-fg);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;font-size:var(--md-font-body);line-height:1.6;}}
 {addr_css}#tasty-find-bar{{position:fixed;top:calc(var(--md-addr-bar-h) + var(--md-space-xs));right:var(--md-space-sm);z-index:20;display:flex;align-items:center;gap:var(--md-space-xs);height:28px;padding:0 var(--md-space-xs);background:{bg_sidebar};border:var(--md-border-w) solid {separator};border-radius:var(--md-radius);box-shadow:0 2px 8px rgba(0,0,0,0.25);}}
 #tasty-find-bar[hidden]{{display:none;}}
+#tasty-addr-bar,#tasty-find-bar{{-webkit-user-select:none;user-select:none;}}
+#tasty-addr-input,#tasty-find-input{{-webkit-user-select:text;user-select:text;}}
 #tasty-find-input{{width:140px;height:22px;border:var(--md-border-w) solid var(--md-border);border-radius:var(--md-radius);padding:0 var(--md-space-xs);background:var(--md-control-bg);color:var(--md-fg);font-size:var(--md-font-body);}}
 #tasty-find-count{{min-width:40px;text-align:center;font-size:calc(var(--md-font-body) * 0.85);color:{muted};}}
 #tasty-find-count.tasty-find-nomatch{{color:{danger};}}
@@ -3628,6 +3630,20 @@ mod tests {
             );
             assert!(tip.contains(" disabled>"), "{tip}");
         }
+    }
+
+    /// 본문 전체 선택과 복사에 주소 띠·검색 바의 글자(경로 표시 등)가 섞이지 않게 띠는 고를 수 없고,
+    /// 두 입력란만 고를 수 있다.
+    #[test]
+    fn address_band_and_find_bar_stay_out_of_the_document_selection() {
+        let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
+        let css = theme_css(&theme);
+        assert!(css.contains(
+            "#tasty-addr-bar,#tasty-find-bar{-webkit-user-select:none;user-select:none;}"
+        ));
+        assert!(css.contains(
+            "#tasty-addr-input,#tasty-find-input{-webkit-user-select:text;user-select:text;}"
+        ));
     }
 
     /// 좁은 폭에서 숨기는 것은 Go 하나다. 경계 폭은 토큰으로 계산한다.

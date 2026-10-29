@@ -1,4 +1,4 @@
-<!-- source-hash: c2db07246642 -->
+<!-- source-hash: bd863c11ac9f -->
 # Opening files
 
 Read a README or check an image beside your terminal. Tasty can open an Explorer, Markdown documents, images, and HTML pages, with a Git viewer for reviewing changes.
@@ -226,6 +226,7 @@ Renders `.md` files. When the file changes, it redraws automatically within 1 se
 - If there are headings, a collapsible **Table of contents** is attached above the body. Clicking an entry moves down to that heading within the document you are already reading — and clicking the same entry again moves there again.
 - Hover a code block for the **Copy code** button.
 - The **Find** key from the [Keyboard shortcuts](../customize/keybindings.md) settings (default `Ctrl+F` · `Alt+F`, macOS `Ctrl+F` · `Cmd+F`) while the document has focus — **Find in document**. Changing the Find key applies to open documents right away.
+- Select all and copy act only on what has focus. Select all in the document picks only the document text, without the address bar or find box text; in the address bar or find box it picks only that field's text.
 - Type another file path in the address bar at the top and press `Enter` or **Go** to move to it. Recently opened files appear as autocompletion. Files opened in other windows of the same Tasty instance are included, with up to 10 entries in most recently opened order. When the Surface is narrow the Go button hides, but `Enter` still moves.
 - The folder button left of the address bar (**Open a file…**) opens the file chooser in the current document's folder. The file you pick opens in the same Surface, without a new tab. Cancelling leaves the document as it was. If a file chooser is already open, a new one doesn't open, so finish or close that one first. The address bar of a Markdown document in a remote Workspace is described in [Working remotely](../remote/attach.md).
 - Links in the document — other Markdown · files open in a new Tab in the same Pane, and on Linux Tasty switches to it (on macOS the new Tab is only added behind the current one), and `http(s)://` goes to the browser. Relative paths are relative to the folder the document is in. If no handler can open a linked file, the **Open file with…** window appears so you can choose (in a remote Workspace it lists only handlers that can open the file on the remote, and a notice appears when there are none). Links that point inside the same document, such as `#heading`, and footnote numbers and their back arrows only move to that spot.

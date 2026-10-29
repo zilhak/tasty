@@ -6791,7 +6791,7 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-markdown"
-version = "0.1.486"
+version = "0.1.487"
 dependencies = [
  "ammonia",
  "anyhow",
