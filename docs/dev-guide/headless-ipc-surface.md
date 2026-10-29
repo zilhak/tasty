@@ -81,7 +81,7 @@ markdown 활성화 뒤 다섯, 번들 9개가 실행된 뒤 여덟(`html`·`imag
 
 `tab.create`·`pane.split`·`workspace.create`가 plugin kind를 요청하면
 `headless_plugins::ensure_plugin_for_surface_kind`가 매니페스트와 `plugins.toml`을 확인하고
-활성화된 소유 plugin 하나만 시작한다. 없는 kind나 비활성화된 plugin의 kind는
+활성화된 소유 plugin 하나만 시작한다. 시작 전에 그 plugin의 번역 namespace를 등록하므로 새 탭의 기본 이름(`surface.kind.html` → `HTML`)은 attach 전에도 번역된 값으로 저장된다([i18n](i18n.md#plugin-네임스페이스)). 없는 kind나 비활성화된 plugin의 kind는
 기동 대기 없이 `unknown surface kind`로 거절한다. 헤드리스 메인 루프가 하나이므로
 시작할 수 없는 plugin을 기다리면 다른 IPC 요청도 지연된다.
 namespace forward도 소유 plugin만 준비하되, 매칭 IPC hook이 있으면 해당 active

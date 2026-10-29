@@ -385,10 +385,14 @@ impl PluginManager {
             self.command_registry.register_plugin(&pkg.manifest);
             // i18n namespace 등록 — 비활성 plugin도 설정 UI에서 command title을
             // 번역해서 보여줘야 하므로 disabled 여부와 무관하게 등록한다.
-            let lang_dir = pkg.dir.join(&pkg.manifest.lang_dir);
-            if let Some(reg) = &self.i18n_registrar {
-                reg.register(&pkg.manifest.id, &lang_dir);
-            }
+            self.register_package_i18n(pkg);
+        }
+    }
+
+    /// 패키지의 언어 디렉터리를 그 id namespace로 등록한다. registrar가 없으면 생략한다.
+    fn register_package_i18n(&self, pkg: &PluginPackage) {
+        if let Some(reg) = &self.i18n_registrar {
+            reg.register(&pkg.manifest.id, &pkg.dir.join(&pkg.manifest.lang_dir));
         }
     }
 
@@ -402,9 +406,11 @@ impl PluginManager {
         if self.processes.contains_key(plugin_id) {
             return false;
         }
-        if !self.packages.iter().any(|p| p.manifest.id == plugin_id) {
+        let Some(pkg) = self.packages.iter().find(|p| p.manifest.id == plugin_id) else {
             return false;
-        }
+        };
+        // 전체 기동을 거치지 않아도 이 플러그인 kind의 탭 이름이 정해지기 전에 번역을 준비한다.
+        self.register_package_i18n(pkg);
         self.ensure_listener();
         self.start_enabled_package(plugin_id);
         self.processes.contains_key(plugin_id)
