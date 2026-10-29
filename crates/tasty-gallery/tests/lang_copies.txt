@@ -32,7 +32,6 @@ src/catalog/components/category_dialogs.rs	Cancel	button.cancel,explorer.op.canc
 src/catalog/components/category_dialogs.rs	Collapse	sidebar.collapse_button,workspace_category.collapse
 src/catalog/components/category_dialogs.rs	Delete category	workspace_category.delete_category
 src/catalog/components/category_dialogs.rs	Delete category?	workspace_category.delete_confirm_title
-src/catalog/components/category_dialogs.rs	New category	workspace_category.new_category
 src/catalog/components/category_dialogs.rs	Rename category	workspace_category.rename_category
 src/catalog/components/clipboard_viewer.rs	Clipboard	settings.keybindings.subtab.clipboard
 src/catalog/components/clipboard_viewer.rs	Close	dag_list.close,explorer.find.close,explorer.properties.close,notice.close,port_scanner.close,remote_attach.close,remote_tool.close,titlebar.close
@@ -99,9 +98,6 @@ src/catalog/components/explorer_context_menu.rs	Paste	explorer.context_menu.past
 src/catalog/components/explorer_context_menu.rs	Paste (into)	explorer.context_menu.paste_into
 src/catalog/components/explorer_context_menu.rs	Rename	context_menu.rename_title,explorer.context_menu.rename,explorer.popup.rename.rename,explorer.popup.rename.title,preset.toolbar.rename
 src/catalog/components/explorer_context_menu.rs	copy	explorer.remote.op_copy
-src/catalog/components/explorer_favorite_popup.rs	Add	button.add,explorer.popup.add_favorite.add,settings.terminal.input_add,settings.terminal.mouse_capture_banner_blacklist_add_button,settings.terminal.mouse_capture_blacklist_add_button
-src/catalog/components/explorer_favorite_popup.rs	Add to favorites	explorer.popup.add_favorite.title
-src/catalog/components/explorer_favorite_popup.rs	Cancel	button.cancel,explorer.op.cancel,image_viewer.cancel,preset.popup.cancel_button,quit_modal.cancel_button,remote_attach.cancel,remote_tool.cancel,transfer.progress.cancel
 src/catalog/components/explorer_file_info.rs	—	dag.detail.none,port_scanner.external_dash
 src/catalog/components/explorer_jobs.rs	Archive	explorer.kind.archive
 src/catalog/components/explorer_jobs/remote.rs	{}	remote.size_sync.names
@@ -115,8 +111,6 @@ src/catalog/components/explorer_ops/kinds.rs	—	dag.detail.none,port_scanner.ex
 src/catalog/components/explorer_ops/search.rs	Detail	explorer.view.detail
 src/catalog/components/explorer_ops/search.rs	PDF document	explorer.kind.pdf
 src/catalog/components/explorer_ops/search.rs	—	dag.detail.none,port_scanner.external_dash
-src/catalog/components/explorer_rename_popup.rs	Cancel	button.cancel,explorer.op.cancel,image_viewer.cancel,preset.popup.cancel_button,quit_modal.cancel_button,remote_attach.cancel,remote_tool.cancel,transfer.progress.cancel
-src/catalog/components/explorer_rename_popup.rs	Rename	context_menu.rename_title,explorer.context_menu.rename,explorer.popup.rename.rename,explorer.popup.rename.title,preset.toolbar.rename
 src/catalog/components/explorer_sidebar.rs	Add to favorites	explorer.popup.add_favorite.title
 src/catalog/components/explorer_sidebar.rs	Favorites	explorer.sidebar.favorites,port_scanner.favorites_heading
 src/catalog/components/explorer_sidebar.rs	Files	explorer.sidebar.tree
@@ -523,8 +517,6 @@ src/catalog/components/remote_attach/panes.rs	Retry	explorer.properties.retry,ex
 src/catalog/components/remote_attach/rows.rs	busy	remote_attach.busy
 src/catalog/components/remote_attach/rows.rs	in use	remote_attach.in_use
 src/catalog/components/remote_attach/rows.rs	inactive	remote_attach.inactive,remote_tool.attach_inactive
-src/catalog/components/rename_popup.rs	Cancel	button.cancel,explorer.op.cancel,image_viewer.cancel,preset.popup.cancel_button,quit_modal.cancel_button,remote_attach.cancel,remote_tool.cancel,transfer.progress.cancel
-src/catalog/components/rename_popup.rs	Rename	context_menu.rename_title,explorer.context_menu.rename,explorer.popup.rename.rename,explorer.popup.rename.title,preset.toolbar.rename
 src/catalog/components/scrim_scope.rs	Convert surface	attach.pending.convert
 src/catalog/components/script_manager.rs	Add script	settings.scripts.add
 src/catalog/components/script_manager.rs	Add trigger…	settings.scripts.trigger_add

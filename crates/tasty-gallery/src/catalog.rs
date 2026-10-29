@@ -1562,7 +1562,7 @@ pub fn pages() -> Vec<Page> {
                     "rename",
                     "Rename popup",
                     "One field, autofocused",
-                    Some("360px · workspace / subtitle / tab — one view"),
+                    Some("360px · workspace / subtitle / tab / category — one shared view"),
                     components::rename_popup::draw,
                 ),
                 single(
@@ -1576,14 +1576,14 @@ pub fn pages() -> Vec<Page> {
                     "explorer-favorite",
                     "Add to favorites popup",
                     "Name a global favorite",
-                    Some("≈280px · path caption + seeded input · anchored popup"),
+                    Some("360px · shared rename view · explorer metrics"),
                     components::explorer_favorite_popup::draw,
                 ),
                 single(
                     "explorer-rename",
                     "Rename popup (explorer)",
                     "Rename a file or folder",
-                    Some("≈280px · same skeleton as Add to favorites"),
+                    Some("360px · shared rename view · explorer metrics"),
                     components::explorer_rename_popup::draw,
                 ),
                 section(

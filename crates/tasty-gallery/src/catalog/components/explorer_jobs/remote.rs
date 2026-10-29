@@ -296,11 +296,14 @@ fn rename_card(ui: &mut egui::Ui, theme: &Theme, waiting: Option<&str>) {
     crate::catalog::components::rename_popup::card(
         ui,
         theme,
-        tasty_ui_widgets::RenamePopupLayout::Explorer,
-        t("explorer.popup.rename.title"),
-        "report-final.pdf",
-        None,
-        waiting,
+        crate::catalog::components::rename_popup::Card {
+            layout: tasty_ui_widgets::RenamePopupLayout::Explorer,
+            title: t("explorer.popup.rename.title"),
+            save: t("button.save"),
+            name: "report-final.pdf",
+            error: None,
+            waiting,
+        },
     );
 }
 

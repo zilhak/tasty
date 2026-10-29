@@ -14,17 +14,27 @@ use crate::i18n::t;
 /// `dialog.rs::rename_popup_sizer` 의 배율 전 기본 폭(시안 `size-360`).
 pub(crate) const POPUP_WIDTH: LogicalPx = LogicalPx(360.0);
 
+/// 예제 카드 한 장의 입력.
+pub(crate) struct Card<'a> {
+    pub layout: RenamePopupLayout,
+    pub title: &'a str,
+    pub save: &'a str,
+    pub name: &'a str,
+    pub error: Option<&'a str>,
+    pub waiting: Option<&'a str>,
+}
+
 /// 예제 rename 팝업 한 장. 입력은 예제끼리 포커스를 다투지 않도록 자동 포커스를 끄고,
 /// 고친 값은 다음 프레임에 처음 값으로 돌아간다.
-pub(crate) fn card(
-    ui: &mut egui::Ui,
-    theme: &Theme,
-    layout: RenamePopupLayout,
-    title: &str,
-    name: &str,
-    error: Option<&str>,
-    waiting: Option<&str>,
-) {
+pub(crate) fn card(ui: &mut egui::Ui, theme: &Theme, card: Card<'_>) {
+    let Card {
+        layout,
+        title,
+        save,
+        name,
+        error,
+        waiting,
+    } = card;
     let width = LogicalPx((POPUP_WIDTH.value() * theme.ui_zoom).round());
     // 제목 띠의 위 여백은 그 시안의 콘텐츠 위 여백과 같다.
     let top = match layout {
@@ -46,7 +56,7 @@ pub(crate) fn card(
             theme,
             &RenamePopupView {
                 layout,
-                save: t("button.save"),
+                save,
                 cancel: t("button.cancel"),
                 error,
                 save_enabled: error.is_none(),
@@ -60,26 +70,32 @@ pub(crate) fn card(
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
-        spec::cluster(ui, theme, "Workspace", |ui| {
+        spec::cluster(ui, theme, "Workspace title", |ui| {
             card(
                 ui,
                 theme,
-                RenamePopupLayout::Dialog,
-                t("rename_dialog.title_heading"),
-                "Planning",
-                None,
-                None,
+                Card {
+                    layout: RenamePopupLayout::Dialog,
+                    title: t("rename_dialog.title_heading"),
+                    save: t("button.save"),
+                    name: "Planning",
+                    error: None,
+                    waiting: None,
+                },
             )
         });
         spec::cluster(ui, theme, "Long name (scrolls inside the padding)", |ui| {
             card(
                 ui,
                 theme,
-                RenamePopupLayout::Dialog,
-                t("rename_dialog.tab_heading"),
-                "a-very-long-tab-name-that-scrolls-inside-the-field",
-                None,
-                None,
+                Card {
+                    layout: RenamePopupLayout::Dialog,
+                    title: t("rename_dialog.tab_heading"),
+                    save: t("button.save"),
+                    name: "a-very-long-tab-name-that-scrolls-inside-the-field",
+                    error: None,
+                    waiting: None,
+                },
             )
         });
         let latte = Theme::with_colors_and_zoom(
@@ -91,22 +107,28 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             card(
                 ui,
                 &latte,
-                RenamePopupLayout::Dialog,
-                t("rename_dialog.subtitle_heading"),
-                "기획 문서",
-                None,
-                None,
+                Card {
+                    layout: RenamePopupLayout::Dialog,
+                    title: t("rename_dialog.subtitle_heading"),
+                    save: t("button.save"),
+                    name: "기획 문서",
+                    error: None,
+                    waiting: None,
+                },
             )
         });
         spec::cluster(ui, theme, "Validation error (wraps)", |ui| {
             card(
                 ui,
                 theme,
-                RenamePopupLayout::Dialog,
-                t("rename_dialog.tab_heading"),
-                "normal",
-                Some(t("workspace_category.error.reserved")),
-                None,
+                Card {
+                    layout: RenamePopupLayout::Dialog,
+                    title: t("rename_dialog.category_heading"),
+                    save: t("button.save"),
+                    name: "normal",
+                    error: Some(t("workspace_category.error.reserved")),
+                    waiting: None,
+                },
             )
         });
     });

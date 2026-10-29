@@ -19,11 +19,14 @@ fn edit_dialog(ui: &mut egui::Ui, theme: &Theme, value: &str, error: Option<&str
     super::rename_popup::card(
         ui,
         theme,
-        tasty_ui_widgets::RenamePopupLayout::Dialog,
-        crate::i18n::t("rename_dialog.new_category_heading"),
-        value,
-        error,
-        None,
+        super::rename_popup::Card {
+            layout: tasty_ui_widgets::RenamePopupLayout::Dialog,
+            title: crate::i18n::t("rename_dialog.new_category_heading"),
+            save: crate::i18n::t("button.save"),
+            name: value,
+            error,
+            waiting: None,
+        },
     );
 }
 

@@ -11,11 +11,14 @@ pub(super) fn card(ui: &mut egui::Ui, theme: &Theme) {
     super::rename_popup::card(
         ui,
         theme,
-        tasty_ui_widgets::RenamePopupLayout::Explorer,
-        t("explorer.popup.rename.title"),
-        "photo.png",
-        None,
-        None,
+        super::rename_popup::Card {
+            layout: tasty_ui_widgets::RenamePopupLayout::Explorer,
+            title: t("explorer.popup.rename.title"),
+            save: t("button.save"),
+            name: "photo.png",
+            error: None,
+            waiting: None,
+        },
     );
 }
 
