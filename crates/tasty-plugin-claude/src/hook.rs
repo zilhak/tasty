@@ -1627,6 +1627,7 @@ mod tests {
                     &crate::codex_return::Binding {
                         receiver_id: "receiver-1".into(),
                         parent_external: None,
+                        attach: false,
                     },
                     true,
                 )

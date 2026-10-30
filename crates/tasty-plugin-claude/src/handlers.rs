@@ -14,6 +14,7 @@ use tasty_plugin_agent_common::params::{
     TargetSurfaceError, U32FieldError, forward, target_surface,
 };
 use tasty_plugin_agent_common::prompt_file;
+use tasty_plugin_agent_common::remote_attach::AttachOrigin;
 use tasty_plugin_sdk::{HostHandle, IpcMethodError, i18n::Translator};
 
 use crate::codex_return::{Binding, ParentTarget, Returns, TerminalParent, parent_target};
@@ -284,6 +285,9 @@ pub(crate) fn handle_children<H: HostCall>(
                 // 상태뿐 아니라 판단 근거와 확실성도 함께 전달한다.
                 "evidence": c.get("evidence").cloned().unwrap_or(Value::Null),
                 "confidence": c.get("confidence").cloned().unwrap_or(Value::Null),
+                // attach mirror 의 원격 자식 표지와, 연결이 끊긴 동안의 확인 불가 상태.
+                "remote": c.get("remote").cloned().unwrap_or(Value::Null),
+                "liveness": c.get("liveness").cloned().unwrap_or(Value::Null),
             })
         })
         .collect();
@@ -317,11 +321,20 @@ pub(crate) fn handle_kill<H: HostCall>(
     params: &Value,
     tr: &Translator,
 ) -> Result<Value, IpcMethodError> {
+    if let Some(origin) = AttachOrigin::of(params) {
+        return crate::remote::serve_kill(scanner, returns, host, params, &origin, tr);
+    }
     let child_index = require_child_index(params, tr)?;
     let target = parent_target(host, params, tr)?;
     let mut kp = serde_json::Map::new();
     returns.insert_parent(host, &target, params, &mut kp, "surface", None, tr)?;
     kp.insert("child".into(), json!(child_index));
+    // attach mirror 의 원격 자식은 서버의 같은 메서드로 닫는다.
+    if let Some(child) = crate::remote::child_by_index(host, &kp, child_index)
+        && let Some(anchor) = crate::remote::child_anchor(host, child, tr)?
+    {
+        return crate::remote::kill(returns, host, anchor, child, child_index, tr);
+    }
     let resp = host_call(host, "terminal.kill", Value::Object(kp))?;
     let killed_id = resp
         .get("killed_surface_id")
@@ -368,12 +381,18 @@ pub(crate) fn handle_tell<H: HostCall>(
     params: &Value,
     tr: &Translator,
 ) -> Result<Value, IpcMethodError> {
+    if let Some(origin) = AttachOrigin::of(params) {
+        return crate::remote::serve_tell(returns, host, params, &origin, tr);
+    }
     let surface_id = require_target_surface(params, tr)?;
     let message = params
         .get("message")
         .and_then(|v| v.as_str())
         .ok_or_else(|| IpcMethodError::invalid_params(tr.t("claude.params.missing_message")))?;
-    if let Some(caller) = crate::codex_return::codex_caller(params, tr)? {
+    let remote = crate::remote::child_anchor(host, surface_id, tr)?;
+    let codex = crate::codex_return::codex_caller(params, tr)?;
+    let from_codex = codex.is_some();
+    if let Some(caller) = codex {
         let resolved = crate::codex_return::resolve_parent(host, &caller, tr)?;
         require_returns(returns, tr)?;
         let target = ParentTarget::Codex(resolved.clone());
@@ -399,11 +418,14 @@ pub(crate) fn handle_tell<H: HostCall>(
         // 일반 호출이 새 지시를 보내면 이 자식의 다음 결과는 그 호출자의 것이다. 보내기 전에 Codex 경로를 끊는다.
         release_codex_route(returns, surface_id, tr)?;
     }
-    let resp = host_call(
-        host,
-        "terminal.tell",
-        json!({ "surface": surface_id, "text": message }),
-    )?;
+    let resp = match remote {
+        Some(anchor) => crate::remote::tell(host, anchor, surface_id, message, from_codex, tr)?,
+        None => host_call(
+            host,
+            "terminal.tell",
+            json!({ "surface": surface_id, "text": message }),
+        )?,
+    };
 
     // 알림을 받을 caller_surface가 없으면 훅 등록만 생략하고 tell 결과는 유지한다.
     if let Some(caller_surface) = params.get("caller_surface").and_then(|v| v.as_u64()) {
@@ -415,7 +437,7 @@ pub(crate) fn handle_tell<H: HostCall>(
 
 /// 일반 호출(tell·respawn)이 자식에게 새 지시를 보내기 전에 이전 Codex 부모의 결과 경로를 끊는다.
 /// 이미 claim 한 결과는 그대로 보낸다. 끊지 못하면 결과가 엉뚱한 대화로 갈 수 있으므로 지시를 보내지 않는다.
-fn release_codex_route(
+pub(crate) fn release_codex_route(
     returns: &Returns,
     child_surface: u32,
     tr: &Translator,
@@ -462,7 +484,7 @@ fn require_parent<H: HostCall>(
 }
 
 /// 응답에 싣는 부모. 물리 부모는 기존 `parent_surface_id`, 외부 부모는 `parent_external` 이다.
-fn describe_parent(target: &ParentTarget, out: &mut serde_json::Map<String, Value>) {
+pub(crate) fn describe_parent(target: &ParentTarget, out: &mut serde_json::Map<String, Value>) {
     match target {
         ParentTarget::Legacy(Some(id)) => {
             out.insert("parent_surface_id".into(), json!(id));
@@ -722,7 +744,7 @@ pub(crate) fn start_claude_in_surface(
     }
 }
 
-fn start_claude_with_options<H: HostCall>(
+pub(crate) fn start_claude_with_options<H: HostCall>(
     host: &H,
     surface_id: u32,
     prompt: Option<&str>,
@@ -873,8 +895,14 @@ pub(crate) fn handle_spawn<H: HostCall>(
     data_dir: Option<&Path>,
     tr: &Translator,
 ) -> Result<Value, IpcMethodError> {
+    if let Some(origin) = AttachOrigin::of(params) {
+        return crate::remote::serve_spawn(scanner, returns, host, params, &origin, data_dir, tr);
+    }
     let options = crate::session_options::SessionOptions::parse(params, tr)?;
     let target = require_parent(host, returns, params, tr)?;
+    if let Some(anchor) = crate::remote::spawn_anchor(host, params, tr)? {
+        return crate::remote::spawn(returns, host, params, &target, anchor, tr);
+    }
     let prompt = params
         .get("prompt")
         .and_then(|v| v.as_str())
@@ -2059,6 +2087,8 @@ mod tests {
                 }]})),
                 "surface.foreground_process" => Ok(json!({ "name": "claude", "pid": 4242 })),
                 "terminal.kill" => Ok(json!({ "killed_surface_id": 42, "child_index": 0 })),
+                // kill 은 대상이 attach mirror 의 원격 자식인지 먼저 묻는다.
+                "attach.agent_target" => Ok(json!({ "remote": false })),
                 other => panic!("unexpected host call: {other}"),
             }
         }
@@ -2126,8 +2156,14 @@ mod tests {
                 method: &str,
                 _params: Value,
             ) -> Result<Value, tasty_plugin_sdk::PluginError> {
-                assert_eq!(method, "terminal.kill");
-                Ok(json!({ "forwarded": true, "surface_id": 42, "child_index": 0 }))
+                match method {
+                    // 원격 자식 판별 조회. 이 부모 아래 자식 목록이 비어 있으면 로컬 kill 이다.
+                    "terminal.children" => Ok(json!({ "children": [] })),
+                    other => {
+                        assert_eq!(other, "terminal.kill");
+                        Ok(json!({ "forwarded": true, "surface_id": 42, "child_index": 0 }))
+                    }
+                }
             }
         }
         let scanner = Arc::new(Mutex::new(ErrorScanner::new()));
@@ -2252,7 +2288,11 @@ mod tests {
         .unwrap();
         handle_broadcast(&returns, &host, &codex_call(json!({ "text": "hi" })), &tr).unwrap();
         let routed = json!({ "parent_external": EXTERNAL, "workspace": "9" });
-        assert_eq!(host.calls("terminal.children"), vec![routed.clone()]);
+        // children 과, kill 이 원격 자식인지 확인한 조회.
+        assert_eq!(
+            host.calls("terminal.children"),
+            vec![routed.clone(), routed.clone()]
+        );
         assert_eq!(
             host.calls("terminal.kill"),
             vec![json!({ "parent_external": EXTERNAL, "workspace": "9", "child": 0 })]

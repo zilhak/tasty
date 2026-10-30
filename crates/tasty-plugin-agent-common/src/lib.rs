@@ -22,4 +22,5 @@ pub mod host_call;
 pub mod params;
 pub mod prompt_file;
 pub mod reboot;
+pub mod remote_attach;
 pub mod task_turn;

@@ -11,6 +11,7 @@
 //!   `codex.deliver` 를 기다리지 않는다. 송신 스레드는 실패한 요청을 같은 키로 늘어나는 간격을 두고
 //!   다시 보내고, 플러그인이 다시 시작하면 남은 요청부터 보낸다. 요청은 `claude.codex_returns` 로 볼 수 있다.
 
+mod attach;
 mod observe;
 mod parent;
 
@@ -84,6 +85,8 @@ struct Route {
     /// 묶인 세션의 프로세스가 끝난 시각(유닉스 ms). 복원된 같은 세션이 다시 이을 수 있도록
     /// [`ENDED_ROUTE_GRACE`] 동안 남겨 두고 그 뒤 지운다.
     ended_at_ms: Option<u64>,
+    /// 결과를 `codex.deliver` 가 아니라 attach 원격 부모(`attach.child_notice`)로 보낸다. 이때 `receiver_id` 는 비어 있다.
+    attach: bool,
 }
 
 /// 결과 경로의 한 턴. Stop 이 온 때 정하고 확정·보고가 늦어도 그대로 들고 가 그 턴의 키로 claim 한다.
@@ -98,6 +101,8 @@ pub(crate) struct TurnId {
     /// Stop 이 온 때의 수신처. 확정을 기다리는 동안 다른 부모가 tell 해 경로의 수신처가 바뀌어도 그 턴의
     /// 결과는 그 턴을 지시한 부모에게 간다.
     receiver_id: String,
+    /// Stop 이 온 때 결과가 attach 원격 부모로 가는 경로였는가.
+    attach: bool,
 }
 
 /// 한 자식의 결과를 받을 곳과 그 자식을 관리하는 부모.
@@ -105,6 +110,8 @@ pub(crate) struct TurnId {
 pub(crate) struct Binding {
     pub receiver_id: String,
     pub parent_external: Option<String>,
+    /// 결과를 attach 원격 부모에게 돌려보낸다. 수신처는 client 가 정하므로 `receiver_id` 는 비어 있다.
+    pub attach: bool,
 }
 
 impl Binding {
@@ -115,6 +122,16 @@ impl Binding {
                 TerminalParent::External(key) => Some(key.clone()),
                 TerminalParent::Surface(_) => None,
             },
+            attach: false,
+        }
+    }
+
+    /// attach 원격 출처 부모. 결과는 서버 host 를 거쳐 client 의 같은 plugin 이 그 부모의 수신처로 기록한다.
+    pub(crate) fn attach(parent_key: &str) -> Self {
+        Self {
+            receiver_id: String::new(),
+            parent_external: Some(parent_key.to_string()),
+            attach: true,
         }
     }
 }
@@ -262,6 +279,7 @@ impl Book {
                         })
                         .unwrap_or_default(),
                     ended_at_ms: r.get("ended_at_ms").and_then(Value::as_u64),
+                    attach: r.get("attach").and_then(Value::as_bool).unwrap_or(false),
                 })
             })
             .collect::<Option<Vec<_>>>()?;
@@ -303,6 +321,7 @@ impl Book {
                 "waiting": r.waiting,
                 "retired": r.retired,
                 "ended_at_ms": r.ended_at_ms,
+                "attach": r.attach,
             })).collect::<Vec<_>>(),
             "outbox": self.outbox.iter().map(outgoing_json).collect::<Vec<_>>(),
         })
@@ -557,6 +576,7 @@ impl Returns {
                 waiting: Vec::new(),
                 retired: Vec::new(),
                 ended_at_ms: None,
+                attach: binding.attach,
             });
             ((), true)
         })
@@ -574,6 +594,7 @@ impl Returns {
                     let route = &mut book.routes[i];
                     route.receiver_id = binding.receiver_id.clone();
                     route.parent_external = binding.parent_external.clone();
+                    route.attach = binding.attach;
                     // 묶인 세션이 끝났거나 넘기다 멈췄으면 지금 그 surface 에서 tell 을 받는 실행은 다른 세션이다.
                     // 다음 hook 의 세션으로 다시 묶는다. 경로 id 와 턴 순번은 이어 가므로 키가 겹치지 않는다.
                     if route.ended_at_ms.take().is_some() || route.handoff {
@@ -601,6 +622,7 @@ impl Returns {
                     waiting: Vec::new(),
                     retired: Vec::new(),
                     ended_at_ms: None,
+                    attach: binding.attach,
                 }),
             }
             ((), true)
@@ -765,6 +787,7 @@ impl Returns {
                 child_session: book.routes[i].child_session.clone(),
                 child_surface: book.routes[i].child_surface,
                 receiver_id: book.routes[i].receiver_id.clone(),
+                attach: book.routes[i].attach,
             });
             (id, false)
         });
@@ -824,20 +847,21 @@ impl Returns {
             }
             // 결과에 싣는 수신처·세션·surface 는 그 턴의 것이다. 경로가 그 뒤 다른 세션이나 수신처로
             // 넘어갔어도 바꾸지 않는다.
-            let (receiver_id, child_surface, child_session) = match turn_id {
+            let (receiver_id, child_surface, child_session, attach) = match turn_id {
                 Some(id) => (
                     id.receiver_id.clone(),
                     id.child_surface,
                     id.child_session.clone(),
+                    id.attach,
                 ),
                 None => (
                     route.receiver_id.clone(),
                     route.child_surface,
                     route.child_session.clone(),
+                    route.attach,
                 ),
             };
             let mut request = json!({
-                "receiver_id": receiver_id,
                 "completion_key": format!("claude:{}:t{turn}", route.route_id),
                 "provider": "claude",
                 "child_surface": child_surface,
@@ -847,6 +871,11 @@ impl Returns {
             });
             if let Some(attempt) = attempt_id {
                 request["attempt_id"] = json!(attempt);
+            }
+            if attach {
+                request["attach"] = json!(true);
+            } else {
+                request["receiver_id"] = json!(receiver_id);
             }
             book.outbox.push(Outgoing::new(request.clone()));
             (Some(request), true)
@@ -909,9 +938,12 @@ impl Returns {
         let Some(key) = key_of(&request).map(String::from) else {
             return false;
         };
-        let outcome = host
-            .call("codex.deliver", request)
-            .map_err(|e| e.to_string());
+        let outcome = if attach::is_attach(&request) {
+            attach::hand_over(host, request)
+        } else {
+            host.call("codex.deliver", request)
+                .map_err(|e| e.to_string())
+        };
         match &outcome {
             Ok(response) => {
                 tracing::info!("claude codex return: {key} handed to codex ({response})")
@@ -986,6 +1018,73 @@ impl Returns {
             self.wake();
         }
         Ok(n)
+    }
+
+    /// client: 서버에서 온 원격 자식 결과를 그 mirror 자식 경로의 수신처로 기록한다(`claude.remote_receive`).
+    /// 같은 결과의 재전송은 같은 키라 Codex 원장이 중복으로 거른다. 기록하지 못하면 오류로 답해 host 가
+    /// 나중에 다시 보내게 한다. 경로는 mirror 가 사라져도 남아 있으므로 늦게 온 결과도 기록한다.
+    pub(crate) fn remote_receive<H: HostCall>(
+        &self,
+        host: &H,
+        params: &Value,
+    ) -> Result<Value, IpcMethodError> {
+        use tasty_plugin_agent_common::remote_attach::{Received, received};
+        let Some((surface, payload)) = received(params) else {
+            return Ok(Received::Rejected("missing surface_id or payload".into()).json());
+        };
+        let receiver = if self.is_available() {
+            self.update(|book| {
+                let r = book
+                    .routes
+                    .iter()
+                    .rev()
+                    .find(|r| r.child_surface == surface && !r.attach)
+                    .map(|r| r.receiver_id.clone());
+                (r, false)
+            })
+            .map_err(IpcMethodError::new)?
+        } else {
+            None
+        };
+        let request = match attach::local_request(payload, surface, receiver) {
+            Ok(r) => r,
+            Err(reason) => return Ok(Received::Rejected(reason).json()),
+        };
+        let response = host
+            .call_within("codex.deliver", request, DELIVER_CALL_TIMEOUT)
+            .map_err(IpcMethodError::from)?;
+        let status = if response.get("duplicate").and_then(Value::as_bool) == Some(true) {
+            Received::Duplicate
+        } else {
+            Received::Recorded
+        };
+        Ok(status.json())
+    }
+
+    /// client: 원격 자식이 닫혔다. 서버에 남은 결과가 늦게 올 수 있으므로 경로를 바로 지우지 않고 끝난 경로로
+    /// 두어 [`ENDED_ROUTE_GRACE`] 뒤 지운다.
+    pub(crate) fn end_remote_child(&self, child_surface: u32) {
+        if !self.is_available() {
+            return;
+        }
+        let now = now_ms();
+        let result = self.update(|book| {
+            let mut changed = false;
+            for r in book
+                .routes
+                .iter_mut()
+                .filter(|r| r.child_surface == child_surface && r.ended_at_ms.is_none())
+            {
+                r.ended_at_ms = Some(now);
+                changed = true;
+            }
+            ((), changed)
+        });
+        if let Err(e) = result {
+            tracing::warn!(
+                "claude codex return: could not end the remote child s{child_surface}: {e}"
+            );
+        }
     }
 
     /// 보내지 못한 요청 목록. 본문·수신처·오류·재시도 상태를 그대로 보여 준다.
@@ -1347,6 +1446,7 @@ mod tests {
         let external = Binding {
             receiver_id: RECEIVER.into(),
             parent_external: Some("codex:x".into()),
+            attach: false,
         };
         returns.bind_new_child(40, &external, true).unwrap();
         let target = ParentTarget::Codex(ResolvedParent {
@@ -1408,6 +1508,7 @@ mod tests {
         Binding {
             receiver_id: receiver.to_string(),
             parent_external: None,
+            attach: false,
         }
     }
 
@@ -2409,6 +2510,7 @@ mod tests {
         Binding {
             receiver_id: RECEIVER.into(),
             parent_external: Some("codex:x".into()),
+            attach: false,
         }
     }
 

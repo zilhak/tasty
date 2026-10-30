@@ -87,6 +87,16 @@ no_data_dir = "Claude プラグインのデータフォルダがないため、C
 ambiguous_workspace = "この Codex 会話の子は複数のワークスペースにあります（{}）。--workspace で一つ選んでください。"
 route_not_released = "サーフェス {} の結果はまだ Codex 会話に返す設定になっており、その経路を解除できなかったため指示を送りませんでした: {}"
 
+[claude.remote]
+unsupported = "接続先サーバーの Tasty はリモート子エージェントに対応していません。サーバーの Tasty を更新してください。何も作成していません。"
+lookup_failed = "対象が接続中のリモートワークスペースかどうか確認できませんでした: {}"
+outcome_unknown = "サーバーで実行されたかどうか分かりません({})。子がサーバーにある場合もない場合もあります。再試行の前に children で確認してください。"
+profile_file = "--profile-file はこのコンピューターのファイルを指すため、接続中のリモートワークスペースの子には使えません。サーバーにプロファイルを登録し --profile で指定してください。"
+no_child = "サーバーは spawn を実行しましたが、新しい子を報告しませんでした: {}"
+commit_failed = "子は作成しましたが、通知の送信を開始できませんでした({})。完了通知はサーバーに残っています。"
+hooks_missing = "サーバーの Claude Code に Tasty の Stop・StopFailure フックがインストールされていないため、この子の完了が報告されない可能性があります。サーバーで 'tasty claude install' を実行してください。"
+no_target = "リクエストがこの attach 親の子を指定していません。"
+
 [claude.child]
 unknown_index = "index {} の子はありません — 親 surface {} 基準(利用可能な index: {})"
 

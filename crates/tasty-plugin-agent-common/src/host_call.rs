@@ -6,11 +6,33 @@ use tasty_plugin_sdk::HostHandle;
 /// 동기 호스트 호출. 시험에서는 mock으로 바꿔 응답과 실패를 재현한다.
 pub trait HostCall {
     fn call(&self, method: &str, params: Value) -> Result<Value, tasty_plugin_sdk::PluginError>;
+
+    /// 이 호출 하나만 응답 상한을 바꾼다. 다른 호출과 핸들의 상한은 그대로다.
+    /// 시험 mock 처럼 상한이 없는 구현은 [`Self::call`] 과 같다.
+    fn call_within(
+        &self,
+        method: &str,
+        params: Value,
+        _timeout: std::time::Duration,
+    ) -> Result<Value, tasty_plugin_sdk::PluginError> {
+        self.call(method, params)
+    }
 }
 
 impl HostCall for HostHandle {
     fn call(&self, method: &str, params: Value) -> Result<Value, tasty_plugin_sdk::PluginError> {
         HostHandle::call(self, method, params)
+    }
+
+    fn call_within(
+        &self,
+        method: &str,
+        params: Value,
+        timeout: std::time::Duration,
+    ) -> Result<Value, tasty_plugin_sdk::PluginError> {
+        let mut handle = self.clone();
+        handle.timeout = timeout;
+        HostHandle::call(&handle, method, params)
     }
 }
 

@@ -87,6 +87,10 @@ Codex 대화에서 실행한 `spawn`·`tell`·`children`·`broadcast`·`kill`·`
 | `body` | `turn_ended`는 `last_assistant_message`, `turn_failed`는 오류 종류, `exited`는 null |
 | `attempt_id` | 게이트 없는 Stop에 prompt_id가 있으면 그 값. 없으면 생략 |
 
+### 원격 attach 자식
+
+attach 로 연결한 원격 워크스페이스(mirror)에 `spawn` 하면 자식은 서버 Tasty 에서 서버의 Claude Code·설정·프로필·토큰으로 실행된다. 부모·Codex 결과 경로·완료 알림 훅은 이 Tasty 의 mirror surface 에 묶이고, `tell`·`kill` 은 서버의 같은 메서드로 간다. 서버에서 완료를 보고하는 것은 서버에 `tasty claude install` 로 설치한 기존 Stop·StopFailure 훅이다. 서버에 그 훅이 없으면 spawn 응답에 경고가 실린다. 세부 계약은 [원격 attach 자식](../remote-attach-children.md)에 있다.
+
 ## 목적
 
 **Claude Code CLI를 tasty 안에서 실행하고 관리**하는 통합. 새 워크스페이스/페인에 Claude 인스턴스를 띄우고, 부모-자식 관계로 여러 인스턴스를 spawn·제어한다 (멀티에이전트).
@@ -657,6 +661,10 @@ API 오류에서 실제 이벤트를 받은 실험까지 완료한 것은 아니
 - Given 등록 게이트 둘(`gate-a`/`gate-b`) When `checklist-enable --gate gate-a` Then `checklist-status --gate gate-a` 는 `enabled: true`, `--gate gate-b` 는 `enabled: false` 이고 `gate-list` 가 두 상태를 함께 보여준다. 그 세션에서 `gate-a` 훅만 block 을 걸고 `gate-b` 훅은 조용히 통과한다. 미등록 이름으로 `checklist-enable --gate nope` 를 호출하면 에러이고 마커 디렉토리도 생기지 않으며, `checklist-status --gate nope` 는 에러 없이 `enabled: false, registered: false` 를 돌려준다.
 - Given 켜 두고 라운드가 쌓인 게이트 When `gate-unregister <이름>` 후 같은 이름으로 다시 `gate-register` Then `checklist-status` 가 `enabled: false` 이고 라운드 카운터도 1 부터 시작한다(이전 인스턴스의 상태를 물려받지 않는다).
 - Given 게이트별로 나누기 전 경로(`checklist/enabled.marker`)에만 마커가 있는 인스턴스 When 아무 진입점(`checklist-status` 또는 훅 실행) Then 마커가 `gates/continue-checklist/enabled.marker` 로 옮겨지고 legacy 파일은 사라지며, 켜져 있던 상태가 그대로 보존된다.
+- Given capability 를 지원하는 서버의 mirror workspace 와 물리 부모 P When `tasty claude spawn --workspace <mirror id>` Then 자식은 서버에서 실행되고 응답의 `child_surface_id` 는 이 Tasty 의 mirror surface, `remote` 는 true 이며, 서버의 Stop 훅이 보고한 idle 이 P 의 completion-log 에 한 줄 기록된다.
+- Given Codex 대화가 원격 자식을 spawn 한 상태 When 서버에서 그 턴이 확정됨 Then 서버 plugin 은 `attach.child_notice` 로 결과를 맡기고 `delivered` 를 받기 전에는 영속 요청을 지우지 않으며, client plugin 은 그 결과를 `r.` 접두 키로 그 대화의 수신처에 한 번 기록한다. 같은 결과가 다시 와도 `duplicate` 로 답한다.
+- Given 원격 자식 기능을 모르는 서버의 mirror When `tasty claude spawn --workspace <mirror id>` Then 아무 터미널도 만들지 않고 오류를 돌려준다.
+- Given 서버 결과를 알 수 없게 끝난 원격 spawn When 그 call 의 자식이 늦게 생김 Then 기다리던 부모가 있으면 그 부모로 경로를 묶고, 없으면 그 자식을 닫는다.
 - Given `gate-register mygate --sentinel '[[MY-DONE]]' --rounds 2` 로 등록하고 `checklist-enable --gate mygate` 로 켜 둔 게이트 When `spawn --profile mygate` Then 그 자식의 `Stop` 훅으로 `checklist-hook --gate mygate` 가 걸리고, 센티넬 없이 턴을 끝내려 하면 **mygate 의 본문**(host 기본 체크리스트 본문이 아니라)이 주입되며 block 된다. `[[MY-DONE]]` 을 포함해 답하면 통과하고, 포함하지 않은 채 계속하면 **mygate 의 상한 2** 에서 백스톱으로 통과한다. 라운드는 `checklist/gates/mygate/rounds/<session>.json` 에 쌓이고 그 세션이 끝나면 정리된다.
 - Given 등록 게이트 `mygate` 와 그것을 `reboot --profile mygate` 로 부착해 둔 자식(이름 meta 를 기록하는 기동 경로는 `reboot` 뿐이라 `spawn` 으로 띄운 자식은 훅이 걸려 있어도 `attached_names` 가 `null` 이다) When `profile-list` / `profile-show mygate` / `profile-current --surface <자식>` Then 목록에 `user/mygate`(attachable, 게이트 설명)와 `host/continue-checklist` 가 함께 보이고, show 는 owner `user` 와 생성된 Stop 훅 JSON 을 돌려주며, current 의 `attached_names` 에 `mygate` 가 있다.
 - Given 게이트 둘 When `--profile mygate,continue-checklist` 로 부착 Then `generated/<정렬된이름>.json` 의 `hooks.Stop` 항목이 2개이고 각각 `--gate mygate` / `--gate continue-checklist` 를 지목한다.

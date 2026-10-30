@@ -100,17 +100,23 @@ pub(crate) fn is_marker_installed_in_value(root: &Value, event_name: &str, marke
     arr.iter().any(|entry| entry_matches_marker(entry, marker))
 }
 
-/// Stop 훅 설치 여부를 읽는다. 파일이 없으면 false다. 현재 제품 내 호출자는 없다.
-#[allow(dead_code)]
-pub(crate) fn is_tasty_stop_hook_installed(tr: &Translator) -> Result<bool> {
+/// 턴 확정을 보고하는 Stop·StopFailure 훅이 이 컴퓨터의 Claude Code 설정에 모두 있는가. 파일이 없으면 false다.
+/// attach 원격 자식은 자식이 도는 서버의 설정을 쓰므로 서버 plugin 이 spawn 응답 경고에 쓴다.
+pub(crate) fn completion_hooks_installed(tr: &Translator) -> Result<bool> {
     let path = claude_settings_path(tr)?;
     if !path.exists() {
         return Ok(false);
     }
     let content = std::fs::read_to_string(&path)?;
     let root: Value = serde_json::from_str(&content)?;
-    let marker = tasty_hook_marker("stop");
-    Ok(is_marker_installed_in_value(&root, "Stop", &marker))
+    Ok(
+        is_marker_installed_in_value(&root, "Stop", &tasty_hook_marker("stop"))
+            && is_marker_installed_in_value(
+                &root,
+                "StopFailure",
+                &tasty_hook_marker("stop-failure"),
+            ),
+    )
 }
 
 /// install 이 바꾼 이벤트. `added` 는 새로 넣은 항목, `updated` 는 기존 Tasty 항목의 matcher 나 명령을

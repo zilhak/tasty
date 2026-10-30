@@ -6,6 +6,8 @@ surface kind 를 제공하는 플러그인(markdown·image·html)은 그 kind �
 
 Claude의 훅 설치는 [완료 알림 mod](claude/notify-mod.md)도 관리한다. 실제 모델 수신과 로컬 시험의 범위는 구분한다.
 
+claude·codex 는 attach 로 연결한 원격 워크스페이스에도 자식을 만들고 관리한다. 두 plugin 이 같은 방식을 쓰므로 [원격 attach 자식](remote-attach-children.md)에 함께 적는다. 자식 쪽 Tasty 에 설치한 기존 훅이 그대로 완료를 보고한다.
+
 ## 카탈로그 (`BUILTINS`)
 
 | 플러그인 (id) | 무엇 | 주요 기여 |
