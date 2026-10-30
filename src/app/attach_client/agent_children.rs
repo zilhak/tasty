@@ -43,9 +43,6 @@ struct Adopting {
 }
 static ADOPTING: Mutex<Vec<Adopting>> = Mutex::new(Vec::new());
 
-/// 서버 결과의 새 자식이 mirror 에 나타나기를 기다리는 한도.
-const ADOPT_GRACE: Duration = Duration::from_secs(5);
-
 /// late_spawn 재결합이 일시 실패했을 때 다시 넣기까지의 간격.
 const LATE_RETRY: Duration = Duration::from_secs(5);
 
@@ -558,12 +555,12 @@ fn adopt(sess: &AttachClientSession, engine: &mut EngineMut<'_>, ws: u32) {
         .calls
         .iter()
         .filter(|(_, c)| c.workspace == ws && c.state == CallState::Adopting)
-        // 결과와 같은 delta 사이에 생겼다 닫힌 자식은 mirror 에 나타나지 않는다. 한도가 지나면 나타난 것만 등록한다.
+        // mirror 에 아직 없는 자식은 닫혔다는 근거가 없으므로 기다린다. 상한이 지나면 plugin 은 결과불명을 받고,
+        // 나중에 나타나면 late_spawn 으로 재결합하며, 끝내 나타나지 않으면 기록 보관 기한에 정리된다.
         .filter(|(_, c)| {
             c.spawned
                 .iter()
                 .all(|r| sess.state.remote_to_local.contains_key(r))
-                || c.resulted_at.is_some_and(|at| at.elapsed() > ADOPT_GRACE)
         })
         .map(|(id, _)| *id)
         .collect();

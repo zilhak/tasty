@@ -108,11 +108,11 @@ pub(super) fn resolve_spawn(
         }
         _ => None,
     };
-    match attach_parent {
+    match &attach_parent {
         Some(key) if !target.mirror => crate::remote::agent_children::spawn_allowed(
             &session.live.occupancy,
             caller_plugin,
-            &key,
+            key,
             input.get("attach_context").and_then(|v| v.as_str()),
             target.id,
         )
@@ -128,6 +128,15 @@ pub(super) fn resolve_spawn(
     let workspace = target.id;
     let tab_index = pane_value.tabs.len();
     let cwd = optional_str(input, "cwd");
+    // 원격 holder 의 경로는 그 client 에서 바꾸지 않고 오므로, 상대 경로를 이 프로세스 cwd 로 풀지 않는다.
+    if attach_parent.is_some()
+        && let Some(path) = &cwd
+        && !std::path::Path::new(path).is_absolute()
+    {
+        return Err(bad(format!(
+            "cwd of a remote attach child must be an absolute path on this machine: {path}"
+        )));
+    }
     if let Some(path) = &cwd
         && !std::path::Path::new(path).is_dir()
     {

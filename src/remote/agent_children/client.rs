@@ -74,8 +74,6 @@ pub(crate) struct Call {
     pub state: CallState,
     pub outcome: Option<CallOutcome>,
     pub spawned: Vec<u32>,
-    /// 서버 결과를 받은 시각. 새 자식이 mirror 에 나타나기를 기다리는 한도의 기준이다.
-    pub resulted_at: Option<Instant>,
     pub adopted: Vec<Adopted>,
     /// plugin 에 이미 응답했다. 그 뒤에 온 결과는 늦은 생성으로 처리한다.
     pub replied: bool,
@@ -194,7 +192,6 @@ impl Client {
         }
         call.outcome = Some(outcome);
         call.spawned = spawned;
-        call.resulted_at = Some(Instant::now());
         call.state = if call.spawned.is_empty() || call.parent.is_none() {
             CallState::Done
         } else {
@@ -327,7 +324,7 @@ pub(crate) fn call_reply(
                 id.clone(),
                 -32000,
                 format!(
-                    "remote agent call {call_id}: the remote child closed before it could be registered here"
+                    "remote agent call {call_id}: the remote child exists but could not be registered under its parent here"
                 ),
             )
         }
@@ -455,7 +452,6 @@ mod tests {
             late_sent: false,
             late_retry_at: None,
             wire: None,
-            resulted_at: None,
         }
     }
 
@@ -527,16 +523,14 @@ mod tests {
     }
 
     #[test]
-    fn a_child_that_closed_before_it_appeared_is_an_error_not_a_success() {
+    fn a_child_that_has_not_appeared_leaves_the_outcome_unknown() {
         // 전역 상태를 쓰므로 다른 시험과 겹치지 않는 번호를 쓴다.
         let id = 9_100_001;
-        let mut done = call(4, Some(ParentKey::Surface(3)));
-        done.state = CallState::Done;
-        done.outcome = Some(CallOutcome::Ok {
-            result: serde_json::json!({}),
-        });
-        done.spawned = vec![9];
-        client().calls.insert(id, done);
+        let mut waiting = call(4, Some(ParentKey::Surface(3)));
+        waiting.state = CallState::Adopting;
+        waiting.spawned = vec![9];
+        waiting.started = Instant::now() - Duration::from_secs(40);
+        client().calls.insert(id, waiting);
         let reply = call_reply(
             id,
             serde_json::json!(1),
@@ -544,8 +538,16 @@ mod tests {
             Duration::from_secs(35),
         )
         .expect("answered");
-        client().calls.remove(&id);
-        assert!(reply.error.is_some(), "{reply:?}");
+        let late = client().calls.remove(&id).map(|c| c.late);
+        assert_eq!(
+            reply.error.as_ref().map(|e| e.code),
+            Some(ERR_OUTCOME_UNKNOWN)
+        );
+        assert_eq!(
+            late,
+            Some(true),
+            "a later appearance is rejoined through late_spawn"
+        );
     }
 
     #[test]
