@@ -55,6 +55,17 @@ unknown_event = "unknown hook event '{event}' (supported: stop, prompt-submit, s
 [codex.launch]
 workspace_create_missing_id = "host workspace.create response is missing 'id': {resp}"
 
+[codex.remote]
+unsupported = "The Tasty on the attached server does not support remote child agents. Update Tasty on the server. Nothing was created."
+lookup_failed = "Could not check whether the target is an attached remote workspace: {detail}"
+outcome_unknown = "It is not known whether the server ran this ({detail}). The child may or may not exist on the server. Check with children before trying again."
+no_child = "The server ran spawn but did not report a new child: {resp}"
+commit_failed = "The child was created, but its notifications could not be started ({detail}). Its completions are kept on the server."
+bind_failed = "Child surface {surface} was created on the server, but where to report its completion could not be set ({detail}). Its notifications were not released; {cleanup}"
+child_closed = "the child was closed."
+child_not_closed = "the child could not be closed ({detail}). Close it with kill."
+no_target = "The request did not name a child of this attach parent."
+
 [codex.spawn]
 missing_child_surface_id = "host terminal.spawn response is missing 'child_surface_id': {resp}"
 

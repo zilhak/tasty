@@ -15,6 +15,10 @@
 
 Codex 대화에서 spawn한 자식의 턴 결과는 완료 로그와 별도로 [부모 대화에 돌아간다](#codex-부모에게-결과-반환).
 
+### 원격 attach 자식
+
+attach 로 연결한 원격 워크스페이스(mirror)에 `spawn` 하면 자식은 서버 Tasty 에서 서버의 Codex CLI·plugin 설정·승인 정책으로 실행된다. 부모·Codex 결과 경로·완료 알림 훅은 이 Tasty 의 mirror surface 에 묶이고, `tell`·`kill` 은 서버의 같은 메서드로 간다. 서버에서 턴을 보고하는 것은 서버에 `tasty codex install` 로 설치한 기존 훅이다. 부모가 Codex 대화면 서버가 확정한 턴 결과가 그 대화의 대기열에 들어간다. 세부 계약은 [원격 attach 자식](../remote-attach-children.md)에 있다.
+
 ## Tasty 자식에서 지우는 세션 변수
 
 매니페스트 `[contributes.strip_inherited_env]`로 `CODEX_THREAD_ID`를 선언한다. Codex는 도구 명령마다 그 대화의 thread ID를 이 이름으로 넣는다. Codex 도구가 Tasty를 띄우면 이 값이 남아, 그 터미널의 셸이나 그 안의 Claude가 부른 `tasty`를 바깥 Codex 대화의 호출로 해석한다. 이 플러그인이 설치·활성이면 Tasty는 터미널 셸·훅·작업 자식에서 이 값을 지운다([선언 형식과 적용 조건](../../dev-guide/plugin-development.md#상속-환경변수-제거-contributesstrip_inherited_env)). 그 터미널에서 실행한 Codex는 도구마다 자기 thread ID를 다시 넣으므로 Codex 호출자 판정은 그대로다. `CODEX_HOME` 등 다른 `CODEX_*` 값은 사용자 설정이라 남긴다. 플러그인을 비활성화하거나 제거하면 지우지 않는다.
@@ -626,6 +630,9 @@ tasty codex result <event_id>
 
 ## Acceptance Criteria
 
+- Given Codex 대화가 부모이고 대상이 attach mirror workspace When `tasty codex spawn --workspace <mirror id>` Then 자식은 서버에서 서버 설정으로 실행되고, mirror 자식에 결과 경로를 묶은 뒤에만 서버가 통지를 보내며, 자식의 턴 결과는 부모 대화에 한 번 기록된다.
+- Given 서버가 원격 자식의 턴을 확정했지만 client 가 아직 확인하지 않음 When 서버 plugin 이 다시 시작 Then 보낼 기록은 남아 있고 같은 키로 다시 맡기며, client 는 같은 결과를 한 번만 기록한다.
+- Given mirror 자식의 결과 경로를 묶지 못함 When spawn Then 통지를 풀지 않고(commit 없음) 서버의 그 자식을 닫은 뒤 오류로 끝난다.
 - Given Tasty helper 세션의 Codex 부모 When 그 대화에서 `tasty codex spawn --prompt "…"`를 실행하고 자식의 턴이 끝난다 Then 부모 thread의 대기열에 고정 형식의 참조가 한 번 들어가고 부모는 `tasty codex result <event_id>`로 본문을 읽는다.
 - Given Tasty 세션도 아니고 공유 daemon에 로드되지도 않은 Codex 호출자 When spawn Then 자식을 만들지 않고 받을 수 없는 부모라고 알린다.
 - Given 같은 턴의 Stop 훅이 두 번 실행 When 결과를 기록 Then 같은 event_id를 돌려주고 대기열에는 한 번만 넣는다.

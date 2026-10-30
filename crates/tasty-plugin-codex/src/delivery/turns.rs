@@ -55,6 +55,9 @@ pub(crate) struct Candidate {
     pub turn_id: Option<String>,
     pub attempt_id: Option<String>,
     pub created_at_ms: u64,
+    /// attach 원격 출처 부모. 있으면 확정한 결과를 원장 대신 그 부모에게 보낼 기록으로 옮긴다.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attach_parent: Option<String>,
 }
 
 /// 소유 서버가 보고한 턴 상태.
@@ -290,6 +293,9 @@ pub(crate) fn pump_turns(ctx: &Ctx<'_>, fresh: Fresh<'_>) {
             next = Some(next.map_or(at, |t| t.min(at)));
         }
     }
+    if let Some(at) = super::attach_out::pump(ctx) {
+        next = Some(next.map_or(at, |t| t.min(at)));
+    }
     if let Some(at) = next {
         arm_wake(ctx, at);
     }
@@ -378,10 +384,34 @@ fn retry(ctx: &Ctx<'_>, name: &str, candidate: &Candidate, detail: &str) {
 }
 
 fn capture(ctx: &Ctx<'_>, name: &str, candidate: &Candidate, status: &str, body: Option<String>) {
+    if candidate.attach_parent.is_some() {
+        let completion = completion_of(candidate, status, body);
+        match super::attach_out::queue(ctx.root, name, &completion) {
+            Ok(()) => {
+                remove(ctx.root, name);
+                ctx.pump.turn_forget(name);
+                if let Some(at) = super::attach_out::pump(ctx) {
+                    arm_wake(ctx, at);
+                }
+            }
+            Err(e) => tracing::warn!("codex turn {name}: attach result not kept: {e}"),
+        }
+        return;
+    }
     let Some(receiver) = receiver_of(ctx, name, candidate) else {
         return;
     };
-    let completion = Completion {
+    match super::deliver(ctx, &receiver, completion_of(candidate, status, body)) {
+        Ok(_) => {
+            remove(ctx.root, name);
+            ctx.pump.turn_forget(name);
+        }
+        Err(e) => tracing::warn!("codex turn {name}: capture failed: {e}"),
+    }
+}
+
+fn completion_of(candidate: &Candidate, status: &str, body: Option<String>) -> Completion {
+    Completion {
         completion_key: candidate.completion_key.clone(),
         provider: "codex".into(),
         child_surface: candidate.child_surface,
@@ -389,13 +419,6 @@ fn capture(ctx: &Ctx<'_>, name: &str, candidate: &Candidate, status: &str, body:
         status: status.into(),
         body,
         attempt_id: candidate.attempt_id.clone(),
-    };
-    match super::deliver(ctx, &receiver, completion) {
-        Ok(_) => {
-            remove(ctx.root, name);
-            ctx.pump.turn_forget(name);
-        }
-        Err(e) => tracing::warn!("codex turn {name}: capture failed: {e}"),
     }
 }
 

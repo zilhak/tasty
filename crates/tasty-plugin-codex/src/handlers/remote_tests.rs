@@ -1,0 +1,491 @@
+//! attach 원격 자식의 client·서버 분기. Codex 와 host 는 흉내 낸다.
+
+use std::cell::RefCell;
+use std::path::PathBuf;
+
+use tasty_plugin_agent_common::remote_attach::NoticeStatus;
+use tasty_plugin_sdk::PluginError;
+
+use super::*;
+use crate::delivery::attach_out;
+use crate::delivery::testing::Fixture;
+
+const PARENT: &str = "019f55e7-3dfa-7a00-8000-0000000000aa";
+/// mirror 자식(L)과 서버 자식(R).
+const L: u32 = 15;
+const R: u32 = 99;
+
+type Answer = Box<dyn Fn(&str, &Value) -> Result<Value, PluginError>>;
+
+/// 호출을 기록하고, 호출 순간의 L 반환 경로도 남긴다.
+struct Host {
+    root: PathBuf,
+    seen: RefCell<Vec<(String, Value)>>,
+    route_at_commit: RefCell<Vec<Option<ledger::ChildReturn>>>,
+    answer: Answer,
+}
+
+impl HostCall for Host {
+    fn call(&self, method: &str, params: Value) -> Result<Value, PluginError> {
+        if method == "attach.agent_commit" {
+            self.route_at_commit
+                .borrow_mut()
+                .push(ledger::child_receiver(&self.root, L).unwrap_or(None));
+        }
+        let out = (self.answer)(method, &params);
+        self.seen.borrow_mut().push((method.to_string(), params));
+        out
+    }
+}
+
+impl Host {
+    fn new(
+        fx: &Fixture,
+        answer: impl Fn(&str, &Value) -> Result<Value, PluginError> + 'static,
+    ) -> Self {
+        Self {
+            root: fx.root().to_path_buf(),
+            seen: RefCell::default(),
+            route_at_commit: RefCell::default(),
+            answer: Box::new(answer),
+        }
+    }
+
+    fn methods(&self) -> Vec<String> {
+        self.seen.borrow().iter().map(|(m, _)| m.clone()).collect()
+    }
+
+    fn params_of(&self, method: &str) -> Vec<Value> {
+        self.seen
+            .borrow()
+            .iter()
+            .filter(|(m, _)| m == method)
+            .map(|(_, p)| p.clone())
+            .collect()
+    }
+}
+
+fn fail(code: i32, message: &str) -> Result<Value, PluginError> {
+    Err(PluginError::HostCall {
+        method: "m".into(),
+        message: message.into(),
+        code: Some(code),
+    })
+}
+
+/// mirror 를 가진 client host. 원격 spawn 은 L/R 자식 하나를 돌려준다.
+fn client(method: &str, params: &Value) -> Result<Value, PluginError> {
+    Ok(match method {
+        "attach.agent_target" => {
+            json!({ "remote": true, "capable": true, "anchor_surface_id": 12, "child": params.get("surface_id").is_some() })
+        }
+        "attach.agent_call" => json!({
+            "call_id": 7,
+            "result": { "child_surface_id": R },
+            "children": [{ "surface_id": L, "remote_surface_id": R, "index": 1 }],
+        }),
+        "terminal.children" => json!({ "children": [{ "surface_id": L, "index": 1 }] }),
+        _ => json!({}),
+    })
+}
+
+/// PARENT 가 surface 5 의 Tasty helper 세션에서 실행 중이라 결과를 받을 수 있다.
+fn owned_parent(fx: &Fixture) {
+    let generation = fx.open(5, &[]);
+    let host = Host::new(fx, client);
+    fx.with(|d| {
+        super::super::handle_hook(
+            &host,
+            &json!({"surface": 5, "event": "session-start", "session": PARENT, "gen": generation}),
+            &fx.tr,
+            d,
+        )
+    })
+    .unwrap();
+}
+
+fn codex(mut params: Value) -> Value {
+    params["_tasty_context"] = json!({ "provider": "codex", "thread_id": PARENT });
+    params
+}
+
+fn spawn(fx: &Fixture, host: &Host, params: Value) -> Result<Value, IpcMethodError> {
+    fx.with(|d| super::super::handle_spawn(host, &params, &fx.tr, d))
+}
+
+fn receiver_of_l(fx: &Fixture) -> String {
+    ledger::child_receiver(fx.root(), L)
+        .unwrap()
+        .unwrap()
+        .receiver_id
+}
+
+fn notice(key: &str) -> Value {
+    json!({
+        "kind": "notice",
+        "surface_id": L,
+        "key": key,
+        "payload": { "completion": {
+            "completion_key": key,
+            "provider": "codex",
+            "child_surface": R,
+            "child_session": null,
+            "status": "turn_ended",
+            "body": "done",
+            "attempt_id": null,
+        }},
+    })
+}
+
+fn receive(fx: &Fixture, host: &Host, params: Value) -> Value {
+    fx.with(|d| receive_fn(host, d, &params, &fx.tr)).unwrap()
+}
+
+use super::receive as receive_fn;
+
+/// Codex 부모의 mirror spawn: 서버에서 실행하고 L 에 결과 경로를 묶은 뒤에 commit 한다. 이 Tasty 의 호출 문맥과
+/// 부모·수신처는 서버로 보내지 않는다.
+#[test]
+fn a_codex_parent_spawns_on_the_server_and_binds_before_commit() {
+    let fx = Fixture::new();
+    owned_parent(&fx);
+    let host = Host::new(&fx, client);
+    let out = spawn(
+        &fx,
+        &host,
+        codex(json!({ "workspace": "3", "prompt": "hi", "sandbox": "read-only", "cwd": "/srv/w" })),
+    )
+    .unwrap();
+    assert_eq!(out["child_surface_id"], json!(L));
+    assert_eq!(out["remote_child_surface_id"], json!(R));
+    assert!(host.params_of("terminal.spawn").is_empty());
+    assert!(host.params_of("surface.send").is_empty());
+
+    let call = &host.params_of("attach.agent_call")[0];
+    assert_eq!(call["method"], json!("spawn"));
+    assert_eq!(call["parent"]["external"], json!(format!("codex:{PARENT}")));
+    let sent = call["params"].as_object().unwrap();
+    assert_eq!(sent["return_turns"], json!(true));
+    assert_eq!(sent["sandbox"], json!("read-only"));
+    assert_eq!(sent["cwd"], json!("/srv/w"));
+    for key in ["_tasty_context", "workspace", "surface", "parent_external"] {
+        assert!(!sent.contains_key(key), "{key} must not be forwarded");
+    }
+    let routes = host.route_at_commit.borrow();
+    assert_eq!(routes.len(), 1);
+    assert!(
+        routes[0].is_some(),
+        "route must exist when the notices are released"
+    );
+    let methods = host.methods();
+    assert_eq!(
+        methods.last().map(String::as_str),
+        Some("attach.agent_commit")
+    );
+}
+
+/// 물리 부모의 mirror spawn: 완료 알림 훅을 L 에 건 뒤 commit 한다. 결과 반환은 켜지 않는다.
+#[test]
+fn a_surface_parent_gets_its_notify_hooks_before_commit() {
+    let fx = Fixture::new();
+    let host = Host::new(&fx, client);
+    spawn(&fx, &host, json!({ "workspace": 3, "surface": 5 })).unwrap();
+    let call = &host.params_of("attach.agent_call")[0];
+    assert_eq!(call["parent"]["surface"], json!(5));
+    assert_eq!(call["params"]["return_turns"], json!(false));
+    let methods = host.methods();
+    let commit = methods
+        .iter()
+        .position(|m| m == "attach.agent_commit")
+        .unwrap();
+    assert!(
+        methods[..commit].iter().any(|m| m == "hook.set"),
+        "{methods:?}"
+    );
+    assert_eq!(ledger::child_receiver(fx.root(), L).unwrap(), None);
+}
+
+/// 경로를 묶지 못하면 commit 하지 않고(첫 완료를 풀지 않는다) 서버의 자식을 닫는다.
+#[test]
+fn a_child_whose_route_cannot_be_bound_is_not_committed_and_is_closed() {
+    let fx = Fixture::new();
+    owned_parent(&fx);
+    std::fs::write(fx.root().join("children"), "not a directory").unwrap();
+    let host = Host::new(&fx, client);
+    let err = spawn(&fx, &host, codex(json!({ "workspace": 3 }))).unwrap_err();
+    assert!(err.message.contains(&L.to_string()), "{}", err.message);
+    assert!(host.params_of("attach.agent_commit").is_empty());
+    let calls = host.params_of("attach.agent_call");
+    assert_eq!(calls.len(), 2, "{calls:?}");
+    assert_eq!(calls[1]["method"], json!("kill"));
+    assert_eq!(calls[1]["target_surface_id"], json!(L));
+}
+
+/// 원격 결과는 자기 namespace 를 다시 부르지 않고 L 경로의 수신처 원장에 직접 기록한다. 재전송은 같은 키라
+/// duplicate 이고, 경로가 없으면 rejected 다.
+#[test]
+fn remote_results_are_recorded_once_without_calling_codex_deliver() {
+    let fx = Fixture::new();
+    owned_parent(&fx);
+    let host = Host::new(&fx, client);
+    spawn(&fx, &host, codex(json!({ "workspace": 3 }))).unwrap();
+    let receiver = receiver_of_l(&fx);
+
+    let first = receive(&fx, &host, notice("k1"));
+    assert_eq!(first["status"], json!("recorded"), "{first}");
+    assert_eq!(
+        receive(&fx, &host, notice("k1"))["status"],
+        json!("duplicate")
+    );
+    assert!(!host.methods().iter().any(|m| m.starts_with("codex.")));
+    let thread = ledger::read_receiver(fx.root(), &receiver)
+        .unwrap()
+        .unwrap()
+        .thread;
+    let ids = ledger::pending_ids(fx.root(), &thread);
+    assert_eq!(ids.len(), 1);
+    let event = ledger::read_event(fx.root(), &ids[0]).unwrap().unwrap();
+    assert_eq!(event.completion_key, "r.k1");
+    assert_eq!(event.child_surface, L);
+
+    let mut other = notice("k2");
+    other["surface_id"] = json!(L + 1);
+    assert_eq!(receive(&fx, &host, other)["status"], json!("rejected"));
+}
+
+/// 원격 kill 은 서버로 보내고, 경로는 끝난 기록으로 남겨 늦은 결과를 받는다.
+#[test]
+fn a_killed_remote_child_still_records_a_late_result() {
+    let fx = Fixture::new();
+    owned_parent(&fx);
+    let host = Host::new(&fx, |m, p| match m {
+        "attach.agent_call" if p["method"] == json!("kill") => {
+            Ok(json!({ "call_id": 8, "result": { "killed_surface_id": R } }))
+        }
+        _ => client(m, p),
+    });
+    spawn(&fx, &host, codex(json!({ "workspace": 3 }))).unwrap();
+    let out = fx
+        .with(|d| super::super::handle_kill(&host, &codex(json!({ "child": 1 })), &fx.tr, d))
+        .unwrap();
+    assert_eq!(out["killed_surface_id"], json!(L));
+    assert!(host.params_of("terminal.kill").is_empty());
+    let kill = host.params_of("attach.agent_call").pop().unwrap();
+    assert_eq!(kill["target_surface_id"], json!(L));
+    let record = ledger::child_receiver(fx.root(), L).unwrap().unwrap();
+    assert!(record.ended_at_ms.is_some());
+    assert_eq!(
+        receive(&fx, &host, notice("late"))["status"],
+        json!("recorded")
+    );
+}
+
+/// 원격 tell 은 결과 경로를 먼저 정하고 입력은 서버로 보낸다.
+#[test]
+fn a_remote_tell_binds_the_route_then_sends_to_the_server() {
+    let fx = Fixture::new();
+    owned_parent(&fx);
+    let host = Host::new(&fx, |m, p| match m {
+        "terminal.parent" => {
+            Ok(json!({ "parent_external": format!("codex:{PARENT}"), "status": "active" }))
+        }
+        _ => client(m, p),
+    });
+    let out = fx
+        .with(|d| {
+            super::super::handle_tell(
+                &host,
+                &codex(json!({ "surface": L, "message": "go" })),
+                &fx.tr,
+                d,
+            )
+        })
+        .unwrap();
+    assert_eq!(out["remote"], json!(true));
+    assert!(host.params_of("terminal.tell").is_empty());
+    let call = host.params_of("attach.agent_call").pop().unwrap();
+    assert_eq!(call["method"], json!("tell"));
+    assert_eq!(call["params"]["return_turns"], json!(true));
+    assert!(ledger::child_receiver(fx.root(), L).unwrap().is_some());
+}
+
+/// 결과불명 spawn 뒤 늦게 생긴 자식은 기다리던 부모로 묶는다. 기다리는 부모가 없으면 닫고 거절한다.
+#[test]
+fn a_late_child_is_bound_to_the_waiting_parent_or_closed() {
+    let fx = Fixture::new();
+    owned_parent(&fx);
+    let host = Host::new(&fx, |m, p| match m {
+        "attach.agent_call" if p["method"] == json!("spawn") => {
+            fail(-32010, "outcome unknown for call 4242")
+        }
+        _ => client(m, p),
+    });
+    let err = spawn(&fx, &host, codex(json!({ "workspace": 3 }))).unwrap_err();
+    assert!(err.message.contains("not known"), "{}", err.message);
+    let late = json!({
+        "kind": "late_spawn",
+        "call_id": 4242,
+        "children": [{ "surface_id": L, "remote_surface_id": R, "index": 1 }],
+        "result": {},
+        "error": null,
+    });
+    assert_eq!(
+        receive(&fx, &host, late.clone())["status"],
+        json!("recorded")
+    );
+    assert!(ledger::child_receiver(fx.root(), L).unwrap().is_some());
+
+    // 같은 call 을 다시 받으면 기다리는 부모가 없으므로 닫는다.
+    assert_eq!(receive(&fx, &host, late)["status"], json!("rejected"));
+    let kill = host.params_of("attach.agent_call").pop().unwrap();
+    assert_eq!(kill["method"], json!("kill"));
+}
+
+fn origin(extra: Value) -> Value {
+    let mut p = json!({
+        "parent_external": "attach:o3",
+        "attach_context": "opaque",
+        "workspace": "2",
+        "return_turns": true,
+    });
+    for (k, v) in extra.as_object().unwrap() {
+        p[k] = v.clone();
+    }
+    p
+}
+
+fn server(method: &str, _params: &Value) -> Result<Value, PluginError> {
+    Ok(match method {
+        "terminal.spawn" => json!({ "child_surface_id": R, "child_index": 1 }),
+        "terminal.children" => json!({ "children": [{ "surface_id": R, "index": 1 }] }),
+        "terminal.kill" => json!({ "killed_surface_id": R }),
+        _ => json!({}),
+    })
+}
+
+/// 서버: 원격 출처 부모의 자식은 서버 설정으로 실행하고, 알림 훅 없이 결과를 attach 부모로 돌려보낸다.
+#[test]
+fn the_server_runs_the_child_and_routes_its_turns_to_the_attach_parent() {
+    let fx = Fixture::new();
+    let host = Host::new(&fx, server);
+    let out = spawn(&fx, &host, origin(json!({ "prompt": "hi" }))).unwrap();
+    assert_eq!(out["parent_external"], json!("attach:o3"));
+    let sp = &host.params_of("terminal.spawn")[0];
+    assert_eq!(sp["parent_external"], json!("attach:o3"));
+    assert_eq!(sp["attach_context"], json!("opaque"));
+    assert_eq!(host.params_of("surface.send").len(), 1);
+    assert!(
+        !host.methods().iter().any(|m| m.contains("hook")),
+        "{:?}",
+        host.methods()
+    );
+    let record = ledger::child_receiver(fx.root(), R).unwrap().unwrap();
+    assert_eq!(record.attach_parent.as_deref(), Some("attach:o3"));
+    assert!(record.receiver_id.is_empty());
+}
+
+/// 서버: tell·kill 은 host 가 지정한 자식에만 간다.
+#[test]
+fn the_server_only_acts_on_the_named_child() {
+    let fx = Fixture::new();
+    let host = Host::new(&fx, server);
+    let err = fx
+        .with(|d| super::super::handle_tell(&host, &origin(json!({ "message": "go" })), &fx.tr, d))
+        .unwrap_err();
+    assert!(err.message.contains("did not name"), "{}", err.message);
+    fx.with(|d| {
+        super::super::handle_tell(
+            &host,
+            &origin(json!({ "message": "go", "attach_target_surface": R })),
+            &fx.tr,
+            d,
+        )
+    })
+    .unwrap();
+    assert_eq!(host.params_of("terminal.tell")[0]["surface"], json!(R));
+    fx.with(|d| {
+        super::super::handle_kill(
+            &host,
+            &origin(json!({ "attach_target_surface": R })),
+            &fx.tr,
+            d,
+        )
+    })
+    .unwrap();
+    assert_eq!(host.params_of("terminal.kill")[0]["child"], json!(1));
+}
+
+fn completion() -> crate::delivery::ledger::Completion {
+    crate::delivery::ledger::Completion {
+        completion_key: "turn-1".into(),
+        provider: "codex".into(),
+        child_surface: R,
+        child_session: None,
+        status: "turn_ended".into(),
+        body: Some("done".into()),
+        attempt_id: None,
+    }
+}
+
+/// 서버: 맡긴 결과는 pending 이면 남기고 다시 묻는다. delivered·rejected 를 받은 뒤에만 지운다.
+#[test]
+fn an_attach_result_is_kept_until_the_client_settles_it() {
+    let fx = Fixture::new();
+    let name = "a".repeat(64);
+    attach_out::queue(fx.root(), &name, &completion()).unwrap();
+    let next = fx.with(attach_out::pump);
+    assert!(next.is_some());
+    assert_eq!(attach_out::pending(fx.root()), 1);
+    let (surface, key, payload) = fx.rec.notices.borrow()[0].clone();
+    assert_eq!((surface, key.as_str()), (R, "turn-1"));
+    assert_eq!(payload["completion"]["body"], json!("done"));
+    // 다음 시각 전에는 다시 묻지 않는다.
+    fx.with(attach_out::pump);
+    assert_eq!(fx.rec.notices.borrow().len(), 1);
+
+    let name2 = "b".repeat(64);
+    attach_out::queue(fx.root(), &name2, &completion()).unwrap();
+    *fx.rec.notice_status.borrow_mut() = Some(NoticeStatus::Delivered);
+    fx.with(attach_out::pump);
+    assert_eq!(
+        attach_out::pending(fx.root()),
+        1,
+        "only the delivered one is gone"
+    );
+
+    let name3 = "c".repeat(64);
+    attach_out::queue(fx.root(), &name3, &completion()).unwrap();
+    *fx.rec.notice_status.borrow_mut() = Some(NoticeStatus::Rejected("no route".into()));
+    fx.with(attach_out::pump);
+    assert_eq!(attach_out::pending(fx.root()), 1);
+}
+
+/// 두 provider 모두 같은 형태로 원격 attach 를 선언한다.
+#[test]
+fn the_manifest_declares_remote_attach() {
+    let text = std::fs::read_to_string(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tasty-plugin.toml"),
+    )
+    .unwrap();
+    let manifest: toml::Value = toml::from_str(&text).unwrap();
+    let ra = &manifest["contributes"]["remote_attach"];
+    assert_eq!(
+        ra["methods"].as_array().unwrap(),
+        &vec![
+            toml::Value::from("spawn"),
+            toml::Value::from("tell"),
+            toml::Value::from("kill")
+        ]
+    );
+    assert_eq!(ra["receive"].as_str(), Some("remote_receive"));
+    assert!(ra.get("relay_meta").is_none());
+}
+
+#[test]
+fn call_id_is_read_from_the_unknown_outcome_message() {
+    assert_eq!(
+        call_id_in("outcome unknown for call 4242 (timeout)"),
+        Some(4242)
+    );
+    assert_eq!(call_id_in("no id here"), None);
+}

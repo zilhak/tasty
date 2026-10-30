@@ -12,6 +12,8 @@ use tasty_plugin_agent_common::params::{
 use tasty_plugin_agent_common::prompt_file;
 use tasty_plugin_sdk::{HostHandle, IpcMethodError, i18n::Translator};
 
+use tasty_plugin_agent_common::remote_attach::AttachOrigin;
+
 use crate::caller::CallerContext as CodexCaller;
 use crate::delivery::Ctx as DeliveryCtx;
 use crate::ownership;
@@ -309,8 +311,13 @@ pub(crate) fn handle_tell<H: HostCall>(
     tr: &Translator,
     delivery: &DeliveryCtx<'_>,
 ) -> Result<Value, IpcMethodError> {
+    if let Some(origin) = AttachOrigin::of(params) {
+        return remote::serve_tell(host, params, tr, delivery, &origin);
+    }
     let caller = codex_caller_of(params)?;
     let surface_id = require_target_surface(params, tr)?;
+    // 원격 자식이면 훅은 서버에서 돌므로 이 Tasty 에 세션 기록이 없다. 원격 자식도 결과 경로를 둔다.
+    let remote_anchor = remote::child_anchor(host, surface_id, tr)?;
     let message = params
         .get("message")
         .and_then(|v| v.as_str())
@@ -328,7 +335,7 @@ pub(crate) fn handle_tell<H: HostCall>(
                     &surface_id.to_string(),
                 )));
             }
-            if ownership::is_codex_child(delivery, surface_id) {
+            if remote_anchor.is_some() || ownership::is_codex_child(delivery, surface_id) {
                 Some(ownership::bind_route(
                     delivery,
                     surface_id,
@@ -350,12 +357,16 @@ pub(crate) fn handle_tell<H: HostCall>(
             None
         }
     };
-    // 개행과 제출 처리는 호스트의 terminal.tell에 맡긴다.
-    let resp = match host_call(
-        host,
-        "terminal.tell",
-        json!({ "surface": surface_id, "text": message }),
-    ) {
+    // 개행과 제출 처리는 호스트의 terminal.tell에 맡긴다. 원격 자식은 서버의 같은 메서드로 보낸다.
+    let sent = match remote_anchor {
+        Some(anchor) => remote::tell(host, anchor, surface_id, message, previous.is_some(), tr),
+        None => host_call(
+            host,
+            "terminal.tell",
+            json!({ "surface": surface_id, "text": message }),
+        ),
+    };
+    let resp = match sent {
         Ok(resp) => resp,
         Err(e) => {
             if let Some(previous) = previous {
@@ -429,6 +440,7 @@ fn parent_args<H: HostCall>(
     Ok(p)
 }
 
+pub(crate) mod remote;
 mod spawn;
 pub(crate) use spawn::handle_spawn;
 
@@ -628,6 +640,9 @@ pub(crate) fn handle_kill<H: HostCall>(
     tr: &Translator,
     delivery: &DeliveryCtx<'_>,
 ) -> Result<Value, IpcMethodError> {
+    if let Some(origin) = AttachOrigin::of(params) {
+        return remote::serve_kill(host, params, tr, delivery, &origin);
+    }
     let caller = codex_caller_of(params)?;
     let child = require_u32(params, "child", tr)?;
     let kp = parent_args(
@@ -639,6 +654,11 @@ pub(crate) fn handle_kill<H: HostCall>(
         delivery,
         tr,
     )?;
+    if let Some(surface) = remote::child_by_index(host, &kp, child)
+        && let Some(anchor) = remote::child_anchor(host, surface, tr)?
+    {
+        return remote::kill(host, delivery, anchor, surface, child, tr);
+    }
     let resp = host_call(host, "terminal.kill", Value::Object(kp))?;
     // 닫힌 자식의 경로는 더 쓰지 않는다. 이미 기록한 결과는 남는다.
     if let Some(killed) = resp
@@ -2652,6 +2672,8 @@ trusted_hash = "sha256:xyz"
                     "state": "idle",
                 }]})),
                 "terminal.kill" => Ok(json!({ "killed_surface_id": 42, "child_index": 0 })),
+                // kill 은 원격 자식인지 먼저 묻는다. 로컬 자식이다.
+                "attach.agent_target" => Ok(json!({ "remote": false })),
                 other => panic!("unexpected host call: {other}"),
             }
         }

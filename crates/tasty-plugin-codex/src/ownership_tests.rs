@@ -195,7 +195,9 @@ fn a_codex_caller_tells_only_its_own_children_and_binds_before_sending() {
         host.route_at_tell.borrow().as_slice(),
         &[Some(ChildReturn {
             receiver_id: rid.clone(),
-            child_index: None
+            child_index: None,
+            attach_parent: None,
+            ended_at_ms: None,
         })],
         "첫 훅이 읽을 경로가 전송 순간에 이미 있다"
     );
@@ -217,7 +219,9 @@ fn a_codex_caller_tells_only_its_own_children_and_binds_before_sending() {
         ledger::child_receiver(fx.root(), 31).unwrap().unwrap(),
         ChildReturn {
             receiver_id: "0123456789abcdef0123456789abcdef".into(),
-            child_index: Some(4)
+            child_index: Some(4),
+            attach_parent: None,
+            ended_at_ms: None,
         }
     );
 }

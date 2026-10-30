@@ -408,6 +408,7 @@ pub(crate) fn prune(root: &Path, now: std::time::SystemTime) {
     }
     prune_events(root, &keep, now);
     prune_claims(root, now);
+    prune_ended_children(root);
 }
 
 /// 보존 기간이 지난 파일인가.
@@ -466,6 +467,40 @@ pub(crate) struct ChildReturn {
     /// 호스트가 부모 아래에서 매긴 자식 번호. index로 지정하는 명령의 workspace를 찾는 데 쓴다.
     #[serde(default)]
     pub child_index: Option<u32>,
+    /// attach 원격 출처 부모(`attach:o<n>`). 있으면 결과는 원장이 아니라 그 부모에게 돌려보내고
+    /// `receiver_id` 는 비어 있다.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attach_parent: Option<String>,
+    /// 원격 자식을 닫은 시각(ms). 서버에 남은 결과가 늦게 와도 기록하도록 [`ENDED_KEPT`] 동안 경로를 둔다.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ended_at_ms: Option<u64>,
+}
+
+/// 닫은 원격 자식의 반환 경로를 남겨 두는 기간.
+pub(crate) const ENDED_KEPT: std::time::Duration = std::time::Duration::from_secs(24 * 60 * 60);
+
+/// 원격 자식을 닫았다. 경로는 [`ENDED_KEPT`] 동안 남겨 늦은 결과를 받고 [`prune`] 이 지운다.
+pub(crate) fn end_child_receiver(root: &Path, surface: u32) -> std::io::Result<()> {
+    match child_receiver(root, surface)? {
+        Some(mut r) if r.ended_at_ms.is_none() => {
+            r.ended_at_ms = Some(store::now_ms());
+            write_child_return(root, surface, &r)
+        }
+        _ => Ok(()),
+    }
+}
+
+fn prune_ended_children(root: &Path) {
+    let limit = ENDED_KEPT.as_millis() as u64;
+    let now = store::now_ms();
+    for (surface, r) in child_records(root) {
+        if r.ended_at_ms
+            .is_some_and(|at| now.saturating_sub(at) > limit)
+            && let Err(e) = clear_child_receiver(root, surface)
+        {
+            tracing::warn!("codex ledger: prune ended child {surface}: {e}");
+        }
+    }
 }
 
 /// Codex 자식 surface의 결과를 받을 수신자를 기록한다.
@@ -480,6 +515,36 @@ pub(crate) fn set_child_receiver(
         &ChildReturn {
             receiver_id: receiver_id.into(),
             child_index,
+            attach_parent: None,
+            ended_at_ms: None,
+        },
+    )
+}
+
+/// 반환 기록을 그대로 쓴다. 되돌리기처럼 기록 전체를 복원할 때 쓴다.
+pub(crate) fn write_child_return(
+    root: &Path,
+    surface: u32,
+    record: &ChildReturn,
+) -> std::io::Result<()> {
+    store::write_json(&child_file(root, surface), record)
+}
+
+/// attach 원격 출처 부모의 자식으로 기록한다. 결과는 그 부모에게 돌아간다.
+pub(crate) fn set_attach_child(
+    root: &Path,
+    surface: u32,
+    parent_key: &str,
+    child_index: Option<u32>,
+) -> std::io::Result<()> {
+    write_child_return(
+        root,
+        surface,
+        &ChildReturn {
+            receiver_id: String::new(),
+            child_index,
+            attach_parent: Some(parent_key.into()),
+            ended_at_ms: None,
         },
     )
 }

@@ -115,7 +115,7 @@ pub(crate) fn bind_route(
 
 pub(crate) fn restore_route(delivery: &DeliveryCtx<'_>, child: u32, previous: Option<ChildReturn>) {
     let restored = match previous {
-        Some(p) => ledger::set_child_receiver(delivery.root, child, &p.receiver_id, p.child_index),
+        Some(p) => ledger::write_child_return(delivery.root, child, &p),
         None => ledger::clear_child_receiver(delivery.root, child),
     };
     if let Err(e) = restored {

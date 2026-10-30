@@ -1908,3 +1908,43 @@ fn a_background_native_thread_cannot_replace_the_selected_conversation() {
         Some(PARENT)
     );
 }
+
+/// attach 원격 출처 부모의 자식: 확정한 턴은 원장이 아니라 보낼 기록으로 옮겨 서버 host 에 맡긴다. client 가 확인할
+/// 때까지 기록을 두고, 확인(delivered) 뒤에만 지운다.
+#[test]
+fn a_turn_of_an_attach_child_goes_to_the_attach_parent_not_the_ledger() {
+    let mut fx = Fixture::new();
+    fx.loaded = Ok(true);
+    ledger::set_attach_child(fx.root(), 31, "attach:o3", Some(1)).unwrap();
+    let generation = start_thread(&fx, 31, CHILD);
+    fx.ready(&generation, "unix:///owned/c.sock");
+    hook(
+        &fx,
+        json!({"surface":31,"event":"stop","session":CHILD,"gen":generation,"turn_id":"T1"}),
+    );
+    fx.answer_turns(|_| completed("FINAL"));
+    assert!(
+        ledger::all_events(fx.root()).is_empty(),
+        "no local receiver"
+    );
+    assert_eq!(super::attach_out::pending(fx.root()), 1);
+    let notices = fx.rec.notices.borrow().clone();
+    assert_eq!(notices.len(), 1);
+    assert_eq!(notices[0].0, 31);
+    assert_eq!(notices[0].1, format!("codex:{CHILD}:T1"));
+    assert_eq!(notices[0].2["completion"]["body"], json!("FINAL"));
+    assert!(
+        crate::delivery::parse_completion(&notices[0].2["completion"]).is_ok(),
+        "the client reads it with the same parser"
+    );
+
+    *fx.rec.notice_status.borrow_mut() =
+        Some(tasty_plugin_agent_common::remote_attach::NoticeStatus::Delivered);
+    // 재시작은 남은 기록을 다시 묻는 계기다. 간격 전에는 묻지 않는다.
+    fx.with(super::recover);
+    assert_eq!(super::attach_out::pending(fx.root()), 1);
+    super::attach_out::make_due(fx.root());
+    fx.with(super::recover);
+    assert_eq!(super::attach_out::pending(fx.root()), 0);
+    assert_eq!(fx.rec.notices.borrow().len(), 2);
+}

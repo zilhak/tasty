@@ -55,6 +55,17 @@ unknown_event = "不明な hook イベント '{event}'（対応: stop, prompt-su
 [codex.launch]
 workspace_create_missing_id = "ホストの workspace.create 応答に 'id' がありません: {resp}"
 
+[codex.remote]
+unsupported = "接続先サーバーの Tasty はリモートの子エージェントに対応していません。サーバーの Tasty を更新してください。何も作成していません。"
+lookup_failed = "対象が接続中のリモートワークスペースか確認できませんでした: {detail}"
+outcome_unknown = "サーバーで実行されたか分かりません({detail})。子がサーバーに存在する場合も、しない場合もあります。再試行する前に children で確認してください。"
+no_child = "サーバーは spawn を実行しましたが、新しい子を返しませんでした: {resp}"
+commit_failed = "子は作成しましたが、通知の送信を開始できませんでした({detail})。完了通知はサーバーに残っています。"
+bind_failed = "サーバーに子サーフェス {surface} を作成しましたが、完了の通知先を設定できませんでした({detail})。通知の送信は開始していません。{cleanup}"
+child_closed = "その子は閉じました。"
+child_not_closed = "その子を閉じられませんでした({detail})。kill で閉じてください。"
+no_target = "要求がこの attach 親の子を指定していません。"
+
 [codex.spawn]
 missing_child_surface_id = "ホストの terminal.spawn 応答に 'child_surface_id' がありません: {resp}"
 

@@ -10,6 +10,7 @@
 //!
 //! 큐에 넣는 메시지는 고정 템플릿과 이벤트 ID뿐이다. 자식 본문은 userMessage가 되지 않는다.
 
+pub(crate) mod attach_out;
 pub(crate) mod ledger;
 pub(crate) mod send;
 pub(crate) mod turn_scheduler;

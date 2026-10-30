@@ -149,6 +149,14 @@ pub(crate) trait Dispatch {
     fn check_turn(&self, job: super::turns::TurnJob) -> Result<(), String>;
     /// `at_ms`(UNIX ms)에 턴 후보를 다시 확인하게 한다. 예약은 스케줄러 하나에 합쳐진다.
     fn wake_turns_at(&self, at_ms: u64) -> Result<(), String>;
+    /// attach 원격 부모에게 갈 결과를 서버 host 에 맡기거나 그 상태를 묻는다(`attach.child_notice`).
+    /// 호출하는 곳은 worker 이며 이 호출은 codex namespace 를 다시 부르지 않는다.
+    fn child_notice(
+        &self,
+        surface: u32,
+        key: &str,
+        payload: serde_json::Value,
+    ) -> Result<tasty_plugin_agent_common::remote_attach::NoticeStatus, String>;
 }
 
 /// 스레드에서 송신하고 결과를 worker로 돌려준다.
@@ -185,6 +193,15 @@ impl Dispatch for ThreadDispatch {
 
     fn check_turn(&self, job: super::turns::TurnJob) -> Result<(), String> {
         super::turns::spawn_check(self.host.clone(), self.token.clone(), job)
+    }
+
+    fn child_notice(
+        &self,
+        surface: u32,
+        key: &str,
+        payload: serde_json::Value,
+    ) -> Result<tasty_plugin_agent_common::remote_attach::NoticeStatus, String> {
+        tasty_plugin_agent_common::remote_attach::child_notice(&self.host, surface, key, payload)
     }
 
     fn wake_turns_at(&self, at_ms: u64) -> Result<(), String> {

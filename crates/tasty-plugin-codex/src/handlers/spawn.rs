@@ -7,6 +7,9 @@ pub(crate) fn handle_spawn<H: HostCall>(
     tr: &Translator,
     delivery: &DeliveryCtx<'_>,
 ) -> Result<Value, IpcMethodError> {
+    if let Some(origin) = AttachOrigin::of(params) {
+        return super::remote::serve_spawn(host, params, tr, delivery, &origin);
+    }
     let mut args = crate::spawn_options::parse(params, tr)?;
     let policy = resolve_policy_args(host, params, tr)?;
     let mut policy = crate::session::command::policy_tokens(&policy);
@@ -36,6 +39,10 @@ pub(crate) fn handle_spawn<H: HostCall>(
             )
         }
     };
+    if let Some(anchor) = super::remote::spawn_anchor(host, params, tr)? {
+        let receiver_id = receiver.as_ref().map(|r| r.receiver_id.as_str());
+        return super::remote::spawn(host, params, tr, delivery, anchor, receiver_id, &parent);
+    }
     let resp = host_call(host, "terminal.spawn", Value::Object(sp))?;
     let child_sid = resp
         .get("child_surface_id")

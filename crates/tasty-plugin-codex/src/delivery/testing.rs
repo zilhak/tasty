@@ -17,6 +17,10 @@ pub(crate) struct Recorder {
     pub turn_jobs: RefCell<Vec<super::turns::TurnJob>>,
     /// 턴 스케줄러에 요청한 깨우기 시각(ms).
     pub turn_wakes: RefCell<Vec<u64>>,
+    /// `attach.child_notice` 로 맡긴 (surface, key, payload).
+    pub notices: RefCell<Vec<(u32, String, serde_json::Value)>>,
+    /// `attach.child_notice` 의 답. 없으면 pending 이다.
+    pub notice_status: RefCell<Option<tasty_plugin_agent_common::remote_attach::NoticeStatus>>,
 }
 
 impl Dispatch for Recorder {
@@ -38,6 +42,22 @@ impl Dispatch for Recorder {
     fn wake_turns_at(&self, at_ms: u64) -> Result<(), String> {
         self.turn_wakes.borrow_mut().push(at_ms);
         Ok(())
+    }
+
+    fn child_notice(
+        &self,
+        surface: u32,
+        key: &str,
+        payload: serde_json::Value,
+    ) -> Result<tasty_plugin_agent_common::remote_attach::NoticeStatus, String> {
+        self.notices
+            .borrow_mut()
+            .push((surface, key.to_string(), payload));
+        Ok(self
+            .notice_status
+            .borrow()
+            .clone()
+            .unwrap_or(tasty_plugin_agent_common::remote_attach::NoticeStatus::Pending))
     }
 }
 

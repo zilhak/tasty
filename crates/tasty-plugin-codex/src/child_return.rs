@@ -93,8 +93,8 @@ pub(crate) fn report(ctx: &Ctx<'_>, session: &Session, event: &str, params: &Val
     if !is_boundary(event) {
         return Report::default();
     }
-    let receiver_id = match ledger::child_receiver(ctx.root, session.surface) {
-        Ok(Some(r)) => r.receiver_id,
+    let (receiver_id, attach_parent) = match ledger::child_receiver(ctx.root, session.surface) {
+        Ok(Some(r)) => (r.receiver_id, r.attach_parent),
         Ok(None) => return Report::default(),
         Err(e) => {
             tracing::warn!(
@@ -104,7 +104,7 @@ pub(crate) fn report(ctx: &Ctx<'_>, session: &Session, event: &str, params: &Val
             return failed();
         }
     };
-    let candidate = match candidate(session, event, params, receiver_id) {
+    let candidate = match candidate(session, event, params, receiver_id, attach_parent) {
         Ok(candidate) => candidate,
         Err(report) => return report,
     };
@@ -126,6 +126,7 @@ fn candidate(
     event: &str,
     params: &Value,
     receiver_id: String,
+    attach_parent: Option<String>,
 ) -> Result<Candidate, Report> {
     let Some(thread) = session.thread.clone() else {
         tracing::warn!(
@@ -169,6 +170,7 @@ fn candidate(
             attempt_of(session, params)
         },
         created_at_ms: store::now_ms(),
+        attach_parent,
     })
 }
 
