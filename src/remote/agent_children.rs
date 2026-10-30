@@ -244,25 +244,40 @@ pub(crate) fn plugin_notice(
         .filter(|k| !k.is_empty() && k.len() <= 256)
         .ok_or("missing 'key'")?;
     let payload = params.get("payload").cloned().ok_or("missing 'payload'")?;
-    let origin = origin_of_child(&engine.runtime.child_terminals, surface)
-        .ok_or_else(|| format!("s{surface} is not a remote attach child"))?;
+    // 아래는 다시 보내도 바뀌지 않는 거절이라 오류가 아니라 rejected 로 답한다. 오류는 plugin 이 일시 실패로 보고
+    // 계속 다시 보낸다. 서버가 재시작해 출처 기록이 없어진 자식도 여기서 거절된다.
+    let rejected = |reason: String| Ok(PluginNoticeStatus::Rejected(reason));
+    let Some(origin) = origin_of_child(&engine.runtime.child_terminals, surface) else {
+        return rejected(format!("s{surface} is not a remote attach child"));
+    };
+    // holder 가 잠시 끊겨 점유 기록이 없어도 자식이 있으면 그 workspace 로 쌓아 둔다.
     let workspace = engine
         .live
         .occupancy
         .workspace_of_surface(surface)
-        .ok_or_else(|| format!("s{surface} is not in a held workspace"))?;
+        .or_else(|| {
+            engine
+                .core
+                .find_workspace_index_for_surface(surface)
+                .and_then(|(index, _)| engine.core.workspace_at(index))
+                .map(|ws| ws.id)
+        });
+    let Some(workspace) = workspace else {
+        return rejected(format!("s{surface} no longer exists"));
+    };
     let mut server = server();
     if !server
         .children
         .get(&surface)
         .is_some_and(|c| c.origin == origin && &c.plugin == plugin_id)
     {
-        return Err(format!("s{surface} was not created by {plugin_id}"));
+        return rejected(format!(
+            "s{surface} was not created by {plugin_id} in this server process"
+        ));
     }
-    let namespace = server
-        .decl(plugin_id)
-        .map(|d| d.namespace.clone())
-        .ok_or("the calling plugin has no remote attach declaration")?;
+    let Some(namespace) = server.decl(plugin_id).map(|d| d.namespace.clone()) else {
+        return rejected("the calling plugin has no remote attach declaration".into());
+    };
     Ok(server.plugin_notice(
         plugin_id,
         key,
@@ -578,6 +593,79 @@ pub(crate) fn pending_summary() -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn session_with_surface_1() -> crate::runtime::engine_session::EngineSession {
+        use tasty_core::{DomainEvent as E, SurfaceSpec};
+        let events = vec![
+            E::CategoryCreated {
+                id: 0,
+                name: "normal".into(),
+                index: 0,
+            },
+            E::WorkspaceCreated {
+                id: 1,
+                name: "workspace".into(),
+                category: 0,
+                index: 0,
+                pane: 1,
+            },
+            E::TabCreated {
+                id: 1,
+                pane: 1,
+                index: 0,
+                name: "terminal".into(),
+                surface: SurfaceSpec {
+                    id: 1,
+                    kind: "terminal".into(),
+                    data: None,
+                },
+            },
+        ];
+        crate::state::tests::test_state_from_model(crate::state::tests::test_model(events)).1
+    }
+
+    /// 다시 보내도 바뀌지 않는 거절은 오류가 아니라 rejected 다. 오류면 plugin 이 끝없이 다시 보낸다.
+    #[test]
+    fn a_notice_that_can_never_be_accepted_is_rejected_not_an_error() {
+        let mut session = session_with_surface_1();
+        let caller = crate::ipc::caller::CallerContext::Plugin {
+            plugin_id: "com.example.never".into(),
+            permissions: std::sync::Arc::new(std::collections::HashSet::new()),
+        };
+        let notice = |surface: u32| json!({ "surface_id": surface, "key": "k1", "payload": {} });
+        let rejected = |r: Result<PluginNoticeStatus, String>| {
+            matches!(r, Ok(PluginNoticeStatus::Rejected(_)))
+        };
+        // 원격 출처 자식이 아니다(로컬 surface, 없는 surface).
+        assert!(rejected(plugin_notice(
+            &session.as_ref(),
+            &caller,
+            &notice(1)
+        )));
+        assert!(rejected(plugin_notice(
+            &session.as_ref(),
+            &caller,
+            &notice(99)
+        )));
+        // 원격 출처 부모 아래 있지만 이 서버 프로세스의 call 이 만든 자식이 아니다(서버 재시작 뒤와 같다).
+        session.runtime.child_terminals.register_child(
+            ParentKey::External(Server::parent_key(9_100_077)),
+            crate::runtime::child_terminal::ChildEntry {
+                child_surface_id: 1,
+                index: 0,
+                cwd: None,
+                role: None,
+                nickname: None,
+            },
+        );
+        assert!(rejected(plugin_notice(
+            &session.as_ref(),
+            &caller,
+            &notice(1)
+        )));
+        // 형식이 틀린 요청은 호출자 결함이라 오류다.
+        assert!(plugin_notice(&session.as_ref(), &caller, &json!({ "surface_id": 1 })).is_err());
+    }
 
     #[test]
     fn reserved_params_never_reach_the_plugin() {
