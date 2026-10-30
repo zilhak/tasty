@@ -75,6 +75,8 @@ pub(crate) struct Call {
     pub outcome: Option<CallOutcome>,
     pub spawned: Vec<u32>,
     pub adopted: Vec<Adopted>,
+    /// mirror 에 나타났지만 부모 아래 등록하지 못한 자식(로컬, 원격). plugin 이 late_spawn 으로 받아 닫는다.
+    pub unregistered: Vec<(u32, u32)>,
     /// plugin 에 이미 응답했다. 그 뒤에 온 결과는 늦은 생성으로 처리한다.
     pub replied: bool,
     pub committed: bool,
@@ -200,16 +202,26 @@ impl Client {
     }
 
     /// 새 자식 등록이 끝났다.
-    pub(crate) fn adopted(&mut self, call_id: u64, adopted: Vec<Adopted>) {
+    /// `unregistered` 는 등록에 실패한 자식이다. 원격 자식으로는 기록해 plugin 이 원격 kill 로 닫을 수 있게 한다.
+    pub(crate) fn adopted(
+        &mut self,
+        call_id: u64,
+        adopted: Vec<Adopted>,
+        unregistered: Vec<(u32, u32)>,
+    ) {
         let Some(call) = self.calls.get_mut(&call_id) else {
             return;
         };
-        for a in &adopted {
+        let surfaces = adopted
+            .iter()
+            .map(|a| (a.local, a.remote))
+            .chain(unregistered.iter().copied());
+        for (local, remote) in surfaces {
             self.children.insert(
-                a.local,
+                local,
                 Child {
                     workspace: call.workspace,
-                    remote: a.remote,
+                    remote,
                     plugin: call.plugin.clone(),
                     namespace: call.namespace.clone(),
                     gone_at: None,
@@ -218,6 +230,7 @@ impl Client {
             );
         }
         call.adopted = adopted;
+        call.unregistered = unregistered;
         call.state = CallState::Done;
     }
 
@@ -317,14 +330,14 @@ pub(crate) fn call_reply(
         )
     };
     let response = match (&call.state, &call.outcome) {
-        (CallState::Done, Some(CallOutcome::Ok { .. }))
-            if call.parent.is_some() && !call.spawned.is_empty() && call.adopted.is_empty() =>
-        {
+        // 등록하지 못한 자식은 성공으로 돌려주지 않는다. late 로 넘겨 plugin 이 그 자식을 닫게 한다.
+        (CallState::Done, Some(CallOutcome::Ok { .. })) if !call.unregistered.is_empty() => {
+            call.late = true;
             JsonRpcResponse::error(
                 id.clone(),
                 -32000,
                 format!(
-                    "remote agent call {call_id}: the remote child exists but could not be registered under its parent here"
+                    "remote agent call {call_id}: the remote child could not be registered under its parent here and is being closed"
                 ),
             )
         }
@@ -446,6 +459,7 @@ mod tests {
             outcome: None,
             spawned: Vec::new(),
             adopted: Vec::new(),
+            unregistered: Vec::new(),
             replied: false,
             committed: false,
             late: false,
@@ -488,6 +502,7 @@ mod tests {
                 remote: 9,
                 index: 1,
             }],
+            Vec::new(),
         );
         assert_eq!(c.local_of(4, 9), Some(20));
         assert!(c.commit(1, "q").is_err());
@@ -520,6 +535,37 @@ mod tests {
         assert_eq!(c.calls[&2].state, CallState::Waiting);
         assert!(c.children[&20].gone_at.is_some());
         assert!(!c.sessions.contains_key(&4));
+    }
+
+    /// 등록하지 못한 자식은 성공으로 돌려주지 않고, plugin 이 원격 kill 로 닫을 수 있게 원격 자식으로 남긴다.
+    #[test]
+    fn a_child_that_could_not_be_registered_goes_to_the_late_path() {
+        // 전역 상태를 쓰므로 다른 시험과 겹치지 않는 번호를 쓴다.
+        let id = 9_100_002;
+        {
+            let mut c = client();
+            let mut adopting = call(4, Some(ParentKey::Surface(3)));
+            adopting.outcome = Some(CallOutcome::Ok {
+                result: serde_json::json!({}),
+            });
+            adopting.spawned = vec![9];
+            c.calls.insert(id, adopting);
+            c.adopted(id, Vec::new(), vec![(21, 9)]);
+        }
+        let reply = call_reply(
+            id,
+            serde_json::json!(1),
+            Instant::now(),
+            Duration::from_secs(35),
+        )
+        .expect("answered");
+        let mut c = client();
+        let call = c.calls.remove(&id).expect("kept");
+        let child = c.children.remove(&21);
+        assert_eq!(reply.error.as_ref().map(|e| e.code), Some(-32000));
+        assert!(call.late, "the plugin closes it through late_spawn");
+        assert_eq!(call.unregistered, vec![(21, 9)]);
+        assert_eq!(child.map(|ch| ch.remote), Some(9), "kill can target it");
     }
 
     #[test]

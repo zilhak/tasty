@@ -15,6 +15,8 @@ use super::outbox::Outbox;
 
 /// 끝난 call 의 결과를 같은 call_id 재요청에 돌려주기 위해 보관하는 기간.
 pub(super) const CALL_TTL: Duration = Duration::from_secs(10 * 60);
+/// 닫힌 자식의 출처 기록을 남기는 기간. 닫힌 뒤 확정된 마지막 결과를 맡길 수 있다. client tombstone 과 같다.
+pub(super) const CLOSED_CHILD_TTL: Duration = Duration::from_secs(10 * 60);
 /// 한 연결에서 동시에 진행할 수 있는 call 수.
 pub(super) const MAX_RUNNING_PER_CLIENT: usize = 8;
 
@@ -50,6 +52,7 @@ impl Decl {
 pub(super) struct Call {
     pub origin: u64,
     pub plugin: String,
+    pub workspace: u32,
     pub context: String,
     /// 이 call 의 문맥으로 예약된 자식 번호(이 출처 부모 아래). 같은 출처의 call 이 겹쳐도 섞이지 않는다.
     pub slots: Vec<u32>,
@@ -62,7 +65,10 @@ pub(super) struct Call {
 pub(super) struct Child {
     pub origin: u64,
     pub plugin: String,
+    pub workspace: u32,
     pub committed: bool,
+    /// surface 가 사라진 것을 처음 본 시각.
+    pub closed_at: Option<Instant>,
 }
 
 pub(crate) enum Begin {
@@ -96,14 +102,6 @@ pub(crate) struct Server {
 
 /// 확인 결과를 기억하는 수. plugin 재시도 간격 안에 다시 묻는 데 충분하다.
 const SETTLED_CAP: usize = 4096;
-
-/// 통지가 속한 출처·서버 workspace·원격 surface.
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct Placed {
-    pub origin: u64,
-    pub workspace: u32,
-    pub surface: u32,
-}
 
 /// plugin 결과 통지의 처리 상태.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -201,10 +199,6 @@ impl Server {
         self.decls.insert(plugin.to_owned(), decl);
     }
 
-    pub(crate) fn decl(&self, plugin: &str) -> Option<&Decl> {
-        self.decls.get(plugin)
-    }
-
     /// 이 자식의 통지를 정할 plugin. 기록된 자식이면 만든 plugin, 아직이면 그 출처의 진행 중 call 의 plugin 들이다.
     pub(crate) fn notice_allowed(&self, origin: u64, surface: u32, notice: &Notice) -> bool {
         let allowed = |plugin: &str| self.decls.get(plugin).is_some_and(|d| d.allows(notice));
@@ -264,6 +258,7 @@ impl Server {
             Call {
                 origin,
                 plugin: plugin.to_owned(),
+                workspace,
                 context: context.clone(),
                 slots: Vec::new(),
                 created: now,
@@ -301,7 +296,9 @@ impl Server {
             self.children.entry(*surface).or_insert_with(|| Child {
                 origin,
                 plugin: call.plugin.clone(),
+                workspace: call.workspace,
                 committed: false,
+                closed_at: None,
             });
         }
         let outcome = match response {
@@ -420,19 +417,16 @@ impl Server {
     }
 
     /// plugin 고유 결과를 보낸다. 같은 (plugin, key) 를 다시 부르면 새로 쌓지 않고 상태만 돌려준다.
+    /// 자식이 이미 닫혔어도 이 서버 프로세스의 기록이 남아 있으면 받는다. 기록이 없으면(다른 plugin 의 자식,
+    /// 서버 재시작 뒤, 보존 기간이 지남) 다시 보내도 받을 수 없으므로 `Rejected` 다.
     pub(crate) fn plugin_notice(
         &mut self,
         plugin: &str,
         key: &str,
-        at: Placed,
-        notice: Notice,
+        surface: u32,
+        payload: serde_json::Value,
         now: Instant,
     ) -> PluginNoticeStatus {
-        let Placed {
-            origin,
-            workspace,
-            surface,
-        } = at;
         let id = (plugin.to_owned(), key.to_owned());
         if let Some(outbox_key) = self.plugin_keys.get(&id) {
             if self.outbox.holds_key(outbox_key) {
@@ -444,8 +438,20 @@ impl Server {
                     _ => PluginNoticeStatus::Delivered,
                 };
             }
-            // 보관 기간이 지나 버렸거나 기록을 잃었다. 다시 쌓는다.
+            // 보관 기간이 지나 버렸거나 기록을 잃었다. 자식 기록이 있으면 다시 쌓는다.
         }
+        let Some(child) = self.children.get(&surface).filter(|c| c.plugin == plugin) else {
+            return PluginNoticeStatus::Rejected(format!(
+                "s{surface} is not a remote attach child that {plugin} created in this server process"
+            ));
+        };
+        let (origin, workspace) = (child.origin, child.workspace);
+        let Some(namespace) = self.decls.get(plugin).map(|d| d.namespace.clone()) else {
+            return PluginNoticeStatus::Rejected(format!(
+                "{plugin} has no remote attach declaration"
+            ));
+        };
+        let notice = Notice::Plugin { namespace, payload };
         let outbox_key = self.outbox.push(origin, workspace, surface, notice, now);
         self.plugin_keys.insert(id, outbox_key);
         PluginNoticeStatus::Pending
@@ -457,8 +463,13 @@ impl Server {
             .retain(|_, c| c.result.is_none() || now.duration_since(c.created) < CALL_TTL);
         self.outbox.expire(now);
         let outbox = &self.outbox;
-        self.children
-            .retain(|surface, _| live(*surface) || outbox.holds_surface(*surface));
+        self.children.retain(|surface, child| {
+            if live(*surface) {
+                return true;
+            }
+            let closed = *child.closed_at.get_or_insert(now);
+            outbox.holds_surface(*surface) || now.duration_since(closed) < CLOSED_CHILD_TTL
+        });
         let settled = &self.settled;
         self.plugin_keys
             .retain(|_, k| outbox.holds_key(k) || settled.iter().any(|(s, _)| s == k));
@@ -541,22 +552,14 @@ mod tests {
         s.begin_call(1, 7, "p", 4, now);
         finished(&mut s, o, 7, 9, Ok(serde_json::json!({})));
         s.commit(1, 7, &[9]);
-        let at = |origin| Placed {
-            origin,
-            workspace: 4,
-            surface: 9,
-        };
-        let payload = || Notice::Plugin {
-            namespace: "p".into(),
-            payload: serde_json::json!({"k": 1}),
-        };
+        s.set_decl("p", decl_p());
         assert_eq!(
-            s.plugin_notice("p", "c1", at(o), payload(), now),
+            s.plugin_notice("p", "c1", 9, serde_json::json!({"k": 1}), now),
             PluginNoticeStatus::Pending
         );
         // 재시도는 새 통지를 쌓지 않는다.
         assert_eq!(
-            s.plugin_notice("p", "c1", at(o), payload(), now),
+            s.plugin_notice("p", "c1", 9, serde_json::json!({"k": 1}), now),
             PluginNoticeStatus::Pending
         );
         let sent = s.due(now, |_| Some(1));
@@ -566,7 +569,7 @@ mod tests {
         };
         s.ack(1, key, &AckOutcome::Duplicate, now);
         assert_eq!(
-            s.plugin_notice("p", "c1", at(o), payload(), now),
+            s.plugin_notice("p", "c1", 9, serde_json::json!({"k": 1}), now),
             PluginNoticeStatus::Delivered
         );
         assert!(
@@ -714,6 +717,77 @@ mod tests {
         assert!(!s.notice_allowed(o, 9, &other));
     }
 
+    fn decl_p() -> Decl {
+        Decl {
+            namespace: "p".into(),
+            ..Decl::default()
+        }
+    }
+
+    /// 닫힌 자식이 확정한 마지막 결과도 같은 서버 프로세스 안에서는 맡길 수 있다.
+    #[test]
+    fn a_closed_child_still_takes_its_last_results_within_the_retention() {
+        let now = Instant::now();
+        let mut s = Server::new();
+        let (_, o) = token(&s.hello(1, None, now));
+        s.begin_call(1, 7, "p", 4, now);
+        finished(&mut s, o, 7, 9, Ok(serde_json::json!({})));
+        s.commit(1, 7, &[9]);
+        s.set_decl("p", decl_p());
+        let send = |s: &mut Server, key: &str, at: Instant| {
+            s.plugin_notice("p", key, 9, serde_json::json!({ "k": key }), at)
+        };
+        // 닫히기 전에 맡긴 결과는 닫힌 뒤에도 pending 이다.
+        assert_eq!(send(&mut s, "before", now), PluginNoticeStatus::Pending);
+        s.expire(now, |_| false);
+        assert_eq!(send(&mut s, "before", now), PluginNoticeStatus::Pending);
+        // 닫힌 뒤 처음 맡긴 결과도 쌓이고 client 확인으로 끝난다.
+        assert_eq!(send(&mut s, "after", now), PluginNoticeStatus::Pending);
+        for _ in 0..2 {
+            let sent = s.due(now, |_| Some(1));
+            assert_eq!(sent.len(), 1);
+            let AgentServerMsg::ChildNotice { key, .. } = &sent[0].1 else {
+                panic!()
+            };
+            s.ack(1, key, &AckOutcome::Recorded, now);
+        }
+        assert_eq!(send(&mut s, "after", now), PluginNoticeStatus::Delivered);
+        // 보존 기간 안에서는 기록이 남는다.
+        let later = now + CLOSED_CHILD_TTL - Duration::from_secs(1);
+        s.expire(later, |_| false);
+        assert_eq!(send(&mut s, "late", later), PluginNoticeStatus::Pending);
+        // 다른 plugin 은 그 자식에 맡길 수 없다.
+        assert!(matches!(
+            s.plugin_notice("q", "x", 9, serde_json::json!({}), later),
+            PluginNoticeStatus::Rejected(_)
+        ));
+    }
+
+    /// 보존 기간이 지났거나 서버가 다시 시작해 기록이 없으면 받을 수 없다.
+    #[test]
+    fn a_child_record_gone_by_expiry_or_restart_rejects_new_results() {
+        let now = Instant::now();
+        let mut s = Server::new();
+        let (_, o) = token(&s.hello(1, None, now));
+        s.begin_call(1, 7, "p", 4, now);
+        finished(&mut s, o, 7, 9, Ok(serde_json::json!({})));
+        s.commit(1, 7, &[9]);
+        s.set_decl("p", decl_p());
+        s.expire(now, |_| false);
+        let gone = now + CLOSED_CHILD_TTL + Duration::from_secs(1);
+        s.expire(gone, |_| false);
+        assert!(matches!(
+            s.plugin_notice("p", "k", 9, serde_json::json!({}), gone),
+            PluginNoticeStatus::Rejected(_)
+        ));
+        let mut restarted = Server::new();
+        restarted.set_decl("p", decl_p());
+        assert!(matches!(
+            restarted.plugin_notice("p", "k", 9, serde_json::json!({}), now),
+            PluginNoticeStatus::Rejected(_)
+        ));
+    }
+
     #[test]
     fn child_records_stay_while_notices_remain() {
         let now = Instant::now();
@@ -730,7 +804,7 @@ mod tests {
             panic!()
         };
         s.ack(1, key, &AckOutcome::Recorded, now);
-        s.expire(now, |_| false);
+        s.expire(now + CLOSED_CHILD_TTL, |_| false);
         assert!(!s.children.contains_key(&9));
     }
 }

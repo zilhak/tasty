@@ -43,7 +43,7 @@ pub(crate) fn handle(
         "attach.agent_call" | "attach.agent_commit" => {
             Err("this instance has no remote attach mirrors".into())
         }
-        "attach.child_notice" => notice(engine, caller, params),
+        "attach.child_notice" => notice(caller, params),
         "attach.child_notices" => Ok(notices()),
         _ => Err(format!("unknown method {method}")),
     };
@@ -209,6 +209,7 @@ fn call(
                 outcome: None,
                 spawned: Vec::new(),
                 adopted: Vec::new(),
+                unregistered: Vec::new(),
                 replied: false,
                 committed: false,
                 late: false,
@@ -254,19 +255,13 @@ fn commit(caller: &crate::ipc::caller::CallerContext, params: &Value) -> Result<
     Ok(json!({ "committed": remote.len() }))
 }
 
-fn notice(
-    engine: &EngineMut<'_>,
-    caller: &crate::ipc::caller::CallerContext,
-    params: &Value,
-) -> Result<Value, String> {
+fn notice(caller: &crate::ipc::caller::CallerContext, params: &Value) -> Result<Value, String> {
     use crate::remote::agent_children::PluginNoticeStatus as S;
-    Ok(
-        match agents::plugin_notice(&engine.as_ref(), caller, params)? {
-            S::Pending => json!({ "status": "pending" }),
-            S::Delivered => json!({ "status": "delivered" }),
-            S::Rejected(reason) => json!({ "status": "rejected", "reason": reason }),
-        },
-    )
+    Ok(match agents::plugin_notice(caller, params)? {
+        S::Pending => json!({ "status": "pending" }),
+        S::Delivered => json!({ "status": "delivered" }),
+        S::Rejected(reason) => json!({ "status": "rejected", "reason": reason }),
+    })
 }
 
 fn notices() -> Value {

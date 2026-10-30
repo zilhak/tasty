@@ -40,6 +40,8 @@ static WAITING: Mutex<Vec<Waiting>> = Mutex::new(Vec::new());
 struct Adopting {
     call_id: u64,
     pending: Vec<(u32, u32, crate::runtime::child_terminal::Ticket)>,
+    /// 등록 요청부터 거절된 자식(로컬, 원격).
+    failed: Vec<(u32, u32)>,
 }
 static ADOPTING: Mutex<Vec<Adopting>> = Mutex::new(Vec::new());
 
@@ -571,6 +573,7 @@ fn adopt(sess: &AttachClientSession, engine: &mut EngineMut<'_>, ws: u32) {
             continue;
         };
         let mut pending = Vec::new();
+        let mut failed = Vec::new();
         for remote in &call.spawned {
             let Some(&local) = sess.state.remote_to_local.get(remote) else {
                 tracing::info!(
@@ -587,14 +590,21 @@ fn adopt(sess: &AttachClientSession, engine: &mut EngineMut<'_>, ws: u32) {
             };
             match engine.runtime.child_terminals.adopt(parent.clone(), entry) {
                 Ok(ticket) => pending.push((local, *remote, ticket)),
-                Err(e) => tracing::warn!("remote child s{local} not registered: {e}"),
+                Err(e) => {
+                    tracing::warn!("remote child s{local} not registered: {e}");
+                    failed.push((local, *remote));
+                }
             }
         }
         if pending.is_empty() {
-            client.adopted(call_id, Vec::new());
+            client.adopted(call_id, Vec::new(), failed);
             continue;
         }
-        lock(&ADOPTING).push(Adopting { call_id, pending });
+        lock(&ADOPTING).push(Adopting {
+            call_id,
+            pending,
+            failed,
+        });
     }
 }
 
@@ -605,27 +615,27 @@ fn poll_adoptions() {
         if a.pending.iter().any(|(_, _, t)| t.observation().is_none()) {
             return true;
         }
-        let adopted = a
-            .pending
-            .iter()
-            .filter_map(|(local, remote, t)| match t.poll() {
-                Some(Ok(Some(index))) => Some(Adopted {
+        let mut adopted = Vec::new();
+        let mut failed = a.failed.clone();
+        for (local, remote, t) in &a.pending {
+            match t.poll() {
+                Some(Ok(Some(index))) => adopted.push(Adopted {
                     local: *local,
                     remote: *remote,
                     index,
                 }),
                 other => {
                     tracing::warn!("remote child s{local} registration failed: {other:?}");
-                    None
+                    failed.push((*local, *remote));
                 }
-            })
-            .collect();
-        finished.push((a.call_id, adopted));
+            }
+        }
+        finished.push((a.call_id, adopted, failed));
         false
     });
     let mut client = agents::client();
-    for (call_id, adopted) in finished {
-        client.adopted(call_id, adopted);
+    for (call_id, adopted, failed) in finished {
+        client.adopted(call_id, adopted, failed);
     }
 }
 
@@ -641,7 +651,7 @@ fn late_spawns(plugins: &mut Option<crate::plugin::PluginManager>, ws: u32, now:
             && !c.late_sent
             && !c.committed
             && c.state == CallState::Done
-            && !c.adopted.is_empty()
+            && !(c.adopted.is_empty() && c.unregistered.is_empty())
             && c.late_retry_at.is_none_or(|at| now >= at)
     }) {
         let Some(receive) = manager
@@ -671,7 +681,11 @@ fn late_spawns(plugins: &mut Option<crate::plugin::PluginManager>, ws: u32, now:
                     "surface_id": a.local,
                     "remote_surface_id": a.remote,
                     "index": a.index,
-                })).collect::<Vec<_>>(),
+                })).chain(call.unregistered.iter().map(|(local, remote)| json!({
+                    "surface_id": local,
+                    "remote_surface_id": remote,
+                    "index": null,
+                }))).collect::<Vec<_>>(),
                 "result": result,
                 "error": error,
             }),
