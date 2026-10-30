@@ -270,6 +270,7 @@ mirror 워크스페이스는 "통째로 원격" 인 원격 워크스페이스의
   막지 않으면 로컬은 에러를 돌려주는데 forward 큐는 IPC 응답과 무관하게 드레인되어 **호출자가 관리하지 못하는 원격 탭**이 생긴다.
   그래서 mirror 워크스페이스를 대상으로 한 `terminal.spawn` 은 tab/surface 를 하나도 만들지 않고 `invalid_params` 로 즉시 거부하며, 메시지에 mirror 사유와 대안(다른 워크스페이스 사용 / 원격 인스턴스에서 직접 spawn)을 담는다.
   나머지 구조 변경은 아래 "현재 범위"대로 mirror 에서도 forward 된다 — 이 거부는 `terminal.spawn` 한 method 에만 적용된다.
+  `tasty claude spawn`·`tasty codex spawn` 의 mirror 대상은 이 forward 가 아니라 아래 [원격 자식 에이전트](#원격-자식-에이전트) 경로로 서버에서 실행된다.
 - **탭·페인 교체 이동은 forward 하지 않고 로컬에서 차단한다**: 탭 헤더 메뉴의 `탭 이동`/`페인 이동`으로 고른 교체 이동(`ReplaceTabWithTab`/`ReplacePaneWithPane`)은 source 나 target 중 하나라도 mirror 워크스페이스면 App의 mirror 구조 요청 해소가 로컬 실행을 거부하고, 대응 `StructuralOp` 가 없어 원격으로 보내지 않는다. 사용자에게는 차단 toast(`attach.toast.mirror_structural_blocked`)만 뜬다([surface-move](../surface-move/index.md)).
 - **터미널 재시작·PTY 입양은 forward 하지 않고 로컬에서 거부한다**: mirror surface 대상 `RespawnTerminal`(`surface.respawn_terminal`·`terminal.respawn`)과 mirror pane 대상 `AdoptTerminal`(`pty.attach_surface`)은 App의 mirror 구조 요청 해소가 거부한다. 둘 다 로컬 PTY 를 mirror 트리에 넣는 동작이라 원격 트리와 어긋나고, 대응 `StructuralOp` 가 없어 원격으로 보내지 않는다. IPC 응답은 mirror 사유를 담은 오류이며 트리·PTY registry 는 바뀌지 않는다.
 - **탭·페인 preset 적용은 forward 하지 않고 로컬에서 거부한다**: tab preset 의 대상 pane(생략하면 활성 workspace)이나 pane preset 의 대상 workspace(생략하면 활성 workspace)가 mirror 면 `preset.apply` 와 preset 팝업의 적용은 탭·pane 을 만들기 전에 `MirrorStructuralBlocked` 로 거부한다. terminal leaf 면 로컬 셸을 mirror 트리에 넣게 되고, preset 은 대응 `StructuralOp` 가 없어 원격으로 보낼 수 없다. IPC 응답은 mirror 사유를 담은 오류이고, 사용자가 적용했으면 차단 toast(`attach.toast.mirror_structural_blocked`)가 뜬다. workspace preset 은 새 로컬 workspace 를 만들므로 거부하지 않는다.
@@ -405,6 +406,17 @@ Remote는 원 attempt의 SSH 취소와 터널 회수를 요청하고 worker의 �
 - **레이아웃을 저장하는 원격에서는 그 워크스페이스가 재시작 후에도 남는다.** 원격이 만든 것은 mirror 가 아닌 일반 워크스페이스라 원격의 슬롯 파일에 영속된다(비영속 제외 대상은 로컬 mirror 뿐 — 아래 절). 즉 이 기능은 **원격의 영속 상태를 늘린다**: 무심코 여러 번 확정하면 원격에 워크스페이스가 계속 쌓인다.
 - self(loopback) attach 거절은 그대로 적용된다 — 새 ws 를 만들었더라도 대상 포트가 자기 자신이면 attach 되지 않는다(생성만 되고 끝). debug 와 release 모두 같은 사전 검사를 거친다.
 
+### 원격 자식 에이전트
+
+mirror 를 `--workspace`(숫자 id)나 `--pane` 으로 지정한 `tasty claude spawn`·`tasty codex spawn` 은 자식을 서버에서 서버의 provider 설치·설정·로그인으로 실행한다. client 에서는 그 자식의 mirror surface 가 부모 아래 자식으로 등록되어 `tell`·`children`·`state`·`kill` 을 로컬 자식처럼 쓴다.
+
+- 서버 훅이 보고한 완료는 기존 attach holder 연결로 client 에 돌아와 부모의 완료 로그·Codex 대화에 기록된다. 훅에는 부모 주소나 비밀이 없고, 별도 서버·포트를 열지 않는다.
+- 서버의 다른 사용자·도구는 점유 중인 그 자식에 입력하거나 그 자식을 닫을 수 없다. 원격 출처 표지를 꾸민 일반 요청은 host 가 거절한다.
+- 연결이 끊긴 동안 자식의 상태는 `unknown` 으로 보이고, 같은 서버 프로세스에 다시 붙으면 쌓인 완료가 한 번 기록된다. 결과를 확정할 수 없는 지시는 성공이나 실패로 단정하지 않고 결과불명으로 답한다. 서버 프로세스가 다시 시작하면 그 전 자식의 결과는 이어지지 않는다.
+- `--cwd`·`--profile-file` 은 서버 기준 절대 경로만 받는다. 이 기능이 없는 구 서버의 mirror 에는 자식을 만들지 않고 오류로 끝난다.
+
+전달·출처·통지 계약은 [Attach 메커니즘](../../dev-guide/attach-behavior.md#원격-자식-에이전트-ipcstreamagent-children), provider 별 동작은 [원격 attach 자식](../../plugins/remote-attach-children.md)에 있다.
+
 ### mirror workspace 비영속
 
 원격 attach의 mirror workspace는 연결 세션의 projection이며 로컬 journal 구조에 포함되지 않는다. journal snapshot과 호환 export는 로컬 canonical 모델만 읽으므로 mirror를 저장하거나 재시작 시 일반 workspace로 복원하지 않는다. 팝업의 선택 프로필·목록·요청 식별자는 View의 비영속 상태다.
@@ -438,7 +450,7 @@ attach 세션의 수명은 **창(window)이 아니라 engine 에 매인다.** �
   - `tasty remote new-workspace --ssh|--profile [--name <n>] [--cwd <원격경로>] [--json]` — 원격에 워크스페이스 생성(원격 mutate). 출력 id 를 `remote attach --workspace <id>` 에 넘기면 "만들고 그 자리에서 attach" 가 CLI 만으로 완성된다. `--cwd` 는 **원격 파일시스템** 기준이며 원격이 존재를 검증한다. 원격 active 는 불변(Agent origin).
   - `tasty set workspace --id <id> --ssh-profile <name> --remote-workspace <N>` — 자동 매핑 선언.
   - `tasty remote refusals` — 이 인스턴스를 대상으로 해서 거절한 최근 attach 시도와, 연결하지 않은 채 남은 자동 attach 매핑의 안내(IPC `remote.refusals`). 읽기 전용.
-- **IPC (`attach.*`)**: `acquire`/`release`(stream 핸드셰이크), `into_gui`, `list`(점유 목록 조회). 남의 점유를 푸는 메서드는 없다. 표 상세 → [dev-guide/attach-behavior](../../dev-guide/attach-behavior.md#ipc-표면-attach).
+- **IPC (`attach.*`)**: `acquire`/`release`(stream 핸드셰이크), `into_gui`, `list`(점유 목록 조회), 원격 자식 에이전트용 `agent_target`·`agent_call`·`agent_commit`·`child_notice`·`child_notices`. 남의 점유를 푸는 메서드는 없다. 표 상세 → [dev-guide/attach-behavior](../../dev-guide/attach-behavior.md#ipc-표면-attach).
 - **IPC (`remote.*` — 원격 브라우징/생성/attach, IPC·CLI 양면 — [API 규약](../../dev-guide/api-conventions.md#ipc-메서드를-cli로-제공하는-기준))**: `remote.workspaces` { `profile?`/`ssh?` } → 원격 ws 목록(browse, 워커 스레드+지연 회신). `remote.attach` { `remote_workspace` | `new_workspace`, `profile?`/`ssh?`, `name?`, `cwd?` } → 원격 ws 를 로컬 mirror 로 attach(**focus 중립**: mirror 생성만, focus 이동 없음). `new_workspace:true` 면 원격에 워크스페이스를 먼저 만들고 그것을 attach 한다 — `remote_workspace` 와 상호배타이며, 이때만 **생성 완료까지 기다렸다 지연 회신**해 새 `remote_workspace` id 를 돌려준다(기존 ws attach 는 즉시 `{attaching:true}` 유지). 두 응답 모두 시도 번호 `attempt` 를 싣고, 기존 ws attach 는 최종 결과를 조회할 `run` 도 싣는다(위 연결 결과 조회). 자기 자신이 대상이면: loopback 표기는 이 응답 대신 동기 `-32602` 오류가 오고, SSH 경로는 `new_workspace:true` 만 생성 전 `-32602` 이며 기존 ws attach 는 `{attaching:true}` 응답 뒤 비동기 거절이 `remote.refusals`(`via_ssh: true`)에 남는다(위 self-attach 절의 IPC 계약 요약). `remote.refusals` {} → 자기 포트라서 연결하지 않은 최근 시도 목록(위 self-attach 절). CLI 와 코어 공유 — 조회는 `tasty_remote::browse`, 생성은 `tasty_remote::create`.
 - **로컬 self attach**(별도 CLI 프로세스가 포트 파일로 로컬 인스턴스를 mirror): 사용자 mirror 조작 재현 성격이라 release 에 없음 — `tasty debug attach`(debug 빌드 전용, [`dev-guide/debug-ipc`](../../dev-guide/debug-ipc.md)). 같은 머신의 다른 인스턴스에 loopback 주소(`127.0.0.1:PORT`·`localhost:PORT`·`[::1]:PORT`)로 붙는 GUI 원격 연결 팝업·IPC `remote.attach`·자동 attach 는 release 에도 있다(아래 비-목표 절).
 - **프로필**: `--profile`/`tool attach` 이 참조하는 tasty-attach 프로필(및 그것이 `ssh_ref` 로 참조하는 ssh 프로필)은 [remote-profiles](../remote-profiles/index.md) 이 관리.
@@ -519,6 +531,13 @@ bulk 파일 전송과 mirror 터미널 이미지 붙여넣기 업로드에 대�
 - Given 전송 형태로 예산(700 KiB)을 넘는 문서 When client 가 원문을 요청 Then 세션이 끊기지 않고 잘린 원문이 "잘렸다" 표시와 함께 도착하며, 그 판정은 원문 바이트가 아니라 이스케이프된 길이로 이뤄진다(`tests/attach_markdown_content_loopback.rs`).
 - Given attach 점유가 없는 client When 원문을 요청 Then 파일을 한 바이트도 읽히지 않고 거절된다(`tests/attach_markdown_content_loopback.rs`).
 - Given 워크스페이스 둘 중 **한쪽만** 점유한 client When 다른 워크스페이스의 markdown 원문을 요청 Then 인가되어 원문이 도착한다 — 점유는 인스턴스 단위 신뢰이지 워크스페이스별 권한이 아니다(`tests/attach_markdown_content_loopback.rs`).
+- Given 원격 자식을 지원하는 서버의 mirror 와 같은 부모 When Claude·Codex 자식을 동시에 spawn Then 각 응답은 자기가 만든 자식만 싣는다(`src/remote/agent_children/state.rs` 의 `overlapping_calls_of_one_origin_keep_their_own_children`). 실측(Linux 두 인스턴스 loopback): 두 자식이 각각 서버 surface 로 생기고 client 부모 아래 등록됐다.
+- Given 원격 자식 When 서버에서 Stop 훅이 보고 Then client 부모의 완료 로그에 한 줄 기록되고 서버에는 완료 로그가 생기지 않는다. 실측(Linux 두 인스턴스, fixture 훅과 실제 Claude haiku 자식). Codex 대화가 부모면 Claude·Codex 자식의 턴 결과가 그 대화로 돌아온다(실측).
+- Given holder 연결이 끊김 When `terminal.children`·`terminal.state` Then 원격 자식은 `liveness: unknown`, `state: unknown` 이고, 같은 서버에 재연결하면 그동안 쌓인 통지가 중복 없이 한 번 적용된다. 실측(Linux, 두 인스턴스 사이 TCP 중계를 끊었다 같은 주소로 복구). 통지 재전송과 중복 제거는 `src/remote/agent_children/outbox.rs` 의 `a_disconnect_makes_in_flight_notices_due_again_for_the_next_connection` 과 `client.rs` 의 `keys_are_seen_once` 가 고정한다.
+- Given 서버의 공개 IPC·CLI·다른 plugin When 일반 namespace 요청에 `attach_context`·`attach_target_surface`·`attach:` 부모를 싣는다 Then host 가 plugin 에 넘기기 전에 `-32602` 로 거절한다(`crates/tasty-host-plugin/src/manager/tests_request_origin.rs` 의 `a_general_namespace_request_cannot_carry_remote_attach_markers`, 실측).
+- Given 닫힌 원격 자식 When 서버 plugin 이 닫힌 뒤 10분 안에 그 자식의 결과를 맡긴다 Then 쌓여 client 확인으로 끝나고, 기록이 없으면(서버 재시작·기간 경과) `rejected` 다(`state.rs` 의 `a_closed_child_still_takes_its_last_results_within_the_retention`·`a_child_record_gone_by_expiry_or_restart_rejects_new_results`).
+- Given 자식이 mirror 에 나타났지만 부모 아래 등록하지 못함 When call 이 끝남 Then 성공으로 답하지 않고 plugin 의 late_spawn 으로 넘겨 그 자식을 닫게 한다(`client.rs` 의 `a_child_that_could_not_be_registered_goes_to_the_late_path`).
+- Given 원격 실행을 선언하지 않은 plugin 명령 When 숫자 `--workspace` 와 상대 경로 인자 Then CLI 는 mirror 여부를 묻지 않고 로컬 기준 절대 경로로 바꾼다(`crates/tasty-cli/src/dynamic/tests.rs` 의 `a_method_without_remote_execution_keeps_local_paths_even_for_a_numeric_workspace`).
 - Given mesh mirror pane 이 표시 중 When client 가 그 pane 을 클릭/타이핑 Then 원격 plugin 프로세스의 상태가 실제로 바뀌고 그 결과가 mirror 에 반영된다(예: mesh_demo 클릭 카운터 증가).
 - Given mesh mirror pane 에 텍스처 delta 체인 단절(예: 재연결) When client 가 감지 Then `MeshFullResendRequest` 로 전체 텍스처 상태를 재수신해 정상 렌더를 회복한다.
 

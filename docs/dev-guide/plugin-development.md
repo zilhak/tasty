@@ -231,6 +231,23 @@ string 인자의 `path_kind`는 CLI가 호출한 디렉터리 기준으로 경�
 - `file` — 절대 경로로 바꾸고 정규 파일인지 검사한다.
 - `url_or_file` — `scheme://`로 시작하는 값(`https://…`, `file://…`)은 그대로 보내고, 그 밖의 값은 `file`처럼 다룬다. URL과 로컬 파일을 같은 인자로 받는 `tasty html open`이 쓴다.
 - 검사에 실패하면 요청을 보내지 않고 인자명과 함께 오류를 낸다. 파일 내용은 검사하지 않는다.
+- 예외: 아래 `remote_attach.methods` 에 선언한 메서드가 숫자 `--workspace` 나 `--pane` 으로 attach mirror 를 가리키면 경로 인자를 바꾸지 않고 그대로 보낸다. 경로는 실행할 서버 기준이라 서버 plugin 이 절대 경로인지·있는지 확인한다. CLI 는 보내기 전에 `attach.agent_target` 으로 mirror 인지 묻고, 묻지 못하면 로컬로 다룬다.
+
+### 원격 attach 실행 (`contributes.remote_attach`)
+
+attach holder 가 서버에서 이 plugin 의 메서드를 실행하게 하려면 선언한다. host 는 provider 목록을 갖지 않고 이 선언으로만 허용한다. 계약은 [Attach 메커니즘](attach-behavior.md#원격-자식-에이전트-ipcstreamagent-children)에 있다.
+
+```toml
+[contributes.remote_attach]
+methods = ["spawn", "tell", "kill"]   # 서버에서 holder 대신 실행할 자기 namespace 메서드(접두사 없이)
+receive = "remote_receive"            # client 에서 원격 결과와 late_spawn 을 받을 메서드
+relay_meta = ["my-meta-key"]          # 원격 자식에서 client 의 같은 surface 로 옮길 메타 키
+```
+
+- `ipc_namespace` 가 정확히 하나인 plugin 만 선언할 수 있다. 메서드 이름은 그 namespace 안의 이름이다.
+- 서버 host 는 원격 호출에 `parent_external = attach:o<n>`·`attach_context`·`attach_target_surface` 를 넣는다. 일반 namespace 요청이 이 값을 실으면 host 가 거절하므로, plugin 은 `attach:` 부모와 `attach_context` 가 함께 있을 때만 원격 출처로 본다. 같은 plugin 의 공개 메서드가 `attach:` 부모의 자식을 바꾸지 못하게 막는 것은 plugin 몫이다.
+- 원격 자식에서 다시 발화할 훅 이벤트는 `[[contributes.hook_events]]` 선언으로 정한다. `process-exit` 는 선언 없이 옮긴다.
+- plugin 고유 결과는 서버 plugin 이 `attach.child_notice{surface_id, key, payload}` 로 맡기고, client 의 `receive` 메서드가 `kind: notice` 로 받는다. `rejected` 는 다시 보내도 받을 수 없다는 뜻이므로 재시도를 멈춘다.
 
 namespace 소유권은 설치 manifest에서 만든 NamespaceTable로 조회한다.
 관리자와 IPC가 같은 Arc 핸들을 공유하며 부팅 때 한 번 설치한다. 조회 callback이나 별도 prefix 복사본은 두지 않는다.

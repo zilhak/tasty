@@ -64,7 +64,7 @@ host 는 원격 출처 호출에 `parent_external = attach:o<n>`·`attach_contex
 
 ## 한계
 
-- 원격 spawn 의 `--cwd`·`--profile-file` 을 CLI 가 C 의 파일시스템에서 확인하지 않고 그대로 넘기는 것은 host CLI 쪽 조정이 필요하다. 그 조정 전에는 CLI 가 C 에서 먼저 확인하므로 같은 경로가 C 에도 있어야 한다. `--cwd` 를 생략하면 서버의 기본 위치에서 시작한다.
+- 원격 spawn 의 `--cwd`·`--profile-file` 은 CLI 가 C 에서 확인하지 않고 그대로 넘기며 서버가 확인한다([Attach 메커니즘](../dev-guide/attach-behavior.md#cli-경로-인자)). `--cwd` 를 생략하면 서버의 기본 위치에서 시작한다.
 - respawn·broadcast·launch 는 원격 자식에 대해 지원하지 않는다.
 - 결과불명 call 의 부모 기록은 plugin 메모리에만 있다. plugin 이 다시 시작한 뒤 온 늦은 자식은 닫는다.
 - 서버 host 가 다시 시작하면 attach 출처가 사라진다. 그때 진행 중이던 call 은 결과불명이고, 그 출처의 자식 결과는 host 가 `rejected` 로 답해 서버 plugin 에 포기한 기록으로 남는다. 서버 재시작 뒤 출처를 복구해 결과를 다시 전달하는 기능은 없다.

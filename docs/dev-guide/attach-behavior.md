@@ -664,6 +664,77 @@ client 가 mirror 를 걷어내면 원격에 `Detach` 를 보내 원격 점유(h
 
 `crates/tasty-cli/src/local/remote_check.rs`. 포트 발견만으론 **stale 포트 파일**(죽은 인스턴스 잔재)을 오판하므로 3단계: ① 포트 발견 → ② `ssh -L` 터널 → ③ 터널 localport 로 `system.info` **1회**. 응답이 와야 alive(stdout `alive: …`, exit 0). 거부/EOF/타임아웃 = dead(stderr, exit≠0). 단계별 상한은 ① 포트 발견 45초(위 "SSH 터널" 절의 3겹 상한) → ② 터널 ready-probe 5초 → ③ IPC 프로브 5초(`remote_check.rs` 의 `PROBE_TIMEOUT`) — 어느 단계도 무한 대기하지 않으므로 "단발 판정" 계약이 전 구간에서 성립한다. 1회성이라 재연결 백오프 없음. SSH 부품은 attach 와 공유, list 핸들러는 안 건드림.
 
+## 원격 자식 에이전트 (`ipc.stream.agent-children`)
+
+attach 로 연결한 mirror 에 `tasty claude spawn`·`tasty codex spawn` 으로 자식을 만들고, 그 자식을 client 의 자식처럼 tell·children·state·kill 로 다룬다. 자식 프로세스는 서버에서 서버의 provider 설치·설정·토큰으로 돈다. 부모·완료 알림 훅·Codex 결과 수신처는 client 의 mirror surface(L)에 묶인다. provider plugin 이 그 위에서 하는 일은 [원격 attach 자식](../plugins/remote-attach-children.md)에 있다.
+
+- 이 기능은 기존 attach holder 연결의 제어 채널만 쓴다. 별도 서버·포트·부모 주소 등록을 만들지 않고, 훅 명령에 부모 Tasty 주소나 비밀을 넣지 않는다. 메시지는 아래 [커스텀 이벤트 확장](#커스텀-이벤트-확장-streamcontrol-밖-raw-json-event-태그)과 같은 raw JSON `event` 다(`crates/tasty-ipc/src/agent_child.rs`).
+- 서버는 workspace attach descriptor 의 `stream_capabilities` 에 `ipc.stream.agent-children` 을 싣는다. client 는 이 이름이 있는 연결에만 보낸다. 없는 구 서버에 대한 `attach.agent_target` 은 `capable: false` 로 답하고, plugin 은 터미널을 만들지 않고 오류로 끝낸다.
+- 실행할 수 있는 plugin 과 메서드는 각 plugin 매니페스트의 [`contributes.remote_attach`](plugin-development.md#원격-attach-실행-contributesremote_attach) 선언으로만 정한다. host 에는 provider 이름·메서드 목록·훅 이름이 없다.
+
+### 출처
+
+- client 는 holder 연결마다 `agent_hello` 를 보내고, 서버는 그 연결에 묶인 비공개 128비트 출처 토큰과 공개 출처 번호를 `agent_hello_ack` 로 돌려준다. 재연결 때 같은 토큰을 내면 같은 출처로 이어진다(`resumed`). 공개 `instance_id` 나 연결 ID 로는 출처를 정하지 않는다.
+- 서버 child registry 에서 원격 출처 자식의 부모 키는 `attach:o<n>`(공개 순번)이다. 토큰은 registry·응답·훅에 싣지 않는다.
+- 서버 프로세스가 다시 시작하면 출처 기록이 없어진다. 그 전에 만든 자식의 결과·통지는 새 출처로 이어지지 않으며 결과불명이다. 연결만 끊겼다가 같은 서버 프로세스에 다시 붙으면 쌓인 통지를 이어서 받는다. 서버 상태 전체를 디스크에 남겨 재시작 뒤 복원하지는 않는다.
+
+### 원격 call
+
+1. client plugin 이 `attach.agent_call{workspace|pane, method, params}` 를 부른다. `method` 는 호출 plugin 자기 namespace 의 메서드여야 한다. client host 는 결과를 받을 때까지 응답을 미루며 상한은 35초다(plugin SDK 전용 핸들 상한 40초보다 짧다).
+2. client host 는 `agent_call_request{call_id, workspace, method, params}` 를 holder 연결로 보낸다. `call_id` 는 출처 안에서 유일하고, 같은 `call_id` 를 다시 보내면 서버는 다시 실행하지 않고 보관한 결과를 돌려준다.
+3. 서버 host 는 그 plugin 의 `remote_attach.methods` 에 있는지, workspace 를 이 holder 가 점유하는지 확인한다. 인자에서 host 소유 이름(`parent`·`surface`·`parent_external`·`workspace`·`pane`·`caller_surface`·`attach_context`·`attach_target_surface`·`_tasty*`)을 지우고 host 가 정한 값을 넣는다. spawn 에는 `parent_external = attach:o<n>`·`attach_context`(call 문맥 토큰)·`workspace`·`pane` 을, tell·kill 에는 확인한 대상 R 을 `attach_target_surface` 로 넣는다.
+4. 서버 host 는 그 호출을 일반 namespace 진입점이 아닌 원격 전용 전달로 plugin 에 넘긴다. plugin 의 host 호출은 매니페스트 권한·사용자 허가 검사를 그대로 받는다.
+5. 서버 plugin 이 `terminal.spawn` 에 `attach_context` 를 실으면 host 는 문맥 토큰이 그 출처·그 plugin·그 workspace 의 진행 중인 call 인지 확인한 뒤에만 `attach:o<n>` 부모로 등록한다. 만든 자식(R)은 그 call 의 결과에 귀속한다. 같은 출처의 call 이 겹쳐도 각 call 은 자기가 만든 자식만 받는다.
+6. 서버는 `agent_call_result{call_id, outcome, spawned}` 를 보낸다. client 는 `spawned` 의 R 이 mirror 에 나타나면 L 로 바꿔 client child registry 에 plugin 부모 아래로 등록한 뒤 plugin 에 답한다.
+7. plugin 이 L 에 수신처를 묶은 뒤 `attach.agent_commit{call_id}` 를 부르면 client 는 `agent_call_commit` 을 보낸다. 서버는 commit 전에는 그 자식의 통지를 보내지 않으므로 첫 완료가 수신처 없이 지나가지 않는다.
+
+결과를 확정할 수 없으면 client host 는 성공이나 실패로 단정하지 않고 `-32010`(결과불명)으로 답한다. 35초 상한, 연결 종료, 서버 재시작이 이 경우다.
+- 상한 뒤에도 그 call 은 10분 동안 결과를 기다린다. 결과가 와서 자식이 mirror 에 나타나면 plugin 의 `receive` 메서드에 `kind: late_spawn` 으로 넘기고, plugin 이 `recorded` 로 답하면 host 가 commit 한다. plugin 이 받지 않으면(`rejected`) 그 자식을 원격 kill 로 닫는다.
+- mirror 에 나타난 자식을 client child registry 에 등록하지 못하면 성공으로 돌려주지 않는다. 그 자식은 원격 자식으로만 기록해 원격 kill 대상이 되게 하고, plugin 에는 오류로 답한 뒤 `late_spawn` 으로 넘긴다. plugin 은 기다리는 부모가 없으므로 그 자식을 원격 kill 로 닫는다.
+- 결과에 자식이 있는데 mirror 에 아직 나타나지 않았다는 것만으로 자식이 닫혔다고 보지 않는다. 그 call 은 나타날 때까지 기다리고, 상한이 지나면 결과불명으로 답한다. 끝내 나타나지 않으면 10분 보관 기한에 기록이 정리된다.
+
+### 통지
+
+서버는 원격 출처 자식의 변화를 `child_notice{key, surface, notice}` 로 client 에 보낸다.
+
+| 통지 | 서버가 보내는 조건 | client 가 하는 일 |
+|---|---|---|
+| State | 항상 | L 의 상태·근거 갱신 |
+| Event | `process-exit`, 또는 자식을 만든 plugin 의 `hook_events` 선언에 있는 이벤트 | L 에 같은 이벤트로 훅 발화(`fire_as`) |
+| Meta | 자식을 만든 plugin 의 `relay_meta` 선언에 있는 키 | L 의 surface 메타 갱신 |
+| Plugin | 자식을 만든 plugin 이 `attach.child_notice` 로 맡긴 결과 | 같은 plugin 의 `receive` 메서드에 `kind: notice` 로 전달 |
+
+- 통지는 자식마다 FIFO outbox 에 쌓이고 한 번에 하나씩 나간다. client 는 `child_notice_ack{key, outcome}` 으로 답하며, 서버는 `recorded`·`duplicate`·`rejected` 를 받은 뒤에만 지운다. `retry_later` 는 짧은 간격 뒤 다시 보낸다. 연결이 끊기면 보낸 통지를 다음 연결에서 다시 보낸다. 다른 출처는 그 통지를 받거나 확인할 수 없다.
+- client 는 key 를 세션마다 기억해 같은 통지를 한 번만 적용한다. key 에는 서버 프로세스 접두사가 붙어 서버가 재시작한 뒤의 key 와 겹치지 않는다.
+- `attach.child_notice` 는 plugin 결과를 맡긴 상태를 `pending`·`delivered`·`rejected` 로 답한다. 같은 key 를 다시 부르면 먼저 그 key 의 기록된 상태를 돌려준다.
+  - 새 key 는 이 서버 프로세스의 자식 기록(출처·만든 plugin·workspace)으로 쌓는다. 자식 surface 가 닫혀도 기록은 10분(client tombstone 과 같은 기간) 남으므로, 닫힌 직후 확정된 종료·마지막 턴 결과도 맡길 수 있다. holder 가 잠시 끊겨 있어도 `pending` 으로 쌓아 두고 재연결 뒤 보낸다.
+  - 기록이 없으면(그 plugin 이 만든 원격 자식이 아님, 서버 재시작, 보존 기간 지남) 다시 보내도 받을 수 없으므로 오류 대신 `rejected` 와 사유를 돌려준다. plugin 에 `remote_attach` 선언이 없어도 `rejected` 다. 형식이 틀린 요청만 JSON-RPC 오류다.
+- mirror surface 가 사라지면(원격 자식 종료, mirror 정리) client 는 그 자식의 훅을 10분 동안 tombstone 으로 남겨 늦게 온 통지를 받아 준다. 그 사이 온 Event 는 surface 없이 같은 훅으로 발화한다(`fire_detached`).
+
+### 서버 점유와 공개 호출
+
+- 원격 출처 자식은 서버에서 hard 점유된 workspace 안에 있다. 서버 host 는 자식을 만든 plugin 이 그 출처의 call·훅 처리로 하는 입력만 점유 예외로 받는다. 서버 사용자의 키 입력·`surface.send`·다른 plugin 의 입력은 기존처럼 막힌다.
+- 서버의 공개 IPC·CLI·다른 plugin 이 보낸 일반 namespace 요청은 원격 출처 표지(`attach_context`·`attach_target_surface`·`attach:` 로 시작하는 `parent_external`)를 실을 수 없다. 실려 있으면 host 가 plugin 에 넘기기 전에 `-32602` 로 거절한다. 호출자 plugin ID 만으로 원격 출처로 보지 않는다. `tell`·`kill`·`respawn` 같은 일반 메서드가 `attach:` 부모의 자식을 대상으로 하는 경우는 provider plugin 이 거절한다([원격 attach 자식](../plugins/remote-attach-children.md#서버s-plugin)).
+- 원격 kill 은 서버에서 `Cause::RemoteHolder` 로 닫는다.
+
+### client 표시
+
+- `terminal.children`·`terminal.state` 는 원격 자식 L 에 `remote: true` 와 `liveness` 를 싣는다. 연결 중이면 `connected`, 연결이 끊겨 재연결을 기다리는 동안은 `unknown` 이다. `unknown` 이면 `state` 를 `unknown`, `evidence` 를 `remote_disconnected`, `confidence` 를 `unobserved` 로 바꿔 마지막 상태를 현재 상태처럼 보이지 않게 한다.
+- 세션이 끝나면 그 세션의 진행 중 call 은 결과불명으로 끝나고, mirror 자식은 정리될 때 client child registry 와 훅에서 빠진다.
+
+### CLI 경로 인자
+
+plugin CLI 의 `path_kind` 인자는 보통 CLI 가 자기 디렉터리 기준 절대 경로로 바꾸고 검사한다. 원격 실행을 선언한 메서드(`remote_attach.methods`)에 경로 인자와 숫자 `--workspace` 또는 `--pane` 이 있으면, CLI 는 보내기 전에 `attach.agent_target` 으로 대상이 mirror 인지 묻는다. mirror 면 경로를 바꾸지 않고 그대로 보내 서버가 확인하게 한다. 그 밖의 명령(예: 숫자 이름을 받는 `launch --workspace`)과 로컬 대상은 기존 처리 그대로다. 질문이 실패하면 로컬로 다룬다.
+
+서버 host 는 원격 holder spawn 의 `cwd` 가 절대 경로가 아니면 거절한다. 상대 경로를 서버 프로세스의 작업 위치로 풀지 않기 위해서다.
+
+### 한계
+
+- 서버 재시작 뒤에는 그 전에 만든 원격 자식의 결과를 이어 받지 못한다(위 출처 절). 닫힌 자식의 결과는 닫힌 뒤 10분까지만 맡길 수 있다.
+- 결과불명 call 의 늦은 재결합은 plugin 이 그 call 의 부모를 아직 기억할 때만 된다.
+- 재연결은 같은 컴퓨터의 두 인스턴스 사이에 둔 TCP 중계를 끊었다 같은 주소로 되살려 확인했다(Linux). 끊긴 동안 `liveness: unknown`, 그동안 서버에 쌓인 통지는 복구 뒤 한 번만 기록됐고 자식 매핑은 그대로였다. SSH 터널 경유와 force-detach 뒤 재연결은 실제 실행으로 확인하지 않았다.
+- 구 서버에 대한 거절은 capability 판정과 plugin 단위 시험으로 확인했고, 구 버전 서버 실제 실행으로는 확인하지 않았다.
+
 ## IPC 표면 (`attach.*`)
 
 `src/adapters/ipc/handler/attach.rs`.
@@ -673,8 +744,11 @@ client 가 mirror 를 걷어내면 원격에 `Detach` 를 보내 원격 점유(h
 | `attach.acquire` / `attach.release` | `stream.open{target}` 핸드셰이크 | 배타 lock 획득/해제 |
 | `attach.into_gui` | JSON-RPC | 실행 GUI 가 원격 워크스페이스를 mirror 로 재구성(`App::start_gui_attach`). GUI 는 App 층이 자기 자신 여부를 판정한 뒤 답한다(위 self-attach 절). 헤드리스는 접수하지 않고 `-32017` 로 거절한다 |
 | `attach.list` | JSON-RPC | 현재 점유 목록 조회(read) |
+| `attach.agent_target` | JSON-RPC | `workspace`(숫자 id)·`pane` 이 mirror 인지와 서버의 원격 자식 지원(`capable`)을 답한다(read). CLI 도 경로 인자를 다루려고 묻는다 |
+| `attach.agent_call` / `attach.agent_commit` | JSON-RPC(plugin 전용) | 원격 call 실행과 수신처를 묶은 뒤의 commit(위 원격 자식 에이전트 절). 호출 plugin 의 `terminal.spawn`·`terminal.write` 권한이 필요하다 |
+| `attach.child_notice` / `attach.child_notices` | JSON-RPC | 서버 plugin 이 원격 자식의 결과를 맡기고(plugin 전용, `terminal.write`) 남은 통지를 조회한다(read) |
 
-**권한**: attach 보안은 **연결 경계(SSH + 127.0.0.1 loopback)** 에 위임. 자체 권한 레이어 없음 — 소켓에 도달한 caller 는 위 attach 제어를 호출할 수 있다. 남의 점유를 강제로 푸는 메서드는 이 표에 없다(위 force-detach 절). 근거는 [사용자 통제와 데이터 원칙](../principles/control-and-data.md), 주체 계약은 [actors](../concepts/actors.md).
+**권한**: attach 보안은 **연결 경계(SSH + 127.0.0.1 loopback)** 에 위임. 자체 권한 레이어 없음 — 소켓에 도달한 caller 는 위 attach 제어를 호출할 수 있다. 원격 자식의 call·commit·결과 맡기기는 그 plugin 의 기존 터미널 권한을 그대로 요구한다. 남의 점유를 강제로 푸는 메서드는 이 표에 없다(위 force-detach 절). 근거는 [사용자 통제와 데이터 원칙](../principles/control-and-data.md), 주체 계약은 [actors](../concepts/actors.md).
 
 ## 커스텀 이벤트 확장 (`StreamControl` 밖 raw JSON `event` 태그)
 
