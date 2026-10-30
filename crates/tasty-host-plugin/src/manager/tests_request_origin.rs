@@ -541,3 +541,46 @@ fn the_expiry_warning_names_the_host_id_and_the_request_seq_on_one_line() {
         answer.message
     );
 }
+
+/// 공개 IPC·CLI·다른 plugin 의 일반 namespace 요청은 원격 출처 표지를 실을 수 없다. host 가 넣는
+/// 원격 holder call 만 `forward_attach_call` 로 그 표지를 전달한다.
+#[test]
+fn a_general_namespace_request_cannot_carry_remote_attach_markers() {
+    let mut mgr = mgr_owning("orig");
+    let (owner, owner_rx) = PluginProcess::stub_with_request_rx(OWNER);
+    mgr.processes.insert(OWNER.into(), owner);
+    for params in [
+        serde_json::json!({ "attach_context": "guess" }),
+        serde_json::json!({ "attach_target_surface": 7 }),
+        serde_json::json!({ "parent_external": "attach:o1", "child": 0 }),
+    ] {
+        let (tx, rx) = mpsc::sync_channel(1);
+        mgr.forward_namespace_call(
+            "orig.run",
+            params.clone(),
+            None,
+            serde_json::json!(1),
+            tx,
+            None,
+        );
+        let response = rx.try_recv().expect("refused at once");
+        assert_eq!(response.error.map(|e| e.code), Some(-32602), "{params}");
+        assert!(
+            owner_rx.try_recv().is_err(),
+            "{params} must not reach the plugin"
+        );
+    }
+    let (tx, _rx) = mpsc::sync_channel(1);
+    mgr.forward_attach_call(
+        "orig.run",
+        serde_json::json!({ "parent_external": "attach:o1", "attach_context": "c" }),
+        None,
+        serde_json::json!(1),
+        tx,
+        None,
+    );
+    assert!(
+        owner_rx.try_recv().is_ok(),
+        "the host's remote call reaches the plugin"
+    );
+}

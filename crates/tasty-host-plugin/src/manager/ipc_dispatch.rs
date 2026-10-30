@@ -129,6 +129,34 @@ impl PluginManager {
         response_tx: mpsc::SyncSender<JsonRpcResponse>,
         origin: Option<tasty_ipc::server::RequestSeq>,
     ) {
+        if let Some(marker) = tasty_ipc::agent_child::reserved_marker(&params) {
+            send_response(
+                &response_tx,
+                JsonRpcResponse::error(original_id, -32602, &reserved_message(marker)),
+            );
+            return;
+        }
+        self.forward_attach_call(
+            method,
+            params,
+            caller_plugin_id,
+            original_id,
+            response_tx,
+            origin,
+        );
+    }
+
+    /// 원격 holder call 을 그 namespace 로 전달한다. host 가 원격 출처 표지를 넣은 호출만 이 경로를 쓴다.
+    /// 일반 진입점([`Self::forward_namespace_call`])은 같은 표지를 거절한다.
+    pub fn forward_attach_call(
+        &mut self,
+        method: &str,
+        params: serde_json::Value,
+        caller_plugin_id: Option<&str>,
+        original_id: serde_json::Value,
+        response_tx: mpsc::SyncSender<JsonRpcResponse>,
+        origin: Option<tasty_ipc::server::RequestSeq>,
+    ) {
         let plugin_id = match self.validate_namespace_call(method, caller_plugin_id) {
             Ok(id) => id,
             Err((code, msg)) => {
@@ -192,7 +220,11 @@ impl PluginManager {
         {
             return;
         }
-        let plugin_id = match self.validate_namespace_call(method, Some(caller_plugin_id)) {
+        let validated = match tasty_ipc::agent_child::reserved_marker(&params) {
+            Some(marker) => Err((-32602, reserved_message(marker))),
+            None => self.validate_namespace_call(method, Some(caller_plugin_id)),
+        };
+        let plugin_id = match validated {
             Ok(id) => id,
             Err((code, msg)) => {
                 self.send_bound_ipc_parts(
@@ -791,4 +823,9 @@ impl PluginManager {
             }
         }
     }
+}
+
+/// 일반 namespace 요청에 원격 출처 표지가 실렸을 때의 오류.
+fn reserved_message(marker: &str) -> String {
+    format!("'{marker}' is reserved for remote attach calls that the host runs for a holder")
 }

@@ -25,6 +25,27 @@ pub const VERSION: u32 = 1;
 /// 원격 자식의 프로세스 종료. host 가 PTY 종료에서 만든다.
 pub const PROCESS_EXIT: &str = "process-exit";
 
+/// 원격 holder call 문맥을 host 가 넣는 plugin 인자 이름. 일반 namespace 요청은 이 이름을 쓸 수 없다.
+pub const CONTEXT_PARAM: &str = "attach_context";
+/// host 가 확인한 원격 자식 surface 를 싣는 plugin 인자 이름.
+pub const TARGET_PARAM: &str = "attach_target_surface";
+
+/// 일반 namespace 요청(공개 IPC·CLI·다른 plugin)에 실려 오면 안 되는 원격 출처 표지. 있으면 그 이름이다.
+/// 원격 holder 의 call 만 host 가 이 표지를 넣는다. 호출자 plugin ID 만으로 원격 출처로 보지 않는다.
+pub fn reserved_marker(params: &serde_json::Value) -> Option<&'static str> {
+    let map = params.as_object()?;
+    if map.contains_key(CONTEXT_PARAM) {
+        return Some(CONTEXT_PARAM);
+    }
+    if map.contains_key(TARGET_PARAM) {
+        return Some(TARGET_PARAM);
+    }
+    map.get("parent_external")
+        .and_then(serde_json::Value::as_str)
+        .filter(|key| key.starts_with("attach:"))
+        .map(|_| "parent_external")
+}
+
 /// 서버 child registry 에서 원격 출처 자식의 부모 키 접두사. 뒤에 출처 번호가 붙는다(`attach:o3`).
 /// 비공개 토큰이 아니라 공개 순번이므로 registry·응답에 실어도 된다.
 pub const PARENT_PREFIX: &str = "attach:o";
@@ -170,6 +191,31 @@ impl AckOutcome {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_attach_markers_are_reserved() {
+        use serde_json::json;
+        assert_eq!(
+            reserved_marker(&json!({ "attach_context": "x" })),
+            Some(CONTEXT_PARAM)
+        );
+        assert_eq!(
+            reserved_marker(&json!({ "attach_target_surface": 3 })),
+            Some(TARGET_PARAM)
+        );
+        assert_eq!(
+            reserved_marker(&json!({ "parent_external": "attach:o1" })),
+            Some("parent_external")
+        );
+        assert_eq!(
+            reserved_marker(&json!({ "parent_external": "codex:abc" })),
+            None
+        );
+        assert_eq!(
+            reserved_marker(&json!({ "prompt": "attach_context" })),
+            None
+        );
+    }
     use serde_json::json;
 
     #[test]

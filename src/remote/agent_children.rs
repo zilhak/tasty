@@ -464,7 +464,7 @@ fn start_call(
         params.insert("attach_target_surface".into(), json!(target));
     }
     let (tx, rx) = std::sync::mpsc::sync_channel(1);
-    plugins.forward_namespace_call(&full, Value::Object(params), None, Value::Null, tx, None);
+    plugins.forward_attach_call(&full, Value::Object(params), None, Value::Null, tx, None);
     waiting().push(Waiting {
         origin,
         call_id,
