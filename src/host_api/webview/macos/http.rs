@@ -128,7 +128,8 @@ impl Network {
     }
 }
 
-/// macOS 14 added per-store proxy configuration; earlier systems keep remote HTTP unsupported.
+/// macOS 14 added per-store proxy configuration; earlier systems keep remote HTTP unsupported, and
+/// unmeasured releases do too.
 pub(crate) fn available() -> bool {
     // SAFETY: class method on the WebKit class object; no instance is created.
     let responds: bool = unsafe {
@@ -137,7 +138,18 @@ pub(crate) fn available() -> bool {
             instancesRespondToSelector: sel!(setProxyConfigurations:)
         ]
     };
-    responds && Network::get().is_some()
+    responds && Network::get().is_some() && measured_release()
+}
+
+/// The loopback bypass and the `*.localhost` aliases were measured on macOS 27 only. An
+/// unmeasured WebKit could treat an alias as loopback and connect to it directly, so earlier
+/// releases keep the placeholder until they are measured the same way.
+fn measured_release() -> bool {
+    const FIRST_MEASURED: isize = 27;
+    objc2_foundation::NSProcessInfo::processInfo()
+        .operatingSystemVersion()
+        .majorVersion
+        >= FIRST_MEASURED
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -196,15 +208,27 @@ impl HttpView {
         };
         let rules = self.rules.clone();
         let deferred = self.deferred.clone();
-        let view = webview.retain();
+        // The compile can outlive the view and its document; neither is kept alive for it.
+        let view = objc2::rc::Weak::from_retained(&webview.retain());
+        let document = Rc::downgrade(&self.document);
         let handler = RcBlock::new(move |list: *mut WKContentRuleList, error: *mut NSError| {
             // SAFETY: WebKit calls this on the main thread; a non-null list is +0 and retained here.
             let list = unsafe { Retained::retain(list) };
+            let document = document.upgrade();
             let Some(list) = list else {
                 // SAFETY: a non-null error is valid for this call.
                 let error = unsafe { error.as_ref() }.map(|e| e.localizedDescription().to_string());
                 tracing::warn!("WebView surface {surface_id}: loopback rule failed: {error:?}");
                 rules.set(Rules::Failed);
+                // A load already accepted while the rule was pending can never start.
+                if deferred.borrow_mut().take().is_some()
+                    && let Some(document) = document
+                {
+                    load_failed(&document.session());
+                }
+                return;
+            };
+            let Some(view) = view.load() else {
                 return;
             };
             // SAFETY: main thread WebKit property reads on the retained view.
@@ -214,7 +238,9 @@ impl HttpView {
             // SAFETY: main thread; the controller retains the rule list.
             unsafe { controller.addContentRuleList(&list) };
             rules.set(Rules::Ready);
-            if let Some(url) = deferred.borrow_mut().take() {
+            if let Some(url) = deferred.borrow_mut().take()
+                && document.is_some_and(|document| document.session().is_current())
+            {
                 load(&view, &url);
             }
         });

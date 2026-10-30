@@ -1,11 +1,18 @@
 # macOS remote HTTP context
 
-A macOS GUI client on macOS 14 or later shows a remote HTTP(S) document in a
+A macOS GUI client on macOS 27 or later shows a remote HTTP(S) document in a
 WKWebView. Every request of that view reaches the document endpoint, which
 forwards it to the remote host as described in the [HTTP bridge](html-http-bridge.md).
 The client never connects to the logical target. macOS 11–13 have no per-store
 proxy configuration, so those clients do not advertise the HTTP viewer and keep
 the remote HTTP placeholder.
+
+macOS 14–26 have the proxy configuration but are not measured. Their WebKit
+could treat a `*.localhost` alias as loopback and connect to the client itself,
+which no rule here would block. Those releases keep the placeholder too. A
+release is added once the measurements under [Measured behaviour](#measured-behaviour)
+pass on it, in particular that alias hosts reach only the proxy while the same
+port on the client serves a different response.
 
 ## Data store and proxy
 

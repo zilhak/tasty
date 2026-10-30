@@ -166,7 +166,8 @@ pub(crate) fn http_viewer_available(window: &winit::window::Window) -> bool {
 pub(crate) fn http_viewer_available(_window: &winit::window::Window) -> bool {
     true
 }
-/// WebKit routes a data store through the document endpoint only from macOS 14.
+/// WebKit routes a data store through the document endpoint from macOS 14; the viewer is offered
+/// only on releases where its loopback handling was measured.
 #[cfg(target_os = "macos")]
 pub(crate) fn http_viewer_available(_window: &winit::window::Window) -> bool {
     macos::http_available()

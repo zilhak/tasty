@@ -72,7 +72,7 @@ Linux는 이 모드마다 별도 ephemeral `WebContext`에 `tasty-html-entry` sc
 
 ## macOS HTTP context
 
-macOS 14 이상 GUI client는 원격 HTTP(S) 문서마다 비영속 `WKWebsiteDataStore`를 만들고 문서 endpoint를 HTTP CONNECT proxy로 지정한다. WebKit은 proxy를 지정해도 loopback 주소에 직접 연결하므로 원격 loopback 호스트는 `*.tasty.localhost` 별칭으로 열고, 직접 loopback 요청은 content rule로 막는다. 인증·별칭·인증서·Reload 계약과 실측은 [macOS HTTP context](../../dev-guide/macos-http-context.md)에 있다.
+macOS 27 이상 GUI client는 원격 HTTP(S) 문서마다 비영속 `WKWebsiteDataStore`를 만들고 문서 endpoint를 HTTP CONNECT proxy로 지정한다. WebKit은 proxy를 지정해도 loopback 주소에 직접 연결하므로 원격 loopback 호스트는 `*.tasty.localhost` 별칭으로 열고, 직접 loopback 요청은 content rule로 막는다. 인증·별칭·인증서·Reload 계약과 실측은 [macOS HTTP context](../../dev-guide/macos-http-context.md)에 있다.
 
 ## 좌표 — 논리와 물리를 타입 이름에 남긴다
 
@@ -717,4 +717,4 @@ native WebView는 winit 창의 X 자식이라 포인터는 X 서버가 자식 �
 
 ## 원격 HTTP native backend 가용성
 
-원격 HTTP(S) viewer는 Linux X11·Windows·macOS 14 이상 GUI client에서 사용한다. Linux는 native factory가 받는 실제 Xlib 창·display와 X11 GDK 준비를 확인한다. Windows는 WebView2 factory가 있는 GUI 창이면 선언한다. macOS는 `WKWebsiteDataStore`의 proxy 설정과 Network proxy 함수가 있을 때 선언한다. 등록한 창에서 판정하여 engine 수명에 보관하고, parked 상태에서는 해제하며 복원 때 다시 판정한다. 서버 HTTP/HTTPS/Reload protocol 지원은 GUI·headless 공통이고 client renderer 가용성과 구별한다. native Wayland와 macOS 11–13 client는 이 capability를 선언하지 않는다. 인증 proxy 앞단·인증서 확인·스크립트 정책은 [Windows HTTP context](../../dev-guide/windows-http-context.md)와 [macOS HTTP context](../../dev-guide/macos-http-context.md)에 있다. 실제 전송과 script/size consent는 기존 수신·배너 widgets를 사용하며 신규 UI나 포커스 이동은 없다. [원격 HTTP viewer](../../surfaces/html/index.md#원격-https-native-viewer)의 설정·trust boundary를 따른다.
+원격 HTTP(S) viewer는 Linux X11·Windows·macOS 27 이상 GUI client에서 사용한다. Linux는 native factory가 받는 실제 Xlib 창·display와 X11 GDK 준비를 확인한다. Windows는 WebView2 factory가 있는 GUI 창이면 선언한다. macOS는 실측한 27 이상에서 `WKWebsiteDataStore`의 proxy 설정과 Network proxy 함수가 있을 때 선언한다. 등록한 창에서 판정하여 engine 수명에 보관하고, parked 상태에서는 해제하며 복원 때 다시 판정한다. 서버 HTTP/HTTPS/Reload protocol 지원은 GUI·headless 공통이고 client renderer 가용성과 구별한다. native Wayland와 macOS 11–26 client는 이 capability를 선언하지 않는다. 인증 proxy 앞단·인증서 확인·스크립트 정책은 [Windows HTTP context](../../dev-guide/windows-http-context.md)와 [macOS HTTP context](../../dev-guide/macos-http-context.md)에 있다. 실제 전송과 script/size consent는 기존 수신·배너 widgets를 사용하며 신규 UI나 포커스 이동은 없다. [원격 HTTP viewer](../../surfaces/html/index.md#원격-https-native-viewer)의 설정·trust boundary를 따른다.
