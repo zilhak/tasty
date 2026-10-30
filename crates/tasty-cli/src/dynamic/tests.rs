@@ -111,6 +111,7 @@ fn sample_entry() -> PluginCliEntry {
             arg_groups,
         },
         strict_caller_contexts: Vec::new(),
+        remote_methods: Vec::new(),
     }
 }
 
@@ -793,10 +794,14 @@ fn path_entry() -> PluginCliEntry {
             description: None,
             description_i18n_key: None,
             help_group: None,
-            subcommands: vec![new_subcommand("spawn", "pathy.spawn", "place_args")],
+            subcommands: vec![
+                new_subcommand("spawn", "pathy.spawn", "place_args"),
+                new_subcommand("launch", "pathy.launch", "place_args"),
+            ],
             arg_groups,
         },
         strict_caller_contexts: Vec::new(),
+        remote_methods: vec!["pathy.spawn".into()],
     }
 }
 
@@ -870,5 +875,14 @@ fn the_host_is_not_asked_without_a_path_or_a_numeric_placement() {
         asked.is_empty(),
         "a workspace name cannot point at a mirror"
     );
+    assert!(params.unwrap()["cwd"].as_str().unwrap().starts_with('/'));
+}
+
+#[test]
+fn a_method_without_remote_execution_keeps_local_paths_even_for_a_numeric_workspace() {
+    // launch 의 --workspace 는 새 workspace 이름이라 숫자여도 mirror 를 가리키지 않는다.
+    let (params, asked) =
+        path_request(&["pathy", "launch", "--workspace", "7", "--cwd", "."], true);
+    assert!(asked.is_empty());
     assert!(params.unwrap()["cwd"].as_str().unwrap().starts_with('/'));
 }

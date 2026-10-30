@@ -20,7 +20,7 @@ use crate::caller_context::CallerContextSource;
 /// `Some(polling)` 일 때 *terminal_states 도달까지 반복 IPC 호출* 한다.
 ///
 /// `remote_target` 은 요청의 실행 위치(`workspace` 숫자 id·`pane`)가 attach mirror 인지 host 에 묻는다.
-/// 경로 인자가 있고 실행 위치를 지정한 요청에서만 부른다.
+/// 원격 실행을 선언한 메서드에 경로 인자와 실행 위치가 있을 때만 부른다.
 pub fn matches_to_request(
     entries: &[PluginCliEntry],
     caller_contexts: &[CallerContextSource],
@@ -73,10 +73,12 @@ pub fn matches_to_request(
         // 실행 위치가 attach mirror 면 경로는 실행하는 서버 기준이라 이 머신에서 바꾸거나 검사하지 않는다.
         // 그 값은 그대로 보내고 서버 쪽 plugin 이 검사한다. 그 밖에는 호출자 cwd 기준 절대 경로로 바꾸고
         // 존재(+종류)를 검사한다.
-        let remote = !path_args.is_empty() && {
-            let query = placement_query(&params);
-            !query.is_empty() && remote_target(&query)
-        };
+        // 원격 실행을 선언한 메서드만 묻는다. 다른 명령의 `--workspace` 는 이름일 수 있어 mirror 로 보지 않는다.
+        let remote =
+            !path_args.is_empty() && entry.remote_methods.contains(&sub_decl.ipc_method) && {
+                let query = placement_query(&params);
+                !query.is_empty() && remote_target(&query)
+            };
         if !remote {
             for arg in path_args {
                 let Some(raw) = params.get(&arg.name).and_then(Value::as_str) else {

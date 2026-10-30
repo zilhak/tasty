@@ -41,6 +41,9 @@ pub struct PluginCliEntry {
     /// 이 명령이 호출자 값 형식 오류를 거절할 provider. 소유 플러그인이 선언한 provider와
     /// `requires_caller_context`를 합친 것이다.
     pub strict_caller_contexts: Vec<String>,
+    /// 매니페스트 `contributes.remote_attach.methods` 의 전체 IPC 메서드 이름(`<namespace>.<method>`).
+    /// 이 메서드만 attach mirror 대상의 경로 인자를 실행 머신에 맡긴다.
+    pub remote_methods: Vec<String>,
 }
 
 #[cfg(test)]

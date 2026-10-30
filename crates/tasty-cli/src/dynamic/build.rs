@@ -71,11 +71,21 @@ pub fn discover_plugins(plugins_root: &Path) -> DiscoveredPlugins {
             .collect();
         strict.sort();
         strict.dedup();
+        let remote_methods: Vec<String> = match contributes.ipc_namespace.as_slice() {
+            [ns] => contributes
+                .remote_attach
+                .methods
+                .iter()
+                .map(|m| format!("{}.{m}", ns.prefix))
+                .collect(),
+            _ => Vec::new(),
+        };
         for mut cli in contributes.cli {
             localize_decl(&mut cli, &strings);
             out.clis.push(PluginCliEntry {
                 cli,
                 strict_caller_contexts: strict.clone(),
+                remote_methods: remote_methods.clone(),
             });
         }
         out.caller_contexts
