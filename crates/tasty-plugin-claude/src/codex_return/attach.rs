@@ -42,7 +42,7 @@ pub(super) fn hand_over<H: HostCall>(host: &H, mut request: Value) -> Result<Val
     }
 }
 
-/// client 에서 받은 원격 결과를 이 mirror 자식 경로의 수신처로 넘길 `codex.deliver` 요청. 경로가 없거나
+/// client 에서 받은 원격 결과를 그 턴의 route 토큰이 가리키는 수신처로 넘길 `codex.deliver` 요청. 수신처가 없거나
 /// 본문이 틀리면 거절 사유다.
 pub(super) fn local_request(
     payload: &Value,
@@ -59,11 +59,12 @@ pub(super) fn local_request(
         .to_string();
     let receiver_id = receiver_id
         .filter(|r| !r.is_empty())
-        .ok_or_else(|| format!("no Codex return route for s{surface}"))?;
+        .ok_or_else(|| format!("no Codex return route for the result of s{surface}"))?;
     let map = request
         .as_object_mut()
         .ok_or("completion is not an object")?;
     map.remove("attach");
+    map.remove(remote_attach::ROUTE_FIELD);
     map.insert("receiver_id".into(), Value::from(receiver_id));
     map.insert(
         "completion_key".into(),

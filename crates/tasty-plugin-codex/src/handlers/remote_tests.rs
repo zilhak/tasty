@@ -120,7 +120,16 @@ fn receiver_of_l(fx: &Fixture) -> String {
         .receiver_id
 }
 
-fn notice(key: &str) -> Value {
+/// 마지막 원격 호출에 실린 route 토큰.
+fn route_of(host: &Host) -> String {
+    host.params_of("attach.agent_call")
+        .iter()
+        .rev()
+        .find_map(|c| c["params"]["return_route"].as_str().map(str::to_string))
+        .expect("a call with a route token")
+}
+
+fn notice(key: &str, route: &str) -> Value {
     json!({
         "kind": "notice",
         "surface_id": L,
@@ -133,6 +142,7 @@ fn notice(key: &str) -> Value {
             "status": "turn_ended",
             "body": "done",
             "attempt_id": null,
+            "route": route,
         }},
     })
 }
@@ -165,7 +175,11 @@ fn a_codex_parent_spawns_on_the_server_and_binds_before_commit() {
     assert_eq!(call["method"], json!("spawn"));
     assert_eq!(call["parent"]["external"], json!(format!("codex:{PARENT}")));
     let sent = call["params"].as_object().unwrap();
-    assert_eq!(sent["return_turns"], json!(true));
+    assert!(
+        sent["return_route"]
+            .as_str()
+            .is_some_and(remote_attach::is_route_token)
+    );
     assert_eq!(sent["sandbox"], json!("read-only"));
     assert_eq!(sent["cwd"], json!("/srv/w"));
     for key in ["_tasty_context", "workspace", "surface", "parent_external"] {
@@ -192,7 +206,7 @@ fn a_surface_parent_gets_its_notify_hooks_before_commit() {
     spawn(&fx, &host, json!({ "workspace": 3, "surface": 5 })).unwrap();
     let call = &host.params_of("attach.agent_call")[0];
     assert_eq!(call["parent"]["surface"], json!(5));
-    assert_eq!(call["params"]["return_turns"], json!(false));
+    assert!(call["params"].get("return_route").is_none());
     let methods = host.methods();
     let commit = methods
         .iter()
@@ -230,11 +244,12 @@ fn remote_results_are_recorded_once_without_calling_codex_deliver() {
     let host = Host::new(&fx, client);
     spawn(&fx, &host, codex(json!({ "workspace": 3 }))).unwrap();
     let receiver = receiver_of_l(&fx);
+    let route = route_of(&host);
 
-    let first = receive(&fx, &host, notice("k1"));
+    let first = receive(&fx, &host, notice("k1", &route));
     assert_eq!(first["status"], json!("recorded"), "{first}");
     assert_eq!(
-        receive(&fx, &host, notice("k1"))["status"],
+        receive(&fx, &host, notice("k1", &route))["status"],
         json!("duplicate")
     );
     assert!(!host.methods().iter().any(|m| m.starts_with("codex.")));
@@ -248,9 +263,12 @@ fn remote_results_are_recorded_once_without_calling_codex_deliver() {
     assert_eq!(event.completion_key, "r.k1");
     assert_eq!(event.child_surface, L);
 
-    let mut other = notice("k2");
-    other["surface_id"] = json!(L + 1);
-    assert_eq!(receive(&fx, &host, other)["status"], json!("rejected"));
+    let unknown = notice("k2", "ffffffffffffffffffffffffffffffff");
+    assert_eq!(receive(&fx, &host, unknown)["status"], json!("rejected"));
+    assert_eq!(
+        receive(&fx, &host, notice("k3", ""))["status"],
+        json!("rejected")
+    );
 }
 
 /// 원격 kill 은 서버로 보내고, 경로는 끝난 기록으로 남겨 늦은 결과를 받는다.
@@ -275,7 +293,7 @@ fn a_killed_remote_child_still_records_a_late_result() {
     let record = ledger::child_receiver(fx.root(), L).unwrap().unwrap();
     assert!(record.ended_at_ms.is_some());
     assert_eq!(
-        receive(&fx, &host, notice("late"))["status"],
+        receive(&fx, &host, notice("late", &route_of(&host)))["status"],
         json!("recorded")
     );
 }
@@ -305,7 +323,7 @@ fn a_remote_tell_binds_the_route_then_sends_to_the_server() {
     assert!(host.params_of("terminal.tell").is_empty());
     let call = host.params_of("attach.agent_call").pop().unwrap();
     assert_eq!(call["method"], json!("tell"));
-    assert_eq!(call["params"]["return_turns"], json!(true));
+    assert!(call["params"]["return_route"].is_string());
     assert!(ledger::child_receiver(fx.root(), L).unwrap().is_some());
 }
 
@@ -346,7 +364,7 @@ fn origin(extra: Value) -> Value {
         "parent_external": "attach:o3",
         "attach_context": "opaque",
         "workspace": "2",
-        "return_turns": true,
+        "return_route": "0123456789abcdef0123456789abcdef",
     });
     for (k, v) in extra.as_object().unwrap() {
         p[k] = v.clone();
@@ -386,7 +404,10 @@ fn the_server_runs_the_child_and_routes_its_turns_to_the_attach_parent() {
     );
     let record = ledger::child_receiver(fx.root(), R).unwrap().unwrap();
     assert_eq!(record.attach_parent.as_deref(), Some("attach:o3"));
-    assert!(record.receiver_id.is_empty());
+    assert_eq!(
+        record.receiver_id, "0123456789abcdef0123456789abcdef",
+        "the server keeps only the client's route token, not a receiver"
+    );
 }
 
 /// 서버: tell·kill 은 host 가 지정한 자식에만 간다.
@@ -437,7 +458,13 @@ fn completion() -> crate::delivery::ledger::Completion {
 fn an_attach_result_is_kept_until_the_client_settles_it() {
     let fx = Fixture::new();
     let name = "a".repeat(64);
-    attach_out::queue(fx.root(), &name, &completion()).unwrap();
+    attach_out::queue(
+        fx.root(),
+        &name,
+        &completion(),
+        "0123456789abcdef0123456789abcdef",
+    )
+    .unwrap();
     let next = fx.with(attach_out::pump);
     assert!(next.is_some());
     assert_eq!(attach_out::pending(fx.root()), 1);
@@ -449,7 +476,13 @@ fn an_attach_result_is_kept_until_the_client_settles_it() {
     assert_eq!(fx.rec.notices.borrow().len(), 1);
 
     let name2 = "b".repeat(64);
-    attach_out::queue(fx.root(), &name2, &completion()).unwrap();
+    attach_out::queue(
+        fx.root(),
+        &name2,
+        &completion(),
+        "0123456789abcdef0123456789abcdef",
+    )
+    .unwrap();
     *fx.rec.notice_status.borrow_mut() = Some(NoticeStatus::Delivered);
     fx.with(attach_out::pump);
     assert_eq!(
@@ -459,7 +492,13 @@ fn an_attach_result_is_kept_until_the_client_settles_it() {
     );
 
     let name3 = "c".repeat(64);
-    attach_out::queue(fx.root(), &name3, &completion()).unwrap();
+    attach_out::queue(
+        fx.root(),
+        &name3,
+        &completion(),
+        "0123456789abcdef0123456789abcdef",
+    )
+    .unwrap();
     *fx.rec.notice_status.borrow_mut() = Some(NoticeStatus::Rejected("no route".into()));
     fx.with(attach_out::pump);
     assert_eq!(attach_out::pending(fx.root()), 1);
@@ -538,4 +577,84 @@ fn server_local_public_calls_cannot_drive_attach_children() {
         .unwrap_err();
     assert!(err.message.contains("did not name"), "{}", err.message);
     assert!(host.params_of("terminal.tell").is_empty());
+}
+
+/// 결과의 수신처는 그 턴을 지시한 spawn·tell 의 토큰으로 정한다. A 의 턴이 서버에서 확정된 뒤 일반 tell 로 경로가
+/// 풀리거나 B 가 다시 묶어도, 늦게 온 A 턴의 결과는 A 에게, B 턴의 결과는 B 에게 간다.
+#[test]
+fn a_late_result_goes_to_the_parent_that_started_its_turn() {
+    const OTHER: &str = "019f55e7-3dfa-7a00-8000-0000000000bb";
+    let fx = Fixture::new();
+    owned_parent(&fx);
+    let generation = fx.open(6, &[]);
+    let parent_now = std::rc::Rc::new(RefCell::new(format!("codex:{PARENT}")));
+    let current = parent_now.clone();
+    let host = Host::new(&fx, move |m, p| match m {
+        "terminal.parent" => {
+            Ok(json!({ "parent_external": *current.borrow(), "status": "active" }))
+        }
+        _ => client(m, p),
+    });
+    fx.with(|d| {
+        super::super::handle_hook(
+            &host,
+            &json!({"surface": 6, "event": "session-start", "session": OTHER, "gen": generation}),
+            &fx.tr,
+            d,
+        )
+    })
+    .unwrap();
+    spawn(&fx, &host, codex(json!({ "workspace": 3 }))).unwrap();
+    let route_a = route_of(&host);
+    let receiver_a = receiver_of_l(&fx);
+
+    // 일반 셸의 tell 이 경로를 푼다.
+    fx.with(|d| {
+        super::super::handle_tell(
+            &host,
+            &json!({ "surface": L, "message": "plain" }),
+            &fx.tr,
+            d,
+        )
+    })
+    .unwrap();
+    assert_eq!(ledger::child_receiver(fx.root(), L).unwrap(), None);
+    // B 가 그 자식을 맡아 다시 묶는다.
+    *parent_now.borrow_mut() = format!("codex:{OTHER}");
+    let mut b = json!({ "surface": L, "message": "b" });
+    b["_tasty_context"] = json!({ "provider": "codex", "thread_id": OTHER });
+    fx.with(|d| super::super::handle_tell(&host, &b, &fx.tr, d))
+        .unwrap();
+    let route_b = route_of(&host);
+    let receiver_b = receiver_of_l(&fx);
+    assert_ne!(route_a, route_b);
+    assert_ne!(receiver_a, receiver_b);
+
+    assert_eq!(
+        receive(&fx, &host, notice("a1", &route_a))["status"],
+        json!("recorded")
+    );
+    assert_eq!(
+        receive(&fx, &host, notice("b1", &route_b))["status"],
+        json!("recorded")
+    );
+    let thread_of = |rid: &str| {
+        ledger::read_receiver(fx.root(), rid)
+            .unwrap()
+            .unwrap()
+            .thread
+    };
+    let keys_of = |rid: &str| -> Vec<String> {
+        ledger::pending_ids(fx.root(), &thread_of(rid))
+            .iter()
+            .map(|id| {
+                ledger::read_event(fx.root(), id)
+                    .unwrap()
+                    .unwrap()
+                    .completion_key
+            })
+            .collect()
+    };
+    assert_eq!(keys_of(&receiver_a), vec!["r.a1".to_string()]);
+    assert_eq!(keys_of(&receiver_b), vec!["r.b1".to_string()]);
 }

@@ -16,7 +16,7 @@ use std::sync::{LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
 use tasty_plugin_agent_common::remote_attach::{
-    self, AttachOrigin, CallError, Parent, RETURN_TURNS_KEY, Received, Request, Target, TargetError,
+    self, AttachOrigin, CallError, Parent, RETURN_ROUTE_KEY, Received, Request, Target, TargetError,
 };
 
 use super::*;
@@ -193,7 +193,11 @@ pub(crate) fn spawn<H: HostCall>(
     parent: &Map<String, Value>,
 ) -> Result<Value, IpcMethodError> {
     let mut remote = forward(params, SPAWN_KEYS);
-    remote.insert(RETURN_TURNS_KEY.into(), json!(receiver_id.is_some()));
+    if let Some(id) = receiver_id {
+        let token = ledger::issue_attach_route(delivery.root, id)
+            .map_err(|e| IpcMethodError::new(format!("codex child return record: {e}")))?;
+        remote.insert(RETURN_ROUTE_KEY.into(), json!(token));
+    }
     let parent_surface = match receiver_id {
         Some(_) => None,
         None => parent
@@ -304,13 +308,13 @@ pub(crate) fn tell<H: HostCall>(
     anchor: u32,
     child: u32,
     message: &str,
-    codex: bool,
+    route: Option<String>,
     tr: &Translator,
 ) -> Result<Value, IpcMethodError> {
-    let params = Map::from_iter([
-        ("message".to_string(), json!(message)),
-        (RETURN_TURNS_KEY.to_string(), json!(codex)),
-    ]);
+    let mut params = Map::from_iter([("message".to_string(), json!(message))]);
+    if let Some(token) = route {
+        params.insert(RETURN_ROUTE_KEY.to_string(), json!(token));
+    }
     let reply = remote_attach::call(host, child_request("tell", anchor, child, params))
         .map_err(|e| call_error(e, tr))?;
     let mut out = match reply.result {
@@ -377,10 +381,20 @@ pub(crate) fn receive<H: HostCall>(
     let Some((surface, payload)) = remote_attach::received(params) else {
         return Ok(Received::Rejected("missing surface_id or payload".into()).json());
     };
-    let record = ledger::child_receiver(delivery.root, surface)
-        .map_err(|e| IpcMethodError::new(format!("codex child return record: {e}")))?;
-    let Some(receiver_id) = record.map(|r| r.receiver_id).filter(|r| !r.is_empty()) else {
-        return Ok(Received::Rejected(format!("no Codex return route for s{surface}")).json());
+    // 수신처는 지금의 경로가 아니라 그 턴을 지시한 spawn·tell 때 발급한 토큰으로 찾는다. 그 사이 경로가 풀리거나
+    // 다른 부모로 묶여도 그 턴의 결과는 지시한 부모에게 간다.
+    let token = payload
+        .get(crate::delivery::attach_out::PAYLOAD_KEY)
+        .and_then(|c| c.get(remote_attach::ROUTE_FIELD))
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let Some(receiver_id) = ledger::attach_route_receiver(delivery.root, token)
+        .map_err(|e| IpcMethodError::new(format!("codex attach route: {e}")))?
+    else {
+        return Ok(Received::Rejected(format!(
+            "no Codex return route for the result of s{surface}"
+        ))
+        .json());
     };
     let Some(receiver) = ledger::read_receiver(delivery.root, &receiver_id)
         .map_err(|e| IpcMethodError::new(format!("codex receiver: {e}")))?
@@ -498,11 +512,12 @@ pub(crate) fn serve_spawn<H: HostCall>(
                 &resp.to_string(),
             ))
         })?;
-    if origin.return_turns {
+    if let Some(route) = &origin.return_route {
         ledger::set_attach_child(
             delivery.root,
             child,
             &origin.parent_key,
+            route,
             child_index_of(&resp),
         )
         .map_err(|e| IpcMethodError::new(format!("codex child return record: {e}")))?;
@@ -547,9 +562,9 @@ pub(crate) fn serve_tell<H: HostCall>(
         .ok_or_else(|| IpcMethodError::invalid_params(tr.t("codex.params.missing_message")))?;
     let previous = ledger::child_receiver(delivery.root, child)
         .map_err(|e| IpcMethodError::new(format!("codex child return record: {e}")))?;
-    if origin.return_turns {
+    if let Some(route) = &origin.return_route {
         let index = previous.as_ref().and_then(|p| p.child_index);
-        ledger::set_attach_child(delivery.root, child, &origin.parent_key, index)
+        ledger::set_attach_child(delivery.root, child, &origin.parent_key, route, index)
             .map_err(|e| IpcMethodError::new(format!("codex child return record: {e}")))?;
     } else {
         ownership::invalidate_route(delivery, child)?;
@@ -561,7 +576,7 @@ pub(crate) fn serve_tell<H: HostCall>(
     ) {
         Ok(resp) => Ok(resp),
         Err(e) => {
-            if origin.return_turns {
+            if origin.return_route.is_some() {
                 ownership::restore_route(delivery, child, previous);
             }
             Err(e)

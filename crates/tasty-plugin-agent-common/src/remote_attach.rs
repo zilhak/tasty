@@ -26,8 +26,38 @@ const METHOD_NOT_FOUND: i32 = -32601;
 pub const CONTEXT_KEY: &str = "attach_context";
 /// tell·kill 대상으로 host 가 확인한 서버 쪽 자식 surface.
 pub const TARGET_KEY: &str = "attach_target_surface";
-/// client plugin 이 서버 plugin 에 턴 결과를 돌려보내 달라고 알리는 plugin 인자. 부모가 Codex 대화일 때만 켠다.
-pub const RETURN_TURNS_KEY: &str = "return_turns";
+/// client plugin 이 서버 plugin 에 턴 결과를 돌려보내 달라고 알리는 plugin 인자. 부모가 Codex 대화일 때만 넣는다.
+/// 값은 client 가 그 spawn·tell 에 발급한 불투명 route 토큰이다. 서버는 그 지시로 시작한 턴의 결과에 토큰을 그대로
+/// 실어 돌려보내고, client 는 토큰으로 그때의 수신처를 찾는다. 수신처 자체는 서버로 보내지 않는다.
+pub const RETURN_ROUTE_KEY: &str = "return_route";
+/// 돌려보내는 결과 본문에서 route 토큰을 싣는 키.
+pub const ROUTE_FIELD: &str = "route";
+
+static TOKEN_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// 새 route 토큰(32 hex). 추측을 막는 비밀이 아니라 다른 spawn·tell 과 겹치지 않는 이름이다.
+pub fn new_route_token() -> String {
+    use std::hash::{BuildHasher, Hasher};
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let seq = TOKEN_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let half = |salt: u64| {
+        let mut h = std::collections::hash_map::RandomState::new().build_hasher();
+        h.write_u128(nanos);
+        h.write_u64(seq);
+        h.write_u32(std::process::id());
+        h.write_u64(salt);
+        h.finish()
+    };
+    format!("{:016x}{:016x}", half(1), half(2))
+}
+
+/// route 토큰 형식인가. 서버에서 받은 값을 파일 이름·키로 쓰기 전에 확인한다.
+pub fn is_route_token(s: &str) -> bool {
+    s.len() == 32 && s.bytes().all(|b| b.is_ascii_hexdigit())
+}
 
 /// 대상의 위치.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -226,8 +256,8 @@ pub struct AttachOrigin {
     pub parent_key: String,
     /// host 가 이 출처의 자식으로 확인한 tell·kill 대상.
     pub target_surface: Option<u32>,
-    /// 부모가 Codex 대화라 턴 결과를 돌려보내야 한다.
-    pub return_turns: bool,
+    /// 부모가 Codex 대화라 턴 결과를 돌려보내야 할 때 client 가 준 route 토큰. 결과에 그대로 싣는다.
+    pub return_route: Option<String>,
 }
 
 impl AttachOrigin {
@@ -245,7 +275,11 @@ impl AttachOrigin {
         Some(Self {
             parent_key: key.to_string(),
             target_surface: u32_of(params, TARGET_KEY),
-            return_turns: params.get(RETURN_TURNS_KEY).and_then(Value::as_bool) == Some(true),
+            return_route: params
+                .get(RETURN_ROUTE_KEY)
+                .and_then(Value::as_str)
+                .filter(|t| is_route_token(t))
+                .map(str::to_string),
         })
     }
 
@@ -557,16 +591,22 @@ mod tests {
             "parent_external": "attach:o3",
             "attach_context": "tok",
             "attach_target_surface": 9,
-            "return_turns": true,
+            "return_route": "0123456789abcdef0123456789abcdef",
         });
         assert_eq!(
             AttachOrigin::of(&p),
             Some(AttachOrigin {
                 parent_key: "attach:o3".into(),
                 target_surface: Some(9),
-                return_turns: true,
+                return_route: Some("0123456789abcdef0123456789abcdef".into()),
             })
         );
+        let mut bad = p.clone();
+        bad["return_route"] = json!("../x");
+        assert_eq!(AttachOrigin::of(&bad).unwrap().return_route, None);
+        let a = new_route_token();
+        assert!(is_route_token(&a));
+        assert_ne!(a, new_route_token());
         assert_eq!(
             AttachOrigin::of(&json!({ "parent_external": "attach:o3" })),
             None

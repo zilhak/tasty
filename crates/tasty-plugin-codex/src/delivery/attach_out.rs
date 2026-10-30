@@ -49,17 +49,25 @@ pub(crate) fn completion_json(c: &Completion) -> Value {
 }
 
 /// 확정한 결과를 보낼 기록으로 남긴다. 같은 이름이 이미 있으면(같은 턴) 그대로 둔다.
-pub(crate) fn queue(root: &Path, name: &str, completion: &Completion) -> std::io::Result<()> {
+/// `route` 는 client 가 그 턴을 지시할 때 준 토큰이며 결과에 그대로 싣는다.
+pub(crate) fn queue(
+    root: &Path,
+    name: &str,
+    completion: &Completion,
+    route: &str,
+) -> std::io::Result<()> {
     let path = file(root, name);
     if store::read_json::<Outgoing>(&path)?.is_some() {
         return Ok(());
     }
+    let mut body = completion_json(completion);
+    body[tasty_plugin_agent_common::remote_attach::ROUTE_FIELD] = json!(route);
     store::write_json(
         &path,
         &Outgoing {
             key: completion.completion_key.clone(),
             surface: completion.child_surface,
-            completion: completion_json(completion),
+            completion: body,
             attempts: 0,
             next_at_ms: 0,
         },

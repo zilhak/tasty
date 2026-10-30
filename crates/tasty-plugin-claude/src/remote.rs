@@ -18,7 +18,7 @@ use serde_json::{Map, Value, json};
 use tasty_plugin_agent_common::host_call::HostCall;
 use tasty_plugin_agent_common::params::forward;
 use tasty_plugin_agent_common::remote_attach::{
-    self, AttachOrigin, CallError, Parent, RETURN_TURNS_KEY, Request, Target, TargetError,
+    self, AttachOrigin, CallError, Parent, RETURN_ROUTE_KEY, Request, Target, TargetError,
 };
 use tasty_plugin_sdk::{IpcMethodError, i18n::Translator};
 
@@ -151,9 +151,13 @@ pub(crate) fn spawn<H: HostCall>(
     anchor: u32,
     tr: &Translator,
 ) -> Result<Value, IpcMethodError> {
-    let codex = matches!(target, ParentTarget::Codex(_));
     let mut remote = forward(params, SPAWN_KEYS);
-    remote.insert(RETURN_TURNS_KEY.into(), json!(codex));
+    if let ParentTarget::Codex(resolved) = target {
+        let token = returns
+            .issue_attach_route(&resolved.receiver_id)
+            .map_err(|e| IpcMethodError::new(tr.t_fmt("claude.codex.route_not_saved", &e)))?;
+        remote.insert(RETURN_ROUTE_KEY.into(), json!(token));
+    }
     let with_prompt = params.get("prompt").and_then(Value::as_str).is_some();
     let reply = match remote_attach::call(
         host,
@@ -350,13 +354,13 @@ pub(crate) fn tell<H: HostCall>(
     anchor: u32,
     child: u32,
     message: &str,
-    codex: bool,
+    route: Option<String>,
     tr: &Translator,
 ) -> Result<Value, IpcMethodError> {
-    let params = Map::from_iter([
-        ("message".to_string(), json!(message)),
-        (RETURN_TURNS_KEY.to_string(), json!(codex)),
-    ]);
+    let mut params = Map::from_iter([("message".to_string(), json!(message))]);
+    if let Some(token) = route {
+        params.insert(RETURN_ROUTE_KEY.to_string(), json!(token));
+    }
     let reply = remote_attach::call(host, child_request("tell", anchor, child, params))
         .map_err(|e| call_error(e, tr))?;
     let mut out = match reply.result {
@@ -451,7 +455,7 @@ pub(crate) fn serve_spawn<H: HostCall>(
     }
     let permission_mode =
         crate::handlers::resolve_permission_mode(host, params, profile_file.as_deref(), tr)?;
-    if origin.return_turns && !returns.is_available() {
+    if origin.return_route.is_some() && !returns.is_available() {
         return Err(IpcMethodError::new(tr.t("claude.codex.no_data_dir")));
     }
     let mut sp = forward(params, &["cwd", "role", "nickname"]);
@@ -468,11 +472,11 @@ pub(crate) fn serve_spawn<H: HostCall>(
                 tr.t_fmt("claude.spawn.missing_child_surface_id", &resp.to_string()),
             )
         })?;
-    if origin.return_turns {
+    if let Some(route) = &origin.return_route {
         returns
             .bind_new_child(
                 child,
-                &Binding::attach(&origin.parent_key),
+                &Binding::attach(&origin.parent_key, route),
                 prompt.is_some(),
             )
             .map_err(|e| {
@@ -525,12 +529,12 @@ pub(crate) fn serve_tell<H: HostCall>(
         .get("message")
         .and_then(Value::as_str)
         .ok_or_else(|| IpcMethodError::invalid_params(tr.t("claude.params.missing_message")))?;
-    if origin.return_turns {
+    if let Some(route) = &origin.return_route {
         if !returns.is_available() {
             return Err(IpcMethodError::new(tr.t("claude.codex.no_data_dir")));
         }
         returns
-            .bind_tell(child, &Binding::attach(&origin.parent_key))
+            .bind_tell(child, &Binding::attach(&origin.parent_key, route))
             .map_err(|e| IpcMethodError::new(tr.t_fmt("claude.codex.route_not_saved", &e)))?;
     } else {
         crate::handlers::release_codex_route(returns, child, tr)?;

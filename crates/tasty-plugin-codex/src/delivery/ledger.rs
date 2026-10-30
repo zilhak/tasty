@@ -409,6 +409,7 @@ pub(crate) fn prune(root: &Path, now: std::time::SystemTime) {
     prune_events(root, &keep, now);
     prune_claims(root, now);
     prune_ended_children(root);
+    prune_attach_routes(root, now);
 }
 
 /// 보존 기간이 지난 파일인가.
@@ -468,12 +469,57 @@ pub(crate) struct ChildReturn {
     #[serde(default)]
     pub child_index: Option<u32>,
     /// attach 원격 출처 부모(`attach:o<n>`). 있으면 결과는 원장이 아니라 그 부모에게 돌려보내고
-    /// `receiver_id` 는 비어 있다.
+    /// `receiver_id` 자리에는 client 가 그 지시에 준 route 토큰을 둔다.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub attach_parent: Option<String>,
     /// 원격 자식을 닫은 시각(ms). 서버에 남은 결과가 늦게 와도 기록하도록 [`ENDED_KEPT`] 동안 경로를 둔다.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ended_at_ms: Option<u64>,
+}
+
+fn attach_route_file(root: &Path, token: &str) -> PathBuf {
+    root.join("attach-routes").join(format!("{token}.json"))
+}
+
+/// client: 원격 자식에게 보낸 지시 하나의 route 토큰과 그때의 수신처.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+struct AttachRoute {
+    receiver_id: String,
+}
+
+/// client: 원격 자식에게 보내는 spawn·tell 하나의 route 토큰을 발급한다. 서버는 그 지시로 시작한 턴의 결과에 토큰을
+/// 실어 돌려주고, 이 기록으로 그때의 수신처를 찾는다. 경로를 풀거나 다시 묶어도 지우지 않으며 [`RETENTION`] 이
+/// 지나면 [`prune`] 이 지운다. 서버에는 토큰만 보낸다.
+pub(crate) fn issue_attach_route(root: &Path, receiver_id: &str) -> std::io::Result<String> {
+    let token = tasty_plugin_agent_common::remote_attach::new_route_token();
+    store::write_json(
+        &attach_route_file(root, &token),
+        &AttachRoute {
+            receiver_id: receiver_id.into(),
+        },
+    )?;
+    Ok(token)
+}
+
+/// route 토큰의 수신처. 형식이 틀리거나 기록이 없으면 None 이다.
+pub(crate) fn attach_route_receiver(root: &Path, token: &str) -> std::io::Result<Option<String>> {
+    if !tasty_plugin_agent_common::remote_attach::is_route_token(token) {
+        return Ok(None);
+    }
+    Ok(store::read_json::<AttachRoute>(&attach_route_file(root, token))?.map(|r| r.receiver_id))
+}
+
+fn prune_attach_routes(root: &Path, now: std::time::SystemTime) {
+    let Ok(entries) = std::fs::read_dir(root.join("attach-routes")) else {
+        return;
+    };
+    for e in entries.filter_map(Result::ok) {
+        if is_old(&e.path(), now)
+            && let Err(err) = store::remove_file(&e.path())
+        {
+            tracing::warn!("codex ledger: prune attach route: {err}");
+        }
+    }
 }
 
 /// 닫은 원격 자식의 반환 경로를 남겨 두는 기간.
@@ -530,18 +576,19 @@ pub(crate) fn write_child_return(
     store::write_json(&child_file(root, surface), record)
 }
 
-/// attach 원격 출처 부모의 자식으로 기록한다. 결과는 그 부모에게 돌아간다.
+/// attach 원격 출처 부모의 자식으로 기록한다. 결과는 `route` 토큰을 실어 그 부모에게 돌아간다.
 pub(crate) fn set_attach_child(
     root: &Path,
     surface: u32,
     parent_key: &str,
+    route: &str,
     child_index: Option<u32>,
 ) -> std::io::Result<()> {
     write_child_return(
         root,
         surface,
         &ChildReturn {
-            receiver_id: String::new(),
+            receiver_id: route.into(),
             child_index,
             attach_parent: Some(parent_key.into()),
             ended_at_ms: None,

@@ -324,6 +324,8 @@ pub(crate) fn handle_tell<H: HostCall>(
         .ok_or_else(|| IpcMethodError::invalid_params(tr.t("codex.params.missing_message")))?;
     // 반환 경로는 지시를 보내기 전에 정한다. 자식의 첫 훅이 그 기록을 읽는다.
     let mut warning = None;
+    // 원격 자식이면 이 지시의 route 토큰. 서버는 이 지시로 시작한 턴의 결과에 토큰을 실어 돌려준다.
+    let mut route = None;
     let previous = match &caller {
         Some(c) => {
             let (receiver, _) = crate::delivery::prepare_receiver(delivery, c)?;
@@ -334,6 +336,15 @@ pub(crate) fn handle_tell<H: HostCall>(
                     "{surface}",
                     &surface_id.to_string(),
                 )));
+            }
+            if remote_anchor.is_some() {
+                route = Some(
+                    crate::delivery::ledger::issue_attach_route(
+                        delivery.root,
+                        &receiver.receiver_id,
+                    )
+                    .map_err(|e| IpcMethodError::new(format!("codex attach route: {e}")))?,
+                );
             }
             if remote_anchor.is_some() || ownership::is_codex_child(delivery, surface_id) {
                 Some(ownership::bind_route(
@@ -359,7 +370,7 @@ pub(crate) fn handle_tell<H: HostCall>(
     };
     // 개행과 제출 처리는 호스트의 terminal.tell에 맡긴다. 원격 자식은 서버의 같은 메서드로 보낸다.
     let sent = match remote_anchor {
-        Some(anchor) => remote::tell(host, anchor, surface_id, message, previous.is_some(), tr),
+        Some(anchor) => remote::tell(host, anchor, surface_id, message, route, tr),
         None => host_call(
             host,
             "terminal.tell",

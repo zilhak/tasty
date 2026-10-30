@@ -386,7 +386,7 @@ fn retry(ctx: &Ctx<'_>, name: &str, candidate: &Candidate, detail: &str) {
 fn capture(ctx: &Ctx<'_>, name: &str, candidate: &Candidate, status: &str, body: Option<String>) {
     if candidate.attach_parent.is_some() {
         let completion = completion_of(candidate, status, body);
-        match super::attach_out::queue(ctx.root, name, &completion) {
+        match super::attach_out::queue(ctx.root, name, &completion, &candidate.receiver_id) {
             Ok(()) => {
                 remove(ctx.root, name);
                 ctx.pump.turn_forget(name);

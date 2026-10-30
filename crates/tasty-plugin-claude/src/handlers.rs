@@ -391,7 +391,8 @@ pub(crate) fn handle_tell<H: HostCall>(
         .ok_or_else(|| IpcMethodError::invalid_params(tr.t("claude.params.missing_message")))?;
     let remote = crate::remote::child_anchor(host, surface_id, tr)?;
     let codex = crate::codex_return::codex_caller(params, tr)?;
-    let from_codex = codex.is_some();
+    // 원격 자식이면 이 지시의 route 토큰. 서버는 이 지시로 시작한 턴의 결과에 토큰을 실어 돌려준다.
+    let mut route = None;
     if let Some(caller) = codex {
         let resolved = crate::codex_return::resolve_parent(host, &caller, tr)?;
         require_returns(returns, tr)?;
@@ -414,12 +415,21 @@ pub(crate) fn handle_tell<H: HostCall>(
         returns
             .bind_tell(surface_id, &Binding::new(&resolved))
             .map_err(|e| IpcMethodError::new(tr.t_fmt("claude.codex.route_not_saved", &e)))?;
+        if remote.is_some() {
+            route = Some(
+                returns
+                    .issue_attach_route(&resolved.receiver_id)
+                    .map_err(|e| {
+                        IpcMethodError::new(tr.t_fmt("claude.codex.route_not_saved", &e))
+                    })?,
+            );
+        }
     } else {
         // 일반 호출이 새 지시를 보내면 이 자식의 다음 결과는 그 호출자의 것이다. 보내기 전에 Codex 경로를 끊는다.
         release_codex_route(returns, surface_id, tr)?;
     }
     let resp = match remote {
-        Some(anchor) => crate::remote::tell(host, anchor, surface_id, message, from_codex, tr)?,
+        Some(anchor) => crate::remote::tell(host, anchor, surface_id, message, route, tr)?,
         None => host_call(
             host,
             "terminal.tell",

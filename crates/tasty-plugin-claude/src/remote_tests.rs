@@ -8,6 +8,8 @@ use tasty_plugin_sdk::PluginError;
 
 const THREAD: &str = "0193a6f2-7c1e-7b3d-9a40-1f2e3d4c5b6a";
 const RECEIVER: &str = "0123456789abcdef0123456789abcdef";
+const ROUTE_A: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+const ROUTE_B: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 
 type Answer = Box<dyn Fn(&str, &Value) -> Result<Value, PluginError>>;
 
@@ -176,7 +178,7 @@ fn a_mirror_spawn_runs_on_the_server_and_binds_hooks_before_commit() {
         );
     }
     assert_eq!(sent["prompt"], json!("do it"));
-    assert_eq!(sent[RETURN_TURNS_KEY], json!(false));
+    assert!(sent.get(RETURN_ROUTE_KEY).is_none());
     let last_hook = methods
         .iter()
         .rposition(|m| m == "hook.set")
@@ -209,7 +211,11 @@ fn a_codex_parent_binds_its_route_on_the_mirror_child_and_asks_for_turns() {
         call["parent"],
         json!({ "external": format!("codex:{THREAD}") })
     );
-    assert_eq!(call["params"][RETURN_TURNS_KEY], json!(true));
+    let route = call["params"][RETURN_ROUTE_KEY]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert!(remote_attach::is_route_token(&route));
     assert!(host.params_of("hook.set").is_empty());
     assert_eq!(host.params_of("attach.agent_commit").len(), 1);
     // 서버에서 온 결과는 이 경로의 수신처로 기록된다.
@@ -221,6 +227,7 @@ fn a_codex_parent_binds_its_route_on_the_mirror_child_and_asks_for_turns() {
                 "payload": { "completion": {
                     "completion_key": "claude:abc:t1", "provider": "claude", "child_surface": 99,
                     "child_session": "sess", "status": "turn_ended", "body": "done",
+                    "route": route,
                 } },
             }),
         )
@@ -231,6 +238,7 @@ fn a_codex_parent_binds_its_route_on_the_mirror_child_and_asks_for_turns() {
     assert_eq!(delivered["completion_key"], json!("r.claude:abc:t1"));
     assert_eq!(delivered["child_surface"], json!(15));
     assert!(delivered.get("attach").is_none());
+    assert!(delivered.get("route").is_none());
 }
 
 #[test]
@@ -335,13 +343,20 @@ fn an_explicit_profile_file_is_checked_on_the_server() {
 }
 
 /// 경로를 묶지 못하면 commit 하지 않는다(첫 완료를 풀지 않는다). 받을 곳 없는 원격 자식은 닫는다.
+/// 저장소는 토큰을 발급할 때는 쓸 수 있고, 서버가 자식을 만든 뒤에는 쓸 수 없게 된다.
+#[cfg(unix)]
 #[test]
 fn a_child_whose_route_cannot_be_bound_is_not_committed_and_is_closed() {
-    let dir = tempfile::tempdir().unwrap();
-    let blocked = dir.path().join("data");
-    std::fs::write(&blocked, "not a directory").unwrap();
-    let returns = Returns::new(Some(&blocked));
-    let host = client_host(true, spawned);
+    use std::os::unix::fs::PermissionsExt;
+    let (dir, returns) = store();
+    let book = dir.path().join("codex-return");
+    let locked = book.clone();
+    let host = Host::new(move |method, params| {
+        if method == "attach.agent_call" && params["method"] == json!("spawn") {
+            std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o555)).unwrap();
+        }
+        client_host(true, spawned).call(method, params.clone())
+    });
     let mut params =
         spawn_params(json!({ "_tasty_context": { "provider": "codex", "thread_id": THREAD } }));
     params.as_object_mut().unwrap().remove("surface");
@@ -356,6 +371,7 @@ fn a_child_whose_route_cannot_be_bound_is_not_committed_and_is_closed() {
     assert_eq!(calls.len(), 2, "{calls:?}");
     assert_eq!(calls[1]["method"], json!("kill"));
     assert_eq!(calls[1]["target_surface_id"], json!(15));
+    std::fs::set_permissions(&book, std::fs::Permissions::from_mode(0o755)).unwrap();
 }
 
 /// mirror 가 아닌 workspace 는 기존 로컬 spawn 그대로다.
@@ -400,15 +416,18 @@ fn a_tell_to_a_mirror_child_goes_to_the_server_after_the_route() {
     assert_eq!(call["method"], json!("tell"));
     assert_eq!(call["target_surface_id"], json!(15));
     assert_eq!(call["params"]["message"], json!("next"));
-    assert_eq!(call["params"][RETURN_TURNS_KEY], json!(true));
-    // 경로가 저장돼 있어 이후 결과가 이 대화로 간다.
+    let route = call["params"][RETURN_ROUTE_KEY]
+        .as_str()
+        .unwrap()
+        .to_string();
+    // 토큰이 저장돼 있어 이 지시의 결과가 이 대화로 간다.
     let r = returns
         .remote_receive(
             &host,
             &json!({
                 "surface_id": 15, "key": "k",
                 "payload": { "completion": { "completion_key": "claude:x:t2", "provider": "claude",
-                    "child_surface": 99, "status": "turn_ended" } },
+                    "child_surface": 99, "status": "turn_ended", "route": route } },
             }),
         )
         .unwrap();
@@ -420,6 +439,7 @@ fn a_tell_to_a_mirror_child_goes_to_the_server_after_the_route() {
 fn a_killed_mirror_child_still_records_late_results() {
     let (_d, returns) = store();
     returns.bind_new_child(15, &local_binding(), false).unwrap();
+    let route = returns.issue_attach_route(RECEIVER).unwrap();
     let host = client_host(true, || {
         Ok(json!({ "call_id": 9, "result": { "killed": true }, "children": [] }))
     });
@@ -444,7 +464,7 @@ fn a_killed_mirror_child_still_records_late_results() {
             &json!({
                 "surface_id": 15, "key": "k",
                 "payload": { "completion": { "completion_key": "claude:x:t3", "provider": "claude",
-                    "child_surface": 99, "status": "exited" } },
+                    "child_surface": 99, "status": "exited", "route": route } },
             }),
         )
         .unwrap();
@@ -467,7 +487,9 @@ fn a_result_without_a_route_is_rejected_and_a_failed_record_is_retried() {
         )
         .unwrap();
     assert_eq!(r["status"], json!("rejected"));
-    returns.bind_new_child(15, &local_binding(), false).unwrap();
+    let route = returns.issue_attach_route(RECEIVER).unwrap();
+    let mut payload = payload;
+    payload["completion"]["route"] = json!(route);
     assert!(
         returns
             .remote_receive(
@@ -526,7 +548,7 @@ fn server_host(notice: &'static str) -> Host {
 fn the_server_runs_the_child_here_and_returns_turns_through_the_attach_parent() {
     let (_d, returns) = store();
     let host = server_host("pending");
-    let params = origin_params(json!({ "prompt": "p", "cwd": "/srv", RETURN_TURNS_KEY: true }));
+    let params = origin_params(json!({ "prompt": "p", "cwd": "/srv", RETURN_ROUTE_KEY: ROUTE_A }));
     let out =
         crate::handlers::handle_spawn(&scanner(), &returns, &host, &params, None, &tr()).unwrap();
     assert_eq!(out["parent_external"], json!("attach:o3"));
@@ -563,6 +585,7 @@ fn the_server_runs_the_child_here_and_returns_turns_through_the_attach_parent() 
     assert!(key.starts_with("claude:"), "{key}");
     assert_eq!(notice["payload"]["completion"]["body"], json!("done"));
     assert!(notice["payload"]["completion"].get("receiver_id").is_none());
+    assert_eq!(notice["payload"]["completion"]["route"], json!(ROUTE_A));
     assert!(host.params_of("codex.deliver").is_empty());
     assert_eq!(
         returns.pending().unwrap().len(),
@@ -803,4 +826,104 @@ fn server_local_public_calls_cannot_drive_attach_children() {
     let err = crate::handlers::handle_tell(&returns, &host, &forged, &tr()).unwrap_err();
     assert!(err.message.contains("did not name"), "{}", err.message);
     assert!(host.params_of("terminal.tell").is_empty());
+}
+
+/// client: 결과의 수신처는 그 턴을 지시한 spawn·tell 의 토큰으로 정한다. A 의 결과가 늦게 오는 사이 일반 tell 이
+/// 경로를 풀고 B 가 다시 묶어도, A 턴의 결과는 A 에게, B 턴의 결과는 B 에게 간다.
+#[test]
+fn a_late_result_goes_to_the_parent_that_started_its_turn() {
+    const OTHER: &str = "0193a6f2-7c1e-7b3d-9a40-1f2e3d4c5b6b";
+    const RECEIVER_B: &str = "fedcba9876543210fedcba9876543210";
+    let (_d, returns) = store();
+    let host = Host::new(|method, params| match method {
+        "codex.parent" if params["_tasty_context"]["thread_id"] == json!(OTHER) => Ok(json!({
+            "receiver_id": RECEIVER_B,
+            "terminal_parent": { "parent_external": format!("codex:{OTHER}") },
+        })),
+        "attach.agent_call" => Ok(json!({ "call_id": 7, "result": {},
+            "children": [{ "surface_id": 15, "remote_surface_id": 99, "index": 2 }] })),
+        _ => client_host(true, spawned).call(method, params.clone()),
+    });
+    let mut params =
+        spawn_params(json!({ "_tasty_context": { "provider": "codex", "thread_id": THREAD } }));
+    params.as_object_mut().unwrap().remove("surface");
+    crate::handlers::handle_spawn(&scanner(), &returns, &host, &params, None, &tr()).unwrap();
+    let route_a = host.params_of("attach.agent_call")[0]["params"][RETURN_ROUTE_KEY]
+        .as_str()
+        .unwrap()
+        .to_string();
+    // 일반 셸의 tell 이 경로를 풀고, B 가 다시 묶는다.
+    crate::handlers::handle_tell(
+        &returns,
+        &host,
+        &json!({ "surface": 15, "message": "x" }),
+        &tr(),
+    )
+    .unwrap();
+    let b = json!({ "surface": 15, "message": "y",
+        "_tasty_context": { "provider": "codex", "thread_id": OTHER } });
+    crate::handlers::handle_tell(&returns, &host, &b, &tr()).unwrap();
+    let route_b = host.params_of("attach.agent_call").last().unwrap()["params"][RETURN_ROUTE_KEY]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert_ne!(route_a, route_b);
+
+    let result = |key: &str, route: &str| {
+        json!({ "surface_id": 15, "key": key, "payload": { "completion": {
+            "completion_key": key, "provider": "claude", "child_surface": 99,
+            "status": "turn_ended", "route": route } } })
+    };
+    for (key, route) in [("claude:r:t1", &route_a), ("claude:r:t2", &route_b)] {
+        assert_eq!(
+            returns.remote_receive(&host, &result(key, route)).unwrap()["status"],
+            json!("recorded")
+        );
+    }
+    let delivered = host.params_of("codex.deliver");
+    let to: Vec<(&str, &str)> = delivered
+        .iter()
+        .map(|d| {
+            (
+                d["completion_key"].as_str().unwrap(),
+                d["receiver_id"].as_str().unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        to,
+        vec![("r.claude:r:t1", RECEIVER), ("r.claude:r:t2", RECEIVER_B)]
+    );
+}
+
+/// 서버: Stop 때 그 턴의 토큰을 고정한다. claim 뒤 다른 지시가 경로를 새 토큰으로 묶어도 앞 턴의 결과는 앞 토큰을 싣는다.
+#[test]
+fn the_server_keeps_the_route_token_of_the_turn() {
+    let (_d, returns) = store();
+    let host = server_host("pending");
+    let params = origin_params(json!({ "prompt": "p", RETURN_ROUTE_KEY: ROUTE_A }));
+    crate::handlers::handle_spawn(&scanner(), &returns, &host, &params, None, &tr()).unwrap();
+    returns.observe("session-start", 40, Some("sA"), None);
+    returns.observe("prompt-submit", 40, Some("sA"), None);
+    returns.turn_end(TurnEnd {
+        surface: 40,
+        session: Some("sA"),
+        status: ReturnStatus::TurnEnded,
+        body: Some("a"),
+        attempt_id: None,
+        turn: None,
+    });
+    crate::handlers::handle_tell(
+        &returns,
+        &host,
+        &origin_params(
+            json!({ "message": "b", "attach_target_surface": 40, RETURN_ROUTE_KEY: ROUTE_B }),
+        ),
+        &tr(),
+    )
+    .unwrap();
+    returns.pump_once(&host, 0);
+    let notices = host.params_of("attach.child_notice");
+    assert_eq!(notices.len(), 1);
+    assert_eq!(notices[0]["payload"]["completion"]["route"], json!(ROUTE_A));
 }

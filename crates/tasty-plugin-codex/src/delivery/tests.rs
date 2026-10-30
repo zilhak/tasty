@@ -1915,7 +1915,14 @@ fn a_background_native_thread_cannot_replace_the_selected_conversation() {
 fn a_turn_of_an_attach_child_goes_to_the_attach_parent_not_the_ledger() {
     let mut fx = Fixture::new();
     fx.loaded = Ok(true);
-    ledger::set_attach_child(fx.root(), 31, "attach:o3", Some(1)).unwrap();
+    ledger::set_attach_child(
+        fx.root(),
+        31,
+        "attach:o3",
+        "0123456789abcdef0123456789abcdef",
+        Some(1),
+    )
+    .unwrap();
     let generation = start_thread(&fx, 31, CHILD);
     fx.ready(&generation, "unix:///owned/c.sock");
     hook(
@@ -1933,6 +1940,11 @@ fn a_turn_of_an_attach_child_goes_to_the_attach_parent_not_the_ledger() {
     assert_eq!(notices[0].0, 31);
     assert_eq!(notices[0].1, format!("codex:{CHILD}:T1"));
     assert_eq!(notices[0].2["completion"]["body"], json!("FINAL"));
+    assert_eq!(
+        notices[0].2["completion"]["route"],
+        json!("0123456789abcdef0123456789abcdef"),
+        "the result carries the route token of the instruction"
+    );
     assert!(
         crate::delivery::parse_completion(&notices[0].2["completion"]).is_ok(),
         "the client reads it with the same parser"
