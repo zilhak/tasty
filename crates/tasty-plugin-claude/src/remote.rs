@@ -431,6 +431,19 @@ pub(crate) fn child_by_index<H: HostCall>(
     })
 }
 
+fn path_error(problem: remote_attach::PathProblem, tr: &Translator) -> IpcMethodError {
+    let (key, flag, path) = match problem {
+        remote_attach::PathProblem::NotAbsolute { key, path } => {
+            ("claude.remote.path_not_absolute", key, path)
+        }
+        remote_attach::PathProblem::Missing { key, path } => {
+            ("claude.remote.path_missing", key, path)
+        }
+    };
+    let flag = format!("--{}", flag.replace('_', "-"));
+    IpcMethodError::invalid_params(&tr.t_args(key, &[&flag, &path]))
+}
+
 /// 서버: 원격 출처 부모의 새 자식을 이 Tasty 의 설정·CLI 로 실행한다.
 pub(crate) fn serve_spawn<H: HostCall>(
     scanner: &Arc<Mutex<ErrorScanner>>,
@@ -441,18 +454,13 @@ pub(crate) fn serve_spawn<H: HostCall>(
     data_dir: Option<&Path>,
     tr: &Translator,
 ) -> Result<Value, IpcMethodError> {
+    // 원격 부모가 준 경로는 이 서버 기준 절대 경로여야 한다. 서버 프로세스의 작업 위치로 풀지 않는다.
+    if let Some(problem) = remote_attach::server_path_problem(params) {
+        return Err(path_error(problem, tr));
+    }
     let options = crate::session_options::SessionOptions::parse(params, tr)?;
     let prompt = params.get("prompt").and_then(Value::as_str);
     let profile_file = crate::handlers::resolve_profile_file_param(data_dir, params, tr)?;
-    // client CLI 는 경로를 client 에서 정규화하므로 이 서버에 같은 파일이 있는지 여기서 확인한다.
-    if let Some(path) = params.get("profile_file").and_then(Value::as_str)
-        && !path.is_empty()
-        && !Path::new(path).is_file()
-    {
-        return Err(IpcMethodError::invalid_params(
-            &tr.t_fmt("claude.remote.profile_file_missing", path),
-        ));
-    }
     let permission_mode =
         crate::handlers::resolve_permission_mode(host, params, profile_file.as_deref(), tr)?;
     if origin.return_route.is_some() && !returns.is_available() {

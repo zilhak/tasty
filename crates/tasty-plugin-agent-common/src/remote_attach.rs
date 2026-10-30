@@ -365,6 +365,38 @@ pub fn received(params: &Value) -> Option<(u32, &Value)> {
     Some((u32_of(params, "surface_id")?, params.get("payload")?))
 }
 
+/// 원격 출처 spawn 의 경로 인자가 서버에서 쓸 수 없는 이유.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PathProblem {
+    /// 절대 경로가 아니다. 서버 프로세스의 작업 위치로 풀면 다른 파일을 가리킬 수 있다.
+    NotAbsolute { key: &'static str, path: String },
+    /// 이 서버에 그 디렉터리(`cwd`)나 파일(`profile_file`)이 없다.
+    Missing { key: &'static str, path: String },
+}
+
+/// 원격 출처 spawn 의 `cwd`·`profile_file` 은 서버 기준 절대 경로여야 하고 서버에 있어야 한다. 서버가 터미널을
+/// 만들기 전에 확인한다.
+pub fn server_path_problem(params: &Value) -> Option<PathProblem> {
+    for (key, want_dir) in [("cwd", true), ("profile_file", false)] {
+        let Some(path) = params
+            .get(key)
+            .and_then(Value::as_str)
+            .filter(|p| !p.is_empty())
+        else {
+            continue;
+        };
+        let p = std::path::Path::new(path);
+        let path = path.to_string();
+        if !p.is_absolute() {
+            return Some(PathProblem::NotAbsolute { key, path });
+        }
+        if (want_dir && !p.is_dir()) || (!want_dir && !p.is_file()) {
+            return Some(PathProblem::Missing { key, path });
+        }
+    }
+    None
+}
+
 /// attach 원격 부모의 공개 키 접두어.
 pub const PARENT_PREFIX: &str = "attach:";
 
@@ -695,5 +727,41 @@ mod tests {
             .unwrap(),
             None
         );
+    }
+
+    #[test]
+    fn server_paths_must_be_absolute_and_present() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("p.json");
+        std::fs::write(&file, "{}").unwrap();
+        let d = dir.path().to_string_lossy().to_string();
+        let f = file.to_string_lossy().to_string();
+        assert_eq!(
+            server_path_problem(&json!({ "cwd": d, "profile_file": f })),
+            None
+        );
+        assert_eq!(server_path_problem(&json!({})), None);
+        assert!(matches!(
+            server_path_problem(&json!({ "cwd": "work" })),
+            Some(PathProblem::NotAbsolute { key: "cwd", .. })
+        ));
+        assert!(matches!(
+            server_path_problem(&json!({ "profile_file": "p.json" })),
+            Some(PathProblem::NotAbsolute {
+                key: "profile_file",
+                ..
+            })
+        ));
+        assert!(matches!(
+            server_path_problem(&json!({ "cwd": f })),
+            Some(PathProblem::Missing { key: "cwd", .. })
+        ));
+        assert!(matches!(
+            server_path_problem(&json!({ "profile_file": d })),
+            Some(PathProblem::Missing {
+                key: "profile_file",
+                ..
+            })
+        ));
     }
 }

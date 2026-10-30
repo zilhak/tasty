@@ -322,10 +322,29 @@ fn an_explicit_profile_file_is_checked_on_the_server() {
     )
     .unwrap_err();
     assert!(
-        err.message.contains("does not exist on the server"),
+        err.message.contains("does not exist on the remote"),
         "{}",
         err.message
     );
+    for relative in [
+        json!({ "profile_file": "p.json" }),
+        json!({ "cwd": "work" }),
+    ] {
+        let err = crate::handlers::handle_spawn(
+            &scanner(),
+            &returns,
+            &server,
+            &origin_params(relative),
+            None,
+            &tr(),
+        )
+        .unwrap_err();
+        assert!(
+            err.message.contains("not an absolute path"),
+            "{}",
+            err.message
+        );
+    }
     assert!(server.params_of("terminal.spawn").is_empty());
     let dir = tempfile::tempdir().unwrap();
     let file = dir.path().join("p.json");

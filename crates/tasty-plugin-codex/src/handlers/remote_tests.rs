@@ -658,3 +658,31 @@ fn a_late_result_goes_to_the_parent_that_started_its_turn() {
     assert_eq!(keys_of(&receiver_a), vec!["r.a1".to_string()]);
     assert_eq!(keys_of(&receiver_b), vec!["r.b1".to_string()]);
 }
+
+/// 서버: 원격 부모가 준 경로는 서버 기준 절대 경로여야 하고 서버에 있어야 한다. 터미널을 만들기 전에 거절한다.
+#[test]
+fn the_server_takes_only_absolute_existing_paths() {
+    let fx = Fixture::new();
+    let host = Host::new(&fx, server);
+    let err = spawn(&fx, &host, origin(json!({ "cwd": "work" }))).unwrap_err();
+    assert!(
+        err.message.contains("--cwd work is not an absolute path"),
+        "{}",
+        err.message
+    );
+    let err = spawn(
+        &fx,
+        &host,
+        origin(json!({ "cwd": "/nonexistent/tasty-remote-cwd" })),
+    )
+    .unwrap_err();
+    assert!(
+        err.message.contains("does not exist on the remote"),
+        "{}",
+        err.message
+    );
+    assert!(host.params_of("terminal.spawn").is_empty());
+    let cwd = fx.root().to_string_lossy().to_string();
+    spawn(&fx, &host, origin(json!({ "cwd": cwd }))).unwrap();
+    assert_eq!(host.params_of("terminal.spawn")[0]["cwd"], json!(cwd));
+}

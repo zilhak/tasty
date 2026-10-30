@@ -493,6 +493,25 @@ pub(crate) fn serve_spawn<H: HostCall>(
     delivery: &DeliveryCtx<'_>,
     origin: &AttachOrigin,
 ) -> Result<Value, IpcMethodError> {
+    // 원격 부모가 준 경로는 이 서버 기준 절대 경로여야 한다. 서버 프로세스의 작업 위치로 풀지 않는다.
+    if let Some(problem) = remote_attach::server_path_problem(params) {
+        let (key, flag, path) = match problem {
+            remote_attach::PathProblem::NotAbsolute { key, path } => {
+                ("codex.remote.path_not_absolute", key, path)
+            }
+            remote_attach::PathProblem::Missing { key, path } => {
+                ("codex.remote.path_missing", key, path)
+            }
+        };
+        return Err(IpcMethodError::invalid_params(&t_args(
+            tr,
+            key,
+            &[
+                ("{flag}", &format!("--{}", flag.replace('_', "-"))),
+                ("{path}", &path),
+            ],
+        )));
+    }
     let mut args = crate::spawn_options::parse(params, tr)?;
     let policy = resolve_policy_args(host, params, tr)?;
     let mut policy = crate::session::command::policy_tokens(&policy);
