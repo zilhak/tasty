@@ -1,3 +1,4 @@
+mod agent_children;
 mod checked;
 #[cfg(all(test, debug_assertions))]
 mod cli_entry_debug_tests;
@@ -212,15 +213,17 @@ fn dispatch_routed(
         Some(core.navigation_proofs.clone()),
     );
     let mut out = crate::ipc::window_port::IntentOutbox::default();
-    let routed = route_engine_handler(
-        core,
-        &mut scope,
-        &mut out,
-        engine,
-        checked,
-        request,
-        id.clone(),
-    );
+    let routed = crate::remote::agent_children::driving_scope(checked.caller(), || {
+        route_engine_handler(
+            core,
+            &mut scope,
+            &mut out,
+            engine,
+            checked,
+            request,
+            id.clone(),
+        )
+    });
     scope.enqueue_intents(out);
     let outputs = scope.finish();
     outputs.apply(state, engine.core);
@@ -638,9 +641,11 @@ fn route_engine_handler(
         "surface.fire_hook" => {
             hooks::handle_surface_fire_hook(core, window, engine, id, &request.params)
         }
-        "surface.meta.set" => meta::handle_surface_meta_set(core, engine, id, &request.params),
+        "surface.meta.set" => meta::relayed(engine, &request.params, true)
+            .unwrap_or_else(|| meta::handle_surface_meta_set(core, engine, id, &request.params)),
         "surface.meta.get" => meta::handle_surface_meta_get(core, engine, id, &request.params),
-        "surface.meta.unset" => meta::handle_surface_meta_unset(core, engine, id, &request.params),
+        "surface.meta.unset" => meta::relayed(engine, &request.params, false)
+            .unwrap_or_else(|| meta::handle_surface_meta_unset(core, engine, id, &request.params)),
         "surface.meta.list" => meta::handle_surface_meta_list(core, engine, id, &request.params),
         "surface.set_cwd" => surface::handle_set_cwd(&engine.as_ref(), id, &request.params),
         "hook.set" => hooks::handle_hook_set(core, engine, id, &request.params),
@@ -1013,6 +1018,9 @@ fn route_engine_handler(
         // attach.into_gui는 GUI App 층이 답한다. 헤드리스에는 mirror 큐를 처리할 쪽이 없으므로
         // 접수하지 않고 미라우팅 응답(-32017, 메서드 이름 포함)으로 거절한다.
         "attach.list" => attach::handle_list(&engine.read(), id),
+        m if m.starts_with("attach.agent_") || m.starts_with("attach.child_") => {
+            agent_children::handle(core, engine, caller, id, m, &request.params)
+        }
         "remote.profile.list" => remote_profile::handle_list(id),
         "remote.profile.get" => remote_profile::handle_get(id, &request.params),
         "remote.profile.add" => remote_profile::handle_add(core, id, &request.params),

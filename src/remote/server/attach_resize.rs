@@ -264,6 +264,7 @@ mod tests {
                 tasty_ipc::stream::INPUT_ACK_CAPABILITY,
                 tasty_ipc::stream::WORKSPACE_CLOSE_CAPABILITY,
                 tasty_ipc::explorer_op::CAPABILITY,
+                tasty_ipc::agent_child::CAPABILITY,
                 tasty_ipc::html_transfer::CAPABILITY,
                 tasty_ipc::html_transfer::VIEWER_CAPABILITY,
                 tasty_ipc::html_transfer::RESOURCE_CAPABILITY,

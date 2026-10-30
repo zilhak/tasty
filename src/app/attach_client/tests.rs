@@ -99,6 +99,8 @@ pub(crate) fn test_session_with_frames(
             tunnel: None,
             explorer_write: true,
             workspace_close: true,
+            agent_children: true,
+            agent_hello_sent: false,
             explorer_inbox: Vec::new(),
             html: Default::default(),
         },

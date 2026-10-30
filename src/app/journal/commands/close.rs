@@ -468,7 +468,8 @@ impl JournalApplication {
         let Some(pending) = self.commands.pending.get(&ticket) else {
             return;
         };
-        match Request::resolve(&pending.request, session, pending.close_cause) {
+        let cause = attach_child_kill(pending, session).unwrap_or(pending.close_cause);
+        match Request::resolve(&pending.request, session, cause) {
             Ok(mut request) => {
                 if let Reply::Remote(remote) = &pending.reply {
                     request.is_user_close = false;
@@ -605,6 +606,39 @@ pub(super) fn omitted_history_notice(
             u32::try_from(terminals).unwrap_or(u32::MAX),
         ),
     )
+}
+
+/// 원격 holder 출처 자식을 그 자식을 만든 plugin 이 `terminal.kill` 로 닫으면 holder 의 닫기로 처리한다.
+/// 출처가 그 workspace 의 현재 holder 연결에 묶여 있을 때만이며 다른 호출자는 일반 규칙을 따른다.
+fn attach_child_kill(pending: &super::Pending, session: &EngineSession) -> Option<Cause> {
+    if pending.request.method != "terminal.kill" || !matches!(pending.close_cause, Cause::Ordinary)
+    {
+        return None;
+    }
+    let Reply::Plugin { plugin_id, .. } = &pending.reply else {
+        return None;
+    };
+    let key = pending.request.params.get("parent_external")?.as_str()?;
+    if !tasty_ipc::agent_child::is_attach_parent(key) {
+        return None;
+    }
+    let index = u32::try_from(pending.request.params.get("child")?.as_u64()?).ok()?;
+    let children = &session.runtime.child_terminals;
+    let child = children
+        .find_child(
+            &crate::core::child_parent::ParentKey::External(key.to_owned()),
+            index,
+        )?
+        .child_surface_id;
+    let occupancy = &session.live.occupancy;
+    if !crate::remote::agent_children::may_drive_as(occupancy, children, child, plugin_id) {
+        return None;
+    }
+    let workspace = occupancy.workspace_of_surface(child)?;
+    Some(Cause::RemoteHolder {
+        client: occupancy.workspace_holder(workspace)?,
+        workspace,
+    })
 }
 
 pub(super) fn is_close_method(method: &str) -> bool {

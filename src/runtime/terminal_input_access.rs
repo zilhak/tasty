@@ -18,8 +18,10 @@ pub(crate) struct TerminalInputAccess<'a> {
 }
 
 impl TerminalInputAccess<'_> {
+    /// 원격 holder 가 점유한 터미널인지. 그 holder 출처의 자식을 만든 plugin 이 처리 중인 입력은 막지 않는다.
     pub(crate) fn is_hard_occupied(&self, surface: u32) -> bool {
         self.occupancy.is_hard_occupied(surface)
+            && !crate::remote::agent_children::may_drive(self.occupancy, self.children, surface)
     }
 
     pub(crate) fn matches_generation(&self, surface: u32, generation: ResourceGeneration) -> bool {

@@ -3,6 +3,8 @@ pub(crate) mod state;
 
 pub(crate) mod server;
 
+pub(crate) mod agent_children;
+
 pub(crate) mod structure_sync;
 
 #[cfg(feature = "gui")]

@@ -156,6 +156,9 @@ pub(super) fn apply_one_mirror_event(
             }
         }
         MirrorEvent::ExplorerOp(value) => sess.transport.explorer_inbox.push(value),
+        MirrorEvent::AgentChild(msg) => {
+            crate::remote::agent_children::client_receive(sess.state.local_workspace, msg)
+        }
         MirrorEvent::CaptureResult {
             upload_id,
             ok,

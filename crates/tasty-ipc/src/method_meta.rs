@@ -602,6 +602,22 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("attach.release", plugin(Idempotent, &[])),
         ("attach.into_gui", plugin(Mutate, &[]).kept_by_app_layer()),
         ("attach.list", plugin(Read, &[])),
+        // 원격 자식 에이전트. client 쪽 plugin 이 자기 namespace 로 holder 연결을 거쳐 서버 plugin 을 부르고,
+        // 서버 쪽 plugin 이 그 자식의 고유 결과를 보낸다. 호출 plugin 의 기존 터미널 권한을 그대로 요구한다.
+        ("attach.agent_target", plugin_only(Read, &[TerminalSpawn])),
+        (
+            "attach.agent_call",
+            plugin_only(Mutate, &[TerminalSpawn, TerminalWrite]),
+        ),
+        (
+            "attach.agent_commit",
+            plugin_only(Idempotent, &[TerminalSpawn]),
+        ),
+        (
+            "attach.child_notice",
+            plugin_only(Idempotent, &[TerminalWrite]),
+        ),
+        ("attach.child_notices", plugin(Read, &[])),
         // ── remote.profile.* (원격 접속 프로필 CRUD) ─────────────────────
         // 프로필은 비밀 없는 장비 인벤토리(passkey 를 이름으로 참조만). attach.* 와 동일하게
         // 연결 경계(소켓 도달)에 신뢰를 위임 — 추가 Permission 불요.

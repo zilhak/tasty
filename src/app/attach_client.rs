@@ -1,4 +1,5 @@
 //! App integration for remote mirrors; each child imports its actual collaborators.
+mod agent_children;
 mod agent_origin;
 pub(crate) mod attempts;
 mod bulk;

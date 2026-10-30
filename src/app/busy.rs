@@ -30,6 +30,9 @@ impl App {
             engine.forward_attention(&hub);
             engine.forward_surface_cwd(&hub);
         }
+        let engines = self.engines();
+        let engines: Vec<_> = engines.windowed_and_parked().collect();
+        crate::remote::agent_children::tick(&hub, &engines);
     }
 }
 

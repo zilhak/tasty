@@ -22,6 +22,9 @@ pub const VERSION: u32 = 1;
 /// `contributes.remote_attach` 선언(자기 namespace 메서드 이름)을 서버 host 가 읽어 정한다.
 /// host 는 메서드의 의미나 provider 별 훅 이름을 해석하지 않는다.
 
+/// 원격 자식의 프로세스 종료. host 가 PTY 종료에서 만든다.
+pub const PROCESS_EXIT: &str = "process-exit";
+
 /// 서버 child registry 에서 원격 출처 자식의 부모 키 접두사. 뒤에 출처 번호가 붙는다(`attach:o3`).
 /// 비공개 토큰이 아니라 공개 순번이므로 registry·응답에 실어도 된다.
 pub const PARENT_PREFIX: &str = "attach:o";
@@ -48,17 +51,28 @@ pub enum AgentClientMsg {
     /// 서버 plugin 메서드 하나를 holder 권한으로 실행한다. anchor 는 대상 pane 의 원격 surface 다.
     /// 같은 출처가 같은 `call_id` 로 다시 보내면 서버는 다시 실행하지 않고 보관한 결과를 돌려준다
     /// (결과를 받지 못하고 끊긴 client 의 재조회).
+    ///
+    /// `namespace` 는 plugin IPC 접두사(`claude`)이고 `method` 는 접두사 없는 이름이다. 부모·위치·대상은
+    /// host 가 정한다. 서버는 `params` 의 같은 이름 필드를 지우고 출처 부모 키·workspace·pane 과, 확인한
+    /// `target_surface_id` 를 넣어 넘긴다. client 는 자기 쪽 문맥 키(`_tasty_context`·surface·parent)를 보내지 않는다.
     AgentCallRequest {
         call_id: u64,
-        plugin: String,
+        namespace: String,
         method: String,
+        /// 대상 pane 에 있는 원격 surface. 실행 위치(workspace·pane)를 정한다.
         anchor_surface_id: u32,
+        /// 다룰 기존 자식(원격 surface). 서버는 이 출처의 자식일 때만 넘긴다.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        target_surface_id: Option<u32>,
         #[serde(default)]
         params: serde_json::Value,
     },
     /// 이 call 로 생긴 자식의 부모 경로를 client 가 다 준비했다. 서버는 그 전까지 그 자식의 통지를
     /// 보관만 하고 보내지 않는다. 준비 전에 온 완료가 수신처 없이 버려지지 않게 한다.
-    AgentCallCommit { call_id: u64 },
+    AgentCallCommit {
+        call_id: u64,
+        remote_surface_ids: Vec<u32>,
+    },
     /// 받은 통지의 처리 결과.
     ChildNoticeAck { key: String, outcome: AckOutcome },
 }
@@ -67,25 +81,40 @@ pub enum AgentClientMsg {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "event", rename_all = "snake_case")]
 pub enum AgentServerMsg {
-    /// 이 연결에 묶은 출처. 받은 토큰을 재연결 때 다시 보낸다.
-    AgentHelloAck { origin_token: String, origin: u64 },
+    /// 이 연결에 묶은 출처. 받은 토큰을 재연결 때 다시 보낸다. 토큰은 서버 프로세스 단위이며 같은 client 의
+    /// 여러 연결이 함께 쓴다. `resumed` 가 false 인데 토큰을 보냈다면 서버가 그 토큰을 모른다(서버 재시작).
+    /// 그때 client 는 이전 출처의 자식을 결과불명으로 표시하고 이전 `call_id` 를 다시 보내지 않는다.
+    AgentHelloAck {
+        origin_token: String,
+        origin: u64,
+        resumed: bool,
+    },
     /// [`AgentClientMsg::AgentCallRequest`] 의 결과. 성공이면 plugin 응답 그대로다.
     AgentCallResult {
         call_id: u64,
-        ok: bool,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        result: Option<serde_json::Value>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        error: Option<CallError>,
+        outcome: CallOutcome,
+        /// 이 call 동안 이 출처의 자식으로 새로 생긴 원격 surface. 서버 child registry 의 차분이며
+        /// plugin 응답 본문에서 읽지 않는다. 실패한 call 도 자식을 남겼을 수 있다.
+        #[serde(default)]
+        spawned: Vec<u32>,
     },
-    /// 원격 자식의 상태·이벤트·결과. 같은 `key` 는 같은 통지의 재전송이다.
-    /// `seq` 는 서버 프로세스 안에서 만든 순서다. 재전송이 늦게 와도 client 는 더 새 상태를 덮지 않는다.
+    /// 원격 자식의 상태·이벤트·결과. 같은 `key` 는 같은 통지의 재전송이다. 서버는 자식마다 확인받은 순서대로
+    /// 하나씩 보낸다. `seq` 는 서버 프로세스 안의 순서이며 client 는 [`Notice::State`] 에만 써서 오래된 상태가
+    /// 새 상태를 덮지 않게 한다. 이벤트·결과는 key 중복 제거와 자식별 순서로만 처리하고 버리지 않는다.
     ChildNotice {
         key: String,
         seq: u64,
         remote_surface_id: u32,
         notice: Notice,
     },
+}
+
+/// call 의 결과. 성공이면 plugin 응답 그대로다.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
+pub enum CallOutcome {
+    Ok { result: serde_json::Value },
+    Error(CallError),
 }
 
 /// 서버 plugin 이나 holder 검사가 낸 오류.
@@ -101,9 +130,10 @@ pub struct CallError {
 pub enum Notice {
     /// child registry 상태(`idle`·`active`·`needs_input`).
     State { state: String },
-    /// surface hook 이벤트 이름. host 는 이름을 해석하지 않고 client 의 같은 surface 에서 다시 발화한다.
+    /// surface hook 이벤트 이름. 자식을 만든 plugin 이 매니페스트 `hook_events` 에 선언한 이름이거나 host 가 만든
+    /// [`PROCESS_EXIT`] 다. 양쪽 host 가 선언으로 검사하며 의미는 해석하지 않는다.
     Event { name: String },
-    /// 부모 알림 문구가 읽는 surface 메타데이터. `None` 은 삭제다.
+    /// 자식을 만든 plugin 이 `remote_attach.relay_meta` 에 선언한 surface 메타데이터. `None` 은 삭제다.
     Meta {
         key: String,
         #[serde(default)]

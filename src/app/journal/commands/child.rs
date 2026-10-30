@@ -16,6 +16,7 @@ pub(super) fn resolve_spawn(
     session: &mut EngineSession,
     view: &crate::runtime::journal_product::CompletionView,
     pending: &mut Option<Spawn>,
+    caller_plugin: Option<&str>,
 ) -> Result<Option<create::Request>, JsonRpcResponse> {
     if let Some(spawn) = pending.as_ref() {
         let Some(result) = spawn.receipt.poll() else {
@@ -84,8 +85,32 @@ pub(super) fn resolve_spawn(
         .find_workspace_index_for_pane(pane)
         .and_then(|index| core.workspace_at(index))
         .ok_or_else(|| bad("pane workspace disappeared".into()))?;
-    if let Some(response) = crate::ipc::handler::spawn_target_guard(&session.as_ref(), pane, &id) {
-        return Err(response);
+    // 원격 holder 출처의 부모 키는 그 holder 의 call 을 처리하는 plugin 만 쓸 수 있다. 통과하면 그 holder 가
+    // 점유한 workspace 의 hard 점유 거절만 건너뛴다. mirror 거절은 그대로다.
+    let attach_parent = match &parent {
+        crate::core::child_parent::ParentKey::External(key)
+            if tasty_ipc::agent_child::is_attach_parent(key) =>
+        {
+            Some(key.clone())
+        }
+        _ => None,
+    };
+    match attach_parent {
+        Some(key) if !target.mirror => crate::remote::agent_children::spawn_allowed(
+            &session.live.occupancy,
+            caller_plugin,
+            &key,
+            input.get("attach_context").and_then(|v| v.as_str()),
+            target.id,
+        )
+        .map_err(bad)?,
+        _ => {
+            if let Some(response) =
+                crate::ipc::handler::spawn_target_guard(&session.as_ref(), pane, &id)
+            {
+                return Err(response);
+            }
+        }
     }
     let workspace = target.id;
     let tab_index = pane_value.tabs.len();
@@ -189,6 +214,16 @@ pub(super) fn resolve_respawn(
 ) -> Result<create::Request, JsonRpcResponse> {
     let id = serde_json::Value::Null;
     let input = &request.params;
+    if input
+        .get("parent_external")
+        .and_then(|v| v.as_str())
+        .is_some_and(tasty_ipc::agent_child::is_attach_parent)
+    {
+        return Err(JsonRpcResponse::invalid_params(
+            id,
+            "remote attach children cannot be respawned on the remote instance",
+        ));
+    }
     let parent = crate::ipc::handler::params::optional_parent(input, "surface", &id)?
         .or_else(|| {
             session

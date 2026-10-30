@@ -103,6 +103,8 @@ pub enum MirrorEvent {
     /// 원격 explorer 파일 작업의 진행·결과(`explorer_op_progress`·`explorer_op_result`).
     /// 작업 엔진을 가진 호스트가 해석하므로 JSON 그대로 전달한다.
     ExplorerOp(Value),
+    /// 원격 자식 에이전트의 출처 확인·실행 결과·완료 통지. 부모 registry 를 가진 호스트가 처리한다.
+    AgentChild(tasty_ipc::agent_child::AgentServerMsg),
     Html(tasty_ipc::html_transfer::HtmlReply),
     Http(tasty_ipc::html_http::HttpReply),
     /// 서버 전송 손실. 데이터가 연속이라는 가정을 버리고 재동기화를 요청한다.
@@ -312,6 +314,10 @@ pub struct ClientTransport {
     pub explorer_write: bool,
     /// 서버가 점유한 workspace 전체 닫기를 받는다. 구 서버 descriptor 에는 이 기능이 없다.
     pub workspace_close: bool,
+    /// 서버가 원격 자식 에이전트 요청과 완료 통지를 받는다. 구 서버 descriptor 에는 이 기능이 없다.
+    pub agent_children: bool,
+    /// 이 연결로 출처 hello 를 보냈다. 재연결하면 새 transport 라 다시 보낸다.
+    pub agent_hello_sent: bool,
     /// 받은 원격 explorer 작업 통지. 작업 상태를 가진 App 이 도착 순서대로 꺼낸다.
     pub explorer_inbox: Vec<Value>,
     pub html: crate::html_document::HtmlSession,
@@ -474,6 +480,7 @@ impl MirrorEvent {
                 .saturating_add(text(reason))
                 .saturating_add(text(image_reason)),
             Self::ExplorerOp(value) => json(value),
+            Self::AgentChild(msg) => serde_json::to_value(msg).map_or(0, |value| json(&value)),
             Self::Html(reply) => reply.retained_bytes(),
             Self::Http(reply) => reply.retained_bytes(),
             Self::ListDirResult {

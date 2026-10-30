@@ -84,6 +84,34 @@ pub fn handle_surface_meta_get(
     )
 }
 
+/// 원격 출처 자식의 메타 변경을 client 로 옮길 통지로 쌓는다. 처리 자체는 하지 않으므로 항상 None 이다.
+/// 옮길 키는 자식을 만든 plugin 의 `remote_attach.relay_meta` 선언으로 정해진다.
+pub(crate) fn relayed(
+    engine: &crate::runtime::engine_access::EngineMut<'_>,
+    params: &serde_json::Value,
+    set: bool,
+) -> Option<JsonRpcResponse> {
+    let surface = params
+        .get("surface_id")
+        .and_then(serde_json::Value::as_u64)
+        .and_then(|v| u32::try_from(v).ok())?;
+    let key = params.get("key").and_then(|v| v.as_str())?;
+    let value = if set {
+        Some(params.get("value").and_then(|v| v.as_str())?.to_owned())
+    } else {
+        None
+    };
+    crate::remote::agent_children::relay(
+        &engine.as_ref(),
+        surface,
+        tasty_ipc::agent_child::Notice::Meta {
+            key: key.to_owned(),
+            value,
+        },
+    );
+    None
+}
+
 pub fn handle_surface_meta_unset(
     core: &AppServices,
     _engine: &crate::core::CoreState,

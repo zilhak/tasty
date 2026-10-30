@@ -512,6 +512,13 @@ pub(crate) fn handle_set_state(
         Ok(ticket) => ticket,
         Err(error) => return JsonRpcResponse::internal_error(id, error),
     };
+    crate::remote::agent_children::relay(
+        &engine.as_ref(),
+        surface_id,
+        tasty_ipc::agent_child::Notice::State {
+            state: new_state.clone(),
+        },
+    );
     finish_mutation(
         core,
         id,

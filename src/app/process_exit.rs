@@ -17,6 +17,14 @@ pub(crate) fn handle(
     {
         return;
     }
+    // 원격 출처 자식의 종료는 구조 변경으로 매핑이 사라지기 전에 통지로 쌓는다.
+    crate::remote::agent_children::relay(
+        &engine.as_ref(),
+        surface,
+        tasty_ipc::agent_child::Notice::Event {
+            name: tasty_ipc::agent_child::PROCESS_EXIT.into(),
+        },
+    );
     // 두 호스트 모두 HookFired로 작업 대기자를 깨우며 GUI는 이벤트도 방송한다.
     let exec = core.hook_executor();
     for fired in engine

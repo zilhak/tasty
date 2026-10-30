@@ -17,6 +17,8 @@ pub(crate) struct PendingSubmit {
     ack: WriteAck,
     started: Instant,
     settle: Option<Instant>,
+    /// 원격 holder 출처의 자식에 쓴 plugin. CR 제출 때 같은 예외를 다시 확인한다.
+    driver: Option<String>,
 }
 impl PendingSubmit {
     pub(crate) fn new(surface: u32, generation: ResourceGeneration, ack: WriteAck) -> Self {
@@ -26,6 +28,7 @@ impl PendingSubmit {
             ack,
             started: Instant::now(),
             settle: None,
+            driver: None,
         }
     }
     /// 제한 시간 경계를 시험하려고 시작 시각만 지정한다. 제품 경로의 시간 소스는 `new`다.
@@ -85,8 +88,11 @@ impl super::terminal_input_access::TerminalInputAccess<'_> {
             .generation(surface)
             .ok_or(SubmitRejected::NotFound)?;
         let ack = self.write_body_with_ack(surface, body)?;
-        self.pending_submits
-            .push(PendingSubmit::new(surface, generation, ack));
+        let mut submit = PendingSubmit::new(surface, generation, ack);
+        if self.occupancy.is_hard_occupied(surface) {
+            submit.driver = crate::remote::agent_children::driving_plugin();
+        }
+        self.pending_submits.push(submit);
         (self.waker)();
         Ok(())
     }
@@ -96,7 +102,7 @@ impl super::terminal_input_access::TerminalInputAccess<'_> {
         surface: u32,
         body: &str,
     ) -> Result<WriteAck, SubmitRejected> {
-        if self.occupancy.is_hard_occupied(surface) {
+        if self.is_hard_occupied(surface) {
             return Err(SubmitRejected::HardOccupied);
         }
         self.terminals
@@ -117,7 +123,15 @@ impl EngineMut<'_> {
                 .runtime
                 .terminals
                 .matches_generation(submit.surface, submit.generation)
-                || self.live.occupancy.is_hard_occupied(submit.surface)
+                || (self.live.occupancy.is_hard_occupied(submit.surface)
+                    && !submit.driver.as_deref().is_some_and(|plugin| {
+                        crate::remote::agent_children::may_drive_as(
+                            &self.live.occupancy,
+                            &self.runtime.child_terminals,
+                            submit.surface,
+                            plugin,
+                        )
+                    }))
             {
                 continue;
             }

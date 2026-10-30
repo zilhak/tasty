@@ -40,6 +40,7 @@ fn apply(
     apply_capture_uploads(app, engine, outcome);
     apply_file_requests(app, engine, outcome);
     apply_explorer_ops(app, engine, outcome);
+    apply_agent_children(app, engine, outcome);
     apply_bulk_events(app, engine, outcome);
     apply_disconnects(engine, outcome);
     // 직접 구조 op 외의 변경도 점유 client에 전달한다.
@@ -397,6 +398,22 @@ fn apply_explorer_ops(app: &App, engine: &EngineMut<'_>, outcome: &mut PumpOutco
     }
     for &client_id in &outcome.disconnected {
         app.remote_file_jobs.forget_client(client_id);
+    }
+}
+
+/// 원격 자식 에이전트 요청·확인. plugin 응답과 통지 송신은 1초 tick 이 맡는다.
+fn apply_agent_children(app: &mut App, engine: &EngineMut<'_>, outcome: &mut PumpOutcome) {
+    for &client_id in &outcome.disconnected {
+        crate::remote::agent_children::disconnect(client_id);
+    }
+    let agent = std::mem::take(&mut outcome.agent_children);
+    if !agent.is_empty() {
+        crate::remote::agent_children::handle(
+            &app.stream_hub,
+            app.plugin_manager.as_mut(),
+            &[engine.as_ref()],
+            agent,
+        );
     }
 }
 

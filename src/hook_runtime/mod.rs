@@ -91,9 +91,32 @@ impl HookRuntimeState {
         self.surface.remove_hook(hook_id)
     }
 
-    /// 닫힌 surface의 훅을 모두 해제한다.
+    /// 닫힌 surface의 훅을 모두 해제한다. 원격 자식 mirror 면 늦게 오는 종료 통지를 위해 훅을 옮겨 둔다.
     pub(crate) fn forget_surface(&mut self, surface_id: u32) {
+        #[cfg(feature = "gui")]
+        if crate::remote::agent_children::is_client_child(surface_id) {
+            let hooks = self
+                .surface
+                .list_hooks(Some(surface_id))
+                .into_iter()
+                .map(|h| (h.event.clone(), h.binding.clone(), h.once))
+                .collect();
+            crate::remote::agent_children::client_surface_closing(surface_id, hooks);
+        }
         self.surface.remove_surface_hooks(surface_id);
+    }
+
+    #[cfg(feature = "gui")]
+    /// 엔진 밖에 옮겨 둔 훅을 발화한다. 원격 자식 mirror 가 닫힌 뒤 온 이벤트에 쓴다.
+    pub(crate) fn fire_detached(
+        exec: &HookExecutor,
+        manager: &mut HookManager,
+        surface_id: u32,
+        event: HookEvent,
+        event_kind: &str,
+    ) -> Vec<PendingHostEvent> {
+        let fired = manager.check_and_fire(surface_id, std::slice::from_ref(&event));
+        Self::run_fired(exec, fired, surface_id, event_kind, None)
     }
 
     /// OutputMatch 훅이 있으면 PTY 출력 이벤트를 켜야 한다.

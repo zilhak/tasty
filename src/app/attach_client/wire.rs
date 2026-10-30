@@ -63,7 +63,12 @@ pub(super) fn mirror_event_from_control(payload: &[u8]) -> Option<MirrorEvent> {
             .or_else(|| parse_markdown_content_result(payload))
             .or_else(|| parse_markdown_changed(payload))
             .or_else(|| super::html::parse(payload))
-            .or_else(|| crate::app::explorer_files::remote::mirror_event(payload)),
+            .or_else(|| crate::app::explorer_files::remote::mirror_event(payload))
+            .or_else(|| {
+                serde_json::from_slice::<tasty_ipc::agent_child::AgentServerMsg>(payload)
+                    .ok()
+                    .map(MirrorEvent::AgentChild)
+            }),
     }
 }
 

@@ -557,11 +557,16 @@ impl JournalApplication {
             .cloned()
             .unwrap_or_default();
         let resolved = if pending.request.method == "terminal.spawn" {
+            let caller_plugin = match &pending.reply {
+                super::Reply::Plugin { plugin_id, .. } => Some(plugin_id.clone()),
+                _ => None,
+            };
             match super::child::resolve_spawn(
                 &pending.request,
                 session,
                 &view,
                 &mut pending.child_spawn,
+                caller_plugin.as_deref(),
             ) {
                 Ok(Some(request)) => Ok(request),
                 Ok(None) => {

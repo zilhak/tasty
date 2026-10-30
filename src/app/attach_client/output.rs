@@ -136,6 +136,8 @@ impl App {
                 }
             }
         }
+        // 이번 묶음에서 받은 원격 자식 통지·결과를 세션이 정리되기 전에 적용한다.
+        self.pump_agent_children();
         self.notify_unknown_closes(unknown_close);
         for &idx in &reconnecting {
             self.enter_reconnecting(idx);
@@ -167,12 +169,21 @@ fn decide_session_end(
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum MirrorOutputHost {
+pub(super) enum MirrorOutputHost {
     Window(winit::window::WindowId),
     Parked(EngineId),
 }
 
 /// 창이 있는 engine을 우선하고 없으면 parked engine에서 찾는다. None이면 버퍼를 비우지 않는다.
+/// 이 mirror workspace 를 가진 engine. 원격 자식 처리도 출력 적용과 같은 범위를 쓴다.
+pub(super) fn mirror_engine_host(app: &App, local_workspace: u32) -> Option<MirrorOutputHost> {
+    mirror_output_host(
+        app.find_main_with_workspace(local_workspace),
+        app.engines().parked_with_ids().map(|(id, e)| (id, e.core)),
+        local_workspace,
+    )
+}
+
 fn mirror_output_host<'a>(
     windowed: Option<winit::window::WindowId>,
     parked: impl IntoIterator<Item = (EngineId, &'a crate::core::CoreState)>,

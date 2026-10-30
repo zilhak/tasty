@@ -47,6 +47,7 @@ pub fn attach_handshake(
         html,
         explorer_write: descriptor_has_capability(&ctrl, tasty_ipc::explorer_op::CAPABILITY),
         workspace_close: descriptor_has_capability(&ctrl, stream::WORKSPACE_CLOSE_CAPABILITY),
+        agent_children: descriptor_has_capability(&ctrl, tasty_ipc::agent_child::CAPABILITY),
         conn,
         client_id,
         write_half,
@@ -71,6 +72,8 @@ pub struct AttachHandshake {
     pub explorer_write: bool,
     /// 서버가 점유한 workspace 전체 닫기를 받는다.
     pub workspace_close: bool,
+    /// 서버가 원격 자식 에이전트 요청과 완료 통지를 지원한다.
+    pub agent_children: bool,
     pub html: super::html_document::HtmlSession,
 }
 
@@ -406,6 +409,7 @@ impl PreparedConnection {
             input_acks,
             explorer_write,
             workspace_close,
+            agent_children,
             html,
         } = attach_handshake(port, workspace, "remote pending connection", &cancel)?;
         let control = write_half.try_clone()?;
@@ -443,6 +447,8 @@ impl PreparedConnection {
                 tunnel,
                 explorer_write,
                 workspace_close,
+                agent_children,
+                agent_hello_sent: false,
                 explorer_inbox: Vec::new(),
                 html,
             },

@@ -364,6 +364,23 @@ impl crate::app::App {
         }
         for &client_id in &outcome.disconnected {
             self.remote_file_jobs.forget_client(client_id);
+            crate::remote::agent_children::disconnect(client_id);
+        }
+        let agent = std::mem::take(&mut outcome.agent_children);
+        if !agent.is_empty() {
+            // 엔진을 읽는 동안 plugin 호출을 넘겨야 해 관리자를 잠시 꺼낸다. 이 안에서 다른 경로는 관리자를 쓰지 않는다.
+            let mut plugins = self.plugin_manager.take();
+            {
+                let engines = self.engines();
+                let engines: Vec<_> = engines.windowed_and_parked().collect();
+                crate::remote::agent_children::handle(
+                    &self.stream_hub,
+                    plugins.as_mut(),
+                    &engines,
+                    agent,
+                );
+            }
+            self.plugin_manager = plugins;
         }
         outcome
     }

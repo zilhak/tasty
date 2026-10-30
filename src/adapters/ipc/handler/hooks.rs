@@ -277,6 +277,13 @@ pub(crate) fn handle_surface_fire_hook(
     // 수동 발화는 요청한 이벤트 문자열을 싣는다. command-completed의 종료 코드도 함께 전달해
     // push 전략의 성공·실패를 시험할 수 있게 한다.
     let event_kind = event.to_display_string();
+    crate::remote::agent_children::relay(
+        &engine.as_ref(),
+        surface_id,
+        tasty_ipc::agent_child::Notice::Event {
+            name: event_kind.clone(),
+        },
+    );
     let fired = engine
         .hooks
         .fire_as(&core.hook_executor(), surface_id, event, event_kind);
