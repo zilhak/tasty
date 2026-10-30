@@ -132,7 +132,7 @@ impl PluginManager {
         if let Some(marker) = tasty_ipc::agent_child::reserved_marker(&params) {
             send_response(
                 &response_tx,
-                JsonRpcResponse::error(original_id, -32602, &reserved_message(marker)),
+                JsonRpcResponse::error(original_id, -32602, reserved_message(marker)),
             );
             return;
         }
