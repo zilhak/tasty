@@ -209,21 +209,8 @@ struct Book {
     routes: Vec<Route>,
     outbox: Vec<Outgoing>,
     /// client: 원격 자식에게 보낸 spawn·tell 의 route 토큰과 그때의 수신처.
-    attach_routes: Vec<AttachRoute>,
+    attach_routes: Vec<attach::AttachRoute>,
 }
-
-/// 원격 자식에게 보낸 지시 하나의 route 토큰. 서버가 그 지시로 시작한 턴의 결과에 이 토큰을 실어 돌려준다.
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct AttachRoute {
-    token: String,
-    receiver_id: String,
-    issued_at_ms: u64,
-}
-
-/// route 토큰 기록을 두는 기간. 서버는 결과를 확인받을 때까지 다시 보내며 host 통지 보관은 24시간이다.
-const ATTACH_ROUTE_KEPT: Duration = Duration::from_secs(7 * 24 * 60 * 60);
-/// route 토큰 기록 상한. 넘으면 오래된 것부터 지운다.
-const ATTACH_ROUTES_MAX: usize = 4096;
 
 fn opt_str(v: &Value, key: &str) -> Option<String> {
     v.get(key).and_then(Value::as_str).map(String::from)
@@ -325,7 +312,7 @@ impl Book {
             .map(|a| {
                 a.iter()
                     .filter_map(|r| {
-                        Some(AttachRoute {
+                        Some(attach::AttachRoute {
                             token: r.get("token")?.as_str()?.to_string(),
                             receiver_id: r.get("receiver_id")?.as_str()?.to_string(),
                             issued_at_ms: r.get("issued_at_ms")?.as_u64()?,
@@ -1060,104 +1047,6 @@ impl Returns {
             self.wake();
         }
         Ok(n)
-    }
-
-    /// client: 서버에서 온 원격 자식 결과를 그 mirror 자식 경로의 수신처로 기록한다(`claude.remote_receive`).
-    /// 같은 결과의 재전송은 같은 키라 Codex 원장이 중복으로 거른다. 기록하지 못하면 오류로 답해 host 가
-    /// 나중에 다시 보내게 한다. 경로는 mirror 가 사라져도 남아 있으므로 늦게 온 결과도 기록한다.
-    pub(crate) fn remote_receive<H: HostCall>(
-        &self,
-        host: &H,
-        params: &Value,
-    ) -> Result<Value, IpcMethodError> {
-        use tasty_plugin_agent_common::remote_attach::{Received, received};
-        let Some((surface, payload)) = received(params) else {
-            return Ok(Received::Rejected("missing surface_id or payload".into()).json());
-        };
-        // 수신처는 지금의 경로가 아니라 그 턴을 지시한 spawn·tell 때 발급한 토큰으로 찾는다. 그 사이 경로가
-        // 풀리거나 다른 부모로 묶여도 그 턴의 결과는 지시한 부모에게 간다.
-        let token = payload
-            .get(attach::PAYLOAD_KEY)
-            .and_then(|c| c.get(remote_attach::ROUTE_FIELD))
-            .and_then(Value::as_str)
-            .filter(|t| remote_attach::is_route_token(t));
-        let receiver = match token {
-            Some(token) if self.is_available() => self
-                .update(|book| {
-                    let r = book
-                        .attach_routes
-                        .iter()
-                        .find(|r| r.token == token)
-                        .map(|r| r.receiver_id.clone());
-                    (r, false)
-                })
-                .map_err(IpcMethodError::new)?,
-            _ => None,
-        };
-        let request = match attach::local_request(payload, surface, receiver) {
-            Ok(r) => r,
-            Err(reason) => return Ok(Received::Rejected(reason).json()),
-        };
-        let response = host
-            .call_within("codex.deliver", request, DELIVER_CALL_TIMEOUT)
-            .map_err(IpcMethodError::from)?;
-        let status = if response.get("duplicate").and_then(Value::as_bool) == Some(true) {
-            Received::Duplicate
-        } else {
-            Received::Recorded
-        };
-        Ok(status.json())
-    }
-
-    /// client: 원격 자식에게 보내는 spawn·tell 하나의 route 토큰을 발급한다. 토큰→수신처 기록은 경로를 풀거나 다시
-    /// 묶어도 남고 [`ATTACH_ROUTE_KEPT`] 뒤에 지운다. 서버에는 토큰만 보낸다.
-    pub(crate) fn issue_attach_route(&self, receiver_id: &str) -> Result<String, String> {
-        if !self.is_available() {
-            return Err("no plugin data directory".into());
-        }
-        let token = remote_attach::new_route_token();
-        let now = now_ms();
-        self.update(|book| {
-            book.attach_routes
-                .retain(|r| now.saturating_sub(r.issued_at_ms) <= ms(ATTACH_ROUTE_KEPT));
-            book.attach_routes.push(AttachRoute {
-                token: token.clone(),
-                receiver_id: receiver_id.to_string(),
-                issued_at_ms: now,
-            });
-            if book.attach_routes.len() > ATTACH_ROUTES_MAX {
-                let extra = book.attach_routes.len() - ATTACH_ROUTES_MAX;
-                book.attach_routes.drain(..extra);
-            }
-            ((), true)
-        })?;
-        Ok(token)
-    }
-
-    /// client: 원격 자식이 닫혔다. 서버에 남은 결과가 늦게 올 수 있으므로 경로를 바로 지우지 않고 끝난 경로로
-    /// 두어 [`ENDED_ROUTE_GRACE`] 뒤 지운다.
-    pub(crate) fn end_remote_child(&self, child_surface: u32) {
-        if !self.is_available() {
-            return;
-        }
-        let now = now_ms();
-        let result = self.update(|book| {
-            let mut changed = false;
-            for r in book
-                .routes
-                .iter_mut()
-                .filter(|r| r.child_surface == child_surface && r.ended_at_ms.is_none())
-            {
-                r.ended_at_ms = Some(now);
-                changed = true;
-            }
-            ((), changed)
-        });
-        if let Err(e) = result {
-            tracing::warn!(
-                "claude codex return: could not end the remote child s{child_surface}: {e}"
-            );
-        }
     }
 
     /// 보내지 못한 요청 목록. 본문·수신처·오류·재시도 상태를 그대로 보여 준다.
