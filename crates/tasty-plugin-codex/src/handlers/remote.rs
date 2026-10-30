@@ -261,7 +261,14 @@ pub(crate) fn spawn<H: HostCall>(
             host,
             child_request("kill", anchor, child.surface_id, Map::new()),
         ) {
-            Ok(_) => tr.t("codex.remote.child_closed").to_string(),
+            Ok(r) if remote_attach::killed(&r.result) => {
+                tr.t("codex.remote.child_closed").to_string()
+            }
+            Ok(r) => tr.t_replace(
+                "codex.remote.child_not_closed",
+                "{detail}",
+                &r.result.to_string(),
+            ),
             Err(k) => tr.t_replace("codex.remote.child_not_closed", "{detail}", &k.to_string()),
         };
         return Err(IpcMethodError::new(t_args(
@@ -302,6 +309,13 @@ pub(crate) fn spawn<H: HostCall>(
     Ok(Value::Object(out))
 }
 
+/// 원격 tell 의 실패. 서버가 실행했는지 모르는 결과불명은 확정된 실패와 구분한다.
+pub(crate) struct TellError {
+    pub error: IpcMethodError,
+    /// 서버에서 실행됐을 수 있다. 호출자는 새로 정한 결과 경로를 되돌리지 않는다.
+    pub unknown: bool,
+}
+
 /// client: 원격 자식에게 입력을 보낸다. 결과 경로는 호출자가 이미 정했다.
 pub(crate) fn tell<H: HostCall>(
     host: &H,
@@ -310,13 +324,18 @@ pub(crate) fn tell<H: HostCall>(
     message: &str,
     route: Option<String>,
     tr: &Translator,
-) -> Result<Value, IpcMethodError> {
+) -> Result<Value, TellError> {
     let mut params = Map::from_iter([("message".to_string(), json!(message))]);
     if let Some(token) = route {
         params.insert(RETURN_ROUTE_KEY.to_string(), json!(token));
     }
-    let reply = remote_attach::call(host, child_request("tell", anchor, child, params))
-        .map_err(|e| call_error(e, tr))?;
+    let reply =
+        remote_attach::call(host, child_request("tell", anchor, child, params)).map_err(|e| {
+            TellError {
+                unknown: matches!(e, CallError::Unknown(_)),
+                error: call_error(e, tr),
+            }
+        })?;
     let mut out = match reply.result {
         Value::Object(m) => m,
         _ => Map::new(),
@@ -354,8 +373,7 @@ pub(crate) fn kill<H: HostCall>(
 ) -> Result<Value, IpcMethodError> {
     let reply = remote_attach::call(host, child_request("kill", anchor, child, Map::new()))
         .map_err(|e| call_error(e, tr))?;
-    let killed = reply.result.get("killed_surface_id").is_some()
-        || reply.result.get("killed").and_then(Value::as_bool) == Some(true);
+    let killed = remote_attach::killed(&reply.result);
     if killed && let Err(e) = ledger::end_child_receiver(delivery.root, child) {
         tracing::warn!("codex child return record for remote child {child}: {e}");
     }

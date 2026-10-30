@@ -21,6 +21,8 @@ pub(crate) struct Recorder {
     pub notices: RefCell<Vec<(u32, String, serde_json::Value)>>,
     /// `attach.child_notice` 의 답. 없으면 pending 이다.
     pub notice_status: RefCell<Option<tasty_plugin_agent_common::remote_attach::NoticeStatus>>,
+    /// 참이면 `attach.child_notice` 호출이 실패한다(상한 초과 등).
+    pub notice_fails: std::cell::Cell<bool>,
 }
 
 impl Dispatch for Recorder {
@@ -53,6 +55,9 @@ impl Dispatch for Recorder {
         self.notices
             .borrow_mut()
             .push((surface, key.to_string(), payload));
+        if self.notice_fails.get() {
+            return Err("attach.child_notice timed out".into());
+        }
         Ok(self
             .notice_status
             .borrow()

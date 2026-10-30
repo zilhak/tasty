@@ -14,6 +14,7 @@ const PARENT: &str = "019f55e7-3dfa-7a00-8000-0000000000aa";
 /// mirror 자식(L)과 서버 자식(R).
 const L: u32 = 15;
 const R: u32 = 99;
+const ROUTE: &str = "0123456789abcdef0123456789abcdef";
 
 type Answer = Box<dyn Fn(&str, &Value) -> Result<Value, PluginError>>;
 
@@ -685,4 +686,97 @@ fn the_server_takes_only_absolute_existing_paths() {
     let cwd = fx.root().to_string_lossy().to_string();
     spawn(&fx, &host, origin(json!({ "cwd": cwd }))).unwrap();
     assert_eq!(host.params_of("terminal.spawn")[0]["cwd"], json!(cwd));
+}
+
+/// 결과불명 tell 은 서버에서 실행됐을 수 있으므로 새 경로와 토큰을 되돌리지 않는다. 확정된 실패만 되돌린다.
+#[test]
+fn an_unknown_remote_tell_keeps_the_new_route() {
+    let fx = Fixture::new();
+    owned_parent(&fx);
+    let unknown = std::rc::Rc::new(std::cell::Cell::new(true));
+    let flag = unknown.clone();
+    let host = Host::new(&fx, move |m, p| match m {
+        "terminal.parent" => {
+            Ok(json!({ "parent_external": format!("codex:{PARENT}"), "status": "active" }))
+        }
+        "attach.agent_call" if p["method"] == json!("tell") => {
+            if flag.get() {
+                fail(-32010, "outcome unknown for call 5")
+            } else {
+                fail(-32000, "refused")
+            }
+        }
+        _ => client(m, p),
+    });
+    let tell = || {
+        fx.with(|d| {
+            super::super::handle_tell(
+                &host,
+                &codex(json!({ "surface": L, "message": "go" })),
+                &fx.tr,
+                d,
+            )
+        })
+    };
+    let err = tell().unwrap_err();
+    assert!(err.message.contains("not known"), "{}", err.message);
+    let kept = ledger::child_receiver(fx.root(), L).unwrap().unwrap();
+    let route = route_of(&host);
+    assert_eq!(
+        ledger::attach_route_receiver(fx.root(), &route).unwrap(),
+        Some(kept.receiver_id.clone())
+    );
+    assert_eq!(
+        receive(&fx, &host, notice("u1", &route))["status"],
+        json!("recorded")
+    );
+
+    // 서버가 거절했으면 이전 경로(여기서는 없음)로 되돌린다.
+    ledger::clear_child_receiver(fx.root(), L).unwrap();
+    unknown.set(false);
+    tell().unwrap_err();
+    assert_eq!(ledger::child_receiver(fx.root(), L).unwrap(), None);
+}
+
+/// 묶기 실패 뒤 kill 응답이 닫았다고 하지 않으면 닫았다고 알리지 않는다.
+#[test]
+fn an_unconfirmed_kill_is_not_reported_as_closed() {
+    let fx = Fixture::new();
+    owned_parent(&fx);
+    std::fs::write(fx.root().join("children"), "not a directory").unwrap();
+    let host = Host::new(&fx, |m, p| match m {
+        "attach.agent_call" if p["method"] == json!("kill") => {
+            Ok(json!({ "call_id": 9, "result": { "killed": false } }))
+        }
+        _ => client(m, p),
+    });
+    let err = spawn(&fx, &host, codex(json!({ "workspace": 3 }))).unwrap_err();
+    assert!(
+        err.message.contains("could not be closed"),
+        "{}",
+        err.message
+    );
+    assert!(
+        !err.message.contains("the child was closed"),
+        "{}",
+        err.message
+    );
+}
+
+/// worker 에서 도는 결과 펌프는 host 호출이 실패하면 남은 기록을 이번에 묻지 않고 다음 깨우기로 미룬다.
+#[test]
+fn a_failed_hand_over_stops_this_pump_round() {
+    let fx = Fixture::new();
+    for n in ["a", "b", "c"] {
+        attach_out::queue(fx.root(), &n.repeat(64), &completion(), ROUTE).unwrap();
+    }
+    fx.rec.notice_fails.set(true);
+    let next = fx.with(attach_out::pump);
+    assert_eq!(
+        fx.rec.notices.borrow().len(),
+        1,
+        "one call per failing round"
+    );
+    assert_eq!(attach_out::pending(fx.root()), 3);
+    assert!(next.is_some(), "the rest is asked again on the next wake");
 }

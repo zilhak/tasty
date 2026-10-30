@@ -4,6 +4,8 @@
 //! 맡긴다(`attach.child_notice`). client 의 같은 plugin 이 그 부모의 수신처 원장에 기록한다. 기록은 client 가
 //! 기록을 확인한(`delivered`) 뒤나 받을 수 없다고 한(`rejected`) 뒤에만 지운다. `pending` 이나 호출 실패는
 //! 같은 키로 늘어나는 간격([`super::backoff`])을 두고 다시 묻는다. 다시 묻는 계기는 턴 펌프(훅·예약·재시작)다.
+//! 이 펌프는 worker 에서 돈다. 호출 하나는 [`tasty_plugin_agent_common::remote_attach::NOTICE_TIMEOUT`] 을 넘지 않고,
+//! 호출이 실패하면 그 펌프에서는 남은 기록을 묻지 않는다.
 
 use std::path::{Path, PathBuf};
 
@@ -96,7 +98,15 @@ fn names(root: &Path) -> Vec<String> {
 pub(crate) fn pump(ctx: &Ctx<'_>) -> Option<u64> {
     let now = store::now_ms();
     let mut next: Option<u64> = None;
+    let mut stalled = false;
     for name in names(ctx.root) {
+        // host 호출이 실패했으면 이번에는 더 묻지 않는다. worker 를 한 번에 오래 막지 않도록 남은 기록은 다음
+        // 깨우기에 묻는다.
+        if stalled {
+            let at = now + super::backoff(1).as_millis() as u64;
+            next = Some(next.map_or(at, |t| t.min(at)));
+            break;
+        }
         let path = file(ctx.root, &name);
         let mut out = match store::read_json::<Outgoing>(&path) {
             Ok(Some(o)) => o,
@@ -127,6 +137,7 @@ pub(crate) fn pump(ctx: &Ctx<'_>) -> Option<u64> {
             Ok(NoticeStatus::Pending) => false,
             Err(e) => {
                 tracing::warn!("codex attach result {}: not handed over: {e}", out.key);
+                stalled = true;
                 false
             }
         };

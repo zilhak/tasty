@@ -306,6 +306,18 @@ pub enum NoticeStatus {
 
 /// 원격 부모에게 갈 결과를 서버 host 에 맡기거나 그 상태를 묻는다. 같은 key 는 새로 쌓이지 않는다.
 /// 영속 기록은 [`NoticeStatus::Delivered`]·[`NoticeStatus::Rejected`] 를 받은 뒤에만 지운다.
+/// `attach.child_notice` 한 번의 상한. 이 호출은 host 에 기록을 맡기거나 상태만 물으므로 오래 걸릴 일이 없다.
+/// worker 에서 불러도 healthcheck(60초)에 닿지 않도록 짧게 둔다. 넘으면 pending 과 같이 다시 묻는다.
+pub const NOTICE_TIMEOUT: Duration = Duration::from_secs(15);
+
+/// 원격 kill 응답이 자식을 닫았다고 보고했는가. `Ok` 응답이어도 대상을 찾지 못했으면 거짓이다.
+pub fn killed(result: &Value) -> bool {
+    result.get("killed").and_then(Value::as_bool) == Some(true)
+        || result
+            .get("killed_surface_id")
+            .is_some_and(|v| !v.is_null())
+}
+
 pub fn child_notice<H: HostCall>(
     host: &H,
     surface_id: u32,
@@ -313,9 +325,10 @@ pub fn child_notice<H: HostCall>(
     payload: Value,
 ) -> Result<NoticeStatus, String> {
     let response = host
-        .call(
+        .call_within(
             "attach.child_notice",
             json!({ "surface_id": surface_id, "key": key, "payload": payload }),
+            NOTICE_TIMEOUT,
         )
         .map_err(|e| e.to_string())?;
     parse_notice_status(&response)

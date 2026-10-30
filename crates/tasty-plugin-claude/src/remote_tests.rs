@@ -382,6 +382,12 @@ fn a_child_whose_route_cannot_be_bound_is_not_committed_and_is_closed() {
     let err = crate::handlers::handle_spawn(&scanner(), &returns, &host, &params, None, &tr())
         .unwrap_err();
     assert!(err.message.contains("15"), "{}", err.message);
+    // 이 시험의 kill 응답은 닫았다고 하지 않으므로 닫았다고 알리지 않는다.
+    assert!(
+        err.message.contains("could not be closed"),
+        "{}",
+        err.message
+    );
     assert!(
         host.params_of("attach.agent_commit").is_empty(),
         "must not release notices"

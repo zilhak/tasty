@@ -209,7 +209,10 @@ pub(crate) fn spawn<H: HostCall>(
             host,
             child_request("kill", anchor, child.surface_id, Map::new()),
         ) {
-            Ok(_) => tr.t("claude.remote.child_closed").to_string(),
+            Ok(r) if remote_attach::killed(&r.result) => {
+                tr.t("claude.remote.child_closed").to_string()
+            }
+            Ok(r) => tr.t_fmt("claude.remote.child_not_closed", &r.result.to_string()),
             Err(k) => tr.t_fmt("claude.remote.child_not_closed", &k.to_string()),
         };
         return Err(IpcMethodError::new(tr.t_args(

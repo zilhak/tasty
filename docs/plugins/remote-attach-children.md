@@ -39,7 +39,7 @@ attach 로 연결한 원격 워크스페이스(mirror)에 `tasty claude spawn` /
   - 응답을 받으면 L 에 기존 경로를 묶는다(물리 부모: 완료 알림 훅, Codex 부모: 결과 경로). 묶기에 성공한 뒤에만 `attach.agent_commit` 을 부른다. commit 전에는 서버가 그 자식의 통지를 보내지 않으므로 첫 완료가 수신처 없이 지나가지 않는다. 묶기에 실패하면 commit 하지 않고 그 자식을 원격 kill 로 닫은 뒤 오류로 끝난다.
   - 응답의 `child_surface_id`·`child_index` 는 C 기준(L)이다. `remote: true`, `remote_child_surface_id`(R)를 덧붙인다.
   - 결과를 알 수 없으면(-32010, 35초 상한·재연결 실패·서버 재시작) 성공이나 실패로 단정하지 않고 결과불명으로 알린다. 그 call 의 부모는 plugin 메모리에 15분 남긴다. host 가 늦은 결과를 `remote_receive{kind: late_spawn}` 으로 주면 그 부모로 경로를 묶고 `recorded` 로 답한다(host 가 commit). 기다리는 부모가 없거나(plugin 재시작·만료) 서버가 오류를 냈으면 그 자식을 원격 kill 로 닫고 `rejected` 로 답한다.
-- **tell**: 대상이 C 에 등록된 원격 자식이면 결과 경로를 먼저 정하고(Codex 호출자: 경로 묶기, 그 밖: 이전 Codex 경로 해제) 입력은 `attach.agent_call{method: tell}` 로 보낸다. `--caller-surface` 의 완료 알림 훅은 L 에 다시 건다.
+- **tell**: 대상이 C 에 등록된 원격 자식이면 결과 경로를 먼저 정하고(Codex 호출자: 경로 묶기, 그 밖: 이전 Codex 경로 해제) 입력은 `attach.agent_call{method: tell}` 로 보낸다. 서버가 거절한 것이 확정되면 경로를 되돌리고, 결과불명이면 서버에서 실행됐을 수 있으므로 새 경로와 토큰을 그대로 둔다. `--caller-surface` 의 완료 알림 훅은 L 에 다시 건다.
 - **kill**: index 로 고른 자식이 원격 자식이면 `attach.agent_call{method: kill}` 로 닫는다. 결과 경로는 바로 지우지 않고 끝난 경로로 남겨(24시간) 서버에 남은 결과가 늦게 와도 기록한다.
 - **children·state·parent**: host child registry 가 L 을 일반 자식처럼 답한다. claude children 은 host 의 `remote`·`liveness` 필드를 그대로 싣는다. 연결이 끊긴 동안 liveness 는 `unknown` 이다.
 - **remote_receive**(`kind: notice`): payload 의 결과를 L 의 결과 경로 수신처로 기록한다. 완료 키는 서버 키에 `r.` 를 붙인다. 재전송은 같은 키라 Codex 원장이 `duplicate` 로 거른다. 토큰이 없거나 모르는 토큰이면 `rejected`, 일시 실패는 JSON-RPC 오류(host 가 다시 보낸다)다.
@@ -58,6 +58,7 @@ host 는 원격 출처 호출에 `parent_external = attach:o<n>`·`attach_contex
 - `return_route` 가 있는 자식은 결과 경로를 attach 부모로 두고, 수신처 자리에 그 토큰을 둔다. 로컬과 같이 Stop 때 그 턴의 토큰을 고정하므로, 확정 전에 다음 지시가 새 토큰으로 묶어도 앞 턴의 결과는 앞 토큰을 싣는다. 결과 본문의 `route` 필드에 토큰을 싣는다.
   - claude: 경로의 `attach` 표지. 확정된 턴은 기존처럼 claim 해 영속 요청으로 남기고, 송신 스레드가 `codex.deliver` 대신 `attach.child_notice{surface_id: R, key: completion_key, payload: {completion}}` 를 부른다.
   - codex: 반환 기록의 `attach_parent`. 소유 서버로 턴을 확정한 뒤 원장 대신 `attach-out/` 영속 기록으로 옮기고 `attach.child_notice` 를 부른다.
+  - `attach.child_notice` 호출 하나의 상한은 15초다. codex 는 이 호출을 worker 에서 하므로, 호출이 실패하면 그 회차에는 남은 기록을 묻지 않고 다음 깨우기로 미룬다. claude 는 송신 스레드에서 부른다.
   - `pending` 이면 영속 기록을 두고 같은 키로 늘어나는 간격을 두어 다시 묻는다. `delivered`(C 가 recorded·duplicate)나 `rejected` 를 받은 뒤에만 지운다. S host 가 다시 시작하면 같은 키로 다시 쌓으므로 C 에 같은 결과가 다시 갈 수 있고, C 원장이 같은 키로 거른다(장애 재전달 허용).
 
 ## 한계

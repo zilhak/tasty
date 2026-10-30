@@ -369,18 +369,21 @@ pub(crate) fn handle_tell<H: HostCall>(
         }
     };
     // 개행과 제출 처리는 호스트의 terminal.tell에 맡긴다. 원격 자식은 서버의 같은 메서드로 보낸다.
+    // 결과불명이면 서버에서 그 지시가 실행됐을 수 있으므로 새 경로와 토큰을 그대로 둔다. 확정된 실패만 되돌린다.
     let sent = match remote_anchor {
-        Some(anchor) => remote::tell(host, anchor, surface_id, message, route, tr),
+        Some(anchor) => remote::tell(host, anchor, surface_id, message, route, tr)
+            .map_err(|e| (e.error, e.unknown)),
         None => host_call(
             host,
             "terminal.tell",
             json!({ "surface": surface_id, "text": message }),
-        ),
+        )
+        .map_err(|e| (e, false)),
     };
     let resp = match sent {
         Ok(resp) => resp,
-        Err(e) => {
-            if let Some(previous) = previous {
+        Err((e, unknown)) => {
+            if !unknown && let Some(previous) = previous {
                 ownership::restore_route(delivery, surface_id, previous);
             }
             return Err(e);
