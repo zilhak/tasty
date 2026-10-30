@@ -18,10 +18,14 @@ use crate::caller_context::CallerContextSource;
 ///
 /// 반환의 두 번째 값은 manifest 가 선언한 polling 사양 (있으면). caller 가
 /// `Some(polling)` 일 때 *terminal_states 도달까지 반복 IPC 호출* 한다.
+///
+/// `remote_target` 은 요청의 실행 위치(`workspace` 숫자 id·`pane`)가 attach mirror 인지 host 에 묻는다.
+/// 경로 인자가 있고 실행 위치를 지정한 요청에서만 부른다.
 pub fn matches_to_request(
     entries: &[PluginCliEntry],
     caller_contexts: &[CallerContextSource],
     matches: &ArgMatches,
+    remote_target: &mut dyn FnMut(&Map<String, Value>) -> bool,
 ) -> Result<(JsonRpcRequest, Option<PollingDecl>, Option<AutoWaitPlan>)> {
     let (top_name, top_sub) = matches
         .subcommand()
@@ -56,58 +60,30 @@ pub fn matches_to_request(
 
     let mut params = Map::new();
     if let Some(g) = group {
+        let mut path_args = Vec::new();
         for arg in g.positional.iter().chain(g.flags.iter()) {
             if let Some(v) = extract_value(sub_args, arg)? {
-                // `path_kind = "directory"`/`"file"` 이 선언된 string 인자는 CLI
-                // process cwd 기준 absolute path 로 정규화 + 존재(+종류) 검증.
-                // 실패 시 즉시 에러 — 호스트/plugin 은 절대경로만 받는다는 contract.
-                // `"url_or_file"` 은 `scheme://` 값을 그대로 두고 나머지를 `"file"` 처럼 다룬다.
-                let v = if matches!(arg.ty, CliArgType::String)
-                    && let Some(raw) = v.as_str()
+                if matches!(arg.ty, CliArgType::String) && v.is_string() && arg.path_kind.is_some()
                 {
-                    match arg.path_kind.as_deref() {
-                        Some("directory") => Value::String(
-                            crate::cwd_resolve::normalize_cwd_arg(raw).map_err(|e| {
-                                anyhow!(
-                                    "{}",
-                                    tasty_i18n::t_fmt2(
-                                        "cli.plugin_cli.arg_invalid",
-                                        &arg.name,
-                                        &e.to_string()
-                                    )
-                                )
-                            })?,
-                        ),
-                        Some("file") => Value::String(
-                            crate::cwd_resolve::normalize_file_arg(raw).map_err(|e| {
-                                anyhow!(
-                                    "{}",
-                                    tasty_i18n::t_fmt2(
-                                        "cli.plugin_cli.arg_invalid",
-                                        &arg.name,
-                                        &e.to_string()
-                                    )
-                                )
-                            })?,
-                        ),
-                        Some("url_or_file") => Value::String(
-                            crate::cwd_resolve::normalize_url_or_file_arg(raw).map_err(|e| {
-                                anyhow!(
-                                    "{}",
-                                    tasty_i18n::t_fmt2(
-                                        "cli.plugin_cli.arg_invalid",
-                                        &arg.name,
-                                        &e.to_string()
-                                    )
-                                )
-                            })?,
-                        ),
-                        _ => v,
-                    }
-                } else {
-                    v
-                };
+                    path_args.push(arg);
+                }
                 params.insert(arg.name.clone(), v);
+            }
+        }
+        // 실행 위치가 attach mirror 면 경로는 실행하는 서버 기준이라 이 머신에서 바꾸거나 검사하지 않는다.
+        // 그 값은 그대로 보내고 서버 쪽 plugin 이 검사한다. 그 밖에는 호출자 cwd 기준 절대 경로로 바꾸고
+        // 존재(+종류)를 검사한다.
+        let remote = !path_args.is_empty() && {
+            let query = placement_query(&params);
+            !query.is_empty() && remote_target(&query)
+        };
+        if !remote {
+            for arg in path_args {
+                let Some(raw) = params.get(&arg.name).and_then(Value::as_str) else {
+                    continue;
+                };
+                let normalized = normalize_path_arg(arg, raw)?;
+                params.insert(arg.name.clone(), normalized);
             }
         }
         // `stdin_json = true` 인 서브커맨드는 (stdin 이 TTY 가 아닐 때) stdin 의
@@ -165,6 +141,38 @@ pub fn matches_to_request(
         sub_decl.polling.clone(),
         auto_wait_plan,
     ))
+}
+
+/// 요청의 실행 위치. workspace 이름은 mirror 를 가리킬 수 없으므로 숫자 id 만 싣는다.
+pub(crate) fn placement_query(params: &Map<String, Value>) -> Map<String, Value> {
+    let mut query = Map::new();
+    if let Some(ws) = params
+        .get("workspace")
+        .and_then(|w| w.as_u64().or_else(|| w.as_str()?.parse().ok()))
+    {
+        query.insert("workspace".into(), Value::from(ws));
+    }
+    if let Some(pane) = params.get("pane").and_then(Value::as_u64) {
+        query.insert("pane".into(), Value::from(pane));
+    }
+    query
+}
+
+/// `path_kind = "directory"`/`"file"`/`"url_or_file"` 인 값을 호출자 cwd 기준 절대 경로로 바꾸고 검사한다.
+/// `"url_or_file"` 은 `scheme://` 값을 그대로 두고 나머지를 `"file"` 처럼 다룬다.
+fn normalize_path_arg(arg: &tasty_plugin_manifest::CliArg, raw: &str) -> Result<Value> {
+    let normalized = match arg.path_kind.as_deref() {
+        Some("directory") => crate::cwd_resolve::normalize_cwd_arg(raw),
+        Some("file") => crate::cwd_resolve::normalize_file_arg(raw),
+        Some("url_or_file") => crate::cwd_resolve::normalize_url_or_file_arg(raw),
+        _ => return Ok(Value::String(raw.to_owned())),
+    };
+    normalized.map(Value::String).map_err(|e| {
+        anyhow!(
+            "{}",
+            tasty_i18n::t_fmt2("cli.plugin_cli.arg_invalid", &arg.name, &e.to_string())
+        )
+    })
 }
 
 /// 인라인 polling 또는 등록된 이름을 PollingDecl로 해석한다.

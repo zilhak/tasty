@@ -111,7 +111,9 @@ pub fn try_run_plugin_cli(args: &[String]) -> Option<Result<()>> {
         return None;
     }
     let (mut request, polling, auto_wait) =
-        match dynamic::matches_to_request(&entries, &caller_contexts, &matches) {
+        match dynamic::matches_to_request(&entries, &caller_contexts, &matches, &mut |query| {
+            placement_is_remote(query, port_file.as_deref())
+        }) {
             Ok(r) => r,
             Err(e) => return Some(Err(e)),
         };
@@ -129,6 +131,34 @@ pub fn try_run_plugin_cli(args: &[String]) -> Option<Result<()>> {
             (None, None) => run_dynamic_client(request, port_file.as_deref()),
         },
     ))
+}
+
+/// 실행 위치가 attach mirror 인지 host 에 묻는다. 묻지 못하면(구 host·연결 실패·대상 없음) 이 머신의
+/// 대상으로 보고 기존 경로 검사를 한다. 원래 요청의 전송·오류 처리는 이 결과와 관계없이 그대로다.
+fn placement_is_remote(
+    query: &serde_json::Map<String, serde_json::Value>,
+    port_file: Option<&str>,
+) -> bool {
+    let probe = || -> Result<bool> {
+        let port = crate::port_file::read_port_diagnosed(port_file)?;
+        let mut conn = IpcConnection::new(connect_ipc(port)?)?;
+        let request = tasty_ipc::protocol::JsonRpcRequest {
+            caller_agent_id: None,
+            response_timeout_ms: None,
+            idempotency_key: None,
+            jsonrpc: "2.0".into(),
+            method: "attach.agent_target".into(),
+            params: serde_json::Value::Object(query.clone()),
+            id: Some(serde_json::Value::from(1)),
+            session_token: None,
+        };
+        let value = conn.send(&request)?;
+        Ok(value.get("remote").and_then(serde_json::Value::as_bool) == Some(true))
+    };
+    probe().unwrap_or_else(|e| {
+        tracing::debug!("attach placement probe failed; treating the target as local: {e}");
+        false
+    })
 }
 
 /// 플러그인 CLI 단발 요청. 훅 전달 실패는 로컬 파일에 기록한다.

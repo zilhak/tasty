@@ -604,7 +604,8 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("attach.list", plugin(Read, &[])),
         // 원격 자식 에이전트. client 쪽 plugin 이 자기 namespace 로 holder 연결을 거쳐 서버 plugin 을 부르고,
         // 서버 쪽 plugin 이 그 자식의 고유 결과를 보낸다. 호출 plugin 의 기존 터미널 권한을 그대로 요구한다.
-        ("attach.agent_target", plugin_only(Read, &[TerminalSpawn])),
+        // agent_target 은 읽기 전용이라 CLI 도 경로 인자를 어느 머신 기준으로 다룰지 정하려고 묻는다.
+        ("attach.agent_target", plugin(Read, &[])),
         (
             "attach.agent_call",
             plugin_only(Mutate, &[TerminalSpawn, TerminalWrite]),

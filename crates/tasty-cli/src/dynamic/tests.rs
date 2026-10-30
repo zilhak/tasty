@@ -228,7 +228,7 @@ fn merge_stdin_ignores_null_fields() {
 fn flag_with_value_maps_to_params() {
     let entries = vec![sample_entry()];
     let m = parse(&["codex", "spawn", "--surface", "5", "--prompt", "hello"]);
-    let (req, _polling, _auto) = matches_to_request(&entries, &[], &m).unwrap();
+    let (req, _polling, _auto) = matches_to_request(&entries, &[], &m, &mut |_| false).unwrap();
     assert_eq!(req.method, "codex.spawn");
     let p = req.params.as_object().unwrap();
     assert_eq!(p["surface"], Value::from(5_u32));
@@ -319,7 +319,8 @@ fn non_numeric_value_for_a_number_flag_is_rejected_not_dropped() {
     tasty_i18n::init("en");
     let entries = vec![sample_entry()];
     let m = parse(&["codex", "spawn", "--surface", "conductor", "--prompt", "hi"]);
-    let err = matches_to_request(&entries, &[], &m).expect_err("비수치 --surface 는 오류여야 한다");
+    let err = matches_to_request(&entries, &[], &m, &mut |_| false)
+        .expect_err("비수치 --surface 는 오류여야 한다");
     let msg = err.to_string();
     assert_ne!(
         msg, "cli.plugin_cli.flag_not_a_number",
@@ -339,7 +340,7 @@ fn an_out_of_range_number_is_not_reported_as_a_non_number() {
 
     let over = format!("{}", u64::from(u32::MAX) + 2);
     let m = parse(&["codex", "spawn", "--surface", &over, "--prompt", "hi"]);
-    let msg = matches_to_request(&entries, &[], &m)
+    let msg = matches_to_request(&entries, &[], &m, &mut |_| false)
         .expect_err("u32 범위 밖 --surface 는 오류여야 한다")
         .to_string();
     assert!(msg.contains(&over), "받은 값을 담아야 한다: {msg}");
@@ -351,7 +352,7 @@ fn an_out_of_range_number_is_not_reported_as_a_non_number() {
 
     // 대우 — 진짜 숫자가 아닌 것은 종전 문구 그대로다.
     let m = parse(&["codex", "spawn", "--surface", "conductor", "--prompt", "hi"]);
-    let msg = matches_to_request(&entries, &[], &m)
+    let msg = matches_to_request(&entries, &[], &m, &mut |_| false)
         .expect_err("비수치는 오류")
         .to_string();
     assert!(msg.contains("not a number"), "{msg}");
@@ -362,7 +363,7 @@ fn an_absent_number_flag_is_still_not_an_error() {
     let entries = vec![sample_entry()];
     let m = parse(&["codex", "spawn", "--prompt", "hi"]);
     let (req, _polling, _auto) =
-        matches_to_request(&entries, &[], &m).expect("없는 플래그는 오류가 아니다");
+        matches_to_request(&entries, &[], &m, &mut |_| false).expect("없는 플래그는 오류가 아니다");
     assert_eq!(
         req.params.as_object().unwrap()["prompt"],
         Value::String("hi".into())
@@ -373,7 +374,7 @@ fn an_absent_number_flag_is_still_not_an_error() {
 fn bool_flag_present_serializes_true() {
     let entries = vec![sample_entry()];
     let m = parse(&["codex", "spawn", "--force"]);
-    let (req, _polling, _auto) = matches_to_request(&entries, &[], &m).unwrap();
+    let (req, _polling, _auto) = matches_to_request(&entries, &[], &m, &mut |_| false).unwrap();
     let p = req.params.as_object().unwrap();
     assert_eq!(p["force"], Value::Bool(true));
 }
@@ -425,7 +426,7 @@ fn a_plugin_name_that_does_not_collide_is_still_registered() {
 fn bool_flag_absent_serializes_false() {
     let entries = vec![sample_entry()];
     let m = parse(&["codex", "spawn"]);
-    let (req, _polling, _auto) = matches_to_request(&entries, &[], &m).unwrap();
+    let (req, _polling, _auto) = matches_to_request(&entries, &[], &m, &mut |_| false).unwrap();
     let p = req.params.as_object().unwrap();
     assert_eq!(p["force"], Value::Bool(false));
 }
@@ -434,7 +435,7 @@ fn bool_flag_absent_serializes_false() {
 fn default_value_applied_when_missing() {
     let entries = vec![sample_entry()];
     let m = parse(&["codex", "broadcast", "hello"]);
-    let (req, _polling, _auto) = matches_to_request(&entries, &[], &m).unwrap();
+    let (req, _polling, _auto) = matches_to_request(&entries, &[], &m, &mut |_| false).unwrap();
     let p = req.params.as_object().unwrap();
     assert_eq!(p["text"], Value::String("hello".into()));
     assert_eq!(p["timeout"], Value::from(60_u32));
@@ -760,4 +761,114 @@ fn internal_subcommands_are_listed_last_and_stay_runnable() {
         .try_get_matches_from(["tasty", "codex", "broadcast", "hi"])
         .map(|m| m.subcommand_name().map(str::to_string));
     assert_eq!(matches.unwrap().as_deref(), Some("codex"));
+}
+
+fn path_entry() -> PluginCliEntry {
+    let arg = |name: &str, ty, path_kind: Option<&str>| CliArg {
+        name: name.into(),
+        ty,
+        flag: Some(format!("--{name}")),
+        required: false,
+        default: None,
+        help: None,
+        help_i18n_key: None,
+        stdin_field: None,
+        path_kind: path_kind.map(str::to_owned),
+        reject_repeat: false,
+    };
+    let mut arg_groups: HashMap<String, CliArgGroup> = HashMap::new();
+    arg_groups.insert(
+        "place_args".into(),
+        CliArgGroup {
+            positional: vec![],
+            flags: vec![
+                arg("workspace", CliArgType::String, None),
+                arg("cwd", CliArgType::String, Some("directory")),
+            ],
+        },
+    );
+    PluginCliEntry {
+        cli: CliCommandDecl {
+            name: "pathy".into(),
+            description: None,
+            description_i18n_key: None,
+            help_group: None,
+            subcommands: vec![new_subcommand("spawn", "pathy.spawn", "place_args")],
+            arg_groups,
+        },
+        strict_caller_contexts: Vec::new(),
+    }
+}
+
+fn path_request(args: &[&str], remote: bool) -> (anyhow::Result<Value>, Vec<Map<String, Value>>) {
+    let entries = vec![path_entry()];
+    let m = build_augmented_cli(&entries)
+        .try_get_matches_from(std::iter::once("tasty").chain(args.iter().copied()))
+        .expect("parse");
+    let mut asked = Vec::new();
+    let result = matches_to_request(&entries, &[], &m, &mut |q| {
+        asked.push(q.clone());
+        remote
+    })
+    .map(|(req, _, _)| req.params);
+    (result, asked)
+}
+
+#[test]
+fn a_path_for_an_attach_mirror_is_sent_unchanged_for_the_server_to_check() {
+    let (params, asked) = path_request(
+        &[
+            "pathy",
+            "spawn",
+            "--workspace",
+            "7",
+            "--cwd",
+            "/only/on/the/server",
+        ],
+        true,
+    );
+    assert_eq!(params.unwrap()["cwd"], "/only/on/the/server");
+    assert_eq!(
+        asked,
+        vec![
+            serde_json::json!({ "workspace": 7 })
+                .as_object()
+                .unwrap()
+                .clone()
+        ]
+    );
+}
+
+#[test]
+fn a_path_for_a_local_target_is_still_resolved_and_checked_here() {
+    let (params, _) = path_request(
+        &[
+            "pathy",
+            "spawn",
+            "--workspace",
+            "7",
+            "--cwd",
+            "/only/on/the/server",
+        ],
+        false,
+    );
+    assert!(params.is_err(), "a missing local directory is refused");
+    let here = std::env::current_dir().unwrap();
+    let (params, _) = path_request(&["pathy", "spawn", "--workspace", "7", "--cwd", "."], false);
+    assert_eq!(params.unwrap()["cwd"], here.to_string_lossy().as_ref());
+}
+
+#[test]
+fn the_host_is_not_asked_without_a_path_or_a_numeric_placement() {
+    let (_, asked) = path_request(&["pathy", "spawn", "--workspace", "7"], true);
+    assert!(asked.is_empty());
+    let (params, asked) = path_request(
+        &["pathy", "spawn", "--workspace", "name", "--cwd", "."],
+        true,
+    );
+    assert!(
+        asked.is_empty(),
+        "a workspace name cannot point at a mirror"
+    );
+    assert!(params.unwrap()["cwd"].as_str().unwrap().starts_with('/'));
 }
