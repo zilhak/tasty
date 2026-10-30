@@ -244,6 +244,21 @@ tasty claude codex-returns --retry   # 남은 결과를 모두 지금 보낼 차
 
 한 Codex 대화의 자식들이 여러 워크스페이스에 있으면 `children`·`kill`·`broadcast`·`respawn` 에 `--workspace` 로 어느 워크스페이스의 자식인지 지정하세요. 지정하지 않으면 후보를 알려 주며 거절합니다. 자식이 지금 있는 워크스페이스를 기준으로 하므로, 복원되어 다른 워크스페이스로 옮겨 간 자식도 지금 위치로 찾습니다.
 
+### 연결한 원격 워크스페이스에 자식 만들기
+
+다른 컴퓨터의 Tasty 워크스페이스를 연결(attach)해 두었다면, 그 워크스페이스 번호를 `--workspace` 로 주어 `tasty claude spawn`·`tasty codex spawn` 할 수 있습니다. 자식은 원격 컴퓨터에서 그 컴퓨터의 Claude Code·Codex 설치, 설정, 로그인으로 실행되고, 내 쪽에서는 연결한 워크스페이스 안의 자식으로 보입니다. `tell`·`children`·`kill` 도 내 쪽 자식처럼 씁니다.
+
+```sh
+tasty claude spawn --workspace 7 --prompt "테스트를 돌려 줘"    # 7 은 연결한 원격 워크스페이스
+```
+
+- 원격 컴퓨터에도 `tasty claude install`·`tasty codex install` 로 훅을 설치해 두어야 완료가 돌아옵니다. Claude 훅이 없으면 spawn 결과에 경고가 나옵니다.
+- 완료 알림은 내 쪽 부모의 완료 로그로 오고, Codex 대화가 부모면 응답 결과도 그 대화로 돌아옵니다. 결과가 늦게 와도 그 응답을 지시한 대화로 갑니다.
+- 연결이 끊기면 지시가 실행됐는지 알 수 없다고 알릴 수 있습니다. 다시 시도하기 전에 `children` 으로 확인하세요.
+- `--cwd`·`--profile-file` 은 원격 컴퓨터 기준의 절대 경로로 줍니다. 상대 경로나 원격 컴퓨터에 없는 경로면 자식을 만들지 않고 거절합니다.
+- 원격 쪽 사용자는 연결된 동안 그 자식에게 `tell`·`kill`·`respawn`·`reboot` 를 할 수 없습니다. 연결한 쪽만 다룰 수 있습니다.
+- 원격 자식에는 `respawn`·`broadcast` 를 쓸 수 없습니다.
+
 ### API 에러로 멈춘 Claude 자동 재개
 
 서버 과부하 같은 일시적인 API 에러로 Claude 의 턴이 끝나면, Tasty 가 잠시 뒤 "이어서 진행해" 문구를 대신 보내 작업을 잇게 할 수 있습니다. **기본은 꺼져 있습니다.** **설정** <!-- en: Settings --> › **플러그인** <!-- en: Plugins --> › **Claude Code** 에서 켭니다.

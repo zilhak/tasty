@@ -1,4 +1,4 @@
-<!-- source-hash: 8ad0c4933977 -->
+<!-- source-hash: bddfba8fc9d0 -->
 # Working with Claude and Codex
 
 Connect Claude Code and Codex CLI to share work across several agents. One agent can launch others and receive their results, so implementation, testing, and review can run alongside each other.
@@ -245,6 +245,21 @@ tasty claude codex-returns --retry   # put every pending result back in line to 
 `--retry` also puts back results whose automatic retry stopped, and returns without waiting for the sending. The list it prints can therefore still show the results it just put back; run `codex-returns` again a moment later to check.
 
 When the children of one Codex conversation are in more than one workspace, pass `--workspace` to `children`, `kill`, `broadcast`, or `respawn` to say which workspace's children you mean. Without it the command is refused and lists the candidates. The workspace a child is in now counts, so a child that was restored into another workspace is found where it is now.
+
+### Creating children in an attached remote workspace
+
+If you have attached a Tasty workspace on another computer, pass that workspace's number to `--workspace` to run `tasty claude spawn` or `tasty codex spawn` there. The child runs on the remote computer with that computer's Claude Code or Codex installation, settings, and sign-in, and appears on your side as a child in the attached workspace. Use `tell`, `children`, and `kill` as you would for a local child.
+
+```sh
+tasty claude spawn --workspace 7 --prompt "Run the tests"    # 7 is the attached remote workspace
+```
+
+- Install the hooks on the remote computer as well (`tasty claude install`, `tasty codex install`), or completions will not come back. Without the Claude hooks, spawn shows a warning.
+- Completion notifications arrive in your parent's completion log, and when a Codex conversation is the parent, the replies return to that conversation. A late result still goes to the conversation that gave that instruction.
+- If the connection drops, Tasty may report that it cannot tell whether the instruction ran. Check with `children` before trying again.
+- Give `--cwd` and `--profile-file` as absolute paths on the remote computer. A relative path, or a path that does not exist on the remote computer, is refused and no child is created.
+- While attached, the user on the remote side cannot `tell`, `kill`, `respawn`, or `reboot` that child. Only the attached side can drive it.
+- `respawn` and `broadcast` are not available for remote children.
 
 ### Resuming Claude automatically after an API error
 
