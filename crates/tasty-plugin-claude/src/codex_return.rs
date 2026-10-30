@@ -971,15 +971,16 @@ impl Returns {
             attach::hand_over(host, request)
         } else {
             host.call("codex.deliver", request)
-                .map_err(|e| e.to_string())
+                .map_err(|e| attach::Failure::Retry(e.to_string()))
         };
         match &outcome {
             Ok(response) => {
                 tracing::info!("claude codex return: {key} handed to codex ({response})")
             }
-            Err(message) => tracing::warn!(
+            Err(attach::Failure::Retry(message)) => tracing::warn!(
                 "claude codex return: {key} was not handed to codex, kept for retry: {message}"
             ),
+            Err(attach::Failure::Refused(_)) => {}
         }
         self.settle(&key, outcome.map(|_| ()), now_ms().max(now));
         true
@@ -999,11 +1000,27 @@ impl Returns {
         .unwrap_or(None)
     }
 
-    fn settle(&self, key: &str, outcome: Result<(), String>, now: u64) {
+    fn settle(&self, key: &str, outcome: Result<(), attach::Failure>, now: u64) {
         let result = self.update(|book| {
             match &outcome {
                 Ok(()) => book.outbox.retain(|o| key_of(&o.request) != Some(key)),
-                Err(e) => {
+                // 영구 거절은 지우지 않고 사유와 함께 포기한 요청으로 남긴다(`codex-returns` 로 본다).
+                Err(attach::Failure::Refused(reason)) => {
+                    for o in book
+                        .outbox
+                        .iter_mut()
+                        .filter(|o| key_of(&o.request) == Some(key))
+                    {
+                        o.error = Some(format!("refused by the attach parent: {reason}"));
+                        o.attempts = o.attempts.saturating_add(1);
+                        o.first_failed_ms.get_or_insert(now);
+                        o.gave_up = true;
+                    }
+                    tracing::warn!(
+                        "claude codex return: {key} was refused by the attach parent; kept as given up: {reason}"
+                    );
+                }
+                Err(attach::Failure::Retry(e)) => {
                     for o in book
                         .outbox
                         .iter_mut()

@@ -21,29 +21,35 @@ pub(super) fn is_attach(request: &Value) -> bool {
     request.get("attach").and_then(Value::as_bool) == Some(true)
 }
 
-/// 요청을 서버 host 에 맡기거나 상태를 묻는다. 지워도 되면 `Ok`, 다시 물어야 하면 `Err` 다.
-pub(super) fn hand_over<H: HostCall>(host: &H, mut request: Value) -> Result<Value, String> {
+/// 보내지 못한 요청의 처리.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) enum Failure {
+    /// 일시 실패나 아직 확인 전이다. 늘어나는 간격으로 다시 보낸다(기한이 지나면 포기한다).
+    Retry(String),
+    /// 받는 쪽이 영구히 받을 수 없다고 했다. 다시 보내지 않고 사유와 함께 포기한 요청으로 남긴다.
+    Refused(String),
+}
+
+/// 요청을 서버 host 에 맡기거나 상태를 묻는다. client 가 기록했으면 `Ok` 이고 그때만 지운다.
+pub(super) fn hand_over<H: HostCall>(host: &H, mut request: Value) -> Result<Value, Failure> {
     let surface = request
         .get("child_surface")
         .and_then(Value::as_u64)
         .and_then(|n| u32::try_from(n).ok())
-        .ok_or("attach result without child_surface")?;
+        .ok_or_else(|| Failure::Refused("attach result without child_surface".into()))?;
     let key = super::key_of(&request)
-        .ok_or("attach result without completion_key")?
+        .ok_or_else(|| Failure::Refused("attach result without completion_key".into()))?
         .to_string();
     if let Some(map) = request.as_object_mut() {
         map.remove("attach");
     }
     let payload = serde_json::json!({ PAYLOAD_KEY: request });
-    match remote_attach::child_notice(host, surface, &key, payload)? {
+    match remote_attach::child_notice(host, surface, &key, payload).map_err(Failure::Retry)? {
         NoticeStatus::Delivered => Ok(serde_json::json!({ "attach": "delivered" })),
-        NoticeStatus::Rejected(reason) => {
-            tracing::warn!(
-                "claude codex return: {key} was refused by the attach parent and dropped: {reason}"
-            );
-            Ok(serde_json::json!({ "attach": "rejected", "reason": reason }))
-        }
-        NoticeStatus::Pending => Err("waiting for the attach parent to record it".into()),
+        NoticeStatus::Rejected(reason) => Err(Failure::Refused(reason)),
+        NoticeStatus::Pending => Err(Failure::Retry(
+            "waiting for the attach parent to record it".into(),
+        )),
     }
 }
 

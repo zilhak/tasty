@@ -502,7 +502,34 @@ fn an_attach_result_is_kept_until_the_client_settles_it() {
     .unwrap();
     *fx.rec.notice_status.borrow_mut() = Some(NoticeStatus::Rejected("no route".into()));
     fx.with(attach_out::pump);
-    assert_eq!(attach_out::pending(fx.root()), 1);
+    // 영구 거절은 지우지 않고 포기한 기록으로 남기며 더 묻지 않는다.
+    assert_eq!(attach_out::pending(fx.root()), 2);
+    assert_eq!(attach_out::given_up(fx.root()), 1);
+    let asked = fx.rec.notices.borrow().len();
+    attach_out::make_due(fx.root());
+    fx.with(attach_out::pump);
+    assert_eq!(
+        fx.rec.notices.borrow().len(),
+        asked + 1,
+        "only the record still waiting is asked again"
+    );
+}
+
+/// 첫 실패부터 자동 재시도 기한이 지나면 결과를 지우지 않고 포기한 기록으로 남긴다.
+#[test]
+fn an_attach_result_past_the_retry_window_is_kept_as_given_up() {
+    let fx = Fixture::new();
+    attach_out::queue(fx.root(), &"d".repeat(64), &completion(), ROUTE).unwrap();
+    fx.with(attach_out::pump);
+    assert_eq!(attach_out::given_up(fx.root()), 0);
+    attach_out::age_failures(fx.root(), attach_out::AUTO_RETRY_WINDOW.as_millis() as u64);
+    let next = fx.with(attach_out::pump);
+    assert_eq!(attach_out::pending(fx.root()), 1, "the result is kept");
+    assert_eq!(attach_out::given_up(fx.root()), 1);
+    assert_eq!(next, None, "nothing left to retry");
+    let asked = fx.rec.notices.borrow().len();
+    fx.with(attach_out::pump);
+    assert_eq!(fx.rec.notices.borrow().len(), asked);
 }
 
 /// 두 provider 모두 같은 형태로 원격 attach 를 선언한다.

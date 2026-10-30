@@ -34,7 +34,7 @@ attach 로 연결한 원격 워크스페이스(mirror)에 `tasty claude spawn` /
 - **spawn**: `--workspace`(숫자 id)나 `--pane` 이 mirror 면 `attach.agent_target` 으로 확인한 뒤 `attach.agent_call{method: spawn}` 을 보낸다. mirror 가 아니면 기존 로컬 spawn 이다. workspace 이름으로는 mirror 를 고르지 않는다.
   - 서버가 기능을 모르면(`capable=false`) 아무것도 만들지 않고 오류로 끝난다.
   - 보내는 인자는 허용 목록뿐이다. claude: `cwd`·`prompt`·`profile`·`profile_file`·`permission_mode`·`model`·`effort`. codex: `cwd`·`prompt`·spawn 옵션·승인 정책. 부모가 Codex 대화면 둘 다 `return_route`(route 토큰)를 붙인다. `_tasty_context`·부모·수신처·`caller_surface` 는 보내지 않는다.
-  - route 토큰은 C plugin 이 spawn·tell 하나마다 새로 발급하는 불투명 값이다. C 는 토큰과 그때의 수신처를 영속 기록하고, 서버에는 토큰만 보낸다. 이 기록은 경로를 풀거나 다른 부모로 다시 묶어도 지우지 않으며 보존 기간(claude 7일, codex 30일) 뒤에 지운다.
+  - route 토큰은 C plugin 이 spawn·tell 하나마다 새로 발급하는 불투명 값이다. C 는 토큰과 그때의 수신처를 영속 기록하고, 서버에는 토큰만 보낸다. 이 기록은 경로를 풀거나 다른 부모로 다시 묶어도 지우지 않는다. claude 는 발급 뒤 7일이 지난 기록을 지우고 4096개를 넘으면 오래된 것부터 지운다. codex 는 수정 시각으로 30일이 지난 기록을 지우며 개수 상한은 없다. 지워진 토큰의 결과는 `rejected` 다.
   - 사용자가 명시한 `--cwd`·`--profile-file` 경로와 `--profile` 이름은 서버가 해석하고 확인한다. 원격 spawn 의 두 경로는 서버 기준 절대 경로만 받는다. 상대 경로를 서버 프로세스의 작업 위치로 풀면 의도하지 않은 파일을 실행할 수 있기 때문이다. 서버 plugin 은 터미널을 만들기 전에 절대 경로인지, `cwd` 는 디렉터리로·`profile_file` 은 파일로 서버에 있는지 확인하고 아니면 거절한다. C 에서 해석한 설정 경로(기본 프로필·plugin 설정)를 대신 넣어 보내지는 않는다. 로컬 spawn 의 상대 경로 처리는 그대로다.
   - 응답을 받으면 L 에 기존 경로를 묶는다(물리 부모: 완료 알림 훅, Codex 부모: 결과 경로). 묶기에 성공한 뒤에만 `attach.agent_commit` 을 부른다. commit 전에는 서버가 그 자식의 통지를 보내지 않으므로 첫 완료가 수신처 없이 지나가지 않는다. 묶기에 실패하면 commit 하지 않고 그 자식을 원격 kill 로 닫은 뒤 오류로 끝난다.
   - 응답의 `child_surface_id`·`child_index` 는 C 기준(L)이다. `remote: true`, `remote_child_surface_id`(R)를 덧붙인다.
@@ -59,11 +59,13 @@ host 는 원격 출처 호출에 `parent_external = attach:o<n>`·`attach_contex
   - claude: 경로의 `attach` 표지. 확정된 턴은 기존처럼 claim 해 영속 요청으로 남기고, 송신 스레드가 `codex.deliver` 대신 `attach.child_notice{surface_id: R, key: completion_key, payload: {completion}}` 를 부른다.
   - codex: 반환 기록의 `attach_parent`. 소유 서버로 턴을 확정한 뒤 원장 대신 `attach-out/` 영속 기록으로 옮기고 `attach.child_notice` 를 부른다.
   - `attach.child_notice` 호출 하나의 상한은 15초다. codex 는 이 호출을 worker 에서 하므로, 호출이 실패하면 그 회차에는 남은 기록을 묻지 않고 다음 깨우기로 미룬다. claude 는 송신 스레드에서 부른다.
-  - `pending` 이면 영속 기록을 두고 같은 키로 늘어나는 간격을 두어 다시 묻는다. `delivered`(C 가 recorded·duplicate)나 `rejected` 를 받은 뒤에만 지운다. S host 가 다시 시작하면 같은 키로 다시 쌓으므로 C 에 같은 결과가 다시 갈 수 있고, C 원장이 같은 키로 거른다(장애 재전달 허용).
+  - `pending` 이나 호출 실패면 영속 기록을 두고 같은 키로 늘어나는 간격을 두어 다시 묻는다. `delivered`(C 가 recorded·duplicate)를 받은 뒤에만 지운다. 같은 키를 다시 맡기면 C 에 같은 결과가 다시 갈 수 있고, C 원장이 같은 키로 거른다(장애 재전달 허용).
+  - `rejected(reason)`(host 가 영구히 전달할 수 없다고 판정했거나 C 가 거절)를 받거나, 첫 실패부터 24시간이 지나도 전달되지 않으면 결과를 지우지 않고 사유와 함께 포기한 기록으로 남긴 뒤 더 묻지 않는다. claude 는 outbox 의 `gave_up` 요청(`tasty claude codex-returns` 로 보고 `--retry` 로 다시 보낼 수 있다), codex 는 plugin 데이터 폴더 `attach-out/` 의 기록(`gave_up`·`error`)과 경고 로그로 남는다.
 
 ## 한계
 
 - 원격 spawn 의 `--cwd`·`--profile-file` 을 CLI 가 C 의 파일시스템에서 확인하지 않고 그대로 넘기는 것은 host CLI 쪽 조정이 필요하다. 그 조정 전에는 CLI 가 C 에서 먼저 확인하므로 같은 경로가 C 에도 있어야 한다. `--cwd` 를 생략하면 서버의 기본 위치에서 시작한다.
 - respawn·broadcast·launch 는 원격 자식에 대해 지원하지 않는다.
 - 결과불명 call 의 부모 기록은 plugin 메모리에만 있다. plugin 이 다시 시작한 뒤 온 늦은 자식은 닫는다.
+- 서버 host 가 다시 시작하면 attach 출처가 사라진다. 그때 진행 중이던 call 은 결과불명이고, 그 출처의 자식 결과는 host 가 `rejected` 로 답해 서버 plugin 에 포기한 기록으로 남는다. 서버 재시작 뒤 출처를 복구해 결과를 다시 전달하는 기능은 없다.
 - `remote_receive` 는 `codex.deliver` 와 같이 공개 IPC 로도 부를 수 있다(별도 권한 경계가 아니다).

@@ -952,3 +952,43 @@ fn the_server_keeps_the_route_token_of_the_turn() {
     assert_eq!(notices.len(), 1);
     assert_eq!(notices[0]["payload"]["completion"]["route"], json!(ROUTE_A));
 }
+
+/// 서버: client 가 영구히 받을 수 없다고 하면(rejected) 결과를 지우지 않고 사유와 함께 포기한 요청으로 남긴다.
+#[test]
+fn a_refused_attach_result_is_kept_as_given_up() {
+    let (_d, returns) = store();
+    let host = server_host("pending");
+    let params = origin_params(json!({ "prompt": "p", RETURN_ROUTE_KEY: ROUTE_A }));
+    crate::handlers::handle_spawn(&scanner(), &returns, &host, &params, None, &tr()).unwrap();
+    returns.observe("session-start", 40, Some("sA"), None);
+    returns.turn_end(TurnEnd {
+        surface: 40,
+        session: Some("sA"),
+        status: ReturnStatus::TurnEnded,
+        body: Some("done"),
+        attempt_id: None,
+        turn: None,
+    });
+    let refused = Host::new(|method, _| match method {
+        "attach.child_notice" => Ok(json!({ "status": "rejected", "reason": "origin is gone" })),
+        _ => Ok(json!({})),
+    });
+    returns.pump_once(&refused, 0);
+    let pending = returns.pending().unwrap();
+    assert_eq!(pending.len(), 1, "the result is kept");
+    assert_eq!(pending[0]["gave_up"], json!(true));
+    assert!(
+        pending[0]["error"]
+            .as_str()
+            .unwrap()
+            .contains("origin is gone"),
+        "{}",
+        pending[0]
+    );
+    returns.pump_once(&refused, u64::MAX / 2);
+    assert_eq!(
+        refused.params_of("attach.child_notice").len(),
+        1,
+        "not asked again"
+    );
+}
