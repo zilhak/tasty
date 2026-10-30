@@ -18,9 +18,9 @@ pub const CAPABILITY: &str = "ipc.stream.agent-children";
 /// [`CAPABILITY`] 의 버전.
 pub const VERSION: u32 = 1;
 
-/// 실행할 수 있는 plugin 과 메서드는 이 파일이 정하지 않는다. 각 plugin 매니페스트의
-/// `contributes.remote_attach` 선언(자기 namespace 메서드 이름)을 서버 host 가 읽어 정한다.
-/// host 는 메서드의 의미나 provider 별 훅 이름을 해석하지 않는다.
+// 실행할 수 있는 plugin 과 메서드는 이 파일이 정하지 않는다. 각 plugin 매니페스트의
+// `contributes.remote_attach` 선언(자기 namespace 메서드 이름)을 서버 host 가 읽어 정한다.
+// host 는 메서드의 의미나 provider 별 훅 이름을 해석하지 않는다.
 
 /// 원격 자식의 프로세스 종료. host 가 PTY 종료에서 만든다.
 pub const PROCESS_EXIT: &str = "process-exit";

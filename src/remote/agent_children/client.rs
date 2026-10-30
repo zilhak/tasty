@@ -288,14 +288,14 @@ pub(crate) fn call_reply(
         return Some(JsonRpcResponse::error(
             id,
             ERR_OUTCOME_UNKNOWN,
-            &format!("remote agent call {call_id} outcome unknown: its record expired"),
+            format!("remote agent call {call_id} outcome unknown: its record expired"),
         ));
     };
     let unknown = |why: &str| {
         JsonRpcResponse::error(
             id.clone(),
             ERR_OUTCOME_UNKNOWN,
-            &format!("remote agent call {call_id} outcome unknown: {why}"),
+            format!("remote agent call {call_id} outcome unknown: {why}"),
         )
     };
     let response = match (&call.state, &call.outcome) {

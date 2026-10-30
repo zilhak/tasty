@@ -805,43 +805,7 @@ impl StreamHub {
                                 }
                                 Ok(_) => {}
                                 Err(_) => {
-                                    if self.collect_html_request(
-                                        client_id,
-                                        &frame.payload,
-                                        &mut out,
-                                    ) {
-                                        // The HTML helper owns capability declarations and request order.
-                                    } else if let Ok(msg) =
-                                        serde_json::from_slice::<CaptureUploadMsg>(&frame.payload)
-                                    {
-                                        out.capture_uploads.push((client_id, msg));
-                                    } else if let Ok(msg) =
-                                        serde_json::from_slice::<ListDirRequestMsg>(&frame.payload)
-                                    {
-                                        out.list_dir_requests.push((client_id, msg));
-                                    } else if let Ok(msg) =
-                                        serde_json::from_slice::<GitQueryRequestMsg>(&frame.payload)
-                                    {
-                                        out.git_query_requests.push((client_id, msg));
-                                    } else if let Ok(msg) =
-                                        serde_json::from_slice::<MarkdownContentRequestMsg>(
-                                            &frame.payload,
-                                        )
-                                    {
-                                        out.markdown_content_requests.push((client_id, msg));
-                                    } else if let Ok(msg) =
-                                        serde_json::from_slice::<crate::explorer_op::ExplorerOpMsg>(
-                                            &frame.payload,
-                                        )
-                                    {
-                                        out.explorer_ops.push((client_id, msg));
-                                    } else if let Ok(msg) = serde_json::from_slice::<
-                                        crate::agent_child::AgentClientMsg,
-                                    >(
-                                        &frame.payload
-                                    ) {
-                                        out.agent_children.push((client_id, msg));
-                                    }
+                                    self.collect_other_control(client_id, &frame.payload, &mut out)
                                 }
                             }
                         }
@@ -854,6 +818,33 @@ impl StreamHub {
         // 이 배치의 선언(`ClientLossNotify`)까지 반영한 뒤에 갚는다.
         self.repay_all_pending_loss();
         out
+    }
+
+    /// `StreamControl` 이 아닌 제어 메시지를 형태별로 분류한다. 맞는 형태가 없으면 버린다.
+    fn collect_other_control(
+        &self,
+        client_id: StreamClientId,
+        payload: &[u8],
+        out: &mut PumpOutcome,
+    ) {
+        if self.collect_html_request(client_id, payload, out) {
+            // The HTML helper owns capability declarations and request order.
+        } else if let Ok(msg) = serde_json::from_slice::<CaptureUploadMsg>(payload) {
+            out.capture_uploads.push((client_id, msg));
+        } else if let Ok(msg) = serde_json::from_slice::<ListDirRequestMsg>(payload) {
+            out.list_dir_requests.push((client_id, msg));
+        } else if let Ok(msg) = serde_json::from_slice::<GitQueryRequestMsg>(payload) {
+            out.git_query_requests.push((client_id, msg));
+        } else if let Ok(msg) = serde_json::from_slice::<MarkdownContentRequestMsg>(payload) {
+            out.markdown_content_requests.push((client_id, msg));
+        } else if let Ok(msg) = serde_json::from_slice::<crate::explorer_op::ExplorerOpMsg>(payload)
+        {
+            out.explorer_ops.push((client_id, msg));
+        } else if let Ok(msg) =
+            serde_json::from_slice::<crate::agent_child::AgentClientMsg>(payload)
+        {
+            out.agent_children.push((client_id, msg));
+        }
     }
 }
 
