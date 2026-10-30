@@ -14,15 +14,7 @@ use crate::remote::agent_children as agents;
 use crate::remote::agent_children::client::{CALL_REPLY_LIMIT, Call, CallState, Outgoing};
 use crate::runtime::engine_access::EngineMut;
 
-pub(crate) fn handle(
-    #[cfg_attr(
-        not(feature = "gui"),
-        expect(
-            unused_variables,
-            reason = "only the attach client answers through deferred replies"
-        )
-    )]
-    core: &crate::app::services::AppServices,
+pub(crate) fn handle_agent_method(
     engine: &mut EngineMut<'_>,
     caller: &crate::ipc::caller::CallerContext,
     id: Value,
@@ -33,16 +25,12 @@ pub(crate) fn handle(
         #[cfg(feature = "gui")]
         "attach.agent_target" => target(engine, params),
         #[cfg(feature = "gui")]
-        "attach.agent_call" => return call(core, engine, caller, id, params),
-        #[cfg(feature = "gui")]
         "attach.agent_commit" => commit(caller, params),
         // 헤드리스에는 attach client 가 없어 원격 mirror 도 없다.
         #[cfg(not(feature = "gui"))]
         "attach.agent_target" => Ok(json!({ "remote": false })),
         #[cfg(not(feature = "gui"))]
-        "attach.agent_call" | "attach.agent_commit" => {
-            Err("this instance has no remote attach mirrors".into())
-        }
+        "attach.agent_commit" => Err(NO_MIRRORS.into()),
         "attach.child_notice" => notice(caller, params),
         "attach.child_notices" => Ok(notices()),
         _ => Err(format!("unknown method {method}")),
@@ -51,6 +39,42 @@ pub(crate) fn handle(
         Ok(value) => JsonRpcResponse::success(id, value),
         Err(message) => JsonRpcResponse::invalid_params(id, message),
     }
+}
+
+#[cfg(not(feature = "gui"))]
+const NO_MIRRORS: &str = "this instance has no remote attach mirrors";
+
+/// `attach.agent_call`. 응답은 원격 결과가 올 때까지 미룬다.
+pub(crate) fn handle_call(
+    #[cfg_attr(
+        not(feature = "gui"),
+        expect(
+            unused_variables,
+            reason = "only the attach client answers through deferred replies"
+        )
+    )]
+    core: &crate::app::services::AppServices,
+    #[cfg_attr(
+        not(feature = "gui"),
+        expect(unused_variables, reason = "a headless instance has no mirrors")
+    )]
+    engine: &mut EngineMut<'_>,
+    #[cfg_attr(
+        not(feature = "gui"),
+        expect(unused_variables, reason = "a headless instance has no mirrors")
+    )]
+    caller: &crate::ipc::caller::CallerContext,
+    id: Value,
+    #[cfg_attr(
+        not(feature = "gui"),
+        expect(unused_variables, reason = "a headless instance has no mirrors")
+    )]
+    params: &Value,
+) -> JsonRpcResponse {
+    #[cfg(feature = "gui")]
+    return call(core, engine, caller, id, params);
+    #[cfg(not(feature = "gui"))]
+    JsonRpcResponse::invalid_params(id, NO_MIRRORS)
 }
 
 #[cfg(feature = "gui")]

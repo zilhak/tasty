@@ -30,6 +30,14 @@ pub(super) const NOT_A_ROUTING_TARGET: &[(&str, &str)] = &[
     ("attempt_id", "agent task 실행 회차 이름(문자열)"),
     ("banner_id", "debug 배너 식별자(문자열)"),
     ("caller_id", "audit 행의 호출자 표기(문자열)"),
+    (
+        "call_id",
+        "attach.agent_commit 의 원격 call 번호다. client 전역 기록에서 찾으므로 창을 정하지 않는다.",
+    ),
+    (
+        "target_surface_id",
+        "attach.agent_call 의 원격 자식 mirror surface 다. 같은 요청의 anchor_surface_id 가 창을 정하고, 핸들러가 그 mirror 의 자식인지 확인한다.",
+    ),
     ("extension_id", "plugin extension 식별자(문자열)"),
     ("plan_id", "memory.plan 의 계획 이름(문자열)"),
     ("plugin_id", "plugin 매니페스트 id(문자열)"),

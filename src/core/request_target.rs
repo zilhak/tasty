@@ -86,6 +86,13 @@ pub(crate) fn method_scoped_resource_id(
             id,
         });
     }
+    // 원격 자식 call 은 mirror 안의 기준 surface 로 그 mirror 를 가진 창을 정한다.
+    if method == "attach.agent_call" {
+        return numeric(params, "anchor_surface_id").map(|id| ResourceId {
+            kind: Kind::Surface,
+            id,
+        });
+    }
     if method == "hook.unset" {
         return numeric(params, "hook_id").map(|id| ResourceId {
             kind: Kind::Hook,
@@ -267,6 +274,17 @@ mod tests {
             );
         }
         assert!(request_resource_id("notification.create", &json!({"workspace_id":999})).is_some());
+    }
+
+    /// 원격 자식 call 은 mirror 를 가진 창으로 가야 한다. 대상 자식 번호는 창을 정하지 않는다.
+    #[test]
+    fn a_remote_agent_call_routes_by_its_mirror_anchor() {
+        let params = json!({ "anchor_surface_id": 41, "target_surface_id": 99, "call_id": 3 });
+        let got = request_resource_id("attach.agent_call", &params).unwrap();
+        assert!(matches!(got.kind, Kind::Surface));
+        assert_eq!(got.id, 41);
+        assert!(request_resource_id("attach.agent_commit", &params).is_none());
+        assert!(method_scoped_resource_id("surface.close", &params).is_none());
     }
 
     #[test]

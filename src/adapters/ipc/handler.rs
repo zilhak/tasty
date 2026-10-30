@@ -1018,9 +1018,19 @@ fn route_engine_handler(
         // attach.into_gui는 GUI App 층이 답한다. 헤드리스에는 mirror 큐를 처리할 쪽이 없으므로
         // 접수하지 않고 미라우팅 응답(-32017, 메서드 이름 포함)으로 거절한다.
         "attach.list" => attach::handle_list(&engine.read(), id),
-        m if m.starts_with("attach.agent_") || m.starts_with("attach.child_") => {
-            agent_children::handle(core, engine, caller, id, m, &request.params)
+        "attach.agent_call" => {
+            agent_children::handle_call(core, engine, caller, id, &request.params)
         }
+        "attach.agent_target"
+        | "attach.agent_commit"
+        | "attach.child_notice"
+        | "attach.child_notices" => agent_children::handle_agent_method(
+            engine,
+            caller,
+            id,
+            request.method.as_str(),
+            &request.params,
+        ),
         "remote.profile.list" => remote_profile::handle_list(id),
         "remote.profile.get" => remote_profile::handle_get(id, &request.params),
         "remote.profile.add" => remote_profile::handle_add(core, id, &request.params),

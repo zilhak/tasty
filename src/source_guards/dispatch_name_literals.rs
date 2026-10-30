@@ -200,6 +200,10 @@ const DELEGATED_ROUTERS: &[(&str, &str)] = &[
     ),
     ("src/adapters/ipc/handler/ime.rs", "handle_ime_method"),
     (
+        "src/adapters/ipc/handler/agent_children.rs",
+        "handle_agent_method",
+    ),
+    (
         "src/adapters/ipc/handler/plugin.rs",
         "dispatch_lifecycle_toggle",
     ),

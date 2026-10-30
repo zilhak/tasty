@@ -605,19 +605,14 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         // 원격 자식 에이전트. client 쪽 plugin 이 자기 namespace 로 holder 연결을 거쳐 서버 plugin 을 부르고,
         // 서버 쪽 plugin 이 그 자식의 고유 결과를 보낸다. 호출 plugin 의 기존 터미널 권한을 그대로 요구한다.
         // agent_target 은 읽기 전용이라 CLI 도 경로 인자를 어느 머신 기준으로 다룰지 정하려고 묻는다.
+        // call·commit·notice 는 외부 arm 이 있고 핸들러가 plugin 이 아닌 호출을 거절한다(file_picker.trigger 와 같다).
         ("attach.agent_target", plugin(Read, &[])),
         (
             "attach.agent_call",
-            plugin_only(Mutate, &[TerminalSpawn, TerminalWrite]),
+            plugin(Mutate, &[TerminalSpawn, TerminalWrite]),
         ),
-        (
-            "attach.agent_commit",
-            plugin_only(Idempotent, &[TerminalSpawn]),
-        ),
-        (
-            "attach.child_notice",
-            plugin_only(Idempotent, &[TerminalWrite]),
-        ),
+        ("attach.agent_commit", plugin(Idempotent, &[TerminalSpawn])),
+        ("attach.child_notice", plugin(Idempotent, &[TerminalWrite])),
         ("attach.child_notices", plugin(Read, &[])),
         // ── remote.profile.* (원격 접속 프로필 CRUD) ─────────────────────
         // 프로필은 비밀 없는 장비 인벤토리(passkey 를 이름으로 참조만). attach.* 와 동일하게
