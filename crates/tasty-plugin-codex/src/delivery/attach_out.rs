@@ -114,78 +114,111 @@ fn names(root: &Path) -> Vec<String> {
 pub(crate) fn pump(ctx: &Ctx<'_>) -> Option<u64> {
     let now = store::now_ms();
     let mut next: Option<u64> = None;
-    let mut stalled = false;
-    for name in names(ctx.root) {
-        // host 호출이 실패했으면 이번에는 더 묻지 않는다. worker 를 한 번에 오래 막지 않도록 남은 기록은 다음
-        // 깨우기에 묻는다.
-        if stalled {
-            let at = now + super::backoff(1).as_millis() as u64;
-            next = Some(next.map_or(at, |t| t.min(at)));
-            break;
-        }
-        let path = file(ctx.root, &name);
-        let mut out = match store::read_json::<Outgoing>(&path) {
-            Ok(Some(o)) => o,
-            Ok(None) => continue,
-            Err(e) => {
-                tracing::warn!("codex attach result {name}: unreadable: {e}");
-                continue;
-            }
+    let all = names(ctx.root);
+    for (i, name) in all.iter().enumerate() {
+        let path = file(ctx.root, name);
+        let Some(out) = load(&path, name) else {
+            continue;
         };
         if out.gave_up {
             continue;
         }
         if out.next_at_ms > now {
-            next = Some(next.map_or(out.next_at_ms, |t| t.min(out.next_at_ms)));
+            earliest(&mut next, out.next_at_ms);
             continue;
         }
-        let status = ctx.dispatch.child_notice(
-            out.surface,
-            &out.key,
-            json!({ PAYLOAD_KEY: out.completion.clone() }),
-        );
-        let failure = match &status {
-            Ok(NoticeStatus::Delivered) => {
-                if let Err(e) = store::remove_file(&path) {
-                    tracing::warn!("codex attach result {name}: remove: {e}");
-                }
-                continue;
-            }
-            Ok(NoticeStatus::Rejected(reason)) => {
-                out.gave_up = true;
-                format!("refused by the attach parent: {reason}")
-            }
-            Ok(NoticeStatus::Pending) => "waiting for the attach parent to record it".to_string(),
-            Err(e) => {
-                stalled = true;
-                e.clone()
-            }
-        };
-        out.attempts = out.attempts.saturating_add(1);
-        out.error = Some(failure.clone());
-        let first = *out.first_failed_ms.get_or_insert(now);
-        if now.saturating_sub(first) >= AUTO_RETRY_WINDOW.as_millis() as u64 {
-            out.gave_up = true;
+        let asked = ask(ctx, name, &path, out, now);
+        if let Some(at) = asked.next {
+            earliest(&mut next, at);
         }
-        if out.gave_up {
-            tracing::warn!(
-                "codex attach result {}: gave up after {} attempts and kept it in attach-out: {failure}",
-                out.key,
-                out.attempts
-            );
-        } else {
-            tracing::warn!(
-                "codex attach result {}: not handed over yet: {failure}",
-                out.key
-            );
-            out.next_at_ms = now + super::backoff(out.attempts).as_millis() as u64;
-            next = Some(next.map_or(out.next_at_ms, |t| t.min(out.next_at_ms)));
-        }
-        if let Err(e) = store::write_json(&path, &out) {
-            tracing::warn!("codex attach result {name}: keep retry time: {e}");
+        // host 호출이 실패했으면 이번에는 더 묻지 않는다. worker 를 한 번에 오래 막지 않도록 남은 기록은 다음
+        // 깨우기에 묻는다.
+        if asked.stalled {
+            if i + 1 < all.len() {
+                earliest(&mut next, now + super::backoff(1).as_millis() as u64);
+            }
+            break;
         }
     }
     next
+}
+
+fn earliest(next: &mut Option<u64>, at: u64) {
+    *next = Some(next.map_or(at, |t| t.min(at)));
+}
+
+fn load(path: &Path, name: &str) -> Option<Outgoing> {
+    match store::read_json::<Outgoing>(path) {
+        Ok(found) => found,
+        Err(e) => {
+            tracing::warn!("codex attach result {name}: unreadable: {e}");
+            None
+        }
+    }
+}
+
+/// 기록 하나를 물은 결과. `next` 는 그 기록을 다시 물을 시각이고 `stalled` 는 host 호출이 실패했다는 뜻이다.
+struct Asked {
+    next: Option<u64>,
+    stalled: bool,
+}
+
+/// 기록 하나를 서버 host 에 맡기거나 상태를 묻고 그 결과를 기록에 반영한다.
+fn ask(ctx: &Ctx<'_>, name: &str, path: &Path, mut out: Outgoing, now: u64) -> Asked {
+    let status = ctx.dispatch.child_notice(
+        out.surface,
+        &out.key,
+        json!({ PAYLOAD_KEY: out.completion.clone() }),
+    );
+    let (failure, stalled) = match status {
+        Ok(NoticeStatus::Delivered) => {
+            if let Err(e) = store::remove_file(path) {
+                tracing::warn!("codex attach result {name}: remove: {e}");
+            }
+            return Asked {
+                next: None,
+                stalled: false,
+            };
+        }
+        Ok(NoticeStatus::Rejected(reason)) => {
+            out.gave_up = true;
+            (format!("refused by the attach parent: {reason}"), false)
+        }
+        Ok(NoticeStatus::Pending) => (
+            "waiting for the attach parent to record it".to_string(),
+            false,
+        ),
+        Err(e) => (e, true),
+    };
+    let next = record_failure(&mut out, &failure, now);
+    if let Err(e) = store::write_json(path, &out) {
+        tracing::warn!("codex attach result {name}: keep retry time: {e}");
+    }
+    Asked { next, stalled }
+}
+
+/// 실패를 기록하고, 기한이 지났으면 포기로 바꾼다. 다시 물을 시각을 돌려주며 포기했으면 없다.
+fn record_failure(out: &mut Outgoing, failure: &str, now: u64) -> Option<u64> {
+    out.attempts = out.attempts.saturating_add(1);
+    out.error = Some(failure.to_string());
+    let first = *out.first_failed_ms.get_or_insert(now);
+    if now.saturating_sub(first) >= AUTO_RETRY_WINDOW.as_millis() as u64 {
+        out.gave_up = true;
+    }
+    if out.gave_up {
+        tracing::warn!(
+            "codex attach result {}: gave up after {} attempts and kept it in attach-out: {failure}",
+            out.key,
+            out.attempts
+        );
+        return None;
+    }
+    tracing::warn!(
+        "codex attach result {}: not handed over yet: {failure}",
+        out.key
+    );
+    out.next_at_ms = now + super::backoff(out.attempts).as_millis() as u64;
+    Some(out.next_at_ms)
 }
 
 /// 아직 보내지 못한 기록 수(포기한 기록 포함).
