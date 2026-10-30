@@ -284,21 +284,78 @@ fn an_unknown_outcome_is_reported_as_unknown() {
     );
 }
 
+/// 사용자가 명시한 --profile-file 경로는 그대로 서버로 가고, 서버가 자기 파일시스템에서 확인한다.
 #[test]
-fn a_local_profile_file_cannot_name_a_server_file() {
+fn an_explicit_profile_file_is_checked_on_the_server() {
     let (_d, returns) = store();
     let host = client_host(true, spawned);
-    let err = crate::handlers::handle_spawn(
+    crate::handlers::handle_spawn(
         &scanner(),
         &returns,
         &host,
-        &spawn_params(json!({ "profile_file": "/home/me/p.json" })),
+        &spawn_params(json!({ "profile_file": "/srv/profiles/p.json" })),
+        None,
+        &tr(),
+    )
+    .unwrap();
+    assert_eq!(
+        host.params_of("attach.agent_call")[0]["params"]["profile_file"],
+        json!("/srv/profiles/p.json")
+    );
+
+    let server = server_host("pending");
+    let err = crate::handlers::handle_spawn(
+        &scanner(),
+        &returns,
+        &server,
+        &origin_params(json!({ "profile_file": "/nonexistent/tasty-remote-profile.json" })),
         None,
         &tr(),
     )
     .unwrap_err();
-    assert!(err.message.contains("--profile-file"), "{}", err.message);
-    assert!(host.params_of("attach.agent_call").is_empty());
+    assert!(
+        err.message.contains("does not exist on the server"),
+        "{}",
+        err.message
+    );
+    assert!(server.params_of("terminal.spawn").is_empty());
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("p.json");
+    std::fs::write(&file, "{}").unwrap();
+    crate::handlers::handle_spawn(
+        &scanner(),
+        &returns,
+        &server,
+        &origin_params(json!({ "profile_file": file.to_string_lossy() })),
+        None,
+        &tr(),
+    )
+    .unwrap();
+    assert_eq!(server.params_of("terminal.spawn").len(), 1);
+}
+
+/// 경로를 묶지 못하면 commit 하지 않는다(첫 완료를 풀지 않는다). 받을 곳 없는 원격 자식은 닫는다.
+#[test]
+fn a_child_whose_route_cannot_be_bound_is_not_committed_and_is_closed() {
+    let dir = tempfile::tempdir().unwrap();
+    let blocked = dir.path().join("data");
+    std::fs::write(&blocked, "not a directory").unwrap();
+    let returns = Returns::new(Some(&blocked));
+    let host = client_host(true, spawned);
+    let mut params =
+        spawn_params(json!({ "_tasty_context": { "provider": "codex", "thread_id": THREAD } }));
+    params.as_object_mut().unwrap().remove("surface");
+    let err = crate::handlers::handle_spawn(&scanner(), &returns, &host, &params, None, &tr())
+        .unwrap_err();
+    assert!(err.message.contains("15"), "{}", err.message);
+    assert!(
+        host.params_of("attach.agent_commit").is_empty(),
+        "must not release notices"
+    );
+    let calls = host.params_of("attach.agent_call");
+    assert_eq!(calls.len(), 2, "{calls:?}");
+    assert_eq!(calls[1]["method"], json!("kill"));
+    assert_eq!(calls[1]["target_surface_id"], json!(15));
 }
 
 /// mirror 가 아닌 workspace 는 기존 로컬 spawn 그대로다.

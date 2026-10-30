@@ -33,9 +33,9 @@ attach 로 연결한 원격 워크스페이스(mirror)에 `tasty claude spawn` /
 
 - **spawn**: `--workspace`(숫자 id)나 `--pane` 이 mirror 면 `attach.agent_target` 으로 확인한 뒤 `attach.agent_call{method: spawn}` 을 보낸다. mirror 가 아니면 기존 로컬 spawn 이다. workspace 이름으로는 mirror 를 고르지 않는다.
   - 서버가 기능을 모르면(`capable=false`) 아무것도 만들지 않고 오류로 끝난다.
-  - 보내는 인자는 허용 목록뿐이다. claude: `cwd`·`prompt`·`profile`·`permission_mode`·`model`·`effort`. codex: `cwd`·`prompt`·spawn 옵션·승인 정책. 둘 다 `return_turns`(부모가 Codex 대화인가)를 붙인다. `_tasty_context`·부모·수신처·`caller_surface` 는 보내지 않는다.
-  - `--profile-file` 은 C 의 파일 경로라 원격 spawn 에서 거절한다. 서버에 등록한 `--profile` 이름은 서버가 해석한다.
-  - 응답을 받으면 L 에 기존 경로를 묶는다(물리 부모: 완료 알림 훅, Codex 부모: 결과 경로). 그다음 `attach.agent_commit` 을 부른다. commit 전에는 서버가 그 자식의 통지를 보내지 않으므로 첫 완료가 수신처 없이 지나가지 않는다.
+  - 보내는 인자는 허용 목록뿐이다. claude: `cwd`·`prompt`·`profile`·`profile_file`·`permission_mode`·`model`·`effort`. codex: `cwd`·`prompt`·spawn 옵션·승인 정책. 둘 다 `return_turns`(부모가 Codex 대화인가)를 붙인다. `_tasty_context`·부모·수신처·`caller_surface` 는 보내지 않는다.
+  - 사용자가 명시한 `--cwd`·`--profile-file` 경로와 `--profile` 이름은 서버가 해석하고 확인한다. 서버에 그 파일이 없으면 서버 plugin 이 터미널을 만들기 전에 거절한다. C 에서 해석한 설정 경로(기본 프로필·plugin 설정)를 대신 넣어 보내지는 않는다.
+  - 응답을 받으면 L 에 기존 경로를 묶는다(물리 부모: 완료 알림 훅, Codex 부모: 결과 경로). 묶기에 성공한 뒤에만 `attach.agent_commit` 을 부른다. commit 전에는 서버가 그 자식의 통지를 보내지 않으므로 첫 완료가 수신처 없이 지나가지 않는다. 묶기에 실패하면 commit 하지 않고 그 자식을 원격 kill 로 닫은 뒤 오류로 끝난다.
   - 응답의 `child_surface_id`·`child_index` 는 C 기준(L)이다. `remote: true`, `remote_child_surface_id`(R)를 덧붙인다.
   - 결과를 알 수 없으면(-32010, 35초 상한·재연결 실패·서버 재시작) 성공이나 실패로 단정하지 않고 결과불명으로 알린다. 그 call 의 부모는 plugin 메모리에 15분 남긴다. host 가 늦은 결과를 `remote_receive{kind: late_spawn}` 으로 주면 그 부모로 경로를 묶고 `recorded` 로 답한다(host 가 commit). 기다리는 부모가 없거나(plugin 재시작·만료) 서버가 오류를 냈으면 그 자식을 원격 kill 로 닫고 `rejected` 로 답한다.
 - **tell**: 대상이 C 에 등록된 원격 자식이면 결과 경로를 먼저 정하고(Codex 호출자: 경로 묶기, 그 밖: 이전 Codex 경로 해제) 입력은 `attach.agent_call{method: tell}` 로 보낸다. `--caller-surface` 의 완료 알림 훅은 L 에 다시 건다.
@@ -59,7 +59,7 @@ host 는 원격 출처 호출에 `parent_external = attach:o<n>`·`attach_contex
 
 ## 한계
 
-- `--cwd` 는 CLI 가 C 의 파일시스템에서 확인한다. C 에 없는 경로는 CLI 가 먼저 거절하므로, 서버에만 있는 경로는 쓸 수 없다. 생략하면 서버의 기본 위치에서 시작한다.
+- `--cwd`·`--profile-file` 은 CLI 가 C 의 파일시스템에서 먼저 확인하고 절대 경로로 바꾼다. 그래서 같은 경로가 C 에도 있어야 하며, 서버에서는 그 경로를 다시 확인한다. 서버에만 있는 경로는 아직 쓸 수 없다. `--cwd` 를 생략하면 서버의 기본 위치에서 시작한다.
 - respawn·broadcast·launch 는 원격 자식에 대해 지원하지 않는다.
 - 결과불명 call 의 부모 기록은 plugin 메모리에만 있다. plugin 이 다시 시작한 뒤 온 늦은 자식은 닫는다.
 - Codex 결과 수신처는 결과 도착 시점의 L 경로를 따른다. 확정을 기다리는 동안 다른 Codex 대화가 tell 하면 앞 턴의 결과도 새 대화로 간다.

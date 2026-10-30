@@ -25,11 +25,13 @@ use tasty_plugin_sdk::{IpcMethodError, i18n::Translator};
 use crate::codex_return::{Binding, ParentTarget, Returns, TerminalParent};
 use crate::error_scan::{ErrorScanner, ScanTarget};
 
-/// 서버 `claude.spawn` 으로 보내는 인자. 경로 인자 `cwd` 와 등록 이름 `profile` 은 서버에서 해석한다.
+/// 서버 `claude.spawn` 으로 보내는 인자. 사용자가 명시한 경로(`cwd`·`profile_file`)와 등록 이름(`profile`)은
+/// 서버에서 해석·확인한다. 이 Tasty 에서 해석한 설정 경로를 대신 넣지는 않는다.
 const SPAWN_KEYS: &[&str] = &[
     "cwd",
     "prompt",
     "profile",
+    "profile_file",
     "permission_mode",
     "model",
     "effort",
@@ -149,15 +151,6 @@ pub(crate) fn spawn<H: HostCall>(
     anchor: u32,
     tr: &Translator,
 ) -> Result<Value, IpcMethodError> {
-    if params
-        .get("profile_file")
-        .and_then(Value::as_str)
-        .is_some_and(|s| !s.is_empty())
-    {
-        return Err(IpcMethodError::invalid_params(
-            tr.t("claude.remote.profile_file"),
-        ));
-    }
     let codex = matches!(target, ParentTarget::Codex(_));
     let mut remote = forward(params, SPAWN_KEYS);
     remote.insert(RETURN_TURNS_KEY.into(), json!(codex));
@@ -205,10 +198,22 @@ pub(crate) fn spawn<H: HostCall>(
             tr.t_fmt("claude.remote.no_child", &reply.result.to_string()),
         ));
     };
-    let bound = bind(returns, host, target, child.surface_id, with_prompt, tr);
-    // 경로를 묶은 뒤에 통지를 풀어야 첫 완료가 수신처 없이 지나가지 않는다.
+    // 경로를 묶은 뒤에만 통지를 풀어야 첫 완료가 수신처 없이 지나가지 않는다. 묶지 못했으면 commit 하지 않고
+    // (통지는 서버에 보관된 채 남는다) 받을 곳이 없는 자식을 닫는다.
+    if let Err(e) = bind(returns, host, target, child.surface_id, with_prompt, tr) {
+        let cleanup = match remote_attach::call(
+            host,
+            child_request("kill", anchor, child.surface_id, Map::new()),
+        ) {
+            Ok(_) => tr.t("claude.remote.child_closed").to_string(),
+            Err(k) => tr.t_fmt("claude.remote.child_not_closed", &k.to_string()),
+        };
+        return Err(IpcMethodError::new(tr.t_args(
+            "claude.remote.bind_failed",
+            &[&child.surface_id.to_string(), &e.message, &cleanup],
+        )));
+    }
     let committed = remote_attach::commit(host, reply.call_id);
-    bound?;
     let mut out = Map::new();
     out.insert("child_surface_id".into(), json!(child.surface_id));
     if let Some(index) = child.index {
@@ -435,6 +440,15 @@ pub(crate) fn serve_spawn<H: HostCall>(
     let options = crate::session_options::SessionOptions::parse(params, tr)?;
     let prompt = params.get("prompt").and_then(Value::as_str);
     let profile_file = crate::handlers::resolve_profile_file_param(data_dir, params, tr)?;
+    // client CLI 는 경로를 client 에서 정규화하므로 이 서버에 같은 파일이 있는지 여기서 확인한다.
+    if let Some(path) = params.get("profile_file").and_then(Value::as_str)
+        && !path.is_empty()
+        && !Path::new(path).is_file()
+    {
+        return Err(IpcMethodError::invalid_params(
+            &tr.t_fmt("claude.remote.profile_file_missing", path),
+        ));
+    }
     let permission_mode =
         crate::handlers::resolve_permission_mode(host, params, profile_file.as_deref(), tr)?;
     if origin.return_turns && !returns.is_available() {
