@@ -230,8 +230,9 @@ impl App {
                                 .and_then(|r| r.result.as_ref())
                                 .and_then(|v| v.get("reason"))
                                 .and_then(Value::as_str)
-                                .unwrap_or("rejected by the plugin")
-                                .to_owned(),
+                                // 사유는 plugin 이 준 진단 문구다. 없으면 비워 둔다.
+                                .map(str::to_owned)
+                                .unwrap_or_default(),
                         },
                         _ => AckOutcome::RetryLater,
                     };
@@ -409,7 +410,10 @@ fn notice_outcome(
             };
             let fired = match &child.hooks {
                 Some(hooks) => {
-                    let mut manager = hooks.lock().unwrap_or_else(|p| p.into_inner());
+                    static POISONED: std::sync::atomic::AtomicBool =
+                        std::sync::atomic::AtomicBool::new(false);
+                    let mut manager =
+                        crate::poison::recover_mutex(hooks.lock(), "remote child hooks", &POISONED);
                     crate::hook_runtime::HookRuntimeState::fire_detached(
                         exec,
                         &mut manager,
