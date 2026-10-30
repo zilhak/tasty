@@ -30,6 +30,19 @@ pub(super) fn resolve_spawn(
                     "child reservation returned no index",
                 )
             })?;
+        // 원격 holder 문맥의 spawn 이면 이 번호를 그 call 에 귀속한다. 같은 출처의 call 이 겹쳐도 섞이지 않는다.
+        if let Some(context) = request
+            .params
+            .get("attach_context")
+            .and_then(|v| v.as_str())
+            && request
+                .params
+                .get("parent_external")
+                .and_then(|v| v.as_str())
+                .is_some_and(tasty_ipc::agent_child::is_attach_parent)
+        {
+            crate::remote::agent_children::record_spawn_slot(context, index);
+        }
         let mut spawn = pending.take().unwrap();
         spawn
             .request

@@ -247,6 +247,7 @@ pub(super) fn merge_survivor_mapping(
             engine.remote.attach_mesh_frames.remove(local_id);
             // 원격이 닫은 surface도 로컬 닫기처럼 soft 점유 등 점유 기록을 남기지 않는다.
             engine.forget_closed_surface(local_id);
+            super::agent_children::forget_mirror_child(engine, local_id);
         }
     }
 

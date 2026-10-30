@@ -4,7 +4,7 @@
 //! 출처를 이어받는다. 토큰은 서버 프로세스 메모리에만 있어 서버가 다시 시작하면 무효다.
 //! 서버 child registry 에는 공개 번호로 만든 부모 키(`attach:o<n>`)만 남는다.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, HashMap};
 use std::time::{Duration, Instant};
 
 use tasty_ipc::agent_child::{
@@ -51,8 +51,8 @@ pub(super) struct Call {
     pub origin: u64,
     pub plugin: String,
     pub context: String,
-    /// call 시작 때 이 출처의 자식 surface. 끝날 때의 목록과 비교해 새 자식을 찾는다.
-    pub before: BTreeSet<u32>,
+    /// 이 call 의 문맥으로 예약된 자식 번호(이 출처 부모 아래). 같은 출처의 call 이 겹쳐도 섞이지 않는다.
+    pub slots: Vec<u32>,
     pub created: Instant,
     pub result: Option<AgentServerMsg>,
 }
@@ -230,7 +230,6 @@ impl Server {
         call_id: u64,
         plugin: &str,
         workspace: u32,
-        before: BTreeSet<u32>,
         now: Instant,
     ) -> Begin {
         let Some(origin) = self.origin_of_client(client) else {
@@ -266,7 +265,7 @@ impl Server {
                 origin,
                 plugin: plugin.to_owned(),
                 context: context.clone(),
-                before,
+                slots: Vec::new(),
                 created: now,
                 result: None,
             },
@@ -274,17 +273,30 @@ impl Server {
         Begin::Start { origin, context }
     }
 
-    /// call 이 끝났다. 새 자식을 기록하고 문맥을 폐기한다. 보낼 결과를 돌려준다.
+    /// 이 문맥의 spawn 이 출처 부모 아래 자식 번호를 예약했다. 그 번호를 만든 call 에 귀속한다.
+    pub(crate) fn record_slot(&mut self, context: &str, index: u32) {
+        match self.calls.values_mut().find(|c| c.context == context) {
+            Some(call) => call.slots.push(index),
+            None => tracing::warn!("remote agent child slot {index} has no running call"),
+        }
+    }
+
+    /// call 이 끝났다. 이 call 이 예약한 번호의 자식을 기록하고 문맥을 폐기한다. 보낼 결과를 돌려준다.
+    /// `children` 은 출처 부모 아래의 현재 자식(번호 → surface)이다. 이미 닫힌 자식은 빠진다.
     pub(crate) fn finish_call(
         &mut self,
         origin: u64,
         call_id: u64,
-        after: &BTreeSet<u32>,
+        children: &BTreeMap<u32, u32>,
         response: Result<serde_json::Value, CallError>,
     ) -> Option<AgentServerMsg> {
         let call = self.calls.get_mut(&(origin, call_id))?;
         self.contexts.remove(&call.context);
-        let spawned: Vec<u32> = after.difference(&call.before).copied().collect();
+        let spawned: Vec<u32> = call
+            .slots
+            .iter()
+            .filter_map(|index| children.get(index).copied())
+            .collect();
         for surface in &spawned {
             self.children.entry(*surface).or_insert_with(|| Child {
                 origin,
@@ -462,13 +474,72 @@ impl Server {
 mod tests {
     use super::*;
 
+    /// call 의 문맥으로 번호 0 을 예약하고 그 번호에 surface 가 생긴 상태로 끝낸다.
+    fn finished(
+        s: &mut Server,
+        origin: u64,
+        call_id: u64,
+        surface: u32,
+        response: Result<serde_json::Value, CallError>,
+    ) -> Option<AgentServerMsg> {
+        let context = s.calls[&(origin, call_id)].context.clone();
+        s.record_slot(&context, 0);
+        s.finish_call(origin, call_id, &BTreeMap::from([(0, surface)]), response)
+    }
+
+    #[test]
+    fn overlapping_calls_of_one_origin_keep_their_own_children() {
+        let now = Instant::now();
+        let mut s = Server::new();
+        let (_, o) = token(&s.hello(1, None, now));
+        let Begin::Start { context: a, .. } = s.begin_call(1, 1, "claude", 4, now) else {
+            panic!()
+        };
+        let Begin::Start { context: b, .. } = s.begin_call(1, 2, "codex", 4, now) else {
+            panic!()
+        };
+        // b 가 먼저 번호를 예약하고 a 가 뒤에 예약해도 각자 자기 번호만 갖는다.
+        s.record_slot(&b, 0);
+        s.record_slot(&a, 1);
+        let both = BTreeMap::from([(0, 20), (1, 10)]);
+        let spawned = |msg: Option<AgentServerMsg>| match msg {
+            Some(AgentServerMsg::AgentCallResult { spawned, .. }) => spawned,
+            other => panic!("{other:?}"),
+        };
+        assert_eq!(
+            spawned(s.finish_call(o, 2, &both, Ok(serde_json::json!({})))),
+            vec![20]
+        );
+        assert_eq!(
+            spawned(s.finish_call(o, 1, &both, Ok(serde_json::json!({})))),
+            vec![10]
+        );
+        assert_eq!(s.children[&20].plugin, "codex");
+        assert_eq!(s.children[&10].plugin, "claude");
+    }
+
+    #[test]
+    fn a_child_closed_before_the_call_finished_is_not_reported() {
+        let now = Instant::now();
+        let mut s = Server::new();
+        let (_, o) = token(&s.hello(1, None, now));
+        let Begin::Start { context, .. } = s.begin_call(1, 1, "claude", 4, now) else {
+            panic!()
+        };
+        s.record_slot(&context, 0);
+        let msg = s.finish_call(o, 1, &BTreeMap::new(), Ok(serde_json::json!({})));
+        assert!(
+            matches!(msg, Some(AgentServerMsg::AgentCallResult { ref spawned, .. }) if spawned.is_empty())
+        );
+    }
+
     #[test]
     fn a_plugin_result_stays_pending_until_the_client_confirms_it() {
         let now = Instant::now();
         let mut s = Server::new();
         let (_, o) = token(&s.hello(1, None, now));
-        s.begin_call(1, 7, "p", 4, BTreeSet::new(), now);
-        s.finish_call(o, 7, &BTreeSet::from([9]), Ok(serde_json::json!({})));
+        s.begin_call(1, 7, "p", 4, now);
+        finished(&mut s, o, 7, 9, Ok(serde_json::json!({})));
         s.commit(1, 7, &[9]);
         let at = |origin| Placed {
             origin,
@@ -544,13 +615,10 @@ mod tests {
         let now = Instant::now();
         let mut s = Server::new();
         let (_, o) = token(&s.hello(1, None, now));
-        let Begin::Start { .. } = s.begin_call(1, 7, "p", 4, BTreeSet::new(), now) else {
+        let Begin::Start { .. } = s.begin_call(1, 7, "p", 4, now) else {
             panic!()
         };
-        let after = BTreeSet::from([9]);
-        let msg = s
-            .finish_call(o, 7, &after, Ok(serde_json::json!({})))
-            .unwrap();
+        let msg = finished(&mut s, o, 7, 9, Ok(serde_json::json!({}))).unwrap();
         assert!(
             matches!(msg, AgentServerMsg::AgentCallResult { ref spawned, .. } if spawned == &vec![9])
         );
@@ -570,16 +638,13 @@ mod tests {
         let now = Instant::now();
         let mut s = Server::new();
         let (t, o) = token(&s.hello(1, None, now));
-        s.begin_call(1, 7, "p", 4, BTreeSet::new(), now);
-        assert!(matches!(
-            s.begin_call(1, 7, "p", 4, BTreeSet::new(), now),
-            Begin::Running
-        ));
-        s.finish_call(o, 7, &BTreeSet::new(), Err(error(1, "x")));
+        s.begin_call(1, 7, "p", 4, now);
+        assert!(matches!(s.begin_call(1, 7, "p", 4, now), Begin::Running));
+        s.finish_call(o, 7, &BTreeMap::new(), Err(error(1, "x")));
         s.disconnect(1, now);
         s.hello(2, Some(&t), now);
         assert!(matches!(
-            s.begin_call(2, 7, "p", 4, BTreeSet::new(), now),
+            s.begin_call(2, 7, "p", 4, now),
             Begin::Cached(AgentServerMsg::AgentCallResult {
                 outcome: CallOutcome::Error(_),
                 ..
@@ -587,7 +652,7 @@ mod tests {
         ));
         s.expire(now + CALL_TTL, |_| false);
         assert!(matches!(
-            s.begin_call(2, 7, "p", 4, BTreeSet::new(), now),
+            s.begin_call(2, 7, "p", 4, now),
             Begin::Start { .. }
         ));
     }
@@ -597,14 +662,14 @@ mod tests {
         let now = Instant::now();
         let mut s = Server::new();
         let (_, o) = token(&s.hello(1, None, now));
-        let Begin::Start { context, .. } = s.begin_call(1, 7, "p", 4, BTreeSet::new(), now) else {
+        let Begin::Start { context, .. } = s.begin_call(1, 7, "p", 4, now) else {
             panic!()
         };
         // 진행 중 call 의 plugin 은 아직 기록되지 않은 새 자식에 쓸 수 있다.
         assert!(s.plugin_may_drive(o, 9, "p", 1));
         assert!(!s.plugin_may_drive(o, 9, "q", 1));
         assert_eq!(s.context(&context).map(|c| c.workspace), Some(4));
-        s.finish_call(o, 7, &BTreeSet::from([9]), Ok(serde_json::json!({})));
+        finished(&mut s, o, 7, 9, Ok(serde_json::json!({})));
         assert!(s.context(&context).is_none());
         assert!(s.plugin_may_drive(o, 9, "p", 1));
         assert!(!s.plugin_may_drive(o, 9, "q", 1));
@@ -627,7 +692,7 @@ mod tests {
                 relay_meta: vec!["p-note".into()],
             },
         );
-        s.begin_call(1, 7, "p", 4, BTreeSet::new(), now);
+        s.begin_call(1, 7, "p", 4, now);
         let ev = |n: &str| Notice::Event { name: n.into() };
         let meta = |k: &str| Notice::Meta {
             key: k.into(),
@@ -638,7 +703,7 @@ mod tests {
         assert!(s.notice_allowed(o, 9, &ev(PROCESS_EXIT)));
         assert!(!s.notice_allowed(o, 9, &ev("bell")));
         assert!(!s.notice_allowed(o, 9, &meta("restore.command")));
-        s.finish_call(o, 7, &BTreeSet::from([9]), Ok(serde_json::json!({})));
+        finished(&mut s, o, 7, 9, Ok(serde_json::json!({})));
         assert!(s.notice_allowed(o, 9, &meta("p-note")));
         assert!(!s.notice_allowed(o, 9, &ev("q-idle")));
         assert!(!s.notice_allowed(o + 1, 9, &ev("p-idle")));
@@ -654,8 +719,8 @@ mod tests {
         let now = Instant::now();
         let mut s = Server::new();
         let (_, o) = token(&s.hello(1, None, now));
-        s.begin_call(1, 7, "p", 4, BTreeSet::new(), now);
-        s.finish_call(o, 7, &BTreeSet::from([9]), Ok(serde_json::json!({})));
+        s.begin_call(1, 7, "p", 4, now);
+        finished(&mut s, o, 7, 9, Ok(serde_json::json!({})));
         s.relay(o, 4, 9, idle(), now);
         s.expire(now, |_| false);
         assert!(s.children.contains_key(&9));

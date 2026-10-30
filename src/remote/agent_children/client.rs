@@ -74,6 +74,8 @@ pub(crate) struct Call {
     pub state: CallState,
     pub outcome: Option<CallOutcome>,
     pub spawned: Vec<u32>,
+    /// 서버 결과를 받은 시각. 새 자식이 mirror 에 나타나기를 기다리는 한도의 기준이다.
+    pub resulted_at: Option<Instant>,
     pub adopted: Vec<Adopted>,
     /// plugin 에 이미 응답했다. 그 뒤에 온 결과는 늦은 생성으로 처리한다.
     pub replied: bool,
@@ -192,6 +194,7 @@ impl Client {
         }
         call.outcome = Some(outcome);
         call.spawned = spawned;
+        call.resulted_at = Some(Instant::now());
         call.state = if call.spawned.is_empty() || call.parent.is_none() {
             CallState::Done
         } else {
@@ -244,6 +247,24 @@ impl Client {
     }
 
     /// 끝났거나 오래된 call·tombstone 을 정리한다.
+    /// mirror workspace 의 attach 세션이 없어졌다. 결과를 받지 못한 call 은 결과불명이 되고, 그 workspace 의
+    /// 자식 기록은 닫힌 것으로 둔다. 새 attach 는 새 출처라 이전 자식의 통지를 받지 않는다.
+    pub(crate) fn forget_session(&mut self, workspace: u32, now: Instant) {
+        self.sessions.remove(&workspace);
+        for call in self.calls.values_mut().filter(|c| c.workspace == workspace) {
+            if matches!(call.state, CallState::Waiting | CallState::Adopting) {
+                call.state = CallState::Unknown("the attach connection closed".into());
+            }
+        }
+        for child in self
+            .children
+            .values_mut()
+            .filter(|c| c.workspace == workspace)
+        {
+            child.gone_at.get_or_insert(now);
+        }
+    }
+
     pub(crate) fn expire(&mut self, now: Instant) {
         self.calls.retain(|_, c| {
             let age = now.duration_since(c.started);
@@ -299,6 +320,17 @@ pub(crate) fn call_reply(
         )
     };
     let response = match (&call.state, &call.outcome) {
+        (CallState::Done, Some(CallOutcome::Ok { .. }))
+            if call.parent.is_some() && !call.spawned.is_empty() && call.adopted.is_empty() =>
+        {
+            JsonRpcResponse::error(
+                id.clone(),
+                -32000,
+                format!(
+                    "remote agent call {call_id}: the remote child closed before it could be registered here"
+                ),
+            )
+        }
         (CallState::Done, Some(CallOutcome::Ok { result })) => JsonRpcResponse::success(
             id.clone(),
             json!({
@@ -382,6 +414,19 @@ pub(crate) fn client_surface_closing(
     child.hooks = Some(std::sync::Arc::new(Mutex::new(manager)));
 }
 
+/// 이 client 에 등록된 원격 자식이면 그 holder 연결이 지금 이어져 있는지. 원격 자식이 아니면 None 이다.
+pub(crate) fn remote_child_connected(surface: u32) -> Option<bool> {
+    let client = client();
+    let child = client.children.get(&surface)?;
+    Some(
+        child.gone_at.is_none()
+            && client
+                .sessions
+                .get(&child.workspace)
+                .is_some_and(|s| s.connected && s.origin.is_some()),
+    )
+}
+
 pub(crate) fn is_client_child(surface: u32) -> bool {
     client().children.contains_key(&surface)
 }
@@ -410,6 +455,7 @@ mod tests {
             late_sent: false,
             late_retry_at: None,
             wire: None,
+            resulted_at: None,
         }
     }
 
@@ -454,6 +500,52 @@ mod tests {
             c.outgoing.last(),
             Some((4, Outgoing::Commit { call_id: 1, .. }))
         ));
+    }
+
+    #[test]
+    fn a_closed_session_ends_its_calls_as_unknown_and_marks_its_children_gone() {
+        let mut c = Client::default();
+        c.calls.insert(1, call(4, None));
+        c.calls.insert(2, call(5, None));
+        c.children.insert(
+            20,
+            Child {
+                workspace: 4,
+                remote: 9,
+                plugin: "p".into(),
+                namespace: "p".into(),
+                gone_at: None,
+                hooks: None,
+            },
+        );
+        c.sessions.entry(4).or_default();
+        c.forget_session(4, Instant::now());
+        assert!(matches!(c.calls[&1].state, CallState::Unknown(_)));
+        assert_eq!(c.calls[&2].state, CallState::Waiting);
+        assert!(c.children[&20].gone_at.is_some());
+        assert!(!c.sessions.contains_key(&4));
+    }
+
+    #[test]
+    fn a_child_that_closed_before_it_appeared_is_an_error_not_a_success() {
+        // 전역 상태를 쓰므로 다른 시험과 겹치지 않는 번호를 쓴다.
+        let id = 9_100_001;
+        let mut done = call(4, Some(ParentKey::Surface(3)));
+        done.state = CallState::Done;
+        done.outcome = Some(CallOutcome::Ok {
+            result: serde_json::json!({}),
+        });
+        done.spawned = vec![9];
+        client().calls.insert(id, done);
+        let reply = call_reply(
+            id,
+            serde_json::json!(1),
+            Instant::now(),
+            Duration::from_secs(35),
+        )
+        .expect("answered");
+        client().calls.remove(&id);
+        assert!(reply.error.is_some(), "{reply:?}");
     }
 
     #[test]

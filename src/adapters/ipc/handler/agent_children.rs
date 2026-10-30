@@ -215,6 +215,7 @@ fn call(
                 late_sent: false,
                 late_retry_at: None,
                 wire: None,
+                resulted_at: None,
             },
         );
         client.outgoing.push((

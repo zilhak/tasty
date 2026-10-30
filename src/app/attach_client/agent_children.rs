@@ -43,6 +43,9 @@ struct Adopting {
 }
 static ADOPTING: Mutex<Vec<Adopting>> = Mutex::new(Vec::new());
 
+/// 서버 결과의 새 자식이 mirror 에 나타나기를 기다리는 한도.
+const ADOPT_GRACE: Duration = Duration::from_secs(5);
+
 /// late_spawn 재결합이 일시 실패했을 때 다시 넣기까지의 간격.
 const LATE_RETRY: Duration = Duration::from_secs(5);
 
@@ -105,7 +108,18 @@ impl App {
             .iter()
             .map(|s| s.state.local_workspace)
             .collect();
-        agents::client().sessions.retain(|ws, _| live.contains(ws));
+        {
+            let mut client = agents::client();
+            let gone: Vec<u32> = client
+                .sessions
+                .keys()
+                .filter(|ws| !live.contains(ws))
+                .copied()
+                .collect();
+            for ws in gone {
+                client.forget_session(ws, now);
+            }
+        }
         for idx in 0..self.remote.sessions.len() {
             let ws = self.remote.sessions[idx].state.local_workspace;
             self.hello(idx, ws);
@@ -259,6 +273,22 @@ impl App {
                 call.late_retry_at = Some(Instant::now() + LATE_RETRY);
             }
         }
+    }
+}
+
+/// 원격 자식 mirror surface 가 사라졌다. 늦은 종료 통지를 위해 훅을 옮겨 두고 부모 아래 등록을 푼다.
+/// 다른 mirror surface 의 정리는 바꾸지 않는다.
+pub(super) fn forget_mirror_child(engine: &mut EngineMut<'_>, surface: u32) {
+    if !agents::is_client_child(surface) {
+        return;
+    }
+    engine.hooks.forget_surface(surface);
+    if engine
+        .runtime
+        .child_terminals
+        .unregister_child_by_surface(surface)
+    {
+        engine.runtime.child_terminals.save();
     }
 }
 
@@ -528,10 +558,12 @@ fn adopt(sess: &AttachClientSession, engine: &mut EngineMut<'_>, ws: u32) {
         .calls
         .iter()
         .filter(|(_, c)| c.workspace == ws && c.state == CallState::Adopting)
+        // 결과와 같은 delta 사이에 생겼다 닫힌 자식은 mirror 에 나타나지 않는다. 한도가 지나면 나타난 것만 등록한다.
         .filter(|(_, c)| {
             c.spawned
                 .iter()
                 .all(|r| sess.state.remote_to_local.contains_key(r))
+                || c.resulted_at.is_some_and(|at| at.elapsed() > ADOPT_GRACE)
         })
         .map(|(id, _)| *id)
         .collect();
@@ -543,7 +575,12 @@ fn adopt(sess: &AttachClientSession, engine: &mut EngineMut<'_>, ws: u32) {
         };
         let mut pending = Vec::new();
         for remote in &call.spawned {
-            let local = sess.state.remote_to_local[remote];
+            let Some(&local) = sess.state.remote_to_local.get(remote) else {
+                tracing::info!(
+                    "remote child r{remote} of call {call_id} closed before it appeared here"
+                );
+                continue;
+            };
             let entry = crate::runtime::child_terminal::ChildEntry {
                 child_surface_id: local,
                 index: 0,
@@ -567,7 +604,8 @@ fn adopt(sess: &AttachClientSession, engine: &mut EngineMut<'_>, ws: u32) {
 fn poll_adoptions() {
     let mut finished = Vec::new();
     lock(&ADOPTING).retain(|a| {
-        if a.pending.iter().any(|(_, _, t)| t.poll().is_none()) {
+        // poll 은 결과를 꺼내므로 모두 끝났는지는 꺼내지 않는 observation 으로 본다.
+        if a.pending.iter().any(|(_, _, t)| t.observation().is_none()) {
             return true;
         }
         let adopted = a

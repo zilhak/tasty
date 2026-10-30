@@ -13,9 +13,10 @@ mod state;
 #[cfg(feature = "gui")]
 pub(crate) use client::{
     call_reply, client, client_receive, client_summary, client_surface_closing, is_client_child,
+    remote_child_connected,
 };
 
-use std::collections::BTreeSet;
+use std::collections::BTreeMap;
 use std::sync::mpsc::{Receiver, TryRecvError};
 use std::sync::{LazyLock, Mutex, MutexGuard};
 use std::time::Instant;
@@ -74,14 +75,20 @@ pub(crate) fn origin_of_child(
     }
 }
 
-fn origin_children(engine: &EngineRef<'_>, origin: u64) -> BTreeSet<u32> {
+/// 출처 부모 아래 자식의 번호 → surface.
+fn origin_children(engine: &EngineRef<'_>, origin: u64) -> Vec<(u32, u32)> {
     engine
         .runtime
         .child_terminals
         .list_children(&ParentKey::External(Server::parent_key(origin)))
         .iter()
-        .map(|c| c.child_surface_id)
+        .map(|c| (c.index, c.child_surface_id))
         .collect()
+}
+
+/// 원격 holder 문맥의 spawn 이 출처 부모 아래 번호를 예약했다. 그 문맥의 call 에 귀속한다.
+pub(crate) fn record_spawn_slot(context: &str, index: u32) {
+    server().record_slot(context, index);
 }
 
 fn send(hub: &StreamHub, client: StreamClientId, msg: &AgentServerMsg) {
@@ -439,18 +446,14 @@ fn start_call(
             );
         }
     }
-    let before = origin
-        .map(|o| origin_children(engine, o))
-        .unwrap_or_default();
     let mut state = server();
     state.set_decl(&plugin_id, decl);
-    let (origin, context) =
-        match state.begin_call(client, call_id, &plugin_id, workspace, before, now) {
-            Begin::Cached(result) => return Some(result),
-            Begin::Running => return None,
-            Begin::Rejected(e) => return Some(call_error(call_id, e)),
-            Begin::Start { origin, context } => (origin, context),
-        };
+    let (origin, context) = match state.begin_call(client, call_id, &plugin_id, workspace, now) {
+        Begin::Cached(result) => return Some(result),
+        Begin::Running => return None,
+        Begin::Rejected(e) => return Some(call_error(call_id, e)),
+        Begin::Start { origin, context } => (origin, context),
+    };
     drop(state);
     let mut params = sanitized(params);
     params.insert("workspace".into(), json!(workspace.to_string()));
@@ -532,12 +535,12 @@ pub(crate) fn tick(hub: &StreamHub, engines: &[EngineRef<'_>]) {
         }
     });
     for (origin, call_id, result) in finished {
-        let after: BTreeSet<u32> = engines
+        let children: BTreeMap<u32, u32> = engines
             .iter()
             .flat_map(|e| origin_children(e, origin))
             .collect();
         let mut server = server();
-        let Some(msg) = server.finish_call(origin, call_id, &after, result) else {
+        let Some(msg) = server.finish_call(origin, call_id, &children, result) else {
             continue;
         };
         // 끊긴 사이에 끝났으면 다시 연결한 client 가 같은 call_id 로 물을 때 보낸다.

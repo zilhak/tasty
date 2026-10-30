@@ -607,6 +607,7 @@ fn remove_mirror_workspace_from_engine(
         engine.remote.attach_mesh_frames.remove(local);
         // 로컬 닫기 정리와 같이 soft 점유 등 이 surface의 점유 기록을 지운다.
         engine.forget_closed_surface(local);
+        super::agent_children::forget_mirror_child(engine, local);
     }
     engine.remove_mirror_workspace(local_workspace);
     state.reconcile_presentation(engine);

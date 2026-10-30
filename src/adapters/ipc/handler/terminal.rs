@@ -197,10 +197,30 @@ pub(crate) fn handle_children(
             item.insert("role".into(), json!(c.role));
             item.insert("nickname".into(), json!(c.nickname));
             item.insert("cwd".into(), json!(c.cwd));
+            remote_child_fields(c.child_surface_id, &mut item);
             Value::Object(item)
         })
         .collect();
     JsonRpcResponse::success(id, json!({ "children": children }))
+}
+
+/// attach mirror 의 원격 자식이면 `remote`·`liveness` 를 싣는다. holder 연결이 끊긴 동안에는 마지막 원격
+/// 보고를 확정처럼 보이지 않게 state 를 `unknown` 으로 덮는다. 원격 자식이 아니면 그대로 둔다.
+fn remote_child_fields(surface: u32, fields: &mut serde_json::Map<String, Value>) {
+    #[cfg(feature = "gui")]
+    if let Some(connected) = crate::remote::agent_children::remote_child_connected(surface) {
+        fields.insert("remote".into(), json!(true));
+        if connected {
+            fields.insert("liveness".into(), json!("connected"));
+        } else {
+            fields.insert("liveness".into(), json!("unknown"));
+            fields.insert("state".into(), json!("unknown"));
+            fields.insert("evidence".into(), json!("remote_disconnected"));
+            fields.insert("confidence".into(), json!("unobserved"));
+        }
+    }
+    #[cfg(not(feature = "gui"))]
+    let _ = (surface, fields); // 헤드리스에는 attach client 가 없어 원격 자식도 없다.
 }
 
 /// children/state 응답이 같은 state/evidence/confidence 필드를 사용한다.
@@ -227,6 +247,7 @@ pub(crate) fn handle_state(
     };
     let mut out = liveness_fields(engine.child_liveness(surface_id));
     out.insert("surface_id".into(), json!(surface_id));
+    remote_child_fields(surface_id, &mut out);
     JsonRpcResponse::success(id, Value::Object(out))
 }
 
