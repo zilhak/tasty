@@ -7,6 +7,7 @@ pub mod caller_context;
 pub mod gates;
 pub mod host_actions;
 pub mod package;
+pub mod remote_attach;
 pub mod types;
 pub mod validate;
 pub mod validators;
@@ -18,6 +19,7 @@ pub use caller_context::{CallerContextDecl, CallerIdFormat, CallerPathEnvDecl};
 pub use gates::{ContributesGate, GateToken};
 pub use host_actions::{INHERITABLE_HOST_ACTIONS, is_inheritable};
 pub use package::PluginPackage;
+pub use remote_attach::RemoteAttachDecl;
 pub use types::{
     AutoWaitDecl, BannerContribute, BannerRendering, BannerScopeDecl, BannerSizeHint,
     BannerTrigger, BindingMode, CliArg, CliArgGroup, CliArgType, CliCommandDecl, CliSubcommandDecl,

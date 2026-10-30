@@ -83,6 +83,7 @@ impl Manifest {
         self.validate_hook_events()?;
         self.contributes.strip_inherited_env.validate()?;
         crate::caller_context::validate(&self.contributes)?;
+        crate::remote_attach::validate(&self.contributes)?;
         self.validate_extends()?;
         Ok(())
     }

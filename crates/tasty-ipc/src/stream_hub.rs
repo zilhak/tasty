@@ -86,6 +86,8 @@ pub struct PumpOutcome {
     pub html_requests: Vec<(StreamClientId, HtmlControl)>,
     /// 원격 explorer 파일 작업의 요청·답·취소. 별도의 event 태그를 가진 Control JSON이다.
     pub explorer_ops: Vec<(StreamClientId, crate::explorer_op::ExplorerOpMsg)>,
+    /// 원격 자식 에이전트의 출처 선언·실행 요청·통지 응답. 별도의 event 태그를 가진 Control JSON이다.
+    pub agent_children: Vec<(StreamClientId, crate::agent_child::AgentClientMsg)>,
     /// bulk begin·chunk·commit을 도착 순서대로 보관한다. 태그별로 나누면 같은 배치의
     /// chunk를 begin보다 먼저 처리할 수 있다. 결속 workspace는 연결의 bulk_workspace에서 찾는다.
     pub bulk_events: Vec<(StreamClientId, BulkEvent)>,
@@ -833,6 +835,12 @@ impl StreamHub {
                                         )
                                     {
                                         out.explorer_ops.push((client_id, msg));
+                                    } else if let Ok(msg) = serde_json::from_slice::<
+                                        crate::agent_child::AgentClientMsg,
+                                    >(
+                                        &frame.payload
+                                    ) {
+                                        out.agent_children.push((client_id, msg));
                                     }
                                 }
                             }

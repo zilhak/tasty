@@ -4,6 +4,7 @@
 //! 도메인 핸들러와 실제 서버 adapter는 호스트 본체가 구현한다.
 
 pub mod admission;
+pub mod agent_child;
 pub mod alias;
 pub mod caller;
 pub mod capability;

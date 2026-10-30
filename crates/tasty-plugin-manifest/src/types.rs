@@ -564,6 +564,9 @@ pub struct Contributes {
     /// 자기가 선언한 provider는 적지 않아도 엄격 대상이다.
     #[serde(default)]
     pub requires_caller_context: Vec<String>,
+    /// attach holder 가 서버에서 실행할 수 있는 메서드와 client 쪽 결과 수신 메서드.
+    #[serde(default)]
+    pub remote_attach: crate::remote_attach::RemoteAttachDecl,
 }
 
 /// 상속 환경변수 제거 선언. `TASTY_`로 시작하는 이름·접두사는 본체 소유라 선언할 수 없다.
