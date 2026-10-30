@@ -680,13 +680,13 @@ attach 로 연결한 mirror 에 `tasty claude spawn`·`tasty codex spawn` 으로
 
 ### 원격 call
 
-1. client plugin 이 `attach.agent_call{workspace|pane, method, params}` 를 부른다. `method` 는 호출 plugin 자기 namespace 의 메서드여야 한다. client host 는 결과를 받을 때까지 응답을 미루며 상한은 35초다(plugin SDK 전용 핸들 상한 40초보다 짧다).
-2. client host 는 `agent_call_request{call_id, workspace, method, params}` 를 holder 연결로 보낸다. `call_id` 는 출처 안에서 유일하고, 같은 `call_id` 를 다시 보내면 서버는 다시 실행하지 않고 보관한 결과를 돌려준다.
+1. client plugin 이 `attach.agent_target{workspace|pane|surface_id}` 로 mirror 와 기준 surface(`anchor_surface_id`)를 확인한 뒤 `attach.agent_call{anchor_surface_id, method, target_surface_id?, parent?, role?, nickname?, params}` 를 부른다. `method` 는 호출 plugin 자기 namespace 의 접두사 없는 메서드 이름이고, `target_surface_id` 는 tell·kill 이 다룰 기존 원격 자식의 mirror surface(L)다. 응답은 `{call_id, result, children:[{surface_id, remote_surface_id, index}]}` 다. client host 는 결과를 받을 때까지 응답을 미루며 상한은 35초다(plugin SDK 전용 핸들 상한 40초보다 짧다).
+2. client host 는 `agent_call_request{call_id, namespace, method, anchor_surface_id, target_surface_id?, params}` 를 holder 연결로 보낸다. 두 surface 는 서버 쪽 id(R)로 바꿔 싣고, 실행 위치(workspace·pane)는 서버가 `anchor_surface_id` 에서 정한다. 부모·`_tasty_context`·`caller_surface` 는 보내지 않는다. `call_id` 는 출처 안에서 유일하고, 같은 `call_id` 를 다시 보내면 서버는 다시 실행하지 않고 보관한 결과를 돌려준다.
 3. 서버 host 는 그 plugin 의 `remote_attach.methods` 에 있는지, workspace 를 이 holder 가 점유하는지 확인한다. 인자에서 host 소유 이름(`parent`·`surface`·`parent_external`·`workspace`·`pane`·`caller_surface`·`attach_context`·`attach_target_surface`·`_tasty*`)을 지우고 host 가 정한 값을 넣는다. spawn 에는 `parent_external = attach:o<n>`·`attach_context`(call 문맥 토큰)·`workspace`·`pane` 을, tell·kill 에는 확인한 대상 R 을 `attach_target_surface` 로 넣는다.
 4. 서버 host 는 그 호출을 일반 namespace 진입점이 아닌 원격 전용 전달로 plugin 에 넘긴다. plugin 의 host 호출은 매니페스트 권한·사용자 허가 검사를 그대로 받는다.
 5. 서버 plugin 이 `terminal.spawn` 에 `attach_context` 를 실으면 host 는 문맥 토큰이 그 출처·그 plugin·그 workspace 의 진행 중인 call 인지 확인한 뒤에만 `attach:o<n>` 부모로 등록한다. 만든 자식(R)은 그 call 의 결과에 귀속한다. 같은 출처의 call 이 겹쳐도 각 call 은 자기가 만든 자식만 받는다.
 6. 서버는 `agent_call_result{call_id, outcome, spawned}` 를 보낸다. client 는 `spawned` 의 R 이 mirror 에 나타나면 L 로 바꿔 client child registry 에 plugin 부모 아래로 등록한 뒤 plugin 에 답한다.
-7. plugin 이 L 에 수신처를 묶은 뒤 `attach.agent_commit{call_id}` 를 부르면 client 는 `agent_call_commit` 을 보낸다. 서버는 commit 전에는 그 자식의 통지를 보내지 않으므로 첫 완료가 수신처 없이 지나가지 않는다.
+7. plugin 이 L 에 수신처를 묶은 뒤 `attach.agent_commit{call_id}` 를 부르면 client 는 `agent_call_commit{call_id, remote_surface_ids}` 를 보낸다. 서버는 commit 전에는 그 자식의 통지를 보내지 않으므로 첫 완료가 수신처 없이 지나가지 않는다.
 
 결과를 확정할 수 없으면 client host 는 성공이나 실패로 단정하지 않고 `-32010`(결과불명)으로 답한다. 35초 상한, 연결 종료, 서버 재시작이 이 경우다.
 - 상한 뒤에도 그 call 은 10분 동안 결과를 기다린다. 결과가 와서 자식이 mirror 에 나타나면 plugin 의 `receive` 메서드에 `kind: late_spawn` 으로 넘기고, plugin 이 `recorded` 로 답하면 host 가 commit 한다. plugin 이 받지 않으면(`rejected`) 그 자식을 원격 kill 로 닫는다.
@@ -695,7 +695,7 @@ attach 로 연결한 mirror 에 `tasty claude spawn`·`tasty codex spawn` 으로
 
 ### 통지
 
-서버는 원격 출처 자식의 변화를 `child_notice{key, surface, notice}` 로 client 에 보낸다.
+서버는 원격 출처 자식의 변화를 `child_notice{key, seq, remote_surface_id, notice}` 로 client 에 보낸다. 같은 `key` 는 같은 통지의 재전송이다. `seq` 는 서버 프로세스 안의 순서이며 client 는 State 통지에만 써서 오래된 상태가 새 상태를 덮지 않게 한다.
 
 | 통지 | 서버가 보내는 조건 | client 가 하는 일 |
 |---|---|---|
@@ -744,7 +744,7 @@ plugin CLI 의 `path_kind` 인자는 보통 CLI 가 자기 디렉터리 기준 �
 | `attach.acquire` / `attach.release` | `stream.open{target}` 핸드셰이크 | 배타 lock 획득/해제 |
 | `attach.into_gui` | JSON-RPC | 실행 GUI 가 원격 워크스페이스를 mirror 로 재구성(`App::start_gui_attach`). GUI 는 App 층이 자기 자신 여부를 판정한 뒤 답한다(위 self-attach 절). 헤드리스는 접수하지 않고 `-32017` 로 거절한다 |
 | `attach.list` | JSON-RPC | 현재 점유 목록 조회(read) |
-| `attach.agent_target` | JSON-RPC | `workspace`(숫자 id)·`pane` 이 mirror 인지와 서버의 원격 자식 지원(`capable`)을 답한다(read). CLI 도 경로 인자를 다루려고 묻는다 |
+| `attach.agent_target` | JSON-RPC | `workspace`(숫자 id)·`pane`·`surface_id` 가 mirror 인지와 서버의 원격 자식 지원(`capable`)을 답한다(read). CLI 도 경로 인자를 다루려고 묻는다 |
 | `attach.agent_call` / `attach.agent_commit` | JSON-RPC(plugin 전용) | 원격 call 실행과 수신처를 묶은 뒤의 commit(위 원격 자식 에이전트 절). 호출 plugin 의 `terminal.spawn`·`terminal.write` 권한이 필요하다 |
 | `attach.child_notice` / `attach.child_notices` | JSON-RPC | 서버 plugin 이 원격 자식의 결과를 맡기고(plugin 전용, `terminal.write`) 남은 통지를 조회한다(read) |
 
