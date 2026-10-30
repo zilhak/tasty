@@ -502,9 +502,13 @@ pub(crate) fn serve_spawn<H: HostCall>(
     Ok(out)
 }
 
-fn origin_target(origin: &AttachOrigin, tr: &Translator) -> Result<u32, IpcMethodError> {
-    origin
-        .target_surface
+fn origin_target<H: HostCall>(
+    host: &H,
+    origin: &AttachOrigin,
+    tr: &Translator,
+) -> Result<u32, IpcMethodError> {
+    remote_attach::origin_child(host, origin)
+        .map_err(IpcMethodError::from)?
         .ok_or_else(|| IpcMethodError::invalid_params(tr.t("claude.remote.no_target")))
 }
 
@@ -516,7 +520,7 @@ pub(crate) fn serve_tell<H: HostCall>(
     origin: &AttachOrigin,
     tr: &Translator,
 ) -> Result<Value, IpcMethodError> {
-    let child = origin_target(origin, tr)?;
+    let child = origin_target(host, origin, tr)?;
     let message = params
         .get("message")
         .and_then(Value::as_str)
@@ -547,7 +551,7 @@ pub(crate) fn serve_kill<H: HostCall>(
     origin: &AttachOrigin,
     tr: &Translator,
 ) -> Result<Value, IpcMethodError> {
-    let child = origin_target(origin, tr)?;
+    let child = origin_target(host, origin, tr)?;
     let mut parent = forward(params, &["workspace"]);
     parent.insert("parent_external".into(), json!(origin.parent_key));
     let index = child_by_index_of_surface(host, &parent, child)
@@ -587,6 +591,27 @@ fn child_by_index_of_surface<H: HostCall>(
             .flatten()
             .and_then(|n| u32::try_from(n).ok())
     })
+}
+
+/// 서버의 공개 호출이 attach 원격 자식을 바꾸려 하면 거절한다([`remote_attach::refuse_public`]).
+pub(crate) fn refuse_public<H: HostCall>(
+    host: &H,
+    method: &str,
+    params: &Value,
+    tr: &Translator,
+) -> Result<(), IpcMethodError> {
+    match remote_attach::refuse_public(host, method, params) {
+        Ok(None) => Ok(()),
+        Ok(Some(remote_attach::Refusal::Child(surface))) => Err(IpcMethodError::invalid_params(
+            &tr.t_fmt("claude.remote.attach_child", &surface.to_string()),
+        )),
+        Ok(Some(remote_attach::Refusal::Parent)) => Err(IpcMethodError::invalid_params(
+            tr.t("claude.remote.attach_parent"),
+        )),
+        Err(e) => Err(IpcMethodError::new(
+            tr.t_fmt("claude.remote.lookup_failed", &e.to_string()),
+        )),
+    }
 }
 
 #[cfg(test)]

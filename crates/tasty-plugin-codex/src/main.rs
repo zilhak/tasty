@@ -119,6 +119,9 @@ impl Plugin for CodexPlugin {
             ..
         } = ctx;
         let tr = &self.translator;
+        if let Some(name) = method.strip_prefix("codex.") {
+            handlers::remote::refuse_public(&host, name, &params, tr)?;
+        }
         match method.as_str() {
             "codex.launch" => handlers::handle_launch(&host, &params, tr),
             "codex.spawn" => {

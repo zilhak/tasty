@@ -56,6 +56,8 @@ unknown_event = "不明な hook イベント '{event}'（対応: stop, prompt-su
 workspace_create_missing_id = "ホストの workspace.create 応答に 'id' がありません: {resp}"
 
 [codex.remote]
+attach_child = "サーフェス {surface} は接続中のリモート親の子です。その親だけが attach 接続を通じて変更できます。"
+attach_parent = "接続中のリモート親の子は、その親だけが attach 接続を通じて変更できます。"
 unsupported = "接続先サーバーの Tasty はリモートの子エージェントに対応していません。サーバーの Tasty を更新してください。何も作成していません。"
 lookup_failed = "対象が接続中のリモートワークスペースか確認できませんでした: {detail}"
 outcome_unknown = "サーバーで実行されたか分かりません({detail})。子がサーバーに存在する場合も、しない場合もあります。再試行する前に children で確認してください。"

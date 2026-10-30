@@ -155,6 +155,9 @@ impl Plugin for ClaudePlugin {
     }
 
     fn handle_ipc_method(&mut self, ctx: IpcMethodCtx) -> Result<Value, IpcMethodError> {
+        if let Some(name) = ctx.method.strip_prefix("claude.") {
+            remote::refuse_public(&ctx.host, name, &ctx.params, &self.translator)?;
+        }
         match ctx.method.as_str() {
             "claude.hook" => hook::handle_claude_hook(
                 &self.state,

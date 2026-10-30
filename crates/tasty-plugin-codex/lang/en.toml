@@ -56,6 +56,8 @@ unknown_event = "unknown hook event '{event}' (supported: stop, prompt-submit, s
 workspace_create_missing_id = "host workspace.create response is missing 'id': {resp}"
 
 [codex.remote]
+attach_child = "Surface {surface} is a child of an attached remote parent. Only that parent can change it, through its attach connection."
+attach_parent = "Children of an attached remote parent can only be changed by that parent, through its attach connection."
 unsupported = "The Tasty on the attached server does not support remote child agents. Update Tasty on the server. Nothing was created."
 lookup_failed = "Could not check whether the target is an attached remote workspace: {detail}"
 outcome_unknown = "It is not known whether the server ran this ({detail}). The child may or may not exist on the server. Check with children before trying again."

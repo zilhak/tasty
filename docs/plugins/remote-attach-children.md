@@ -51,6 +51,8 @@ host 는 원격 출처 호출에 `parent_external = attach:o<n>`·`attach_contex
 
 - 이 부모에게는 완료 알림 훅을 걸지 않고 `codex.parent`·Codex 호출 문맥도 쓰지 않는다. 상태·이벤트·메타는 host 가 L 로 중계한다.
 - spawn 은 `terminal.spawn` 에 받은 부모·위치·문맥을 그대로 싣고, 기존 로컬 spawn 과 같은 기동 경로(세션 토큰·settings·프로필·권한 모드·오류 감시)를 쓴다. claude 는 S 의 Claude Code 설정에 Tasty Stop·StopFailure 훅이 없으면 응답에 경고를 싣는다.
+- 서버의 공개 호출(서버 사용자의 CLI·다른 도구)은 attach 원격 자식을 바꾸지 못한다. `tell`·`reboot` 의 대상 surface 부모가 `attach:` 이거나, `kill`·`respawn`·`child_profile`(claude)·`broadcast` 가 `attach:` 부모 키를 지정하면 plugin 이 거절한다. host 는 그 자식의 attach 점유 예외를 생성 plugin 단위로 주므로, 이 검사가 없으면 서버 로컬 호출이 같은 plugin 을 거쳐 점유를 우회한다. plugin 의 내부 동작(auto_resume·훅 처리)은 공개 호출이 아니어서 그대로다.
+- 원격 출처 호출의 대상은 `attach_target_surface` 가 지금도 그 출처 부모(`terminal.parent` 의 `parent_external`)의 자식일 때만 쓴다. 공개 호출이 출처 키를 꾸며 넣어도 다른 surface 에는 닿지 않는다. 같은 부모의 자식인지까지 꾸민 호출을 가려내는 것은 host 의 문맥 토큰 확인 몫이다.
 - tell 은 `attach_target_surface` 에만 보낸다. kill 은 `terminal.children{parent_external}` 에서 그 surface 의 index 를 찾아 `terminal.kill` 한다.
 - `return_turns` 가 켜진 자식은 결과 경로를 attach 부모로 둔다.
   - claude: 경로의 `attach` 표지. 확정된 턴은 기존처럼 claim 해 영속 요청으로 남기고, 송신 스레드가 `codex.deliver` 대신 `attach.child_notice{surface_id: R, key: completion_key, payload: {completion}}` 를 부른다.

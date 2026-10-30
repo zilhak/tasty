@@ -354,8 +354,13 @@ fn origin(extra: Value) -> Value {
     p
 }
 
-fn server(method: &str, _params: &Value) -> Result<Value, PluginError> {
+fn server(method: &str, params: &Value) -> Result<Value, PluginError> {
     Ok(match method {
+        // R 은 attach 원격 부모의 자식이고 그 밖은 이 서버의 일반 자식이다.
+        "terminal.parent" if params["surface"] == json!(R) => {
+            json!({ "parent_external": "attach:o3", "status": "active" })
+        }
+        "terminal.parent" => json!({ "parent_surface_id": 5, "status": "active" }),
         "terminal.spawn" => json!({ "child_surface_id": R, "child_index": 1 }),
         "terminal.children" => json!({ "children": [{ "surface_id": R, "index": 1 }] }),
         "terminal.kill" => json!({ "killed_surface_id": R }),
@@ -488,4 +493,49 @@ fn call_id_is_read_from_the_unknown_outcome_message() {
         Some(4242)
     );
     assert_eq!(call_id_in("no id here"), None);
+}
+
+/// 서버의 공개 호출(사용자 CLI 등)은 attach 원격 자식을 바꾸지 못한다. 출처 키를 꾸며 넣어도 그 부모의 자식이 아닌
+/// surface 에는 닿지 않는다.
+#[test]
+fn server_local_public_calls_cannot_drive_attach_children() {
+    let fx = Fixture::new();
+    let host = Host::new(&fx, server);
+    let err = refuse_public(
+        &host,
+        "tell",
+        &json!({ "surface": R, "message": "m" }),
+        &fx.tr,
+    )
+    .unwrap_err();
+    assert!(err.message.contains(&R.to_string()), "{}", err.message);
+    for m in ["kill", "respawn", "broadcast"] {
+        assert!(
+            refuse_public(
+                &host,
+                m,
+                &json!({ "parent_external": "attach:o3", "child": 1 }),
+                &fx.tr
+            )
+            .is_err(),
+            "{m}"
+        );
+    }
+    assert!(refuse_public(&host, "reboot", &json!({ "surface": R }), &fx.tr).is_err());
+    assert!(
+        refuse_public(
+            &host,
+            "tell",
+            &json!({ "surface": 7, "message": "m" }),
+            &fx.tr
+        )
+        .is_ok()
+    );
+
+    let forged = origin(json!({ "message": "m", "attach_target_surface": 7 }));
+    let err = fx
+        .with(|d| super::super::handle_tell(&host, &forged, &fx.tr, d))
+        .unwrap_err();
+    assert!(err.message.contains("did not name"), "{}", err.message);
+    assert!(host.params_of("terminal.tell").is_empty());
 }

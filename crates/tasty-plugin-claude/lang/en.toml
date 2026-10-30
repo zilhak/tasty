@@ -89,6 +89,8 @@ ambiguous_workspace = "The children of this Codex conversation are in several wo
 route_not_released = "Surface {} still returns its results to a Codex conversation, and that route could not be released, so the instruction was not sent: {}"
 
 [claude.remote]
+attach_child = "Surface {} is a child of an attached remote parent. Only that parent can change it, through its attach connection."
+attach_parent = "Children of an attached remote parent can only be changed by that parent, through its attach connection."
 unsupported = "The attached server's Tasty does not support remote child agents. Update Tasty on the server. Nothing was created."
 lookup_failed = "Could not check whether the target is an attached remote workspace: {}"
 outcome_unknown = "The outcome on the server is unknown ({}). The child may or may not exist there. Check with children before trying again."

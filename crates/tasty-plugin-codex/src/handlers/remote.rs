@@ -522,9 +522,13 @@ pub(crate) fn serve_spawn<H: HostCall>(
     Ok(out)
 }
 
-fn origin_target(origin: &AttachOrigin, tr: &Translator) -> Result<u32, IpcMethodError> {
-    origin
-        .target_surface
+fn origin_target<H: HostCall>(
+    host: &H,
+    origin: &AttachOrigin,
+    tr: &Translator,
+) -> Result<u32, IpcMethodError> {
+    remote_attach::origin_child(host, origin)
+        .map_err(IpcMethodError::from)?
         .ok_or_else(|| IpcMethodError::invalid_params(tr.t("codex.remote.no_target")))
 }
 
@@ -536,7 +540,7 @@ pub(crate) fn serve_tell<H: HostCall>(
     delivery: &DeliveryCtx<'_>,
     origin: &AttachOrigin,
 ) -> Result<Value, IpcMethodError> {
-    let child = origin_target(origin, tr)?;
+    let child = origin_target(host, origin, tr)?;
     let message = params
         .get("message")
         .and_then(Value::as_str)
@@ -573,7 +577,7 @@ pub(crate) fn serve_kill<H: HostCall>(
     delivery: &DeliveryCtx<'_>,
     origin: &AttachOrigin,
 ) -> Result<Value, IpcMethodError> {
-    let child = origin_target(origin, tr)?;
+    let child = origin_target(host, origin, tr)?;
     let mut parent = forward(params, &["workspace"]);
     parent.insert("parent_external".into(), json!(origin.parent_key));
     let children = host_call(host, "terminal.children", Value::Object(parent.clone()))?;
@@ -599,6 +603,33 @@ pub(crate) fn serve_kill<H: HostCall>(
         tracing::warn!("codex child return record for killed surface {killed}: {e}");
     }
     Ok(resp)
+}
+
+/// 서버의 공개 호출이 attach 원격 자식을 바꾸려 하면 거절한다([`remote_attach::refuse_public`]).
+pub(crate) fn refuse_public<H: HostCall>(
+    host: &H,
+    method: &str,
+    params: &Value,
+    tr: &Translator,
+) -> Result<(), IpcMethodError> {
+    match remote_attach::refuse_public(host, method, params) {
+        Ok(None) => Ok(()),
+        Ok(Some(remote_attach::Refusal::Child(surface))) => {
+            Err(IpcMethodError::invalid_params(&tr.t_replace(
+                "codex.remote.attach_child",
+                "{surface}",
+                &surface.to_string(),
+            )))
+        }
+        Ok(Some(remote_attach::Refusal::Parent)) => Err(IpcMethodError::invalid_params(
+            tr.t("codex.remote.attach_parent"),
+        )),
+        Err(e) => Err(IpcMethodError::new(tr.t_replace(
+            "codex.remote.lookup_failed",
+            "{detail}",
+            &e.to_string(),
+        ))),
+    }
 }
 
 #[cfg(test)]

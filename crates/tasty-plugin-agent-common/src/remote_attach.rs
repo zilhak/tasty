@@ -331,6 +331,88 @@ pub fn received(params: &Value) -> Option<(u32, &Value)> {
     Some((u32_of(params, "surface_id")?, params.get("payload")?))
 }
 
+/// attach 원격 부모의 공개 키 접두어.
+pub const PARENT_PREFIX: &str = "attach:";
+
+/// 공개 호출로 자식을 바꾸는 메서드(namespace 뒤 이름). attach 원격 자식에는 host 가 넘긴 원격 출처 호출만 쓸 수 있다.
+pub const GUARDED_METHODS: &[&str] = &[
+    "tell",
+    "kill",
+    "respawn",
+    "reboot",
+    "child_profile",
+    "broadcast",
+];
+
+/// 공개 호출이 attach 원격 자식을 바꾸려 해서 거절하는 이유.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Refusal {
+    /// 대상 surface 의 부모가 attach 원격 부모다.
+    Child(u32),
+    /// attach 원격 부모 키를 직접 지정했다.
+    Parent,
+}
+
+fn names_attach_parent(params: &Value) -> bool {
+    params
+        .get("parent_external")
+        .and_then(Value::as_str)
+        .is_some_and(|k| k.starts_with(PARENT_PREFIX))
+}
+
+/// 원격 출처 호출의 대상 자식. host 가 확인한 대상(`attach_target_surface`)이 지금도 그 출처 부모의 자식일 때만 준다.
+/// 공개 호출이 출처 키를 꾸며 넣어도 그 부모의 자식이 아닌 surface 에는 닿지 않는다.
+pub fn origin_child<H: HostCall>(
+    host: &H,
+    origin: &AttachOrigin,
+) -> Result<Option<u32>, tasty_plugin_sdk::PluginError> {
+    let Some(target) = origin.target_surface else {
+        return Ok(None);
+    };
+    let parent = host.call("terminal.parent", json!({ "surface": target }))?;
+    let key = parent.get("parent_external").and_then(Value::as_str);
+    Ok((key == Some(origin.parent_key.as_str())).then_some(target))
+}
+
+/// `surface` 의 host 부모가 attach 원격 부모인가.
+pub fn is_attach_child<H: HostCall>(
+    host: &H,
+    surface: u32,
+) -> Result<bool, tasty_plugin_sdk::PluginError> {
+    let parent = host.call("terminal.parent", json!({ "surface": surface }))?;
+    Ok(names_attach_parent(&parent))
+}
+
+/// 서버의 공개 호출(사용자 CLI·다른 도구)이 attach 원격 자식을 바꾸는지 본다. host 가 attach 점유를 생성 plugin 에만 풀어
+/// 주므로, 같은 plugin 을 거친 서버 로컬 호출이 점유를 우회하지 못하게 plugin 이 막는다. 원격 출처(`AttachOrigin`)의
+/// tell·kill 은 [`AttachOrigin`] 처리 쪽이 따로 대상을 확인하므로 여기서는 통과시킨다. plugin 의 내부 동작(auto_resume·
+/// 훅)은 공개 호출이 아니므로 대상이 아니다.
+pub fn refuse_public<H: HostCall>(
+    host: &H,
+    method: &str,
+    params: &Value,
+) -> Result<Option<Refusal>, tasty_plugin_sdk::PluginError> {
+    if !GUARDED_METHODS.contains(&method) {
+        return Ok(None);
+    }
+    if matches!(method, "tell" | "kill") && AttachOrigin::of(params).is_some() {
+        return Ok(None);
+    }
+    if names_attach_parent(params) {
+        return Ok(Some(Refusal::Parent));
+    }
+    if matches!(method, "tell" | "reboot") {
+        for key in ["surface", "surface_id"] {
+            if let Some(surface) = u32_of(params, key)
+                && is_attach_child(host, surface)?
+            {
+                return Ok(Some(Refusal::Child(surface)));
+            }
+        }
+    }
+    Ok(None)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -515,5 +597,63 @@ mod tests {
     #[test]
     fn the_local_key_is_prefixed_and_stable() {
         assert_eq!(local_completion_key("claude:a:t1"), "r.claude:a:t1");
+    }
+
+    #[test]
+    fn public_calls_cannot_change_attach_children() {
+        let attach_child = host(|m| {
+            assert_eq!(m, "terminal.parent");
+            Ok(json!({ "parent_external": "attach:o3", "status": "active" }))
+        });
+        assert_eq!(
+            refuse_public(
+                &attach_child,
+                "tell",
+                &json!({ "surface": 9, "message": "x" })
+            )
+            .unwrap(),
+            Some(Refusal::Child(9))
+        );
+        assert_eq!(
+            refuse_public(&attach_child, "reboot", &json!({ "surface": 9 })).unwrap(),
+            Some(Refusal::Child(9))
+        );
+        for m in ["kill", "respawn", "child_profile", "broadcast"] {
+            assert_eq!(
+                refuse_public(
+                    &attach_child,
+                    m,
+                    &json!({ "parent_external": "attach:o3", "child": 1 })
+                )
+                .unwrap(),
+                Some(Refusal::Parent),
+                "{m}"
+            );
+        }
+        // host 가 넣은 원격 출처의 tell·kill 은 출처 처리 쪽이 대상을 확인한다.
+        let origin = json!({ "parent_external": "attach:o3", "attach_context": "c", "attach_target_surface": 9 });
+        assert_eq!(refuse_public(&attach_child, "tell", &origin).unwrap(), None);
+        assert_eq!(refuse_public(&attach_child, "kill", &origin).unwrap(), None);
+        // 출처 키를 실어도 respawn·reboot 등은 원격 출처 메서드가 아니다.
+        assert_eq!(
+            refuse_public(&attach_child, "respawn", &origin).unwrap(),
+            Some(Refusal::Parent)
+        );
+        // 다른 메서드는 보지 않는다.
+        assert_eq!(
+            refuse_public(&attach_child, "children", &json!({ "surface": 9 })).unwrap(),
+            None
+        );
+
+        let local_child = host(|_| Ok(json!({ "parent_surface_id": 5, "parent_external": null })));
+        assert_eq!(
+            refuse_public(
+                &local_child,
+                "tell",
+                &json!({ "surface": 9, "message": "x" })
+            )
+            .unwrap(),
+            None
+        );
     }
 }

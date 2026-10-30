@@ -506,7 +506,12 @@ fn origin_params(extra: Value) -> Value {
 }
 
 fn server_host(notice: &'static str) -> Host {
-    Host::new(move |method, _| match method {
+    Host::new(move |method, params| match method {
+        // surface 40 은 attach 원격 부모의 자식이고 7 은 이 서버의 일반 자식이다.
+        "terminal.parent" if params["surface"] == json!(40) => {
+            Ok(json!({ "parent_external": "attach:o3", "status": "active" }))
+        }
+        "terminal.parent" => Ok(json!({ "parent_surface_id": 5, "status": "active" })),
         "terminal.spawn" => Ok(json!({ "child_surface_id": 40, "child_index": 0, "pane_id": 6 })),
         "attach.child_notice" => Ok(json!({ "status": notice })),
         "terminal.children" => Ok(json!({ "children": [{ "surface_id": 40, "index": 0 }] })),
@@ -755,4 +760,47 @@ fn a_late_child_nobody_waits_for_is_closed_and_refused() {
     assert_eq!(kill["method"], json!("kill"));
     assert_eq!(kill["target_surface_id"], json!(15));
     assert!(host.params_of("hook.set").is_empty());
+}
+
+/// 서버의 공개 호출(사용자 CLI 등)은 attach 원격 자식을 바꾸지 못한다. 출처 키를 꾸며 넣어도 그 부모의 자식이 아닌
+/// surface 에는 닿지 않는다.
+#[test]
+fn server_local_public_calls_cannot_drive_attach_children() {
+    let (_d, returns) = store();
+    let host = server_host("pending");
+    let err = refuse_public(
+        &host,
+        "tell",
+        &json!({ "surface": 40, "message": "m" }),
+        &tr(),
+    )
+    .unwrap_err();
+    assert!(err.message.contains("40"), "{}", err.message);
+    for m in ["kill", "respawn", "child_profile", "broadcast"] {
+        assert!(
+            refuse_public(
+                &host,
+                m,
+                &json!({ "parent_external": "attach:o3", "child": 0 }),
+                &tr()
+            )
+            .is_err(),
+            "{m}"
+        );
+    }
+    assert!(refuse_public(&host, "reboot", &json!({ "surface": 40 }), &tr()).is_err());
+    assert!(
+        refuse_public(
+            &host,
+            "tell",
+            &json!({ "surface": 7, "message": "m" }),
+            &tr()
+        )
+        .is_ok()
+    );
+
+    let forged = origin_params(json!({ "message": "m", "attach_target_surface": 7 }));
+    let err = crate::handlers::handle_tell(&returns, &host, &forged, &tr()).unwrap_err();
+    assert!(err.message.contains("did not name"), "{}", err.message);
+    assert!(host.params_of("terminal.tell").is_empty());
 }
