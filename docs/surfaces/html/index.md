@@ -284,6 +284,16 @@ OS별 구현은 다음과 같다.
       - `load_uri`로 앞 로드를 취소하면 앞 로드의 `load-failed`("Load request cancelled")와 `FINISHED`가 새 로드의 navigation 결정과 `STARTED`보다 먼저 온다. 이 두 신호는 앞 로드의 늦은 종료가 되어 chrome은 Loading에 머문다. 판정 전에는 새 `STARTED`가 올 때까지 Failed였다(측정: FIFO `file://` 로드를 걸어 둔 채 다른 파일로 바꾸기, 판정 전 3회·판정 후 4회, WebKitGTK 2.50.4). 없는 파일처럼 현재 로드가 실패하면 Failed가 되고, 뒤따르는 `FINISHED`가 Done으로 덮지 않는다(측정 1회).
       - 앞 로드가 끝나기 전에 요청한 로드가 `STARTED` 없이 실패하면 그 실패도 앞 로드의 것으로 보아 Loading에 남는다. 측정한 순서에서는 앞 로드의 종료가 먼저 와서 생기지 않았다.
 
+#### 로컬 문서의 하위 리소스 읽기 범위
+
+`file://` 문서는 문서 폴더 밖의 상대 CSS·이미지·폰트와 링크·meta refresh 이동 대상도 읽는다. 로컬 파일을 화면에 그리는 것은 막을 대상이 아니다. 스크립트 실행은 위 스크립트 게이트가, 외부 전송은 원격 차단이 따로 막는다.
+
+- Linux·Windows: 일반 WebView에 폴더 범위 제한을 두지 않는다. Linux는 형제 폴더의 CSS·이미지 적용과 meta refresh 이동을 측정했다.
+- macOS: `load_url`은 `loadFileURL:allowingReadAccessToURL:`에 파일 시스템 루트를 준다(`file_read_scope::read_access_root`). WKWebView는 이 범위 밖의 하위 리소스를 알림 없이 거부하고, 처음 준 범위가 그 뒤 페이지 안 이동에도 쓰인다. 문서 폴더만 주면 배너·실패 표시 없이 스타일이 빠진 문서가 보였다. `reload`·`go_back`·`go_forward`는 처음 준 범위를 따른다.
+- 범위를 넓혀도 허용한 스크립트가 다른 로컬 파일 내용을 읽지는 못한다. macOS 27.2에서 `fetch`·`XMLHttpRequest`로 `file:///etc/hosts`와 문서 밖 일반 파일을 읽지 못했고, 문서 밖 일반 파일을 띄운 iframe은 로드되지만 `contentDocument`가 `null`이었다. `file:///etc/hosts` iframe은 로드되지 않았다. Linux도 같은 `fetch`·`XMLHttpRequest`·iframe 요청이 막혔다. 다른 macOS 버전과 Windows는 측정하지 않았다.
+- markdown surface는 렌더한 HTML을 `load_html`로 올리므로 이 범위와 관계없다. 문서 밖 이미지는 [markdown 인라인 이미지 규칙](../markdown/index.md)을 따른다.
+- 원격 attach entry 모드는 custom scheme을 쓰므로 이 경로와 별개다.
+
 ### 사용자가 봤다는 판정
 
 배너는 사용자가 그 문서를 볼 때만 띄운다. "사용자가 봤다"는 다음 신호로 판정한다.
@@ -331,6 +341,9 @@ OS별 구현은 다음과 같다.
 - Given sandbox 기본값에서 에이전트가 연 스크립트 있는 `file://` 문서와 사용자가 보는 다른 탭 When 에이전트가 `surface.html_script` 응답의 `url`·`fingerprint`로 `tasty surface html-script-allow`를 실행한다 Then 응답 `result`는 `allowed`이고, 재로드 뒤 조회의 `allowance`·`allowed`·`javascript`는 배너로 허용했을 때와 같으며, 사용자가 보던 탭과 포커스는 그대로다.
 - Given 조회 뒤 문서가 바뀌었거나 로드 중이거나 지문이 없는 문서 When `surface.html_script_allow` Then `-32022`와 `error.data.reason` `document_changed`·`loading`·`no_fingerprint`로 거절하고 허용 기록은 그대로다.
 - Given html 탭이 `file:///tmp/x/a.html`을 보여 준다 When 페이지 안 `#sec` 링크를 누른다 Then `surface.html_nav`의 `url`은 `file:///tmp/x/a.html#sec`이고 `requested_url`은 그대로다.
+- Given `a/index.html`이 `../b/style.css`와 `../b/dot.png`를 쓴다 When `tasty html open`으로 연다 Then 세 OS 모두 스타일과 이미지가 적용되고 스크립트 배너는 뜨지 않는다.
+- Given `a/redirect.html`이 meta refresh로 `../b/next.html`을 가리킨다 When 연다 Then `surface.html_nav`의 `url`은 `b/next.html`이고 `nav_state`는 `done`이다.
+- Given 스크립트를 허용한 `file://` 문서 When `fetch`·`XMLHttpRequest`로 다른 로컬 파일을 읽거나 그 파일을 띄운 iframe의 `contentDocument`를 읽는다 Then 내용을 얻지 못한다.
 - Given html 탭이 리다이렉트되는 주소를 열었다 When 로드가 끝난다 Then `url`은 최종 주소다.
 - Given html 탭이 문서 A를 보여 준다 When 다음 로드가 commit 전에 실패한다 Then `nav_state`는 `failed`이고 `url`은 A다.
 - Given html 탭에서 A 다음 B를 열었다 When 조회한다 Then `can_go_back`은 `true`, `can_go_forward`는 `false`다. When 뒤로 간다 Then `url`은 A이고 `can_go_forward`는 `true`다.

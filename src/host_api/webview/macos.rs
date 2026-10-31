@@ -1000,15 +1000,12 @@ impl PlatformWebView {
             if let Some(path) = url.strip_prefix("file://") {
                 // URL 문자열이 아닌 파일 경로 API로 비ASCII 경로를 전달한다.
                 let file_url = NSURL::fileURLWithPath(&NSString::from_str(path));
-                // 상대 리소스가 같은 디렉터리 아래를 읽을 수 있도록 부모 경로를 허용한다.
-                let dir_path = std::path::Path::new(path)
-                    .parent()
-                    .map(|p| p.to_string_lossy().to_string())
-                    .unwrap_or_else(|| "/".to_string());
-                let dir_url =
-                    NSURL::fileURLWithPath_isDirectory(&NSString::from_str(&dir_path), true);
+                // 문서 폴더 밖의 상대 리소스도 읽도록 범위를 파일 시스템 루트로 준다.
+                // 스크립트 실행과 외부 전송은 스크립트 게이트와 원격 차단이 따로 막는다.
+                let root = super::file_read_scope::read_access_root(path);
+                let root_url = NSURL::fileURLWithPath_isDirectory(&NSString::from_str(root), true);
                 self.webview
-                    .loadFileURL_allowingReadAccessToURL(&file_url, &dir_url);
+                    .loadFileURL_allowingReadAccessToURL(&file_url, &root_url);
             } else {
                 let ns_url = NSURL::URLWithString(&NSString::from_str(url));
                 if let Some(ns_url) = ns_url {

@@ -2,6 +2,8 @@
 //! 백엔드는 같은 이름의 메서드를 제공하고 cfg로 선택한다. 차이는 docs/design/systems/webview.md를 따른다.
 
 pub(crate) mod entry_response;
+#[cfg(any(target_os = "macos", test))]
+mod file_read_scope;
 mod file_stamp;
 #[cfg(target_os = "linux")]
 pub(crate) mod http_context;
