@@ -243,7 +243,7 @@ fn draw_banner(
                 *clicks += 1;
             }
         });
-        ui.label("Drawn in the plugin process. Host owns the shell + TTL countdown.");
+        ui.label("Drawn in the plugin process. Host owns the shell and the close button.");
     });
 }
 

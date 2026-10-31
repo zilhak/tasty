@@ -775,6 +775,11 @@ plugin banner 는 host `BannerManager` 의 **같은 큐/TTL/z-order 단일 지�
   **포인터/스크롤만** forward 하고 `focused=false` (키/텍스트 없음).
 - **dismiss**: outside-click/Esc 없음. TTL 자동 소멸 + host 셸 우상단 close X + plugin 의
   `banner.close` IPC. persistent(TTL 없음)도 close X 는 항상 노출(무한 배너 금지).
+- **TTL 작성 지침**: [배너의 자동 닫힘](../principles/feedback-and-recovery.md#배너의-생명주기와-자동-닫힘)
+  원칙에 따라 배너 안에 사용자가 고를 동작(버튼 등, close X 제외)이 없으면 manifest
+  `ttl_seconds` 를 주고, 동작이 있으면 주지 않는다. 배너를 띄운 이유가 사라지면 plugin 이
+  `banner.close` 로 닫는다. host 는 mesh 내용을 볼 수 없어 동작 유무를 판정하지 못하므로 이
+  조합을 검증·거부하지 않으며, 원칙의 예외는 plugin 작성자가 정한다.
 - **높이 고정**: 너비는 스코프 폭 도킹, 높이는 manifest `size_hint.height`(없으면 기본값)
   로 host 가 셸을 고정하고 그 안을 content_rect 로 예약한다.
 

@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.mesh-demo"
 name = "egui-mesh Demo"
-version = "0.1.302"
+version = "0.1.303"
 description = "egui-mesh channel proof-of-concept surface (A1)"
 api_version = "1"
 # 배포 패키지에서는 제외하고 개발용 build-plugins / link-plugins에서는 준비한다.
@@ -54,11 +54,11 @@ size_hint = { width = 480, height = 320 }
 anchor = "screen-center"
 dismiss_on_outside_click = true
 
-# 배너 콘텐츠는 플러그인이 그린다. 호스트가 위치·외곽·닫기와 8초 TTL을 관리한다.
+# 배너 콘텐츠는 플러그인이 그린다. 호스트가 위치·외곽·닫기를 관리한다.
+# BUMP 동작이 있으므로 TTL을 두지 않는다(배너는 동작이 있으면 자동으로 닫지 않는다).
 [[contributes.banner]]
 id = "status"
 trigger = { kind = "ipc" }
 rendering = "egui-mesh"
 scope = "surface"
-ttl_seconds = 8
 size_hint = { height = 72 }
