@@ -372,7 +372,7 @@ pub(crate) fn handle_tell<H: HostCall>(
                 route = Some(
                     crate::delivery::ledger::issue_attach_route(
                         delivery.root,
-                        &remote::surface_route(host, caller_surface),
+                        &remote::surface_route(host, caller_surface)?,
                     )
                     .map_err(|e| IpcMethodError::new(format!("codex attach route: {e}")))?,
                 );

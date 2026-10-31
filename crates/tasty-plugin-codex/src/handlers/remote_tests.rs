@@ -317,6 +317,43 @@ fn a_surface_parent_result_for_another_session_is_kept_quiet() {
     );
 }
 
+/// 부모 세션 조회 실패는 세션 없음이 아니다. 발급 때는 원격 지시 전에 오류이고, 받을 때는 알림을 억제하지 않고
+/// 오류로 답해 host 가 다시 보내게 한다.
+#[test]
+fn a_failed_parent_session_lookup_stops_the_order_and_retries_the_result() {
+    let fx = Fixture::new();
+    test_log::take();
+    let broken = Host::new(&fx, |method, params| match method {
+        "surface.meta.get" => fail(-32000, "meta store busy"),
+        _ => surface_parent(method, params),
+    });
+    assert!(spawn(&fx, &broken, json!({ "workspace": 3, "surface": 5 })).is_err());
+    assert!(broken.params_of("attach.agent_call").is_empty());
+
+    let host = Host::new(&fx, surface_parent);
+    spawn(&fx, &host, json!({ "workspace": 3, "surface": 5 })).unwrap();
+    let route = route_of(&host);
+    let told = fx.with(|d| {
+        super::super::handle_tell(
+            &broken,
+            &json!({ "surface": L, "message": "next", "caller_surface": 5 }),
+            &fx.tr,
+            d,
+        )
+    });
+    assert!(told.is_err());
+    assert!(broken.params_of("attach.agent_call").is_empty());
+
+    let failed = fx.with(|d| receive_fn(&broken, d, &notice("codex:m:t1", &route), &fx.tr));
+    assert!(failed.is_err());
+    assert!(test_log::take().is_empty());
+    assert_eq!(
+        receive(&fx, &host, notice("codex:m:t1", &route))["status"],
+        json!("recorded")
+    );
+    assert_eq!(test_log::take().len(), 1);
+}
+
 /// 경로를 묶지 못하면 commit 하지 않고(첫 완료를 풀지 않는다) 서버의 자식을 닫는다.
 #[test]
 fn a_child_whose_route_cannot_be_bound_is_not_committed_and_is_closed() {

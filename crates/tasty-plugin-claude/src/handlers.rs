@@ -432,13 +432,16 @@ pub(crate) fn handle_tell<H: HostCall>(
             && let Some(caller) = caller_surface_of(params)
         {
             require_returns(returns, tr)?;
+            // 세션 조회 실패를 세션 없음으로 낮추면 세션 보호가 빠진 토큰이 나간다. 보내기 전에 실패한다.
+            let session = tasty_plugin_agent_common::remote_results::parent_session(host, caller)
+                .map_err(|e| {
+                IpcMethodError::new(tr.t_fmt("claude.codex.route_not_saved", &e))
+            })?;
             route = Some(
                 returns
                     .issue_attach_route(&RouteTo::Surface {
                         surface: caller,
-                        session: tasty_plugin_agent_common::remote_results::parent_session(
-                            host, caller,
-                        ),
+                        session,
                     })
                     .map_err(|e| {
                         IpcMethodError::new(tr.t_fmt("claude.codex.route_not_saved", &e))

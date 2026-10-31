@@ -230,21 +230,27 @@ pub fn suppression<H: HostCall>(
     let Some(issued) = issued_session else {
         return Ok(None);
     };
-    let now = parent_session(host, parent_surface);
+    let now = parent_session(host, parent_surface)?;
     Ok((now.as_deref() != Some(issued)).then_some("parent_session_changed"))
 }
 
-/// 부모 surface 의 지금 Claude 세션 id. Claude 가 아닌 부모(셸 등)나 조회 실패면 `None`.
-pub fn parent_session<H: HostCall>(host: &H, parent_surface: u32) -> Option<String> {
-    host.call(
-        "surface.meta.get",
-        json!({ "surface_id": parent_surface, "key": PARENT_SESSION_META }),
-    )
-    .ok()?
-    .get("value")?
-    .as_str()
-    .filter(|s| !s.is_empty())
-    .map(String::from)
+/// 부모 surface 의 지금 Claude 세션 id. 값이 없으면(셸 등 Claude 가 아닌 부모) `None` 이다. 조회 자체가 실패하면
+/// `Err` 다. 값 없음으로 낮추면 받을 때는 세션이 바뀐 것으로, 발급 때는 세션 보호가 빠진 것으로 잘못 판단한다.
+pub fn parent_session<H: HostCall>(
+    host: &H,
+    parent_surface: u32,
+) -> Result<Option<String>, String> {
+    let reply = host
+        .call(
+            "surface.meta.get",
+            json!({ "surface_id": parent_surface, "key": PARENT_SESSION_META }),
+        )
+        .map_err(|e| format!("surface.meta.get s{parent_surface}: {e}"))?;
+    Ok(reply
+        .get("value")
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
+        .map(String::from))
 }
 
 /// 받은 원격 결과(`completion`)를 `parent_surface` 의 결과로 저장하고 `notify` 로 알린 뒤 상태를 준다.
@@ -691,5 +697,51 @@ mod tests {
         receive(dir.path(), 7, 12, &completion("claude:x:t1", "x"), None, ok).unwrap();
         assert!(paths[0].exists());
         assert!(!paths[1].exists());
+    }
+
+    /// 부모 surface 를 조회하는 가짜 host. `meta` 가 `Err` 면 세션 조회가 실패한다.
+    struct ParentHost {
+        meta: Result<Value, ()>,
+    }
+
+    impl HostCall for ParentHost {
+        fn call(&self, method: &str, _: Value) -> Result<Value, tasty_plugin_sdk::PluginError> {
+            match method {
+                "surface.locate" => Ok(json!({ "exists": true })),
+                _ => self
+                    .meta
+                    .clone()
+                    .map_err(|()| tasty_plugin_sdk::PluginError::HostCall {
+                        method: method.into(),
+                        message: "busy".into(),
+                        code: Some(-32000),
+                    }),
+            }
+        }
+    }
+
+    #[test]
+    fn a_failed_session_lookup_is_an_error_not_a_changed_session() {
+        let host = ParentHost { meta: Err(()) };
+        assert!(parent_session(&host, 7).is_err());
+        // 받을 때 조회가 실패하면 영구 억제(`parent_session_changed`)가 아니라 다시 받도록 오류다.
+        assert!(suppression(&host, 7, Some("s-1")).is_err());
+    }
+
+    #[test]
+    fn a_missing_session_value_is_none_and_a_matching_one_is_not_suppressed() {
+        let host = ParentHost {
+            meta: Ok(json!({ "value": null })),
+        };
+        assert_eq!(parent_session(&host, 7), Ok(None));
+        assert_eq!(
+            suppression(&host, 7, Some("s-1")),
+            Ok(Some("parent_session_changed"))
+        );
+        let host = ParentHost {
+            meta: Ok(json!({ "value": "s-1" })),
+        };
+        assert_eq!(parent_session(&host, 7), Ok(Some("s-1".into())));
+        assert_eq!(suppression(&host, 7, Some("s-1")), Ok(None));
     }
 }

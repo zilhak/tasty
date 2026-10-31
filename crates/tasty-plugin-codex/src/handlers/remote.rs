@@ -206,7 +206,7 @@ pub(crate) fn spawn<H: HostCall>(
     };
     let to = match (receiver_id, parent_surface) {
         (Some(id), _) => Some(ledger::codex_route(id)),
-        (None, Some(surface)) => Some(surface_route(host, surface)),
+        (None, Some(surface)) => Some(surface_route(host, surface)?),
         (None, None) => None,
     };
     if let Some(to) = to {
@@ -460,13 +460,19 @@ pub(crate) fn receive<H: HostCall>(
     .json())
 }
 
-/// 물리 surface 부모의 route 기록. 발급 때 그 surface 의 Claude 세션을 함께 둔다.
-pub(crate) fn surface_route<H: HostCall>(host: &H, surface: u32) -> ledger::AttachRoute {
-    ledger::AttachRoute {
+/// 물리 surface 부모의 route 기록. 발급 때 그 surface 의 Claude 세션을 함께 둔다. 세션 조회가 실패하면 세션 보호가
+/// 빠진 토큰을 내보내지 않도록 지시 전에 오류다.
+pub(crate) fn surface_route<H: HostCall>(
+    host: &H,
+    surface: u32,
+) -> Result<ledger::AttachRoute, IpcMethodError> {
+    let parent_session = remote_results::parent_session(host, surface)
+        .map_err(|e| IpcMethodError::new(format!("codex attach route: {e}")))?;
+    Ok(ledger::AttachRoute {
         receiver_id: String::new(),
         parent_surface: Some(surface),
-        parent_session: remote_results::parent_session(host, surface),
-    }
+        parent_session,
+    })
 }
 
 /// 물리 surface 부모의 결과: 본문을 먼저 저장하고, 그 부모의 완료 로그에 결과 ID 와 조회 명령을 남긴 뒤 답한다.

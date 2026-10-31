@@ -55,7 +55,7 @@ attach 로 연결한 원격 워크스페이스(mirror)에 `tasty claude spawn` /
 - notify mod 는 완료 로그의 줄을 고친 데 없이 부모 Claude 입력으로 넣는다. mod 가 없으면 Monitor 로 같은 로그를 읽는다.
 - 결과 정체는 (route 토큰, client 완료 키)다. mirror surface 는 재연결로 바뀔 수 있어 정체에 넣지 않는다. 결과 ID 는 정체의 FNV-1a 64비트 해시(16 hex)이고, 같은 ID 칸의 기록과 정체를 대조해 다르면 다음 칸(최대 16칸)에 둔다. 같은 결과를 찾을 때는 빈 칸이 있어도 16칸을 모두 본다. 받기는 결과 폴더의 잠금 파일로 프로세스 사이까지 직렬화한다.
 - 같은 결과가 다시 오면 `duplicate` 이며 다시 알리지 않는다. 다만 알림 줄을 쓴 뒤 `notified` 표시를 저장하지 못하면 다음 재전송에서 같은 ID 의 줄이 한 번 더 간다. 사용자 결정에 따라 장애 때의 중복 알림을 허용한다(결과 유실보다 낫다). 줄에 결과 ID 가 있으므로 같은 ID 를 다시 읽어도 해가 없다.
-- 부모 surface 가 없거나(`parent_gone`), 발급 때 기록한 부모 Claude 세션과 지금 세션이 다르면(`parent_session_changed`) 본문은 저장하되 알리지 않고 `undelivered` 에 사유를 남긴 뒤 `recorded` 로 답한다(서버가 더 묻지 않는다). 같은 surface 에서 새로 시작한 다른 대화가 남의 결과를 받지 않게 하기 위해서다. 세션 메타가 없는 부모(셸)는 surface 존재만 본다. 부모 조회 자체가 실패하면 오류로 답해 다시 받는다.
+- 부모 surface 가 없거나(`parent_gone`), 발급 때 기록한 부모 Claude 세션과 지금 세션이 다르면(`parent_session_changed`) 본문은 저장하되 알리지 않고 `undelivered` 에 사유를 남긴 뒤 `recorded` 로 답한다(서버가 더 묻지 않는다). 같은 surface 에서 새로 시작한 다른 대화가 남의 결과를 받지 않게 하기 위해서다. 세션 메타가 없는 부모(셸)는 surface 존재만 본다. 부모 조회 자체가 실패하면 오류로 답해 다시 받는다. 발급 때 부모 세션 조회가 실패하면 세션 보호가 빠진 토큰을 보내지 않도록 spawn·tell 을 원격에 보내기 전에 오류로 끝낸다.
 - 결과는 자식을 닫아도 남는다. 마지막으로 쓴 시각(알린 결과는 알린 시각)부터 7일이 지나거나 1024개를 넘으면 결론 난 결과(알렸거나 `undelivered`) 중 오래된 것부터 지운다. 아직 알리지 못한 결과는 지우지 않으므로 그때는 상한을 넘을 수 있다. 쓰다 끊긴 tmp 파일은 1시간 뒤 지운다. 조회로는 지우지 않는다.
 - 조회: `claude.remote_results`·`codex.remote_results`(CLI `tasty claude remote-results [--id <ID>]`·`tasty codex remote-results [--id <ID>]`). `--id` 면 본문을 포함한 한 건(`{"result": …}`), 없으면 본문을 뺀 목록(`{"results": […]}`, `body_bytes` 포함, 받은 순서)이다. 목록은 모든 부모의 결과를 보이며 권한 경계가 아니다. 형식이 틀린 ID 와 없는 ID 는 invalid params 오류다.
 

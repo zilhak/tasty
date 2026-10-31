@@ -159,7 +159,8 @@ pub(crate) fn spawn<H: HostCall>(
         ParentTarget::Codex(resolved) => Some(RouteTo::Codex(resolved.receiver_id.clone())),
         ParentTarget::Legacy(Some(parent)) => Some(RouteTo::Surface {
             surface: *parent,
-            session: remote_results::parent_session(host, *parent),
+            session: remote_results::parent_session(host, *parent)
+                .map_err(|e| IpcMethodError::new(tr.t_fmt("claude.codex.route_not_saved", &e)))?,
         }),
         ParentTarget::Legacy(None) => None,
     };

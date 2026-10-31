@@ -575,13 +575,19 @@ fn surface_parent_host(
             if params["surface_id"] == json!(3)
                 && params["key"] == json!(remote_results::PARENT_SESSION_META) =>
         {
-            Ok(json!({ "value": *session.borrow() }))
+            match *session.borrow() {
+                META_FAILS => fail(-32000, "meta store busy"),
+                value => Ok(json!({ "value": value })),
+            }
         }
         "terminal.children" => Ok(json!({ "children": [{ "surface_id": 15, "index": 2 }] })),
         "hook.list" => Ok(json!([])),
         _ => Ok(json!({})),
     })
 }
+
+/// `surface_parent_host` 의 세션 값이 이것이면 부모 세션 조회가 실패한다.
+const META_FAILS: &str = "!meta-fails";
 
 fn turn(key: &str, route: &str, body: &str) -> Value {
     json!({ "surface_id": 15, "remote_surface_id": 99, "key": key, "payload": { "completion": {
@@ -731,6 +737,62 @@ fn a_surface_parent_result_is_kept_quiet_for_another_session_and_retried_on_log_
     assert_eq!(reasons["r.claude:q:t1"], Value::Null);
     assert_eq!(reasons["r.claude:q:t2"], json!("parent_session_changed"));
     assert_eq!(reasons["r.claude:q:t3"], json!("parent_gone"));
+}
+
+/// 부모 세션 조회 실패는 세션 없음이 아니다. 발급 때는 원격 지시 전에 오류이고, 받을 때는 알림을 억제하지 않고
+/// 오류로 답해 host 가 다시 보내게 한다.
+#[test]
+fn a_failed_parent_session_lookup_stops_the_order_and_retries_the_result() {
+    let (_d, returns) = store();
+    crate::codex_return::test_log::take();
+    let session = std::rc::Rc::new(RefCell::new(META_FAILS));
+    let exists = std::rc::Rc::new(RefCell::new(true));
+    let host = surface_parent_host(session.clone(), exists);
+    let spawned = crate::handlers::handle_spawn(
+        &scanner(),
+        &returns,
+        &host,
+        &spawn_params(json!({})),
+        None,
+        &tr(),
+    );
+    assert!(spawned.is_err());
+    assert!(host.params_of("attach.agent_call").is_empty());
+
+    *session.borrow_mut() = "sess-a";
+    crate::handlers::handle_spawn(
+        &scanner(),
+        &returns,
+        &host,
+        &spawn_params(json!({})),
+        None,
+        &tr(),
+    )
+    .unwrap();
+    let route = last_route(&host);
+    let calls = host.params_of("attach.agent_call").len();
+    *session.borrow_mut() = META_FAILS;
+    let told = crate::handlers::handle_tell(
+        &returns,
+        &host,
+        &json!({ "surface": 15, "message": "next", "caller_surface": 3 }),
+        &tr(),
+    );
+    assert!(told.is_err());
+    assert_eq!(host.params_of("attach.agent_call").len(), calls);
+
+    assert!(
+        returns
+            .remote_receive(&host, &turn("claude:m:t1", &route, "B1"), &tr())
+            .is_err()
+    );
+    assert!(crate::codex_return::test_log::take().is_empty());
+    *session.borrow_mut() = "sess-a";
+    let r = returns
+        .remote_receive(&host, &turn("claude:m:t1", &route, "B1"), &tr())
+        .unwrap();
+    assert_eq!(r["status"], json!("recorded"));
+    assert_eq!(crate::codex_return::test_log::take().len(), 1);
 }
 
 fn origin_params(extra: Value) -> Value {
