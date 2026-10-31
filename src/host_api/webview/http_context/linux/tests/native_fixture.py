@@ -324,7 +324,7 @@ def run_case(case, cert, expected, env):
     child_env |= {f"DE_{key}_PORT": str(value) for key, value in LOGICAL_PORTS.items()}
     try:
         with (local / "native.log").open("w") as output:
-            child = subprocess.Popen(["dbus-run-session", "--", BINARY, "--ignored", "--exact", "http_context::linux::tests::native_suite", "--nocapture", "--test-threads=1"], env=child_env, stdout=output, stderr=subprocess.STDOUT)
+            child = subprocess.Popen(["dbus-run-session", "--", BINARY, "--ignored", "--exact", "host_api::webview::http_context::linux::tests::native_suite", "--nocapture", "--test-threads=1"], env=child_env, stdout=output, stderr=subprocess.STDOUT)
             remember(child.pid)
             deadline = time.monotonic() + 28
             while child.poll() is None:
