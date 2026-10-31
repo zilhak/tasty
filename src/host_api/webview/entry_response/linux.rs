@@ -121,10 +121,8 @@ pub(in crate::host_api::webview) fn webview(source: EntryResponseSource) -> WebV
     });
     if let Some(settings) = WebViewExt::settings(&view) {
         use webkit2gtk::SettingsExt;
-        settings.set_enable_dns_prefetching(false);
+        crate::host_api::webview::linux::direct_paths::close(&settings);
         settings.set_enable_hyperlink_auditing(false);
-        settings.set_enable_webrtc(false);
-        settings.set_enable_media_stream(false);
         settings.set_allow_file_access_from_file_urls(false);
         settings.set_allow_universal_access_from_file_urls(false);
     }

@@ -91,6 +91,44 @@ def cleanup():
         now = proc(row["pid"])
         row["absent_or_replaced"] = now is None or now["start"] != row["start"]
 
+class UdpTrap:
+    """Counts datagrams a page sends straight to a client address instead of through the proxy."""
+    def __init__(self):
+        self.stop = threading.Event()
+        self.received = 0
+        self.lock = threading.Lock()
+        self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.socket.bind(("127.0.0.1", 0))
+        self.socket.settimeout(.1)
+        self.port = self.socket.getsockname()[1]
+        self.worker = threading.Thread(target=self.receive)
+        self.worker.start()
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+            probe.sendto(b"control", ("127.0.0.1", self.port))
+        end = time.monotonic() + 2
+        while self.take() != 1:
+            assert time.monotonic() < end, "UDP trap positive control"
+            time.sleep(.01)
+    def receive(self):
+        while not self.stop.is_set():
+            try:
+                self.socket.recvfrom(2048)
+            except socket.timeout:
+                continue
+            except OSError:
+                break
+            with self.lock:
+                self.received += 1
+    def take(self):
+        with self.lock:
+            received, self.received = self.received, 0
+        return received
+    def close(self):
+        self.stop.set()
+        self.socket.close()
+        self.worker.join(2)
+        assert not self.worker.is_alive()
+
 class DirectSentinel:
     """Own both localhost address families; a bypass can reach only this fixture."""
     def __init__(self):
@@ -305,6 +343,18 @@ def response(path, case):
         return b"self.addEventListener('install',e=>self.skipWaiting());self.addEventListener('activate',e=>e.waitUntil(clients.claim()));self.addEventListener('fetch',e=>{if(new URL(e.request.url).pathname==='/sw-hit')e.respondWith(new Response('SW OLD'));if(new URL(e.request.url).pathname==='/retained-post')e.respondWith(new Response('<title>SW OLD</title>',{headers:{'Content-Type':'text/html'}}));});", b"Content-Type: application/javascript\r\n"
     if path == "/asset":
         return b"asset", b"Cache-Control: max-age=3600\r\n"
+    if path in ("/direct", "/direct-header-on", "/direct-meta-on"):
+        # A remote document that reaches past the proxy when the engine allows it: a DNS prefetch
+        # hint and an anchor need no script, and WebRTC gathers ICE toward the fixture's UDP trap.
+        # The .invalid names never resolve; only the client resolver attempt is observed.
+        # The -on variants ask the engine to re-enable DNS prefetch from the origin's response.
+        meta = b'<meta http-equiv="x-dns-prefetch-control" content="on">' if path == "/direct-meta-on" else b""
+        extra = b"X-DNS-Prefetch-Control: on\r\n" if path == "/direct-header-on" else b""
+        html = (b'<!doctype html>' + meta + b'<title>direct pending</title><link rel="dns-prefetch" href="//p-NONCE.invalid"><a href="http://a-NONCE.invalid/">anchor</a><script>'
+                b'const peer=typeof RTCPeerConnection;let state="absent";'
+                b'try{if(peer!=="undefined"){const pc=new RTCPeerConnection({iceServers:[{urls:"stun:127.0.0.1:UDP"},{urls:"stun:s-NONCE.invalid:UDP"}]});pc.createDataChannel("x");state="created";pc.createOffer().then(o=>pc.setLocalDescription(o)).then(()=>state="gathering",e=>state="offer-"+e.name);}}catch(e){state="throw-"+e.name}'
+                b'setTimeout(()=>document.title="DIRECT peer="+peer+" state="+state+" media="+typeof navigator.mediaDevices,4000);</script>')
+        return html.replace(b"NONCE", DIRECT_NONCE.encode()).replace(b"UDP", str(UDP_TRAP.port).encode()), b"Content-Type: text/html\r\n" + extra
     if path == "/sw-hit":
         return b"REMOTE", b"Content-Type: text/plain\r\n"
     return b"<!doctype html><title>POST RETAINED</title>", b"Content-Type: text/html\r\n"
@@ -382,6 +432,12 @@ def run_case(case, cert, expected, env):
         elif case == "retained_no_clear":
             assert sum(r["line"] == "POST /retained-post HTTP/1.1" for r in endpoint.requests) == 1
             assert following is None
+        elif case.startswith("direct_paths"):
+            assert endpoint.requests and all(r["line"].startswith("GET /direct") for r in endpoint.requests), endpoint.requests
+            received = UDP_TRAP.take()
+            if case != "direct_paths_control":
+                assert received == 0, received
+            return {"case": case, "rc": 0, "requests": endpoint.requests, "udp_trap_datagrams": received, "dns_nonce": DIRECT_NONCE, "native_log": str(local / "native.log"), "native_log_sha256": hashlib.sha256((local / "native.log").read_bytes()).hexdigest()}
         elif case == "retained_lifecycle":
             assert all(r["line"] == "GET /base HTTP/1.1" for r in endpoint.requests)
         else:
@@ -395,6 +451,7 @@ def run_case(case, cert, expected, env):
 
 rows = []
 xvfb = None
+UDP_TRAP = None
 try:
     env = {key: value for key, value in os.environ.items() if not key.startswith("TASTY_")}
     for key in ("TASTY_SURFACE_ID", "TASTY_SESSION_TOKEN", "TASTY_AGENT_ID", "DISPLAY", "DBUS_SESSION_BUS_ADDRESS", "XAUTHORITY"):
@@ -413,11 +470,13 @@ try:
         direct = DirectSentinel()
         DIRECT.append(direct)
         LOGICAL_PORTS[kind] = direct.port
+    UDP_TRAP = UdpTrap()
+    DIRECT_NONCE = os.urandom(8).hex()
     good = certificate("owned", "localhost")
     other = certificate("other", "localhost")
     NEW_LEAF = other
     bad = certificate("bad-host", "wrong.invalid")
-    cases = sys.argv[3:] or ["lifecycle", "valid", "repeat", "fresh_changed_reject", "fresh_changed_valid", "port", "history", "wrong_leaf", "extra_flags", "wrong_host", "retired", "closed", "bound", "timeout", "cache"]
+    cases = sys.argv[3:] or ["lifecycle", "valid", "repeat", "fresh_changed_reject", "fresh_changed_valid", "port", "history", "wrong_leaf", "extra_flags", "wrong_host", "retired", "closed", "bound", "timeout", "cache", "direct_paths", "direct_paths_header_on", "direct_paths_meta_on"]
     for case in cases:
         rows.append(run_case(case, other if case == "wrong_leaf" else bad if case == "extra_flags" else good, bad if case == "extra_flags" else good, env))
         (ROOT / "progress.json").write_text(json.dumps(rows, indent=2) + "\n")
@@ -433,6 +492,8 @@ finally:
         xvfb.wait(timeout=5)
     for direct in DIRECT:
         direct.close()
+    if UDP_TRAP:
+        UDP_TRAP.close()
     result["cleanup"] = CLEANUP
     result["owned_all_absent"] = all(row["absent_or_replaced"] for row in CLEANUP)
     result["private_profile_homes"] = [{"path": str(home), "removed": False} for home in PROFILE_HOMES]

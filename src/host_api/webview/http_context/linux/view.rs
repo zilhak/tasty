@@ -33,6 +33,9 @@ impl State {
     ) -> Rc<Self> {
         let webview = WebView::with_context(&context);
         store::retain_profile(&webview, &profile);
+        if let Some(settings) = WebViewExt::settings(&webview) {
+            crate::host_api::webview::linux::direct_paths::close(&settings);
+        }
         let state = Rc::new(Self {
             webview,
             context,

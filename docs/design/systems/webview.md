@@ -70,6 +70,10 @@ Linux는 이 모드마다 별도 ephemeral `WebContext`에 `tasty-html-entry` sc
 
 현재 attach entry viewer capability는 Linux·Windows·macOS GUI client가 광고한다. Windows는 전용 user-data folder·InPrivate context에서 응답 interception으로 entry와 같은 root의 하위 파일 GET에 답한다. 격리 debug 인스턴스 두 개의 실제 GUI mirror에서 entry·하위 파일 표시, 하위 문서 이동의 새 전송·scan, root 밖 참조 거절, 크기 질문 허용, script 허용과 Reload를 확인했다. macOS는 view마다 nonpersistent `WKWebsiteDataStore`를 두고 `WKURLSchemeHandler`로 entry와 같은 root의 하위 파일 GET에 답한다. headless 서버와 GUI client의 격리 debug 인스턴스에서 실제 GUI mirror의 entry·CSS·이미지 표시, root 밖 참조 거절, 하위 문서 이동의 새 전송·scan, 크기 질문 배너, script 허용과 Reload를 확인했다. 크기 질문의 허용·거절 클릭은 macOS 자동 입력을 쓰지 않아 측정하지 않았다. Reload로 새로 만든 WKWebView는 배율 2 화면의 창에서 정상 표시됐으나, 배율 1 외장 화면의 창에서는 문서 전달과 내부 snapshot이 정상인데도 창에 그려지지 않는 경우를 관측했고 원인은 확인하지 않았다. macOS handler는 main-thread task를 보유해 완료 wakeup에서 polling하고, stop에서 waiter를 제거한 뒤 후속 callback을 보내지 않는다. Windows는 apartment 안에 resource args·deferral·waiter를 보유하며 완료·실패·view close에서 응답을 결정하고 deferral을 끝낸다. 두 어댑터 모두 대기 요청을 256개로 제한하고 완료 직전 native owner를 재검사한다. main-frame 하위 문서 탐색은 cache 유무와 관계없이 새 전송·scan으로 넘긴다. 이 파일 entry 모드는 HTTP(S)를 다루지 않는다. 원격 HTTP(S)는 [별도 native backend](#원격-http-native-backend-가용성)가 맡는다.
 
+## 원격 HTTP 직접 경로
+
+원격 HTTP(S) 문서 view의 HTTP 요청은 모두 문서 endpoint를 거친다. proxy 설정 밖으로 나갈 수 있는 WebRTC(ICE UDP)와 DNS prefetch(client resolver 조회)는 OS별로 다음과 같이 다룬다. Linux는 HTTP view와 TLS 확인용 보조 view에 WebRTC·media stream·DNS prefetch 끄기를 명시한다. hyperlink auditing은 proxy를 거치는 요청이라 HTTP view에서는 끄지 않는다. 실측 범위는 [HTTP bridge](../../dev-guide/html-http-bridge.md#linux-native-context-component)에 있다.
+
 ## macOS HTTP context
 
 macOS 27 이상 GUI client는 원격 HTTP(S) 문서마다 비영속 `WKWebsiteDataStore`를 만들고 문서 endpoint를 HTTP CONNECT proxy로 지정한다. WebKit은 proxy를 지정해도 loopback 주소에 직접 연결하므로 원격 loopback 호스트는 `*.tasty.localhost` 별칭으로 열고, 직접 loopback 요청은 content rule로 막는다. 인증·별칭·인증서·Reload 계약과 실측은 [macOS HTTP context](../../dev-guide/macos-http-context.md)에 있다.

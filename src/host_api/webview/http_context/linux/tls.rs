@@ -171,6 +171,7 @@ fn start(
     store::retain_profile(&webview, &state.profile);
     if let Some(settings) = WebViewExt::settings(&webview) {
         settings.set_enable_javascript(false);
+        crate::host_api::webview::linux::direct_paths::close(&settings);
     }
     callbacks(state, &webview, id);
     let weak = Rc::downgrade(state);

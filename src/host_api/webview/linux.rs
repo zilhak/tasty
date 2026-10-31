@@ -27,6 +27,7 @@ use super::{NavState, PendingNavigation, WebViewBounds};
 mod availability;
 pub(crate) use availability::http_available;
 mod content_filter;
+pub(super) mod direct_paths;
 mod edit;
 mod navigation_policy;
 mod overlay_backend;

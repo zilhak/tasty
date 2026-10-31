@@ -6,6 +6,8 @@ use std::{
 };
 #[path = "tests/cache.rs"]
 mod cache;
+#[path = "tests/direct.rs"]
+mod direct;
 #[path = "tests/lifecycle.rs"]
 mod lifecycle;
 #[path = "tests/navigation.rs"]
@@ -200,6 +202,10 @@ fn native_suite() {
         "retained_epoch" => retained::epoch(),
         "retained_post" | "retained_no_clear" => retained::post_cookie(&case),
         "cache" | "cache_private" => cache::run(),
+        "direct_paths"
+        | "direct_paths_header_on"
+        | "direct_paths_meta_on"
+        | "direct_paths_control" => direct::run(&case),
         _ => navigation::run(&case),
     }
     tracing::info!("NATIVE_CASE_PASS {case}");
