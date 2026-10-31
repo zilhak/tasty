@@ -261,6 +261,8 @@ tasty claude spawn --workspace 7 --prompt "테스트를 돌려 줘"    # 7 은 �
   tasty claude remote-results                         # 저장된 결과 목록 (본문 제외)
   ```
 
+  결과 줄의 문구는 Tasty 의 언어 설정에 따라 번역됩니다. 예를 들어 영어로는 `surface 12: turn result 0123456789abcdef (turn_ended) is stored. Read it with: tasty claude remote-results --id 0123456789abcdef`, 한국어로는 `surface 12: 턴 결과 0123456789abcdef (turn_ended)을(를) 저장했습니다. 읽기: tasty claude remote-results --id 0123456789abcdef` 처럼 옵니다. 스크립트로 결과 줄을 찾을 때는 `turn result` 같은 문구나 줄 안의 아무 16진수가 아니라 줄 끝의 `tasty claude remote-results --id <ID>`·`tasty codex remote-results --id <ID>` 명령 부분에서 claude/codex 와 ID(16자리 소문자 16진수)를 함께 꺼내세요. 예: `grep -E '(^| )tasty (claude|codex) remote-results --id ([0-9a-f]{16})$'`
+
   결과는 자식을 닫은 뒤에도 7일 동안 남습니다. 지시한 뒤 부모 세션이 바뀌었거나 부모가 닫혔으면 결과는 저장만 하고 알리지 않으니 목록에서 찾으세요. 연결 장애 중에는 같은 결과 줄이 한 번 더 올 수 있지만 같은 ID 이므로 다시 읽어도 됩니다.
 - 원격 자식에게는 그 자식을 만든 부모만 `tell` 할 수 있습니다. 다른 부모(같은 화면에서 새로 시작한 Claude 대화 포함)가 보내면 응답이 엉뚱한 부모에게 가지 않도록 거절합니다. 그 부모용 자식을 새로 만드세요. 이 규칙이 생기기 전에 만든 원격 자식처럼 만든 부모를 알 수 없는 자식에게는 아무도 `tell` 할 수 없으니 새로 만드세요.
 - 연결이 끊기면 지시가 실행됐는지 알 수 없다고 알릴 수 있습니다. 다시 시도하기 전에 `children` 으로 확인하세요. 연결을 직접 끊었다가 다시 연결하면 새 연결로 보며, 이전 연결에서 보낸 지시의 결과는 이어서 받지 못합니다.

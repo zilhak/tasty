@@ -1,4 +1,4 @@
-<!-- source-hash: f5347f31f99d -->
+<!-- source-hash: c009d67a694c -->
 # Working with Claude and Codex
 
 Connect Claude Code and Codex CLI to share work across several agents. One agent can launch others and receive their results, so implementation, testing, and review can run alongside each other.
@@ -262,6 +262,8 @@ tasty claude spawn --workspace 7 --prompt "Run the tests"    # 7 is the attached
   tasty claude remote-results --id 0123456789abcdef   # reply text of a Claude child (for a Codex child: tasty codex remote-results)
   tasty claude remote-results                         # list stored results (without their text)
   ```
+
+  The wording of the result line is translated into Tasty's language setting. For example, in English it reads `surface 12: turn result 0123456789abcdef (turn_ended) is stored. Read it with: tasty claude remote-results --id 0123456789abcdef`, and in Korean `surface 12: 턴 결과 0123456789abcdef (turn_ended)을(를) 저장했습니다. 읽기: tasty claude remote-results --id 0123456789abcdef`. When a script looks for result lines, do not match words such as `turn result` or any hex number in the line; take claude/codex and the id (16 lowercase hex digits) together from the command at the end of the line, `tasty claude remote-results --id <ID>` or `tasty codex remote-results --id <ID>`. For example: `grep -E '(^| )tasty (claude|codex) remote-results --id ([0-9a-f]{16})$'`
 
   Results stay for 7 days, even after the child is closed. If the parent's session changed or the parent was closed after the instruction, the result is stored without a notice; find it in the list. During a connection failure the same result line can arrive twice; it carries the same id, so reading it again is harmless.
 - Only the parent that created a remote child can `tell` it. A `tell` from another parent (including a new Claude conversation started in the same pane) is refused so that replies cannot go to the wrong parent. Spawn a new child for that parent instead. A remote child whose creating parent is unknown, such as one spawned before this rule existed, refuses every `tell`; spawn a new one.
