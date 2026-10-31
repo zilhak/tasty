@@ -99,15 +99,29 @@ impl SettingsPatch {
                 font.font_size = size;
             }
             Self::ExplorerMode(mode) => settings.general.explorer_view_mode = mode.clone(),
-            Self::SuppressMouseHint(name) => settings
-                .general
-                .mouse_capture_banner_blacklist
-                .push(name.clone()),
+            Self::SuppressMouseHint(name) => {
+                add_app_pattern(&mut settings.general.mouse_capture_banner_blacklist, name)
+            }
             Self::DisableMouseCapture(name) => {
-                settings.general.mouse_capture_blacklist.push(name.clone())
+                add_app_pattern(&mut settings.general.mouse_capture_blacklist, name)
             }
         }
     }
+}
+
+/// 매칭은 trim·ASCII 소문자화한 패턴으로 하고 빈 패턴을 건너뛴다(`tasty_settings` `matches_blacklist`).
+/// 빈 이름은 아무 프로그램에도 맞지 않고, 같은 패턴을 다시 넣으면 결과는 같고 목록만 늘어난다.
+/// 두 경우 모두 목록을 바꾸지 않는다.
+fn add_app_pattern(list: &mut Vec<String>, name: &str) {
+    let name = name.trim();
+    if name.is_empty()
+        || list
+            .iter()
+            .any(|existing| existing.trim().eq_ignore_ascii_case(name))
+    {
+        return;
+    }
+    list.push(name.to_string());
 }
 
 /// 프레임 단계와 무관한 일반 명령. 프레임 drain은 이것을 실행하지 않고 일반 dispatch에 넘긴다.
@@ -416,6 +430,56 @@ impl EngineAction {
 #[cfg(all(test, feature = "gui"))]
 mod tests {
     use super::EngineAction;
+
+    #[test]
+    fn an_empty_app_name_is_not_added_to_either_blacklist() {
+        use super::SettingsPatch;
+        let mut settings = crate::settings::Settings::default();
+        let banner_before = settings.general.mouse_capture_banner_blacklist.clone();
+        let capture_before = settings.general.mouse_capture_blacklist.clone();
+        SettingsPatch::SuppressMouseHint(String::new()).apply(&mut settings);
+        SettingsPatch::SuppressMouseHint(" \t".into()).apply(&mut settings);
+        SettingsPatch::DisableMouseCapture(String::new()).apply(&mut settings);
+        SettingsPatch::DisableMouseCapture("  ".into()).apply(&mut settings);
+        assert_eq!(
+            settings.general.mouse_capture_banner_blacklist,
+            banner_before
+        );
+        assert_eq!(settings.general.mouse_capture_blacklist, capture_before);
+    }
+
+    #[test]
+    fn the_same_app_pattern_is_added_once_and_trimmed() {
+        use super::SettingsPatch;
+        let mut settings = crate::settings::Settings::default();
+        settings.general.mouse_capture_banner_blacklist.clear();
+        settings.general.mouse_capture_blacklist.clear();
+        for name in ["vim", "vim", " vim ", "VIM"] {
+            SettingsPatch::SuppressMouseHint(name.into()).apply(&mut settings);
+            SettingsPatch::DisableMouseCapture(name.into()).apply(&mut settings);
+        }
+        assert_eq!(
+            settings.general.mouse_capture_banner_blacklist,
+            vec!["vim".to_string()]
+        );
+        assert_eq!(
+            settings.general.mouse_capture_blacklist,
+            vec!["vim".to_string()]
+        );
+    }
+
+    /// 설정 화면에서 넣은 공백·대문자 항목도 같은 패턴으로 본다(매칭이 trim·소문자화하므로).
+    #[test]
+    fn a_stored_pattern_with_spaces_counts_as_the_same_name() {
+        use super::SettingsPatch;
+        let mut settings = crate::settings::Settings::default();
+        settings.general.mouse_capture_blacklist = vec![" HTOP ".to_string()];
+        SettingsPatch::DisableMouseCapture("htop".into()).apply(&mut settings);
+        assert_eq!(
+            settings.general.mouse_capture_blacklist,
+            vec![" HTOP ".to_string()]
+        );
+    }
 
     fn engine_with(
         registries: &crate::runtime::registries::RuntimeRegistries,

@@ -153,7 +153,11 @@ mouse-capture 배너(`defs::BANNER_MOUSE_CAPTURE`)에 한해, X 왼쪽에 "더�
   프로그램 이름 세그먼트만 축소+ellipsis 한다. 줄을 바꾼 행은 최소 `menu-item-height`, 위아래
   `menu-item-wrap-padding-y`, 줄 높이 `line-height-ui` × 본문 크기이고 아이콘은 세로 가운데다. 이름은 단어
   중간에서 끊지 않고 혼자 한 줄보다 길 때만 ellipsis 한다. 이름을 줄였으면 전체 이름을 항목 tooltip 으로 보완한다.
-- 두 블랙리스트는 Settings › Terminal › Mouse Capture 탭과 데이터를 공유한다. 메뉴와 설정 화면은 같은 저장·매칭 규칙을 사용한다([터미널 (Terminal)](../../surfaces/terminal/index.md)).
+- 두 블랙리스트는 Settings › Terminal › Mouse Capture 탭과 데이터를 공유한다. 메뉴와 설정 화면은 같은 매칭 규칙을 사용한다([터미널 (Terminal)](../../surfaces/terminal/index.md)).
+- **저장 방어**: 메뉴 항목이 보내는 설정 변경은 프로그램 이름을 trim 해 저장한다. trim 뒤 빈 이름과, 이미 있는
+  패턴과 trim·ASCII 대소문자 무시 비교로 같은 이름은 목록을 바꾸지 않는다. 기존 목록의 빈 항목·중복은 자동으로
+  정리하지 않는다. 이름을 모를 때(원격 mirror, 첫 foreground 조회 전) 메뉴를 어떻게 보일지는 아직 정해지지 않았고,
+  지금은 빈 이름으로 행을 그린다. 이 상태에서 "이 안내 끄기"는 저장하지 않지만 배너는 닫는다.
 
 ## TTL (살아있는 시간)
 
