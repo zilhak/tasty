@@ -5,7 +5,9 @@
 //!   이 Tasty 의 호출 문맥(`_tasty_context`)·부모·수신처는 보내지 않는다.
 //! - 서버(자식 쪽): host 가 넣은 원격 출처(`attach:o<n>` + 문맥 토큰)로 받은 호출이다. 서버에 설치된 CLI·설정·
 //!   프로필·토큰으로 Claude 를 실행하고 훅도 서버로 보고된다. 이 부모에게는 알림 훅을 걸지 않는다(상태·이벤트는
-//!   host 가 중계한다). 부모가 Codex 대화면 턴 결과를 [`crate::codex_return`] 의 attach 경로로 돌려보낸다.
+//!   host 가 중계한다). client 가 route 토큰을 보냈으면 턴 결과를 [`crate::codex_return`] 의 attach 경로로 돌려보낸다.
+//! - client 는 부모가 Codex 대화든 물리 surface 든 spawn·tell 마다 route 토큰을 발급한다. 물리 부모의 결과는 본문을
+//!   저장한 뒤 그 부모의 완료 로그에 결과 ID 와 조회 명령(`tasty claude remote-results --id`)을 남긴다.
 //!
 //! 계약: docs/plugins/index.md 의 "원격 attach 자식" 절.
 
@@ -20,9 +22,10 @@ use tasty_plugin_agent_common::params::forward;
 use tasty_plugin_agent_common::remote_attach::{
     self, AttachOrigin, CallError, Parent, RETURN_ROUTE_KEY, Request, Target, TargetError,
 };
+use tasty_plugin_agent_common::remote_results;
 use tasty_plugin_sdk::{IpcMethodError, i18n::Translator};
 
-use crate::codex_return::{Binding, ParentTarget, Returns, TerminalParent};
+use crate::codex_return::{Binding, ParentTarget, Returns, RouteTo, TerminalParent};
 use crate::error_scan::{ErrorScanner, ScanTarget};
 
 /// 서버 `claude.spawn` 으로 보내는 인자. 사용자가 명시한 경로(`cwd`·`profile_file`)와 등록 이름(`profile`)은
@@ -152,9 +155,17 @@ pub(crate) fn spawn<H: HostCall>(
     tr: &Translator,
 ) -> Result<Value, IpcMethodError> {
     let mut remote = forward(params, SPAWN_KEYS);
-    if let ParentTarget::Codex(resolved) = target {
+    let to = match target {
+        ParentTarget::Codex(resolved) => Some(RouteTo::Codex(resolved.receiver_id.clone())),
+        ParentTarget::Legacy(Some(parent)) => Some(RouteTo::Surface {
+            surface: *parent,
+            session: remote_results::parent_session(host, *parent),
+        }),
+        ParentTarget::Legacy(None) => None,
+    };
+    if let Some(to) = to {
         let token = returns
-            .issue_attach_route(&resolved.receiver_id)
+            .issue_attach_route(&to)
             .map_err(|e| IpcMethodError::new(tr.t_fmt("claude.codex.route_not_saved", &e)))?;
         remote.insert(RETURN_ROUTE_KEY.into(), json!(token));
     }
@@ -282,7 +293,7 @@ pub(crate) fn receive<H: HostCall>(
 ) -> Result<Value, IpcMethodError> {
     match params.get("kind").and_then(Value::as_str) {
         Some("late_spawn") => Ok(late_spawn(returns, host, params, tr).json()),
-        _ => returns.remote_receive(host, params),
+        _ => returns.remote_receive(host, params, tr),
     }
 }
 

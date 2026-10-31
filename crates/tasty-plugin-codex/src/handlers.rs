@@ -341,7 +341,7 @@ pub(crate) fn handle_tell<H: HostCall>(
                 route = Some(
                     crate::delivery::ledger::issue_attach_route(
                         delivery.root,
-                        &receiver.receiver_id,
+                        &crate::delivery::ledger::codex_route(&receiver.receiver_id),
                     )
                     .map_err(|e| IpcMethodError::new(format!("codex attach route: {e}")))?,
                 );
@@ -365,6 +365,18 @@ pub(crate) fn handle_tell<H: HostCall>(
         }
         None => {
             ownership::invalidate_route(delivery, surface_id)?;
+            // 원격 자식의 본문은 서버에만 있으므로 호출 surface 에 결과를 돌려받을 토큰을 보낸다.
+            if remote_anchor.is_some()
+                && let Ok(caller_surface) = require_u32(params, "caller_surface", tr)
+            {
+                route = Some(
+                    crate::delivery::ledger::issue_attach_route(
+                        delivery.root,
+                        &remote::surface_route(host, caller_surface),
+                    )
+                    .map_err(|e| IpcMethodError::new(format!("codex attach route: {e}")))?,
+                );
+            }
             None
         }
     };

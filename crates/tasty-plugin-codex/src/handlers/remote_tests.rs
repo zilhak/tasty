@@ -199,7 +199,7 @@ fn a_codex_parent_spawns_on_the_server_and_binds_before_commit() {
     );
 }
 
-/// 물리 부모의 mirror spawn: 완료 알림 훅을 L 에 건 뒤 commit 한다. 결과 반환은 켜지 않는다.
+/// 물리 부모의 mirror spawn: 완료 알림 훅을 L 에 건 뒤 commit 한다. 턴 본문을 돌려받을 토큰만 서버로 보낸다.
 #[test]
 fn a_surface_parent_gets_its_notify_hooks_before_commit() {
     let fx = Fixture::new();
@@ -207,7 +207,11 @@ fn a_surface_parent_gets_its_notify_hooks_before_commit() {
     spawn(&fx, &host, json!({ "workspace": 3, "surface": 5 })).unwrap();
     let call = &host.params_of("attach.agent_call")[0];
     assert_eq!(call["parent"]["surface"], json!(5));
-    assert!(call["params"].get("return_route").is_none());
+    assert!(
+        call["params"]["return_route"]
+            .as_str()
+            .is_some_and(remote_attach::is_route_token)
+    );
     let methods = host.methods();
     let commit = methods
         .iter()
@@ -218,6 +222,99 @@ fn a_surface_parent_gets_its_notify_hooks_before_commit() {
         "{methods:?}"
     );
     assert_eq!(ledger::child_receiver(fx.root(), L).unwrap(), None);
+}
+
+/// 물리 부모 5 가 살아 있고 Claude 세션 `sess-a` 를 쓰는 client host.
+fn surface_parent(method: &str, params: &Value) -> Result<Value, PluginError> {
+    match method {
+        "surface.locate" => Ok(json!({ "exists": true })),
+        "surface.meta.get" if params["surface_id"] == json!(5) => Ok(json!({ "value": "sess-a" })),
+        _ => client(method, params),
+    }
+}
+
+/// 물리 부모: spawn·tell 마다 받은 턴 본문을 원장 대신 결과 보관에 저장하고 부모 완료 로그에 결과 ID 와 조회 명령을
+/// 남긴다. 재전송은 다시 알리지 않고, 조회 명령은 본문을 준다.
+#[test]
+fn a_surface_parent_gets_each_turn_body_stored_before_its_notice() {
+    let fx = Fixture::new();
+    test_log::take();
+    let host = Host::new(&fx, surface_parent);
+    spawn(&fx, &host, json!({ "workspace": 3, "surface": 5 })).unwrap();
+    let spawn_route = route_of(&host);
+    assert_eq!(
+        receive(&fx, &host, notice("codex:a:t1", &spawn_route))["status"],
+        json!("recorded")
+    );
+    assert!(host.params_of("codex.deliver").is_empty());
+    let lines = test_log::take();
+    assert_eq!(lines.len(), 1, "{lines:?}");
+    assert_eq!(lines[0].0, 5);
+    let id = lines[0].1.split_whitespace().last().unwrap().to_string();
+    assert!(
+        lines[0]
+            .1
+            .contains(&format!("tasty codex remote-results --id {id}")),
+        "{}",
+        lines[0].1
+    );
+    let shown = fx
+        .with(|d| super::results(d, &json!({ "id": id }), &fx.tr))
+        .unwrap();
+    assert_eq!(shown["result"]["body"], json!("done"));
+    assert_eq!(shown["result"]["provider"], json!("codex"));
+    assert_eq!(
+        receive(&fx, &host, notice("codex:a:t1", &spawn_route))["status"],
+        json!("duplicate")
+    );
+    assert!(test_log::take().is_empty());
+
+    fx.with(|d| {
+        super::super::handle_tell(
+            &host,
+            &json!({ "surface": L, "message": "next", "caller_surface": 5 }),
+            &fx.tr,
+            d,
+        )
+    })
+    .unwrap();
+    let tell_route = route_of(&host);
+    assert_ne!(tell_route, spawn_route);
+    assert_eq!(
+        receive(&fx, &host, notice("codex:a:t2", &tell_route))["status"],
+        json!("recorded")
+    );
+    let lines = test_log::take();
+    assert_eq!(lines.len(), 1);
+    assert!(!lines[0].1.contains(&id));
+    let bad = fx
+        .with(|d| super::results(d, &json!({ "id": "nope" }), &fx.tr))
+        .unwrap_err();
+    assert_eq!(bad.code, -32602);
+}
+
+/// 부모 세션이 바뀌었으면 본문은 저장하되 알리지 않는다.
+#[test]
+fn a_surface_parent_result_for_another_session_is_kept_quiet() {
+    let fx = Fixture::new();
+    test_log::take();
+    let host = Host::new(&fx, surface_parent);
+    spawn(&fx, &host, json!({ "workspace": 3, "surface": 5 })).unwrap();
+    let route = route_of(&host);
+    let other = Host::new(&fx, |method, params| match method {
+        "surface.meta.get" => Ok(json!({ "value": "sess-b" })),
+        _ => surface_parent(method, params),
+    });
+    assert_eq!(
+        receive(&fx, &other, notice("codex:b:t1", &route))["status"],
+        json!("recorded")
+    );
+    assert!(test_log::take().is_empty());
+    let list = fx.with(|d| super::results(d, &json!({}), &fx.tr)).unwrap();
+    assert_eq!(
+        list["results"][0]["undelivered"],
+        json!("parent_session_changed")
+    );
 }
 
 /// 경로를 묶지 못하면 commit 하지 않고(첫 완료를 풀지 않는다) 서버의 자식을 닫는다.
@@ -750,7 +847,9 @@ fn an_unknown_remote_tell_keeps_the_new_route() {
     let kept = ledger::child_receiver(fx.root(), L).unwrap().unwrap();
     let route = route_of(&host);
     assert_eq!(
-        ledger::attach_route_receiver(fx.root(), &route).unwrap(),
+        ledger::attach_route(fx.root(), &route)
+            .unwrap()
+            .map(|r| r.receiver_id),
         Some(kept.receiver_id.clone())
     );
     assert_eq!(

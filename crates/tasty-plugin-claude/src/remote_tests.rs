@@ -178,7 +178,10 @@ fn a_mirror_spawn_runs_on_the_server_and_binds_hooks_before_commit() {
         );
     }
     assert_eq!(sent["prompt"], json!("do it"));
-    assert!(sent.get(RETURN_ROUTE_KEY).is_none());
+    // 물리 부모도 턴 본문을 돌려받도록 불투명 토큰만 보낸다(부모 surface 는 보내지 않는다).
+    assert!(remote_attach::is_route_token(
+        sent[RETURN_ROUTE_KEY].as_str().unwrap()
+    ));
     let last_hook = methods
         .iter()
         .rposition(|m| m == "hook.set")
@@ -230,6 +233,7 @@ fn a_codex_parent_binds_its_route_on_the_mirror_child_and_asks_for_turns() {
                     "route": route,
                 } },
             }),
+            &tr(),
         )
         .unwrap();
     assert_eq!(r, json!({ "status": "recorded" }));
@@ -454,6 +458,7 @@ fn a_tell_to_a_mirror_child_goes_to_the_server_after_the_route() {
                 "payload": { "completion": { "completion_key": "claude:x:t2", "provider": "claude",
                     "child_surface": 99, "status": "turn_ended", "route": route } },
             }),
+            &tr(),
         )
         .unwrap();
     assert_eq!(r["status"], json!("recorded"));
@@ -464,7 +469,9 @@ fn a_tell_to_a_mirror_child_goes_to_the_server_after_the_route() {
 fn a_killed_mirror_child_still_records_late_results() {
     let (_d, returns) = store();
     returns.bind_new_child(15, &local_binding(), false).unwrap();
-    let route = returns.issue_attach_route(RECEIVER).unwrap();
+    let route = returns
+        .issue_attach_route(&RouteTo::Codex(RECEIVER.into()))
+        .unwrap();
     let host = client_host(true, || {
         Ok(json!({ "call_id": 9, "result": { "killed": true }, "children": [] }))
     });
@@ -491,6 +498,7 @@ fn a_killed_mirror_child_still_records_late_results() {
                 "payload": { "completion": { "completion_key": "claude:x:t3", "provider": "claude",
                     "child_surface": 99, "status": "exited", "route": route } },
             }),
+            &tr(),
         )
         .unwrap();
     assert_eq!(r["status"], json!("recorded"));
@@ -509,17 +517,21 @@ fn a_result_without_a_route_is_rejected_and_a_failed_record_is_retried() {
         .remote_receive(
             &host,
             &json!({ "surface_id": 15, "key": "k", "payload": payload }),
+            &tr(),
         )
         .unwrap();
     assert_eq!(r["status"], json!("rejected"));
-    let route = returns.issue_attach_route(RECEIVER).unwrap();
+    let route = returns
+        .issue_attach_route(&RouteTo::Codex(RECEIVER.into()))
+        .unwrap();
     let mut payload = payload;
     payload["completion"]["route"] = json!(route);
     assert!(
         returns
             .remote_receive(
                 &host,
-                &json!({ "surface_id": 15, "key": "k", "payload": payload })
+                &json!({ "surface_id": 15, "key": "k", "payload": payload }),
+                &tr()
             )
             .is_err(),
         "a temporary failure must make the host retry"
@@ -534,9 +546,191 @@ fn a_result_without_a_route_is_rejected_and_a_failed_record_is_retried() {
         .remote_receive(
             &dup,
             &json!({ "surface_id": 15, "key": "k", "payload": payload }),
+            &tr(),
         )
         .unwrap();
     assert_eq!(r["status"], json!("duplicate"));
+}
+
+/// 물리 부모 3 의 client host. 부모 세션과 존재 여부를 시험 중에 바꿀 수 있다.
+fn surface_parent_host(
+    session: std::rc::Rc<RefCell<&'static str>>,
+    exists: std::rc::Rc<RefCell<bool>>,
+) -> Host {
+    Host::new(move |method, params| match method {
+        "attach.agent_target" => Ok(json!({
+            "remote": true, "capable": true, "workspace": 2, "anchor_surface_id": 12,
+            "child": params.get("surface_id") == Some(&json!(15)),
+        })),
+        "attach.agent_call" => match params["method"].as_str() {
+            Some("spawn") => spawned(),
+            Some("kill") => {
+                Ok(json!({ "call_id": 9, "result": { "killed": true }, "children": [] }))
+            }
+            _ => Ok(json!({ "call_id": 8, "result": { "ok": true }, "children": [] })),
+        },
+        "attach.agent_commit" => Ok(json!({ "committed": 1 })),
+        "surface.locate" => Ok(json!({ "exists": *exists.borrow() })),
+        "surface.meta.get"
+            if params["surface_id"] == json!(3)
+                && params["key"] == json!(remote_results::PARENT_SESSION_META) =>
+        {
+            Ok(json!({ "value": *session.borrow() }))
+        }
+        "terminal.children" => Ok(json!({ "children": [{ "surface_id": 15, "index": 2 }] })),
+        "hook.list" => Ok(json!([])),
+        _ => Ok(json!({})),
+    })
+}
+
+fn turn(key: &str, route: &str, body: &str) -> Value {
+    json!({ "surface_id": 15, "remote_surface_id": 99, "key": key, "payload": { "completion": {
+        "completion_key": key, "provider": "claude", "child_surface": 99, "child_session": "c",
+        "status": "turn_ended", "body": body, "route": route } } })
+}
+
+fn last_route(host: &Host) -> String {
+    host.params_of("attach.agent_call").last().unwrap()["params"][RETURN_ROUTE_KEY]
+        .as_str()
+        .unwrap()
+        .to_string()
+}
+
+/// 물리 부모: spawn·tell 마다 받은 턴 본문을 저장한 뒤 부모 완료 로그에 결과 ID 와 조회 명령을 남긴다. 재전송은
+/// 다시 알리지 않고, 자식을 닫은 뒤 온 결과도 저장한다. 조회 명령은 본문을 그대로 준다.
+#[test]
+fn a_surface_parent_gets_each_turn_body_stored_before_its_notice() {
+    let (_d, returns) = store();
+    crate::codex_return::test_log::take();
+    let session = std::rc::Rc::new(RefCell::new("sess-a"));
+    let exists = std::rc::Rc::new(RefCell::new(true));
+    let host = surface_parent_host(session.clone(), exists.clone());
+    crate::handlers::handle_spawn(
+        &scanner(),
+        &returns,
+        &host,
+        &spawn_params(json!({})),
+        None,
+        &tr(),
+    )
+    .unwrap();
+    let spawn_route = last_route(&host);
+    let r = returns
+        .remote_receive(&host, &turn("claude:a:t1", &spawn_route, "BODY-1"), &tr())
+        .unwrap();
+    assert_eq!(r["status"], json!("recorded"));
+    let lines = crate::codex_return::test_log::take();
+    assert_eq!(lines.len(), 1, "{lines:?}");
+    assert_eq!(lines[0].0, 3);
+    let id = lines[0].1.split_whitespace().last().unwrap().to_string();
+    assert!(
+        lines[0]
+            .1
+            .contains(&format!("tasty claude remote-results --id {id}")),
+        "{}",
+        lines[0].1
+    );
+    assert!(lines[0].1.starts_with("surface 15: "), "{}", lines[0].1);
+    let shown =
+        crate::codex_return::handle_remote_results(&returns, &json!({ "id": id }), &tr()).unwrap();
+    assert_eq!(shown["result"]["body"], json!("BODY-1"));
+    assert_eq!(shown["result"]["parent_surface"], json!(3));
+    // 재전송은 다시 알리지 않는다.
+    let r = returns
+        .remote_receive(&host, &turn("claude:a:t1", &spawn_route, "BODY-1"), &tr())
+        .unwrap();
+    assert_eq!(r["status"], json!("duplicate"));
+    assert!(crate::codex_return::test_log::take().is_empty());
+
+    // 같은 자식에게 보낸 tell 은 새 토큰이고, 그 턴은 별도 결과다.
+    crate::handlers::handle_tell(
+        &returns,
+        &host,
+        &json!({ "surface": 15, "message": "next", "caller_surface": 3 }),
+        &tr(),
+    )
+    .unwrap();
+    let tell_route = last_route(&host);
+    assert_ne!(tell_route, spawn_route);
+    // 자식을 닫은 뒤 늦게 온 결과도 저장하고 알린다.
+    crate::handlers::handle_kill(
+        &scanner(),
+        &returns,
+        &host,
+        &json!({ "surface": 3, "child_index": 2 }),
+        &tr(),
+    )
+    .unwrap();
+    returns
+        .remote_receive(&host, &turn("claude:a:t2", &tell_route, "BODY-2"), &tr())
+        .unwrap();
+    let lines = crate::codex_return::test_log::take();
+    assert_eq!(lines.len(), 1);
+    let id2 = lines[0].1.split_whitespace().last().unwrap().to_string();
+    assert_ne!(id, id2);
+    let list = crate::codex_return::handle_remote_results(&returns, &json!({}), &tr()).unwrap();
+    assert_eq!(list["results"].as_array().unwrap().len(), 2);
+    assert!(list["results"][0].get("body").is_none());
+}
+
+/// 부모 세션이 바뀌었거나 부모 surface 가 없으면 본문은 저장하되 알리지 않는다. 알림을 쓰지 못하면 오류로 답해
+/// host 가 다시 보내게 하고, 다시 오면 알림만 한다.
+#[test]
+fn a_surface_parent_result_is_kept_quiet_for_another_session_and_retried_on_log_failure() {
+    let (_d, returns) = store();
+    crate::codex_return::test_log::take();
+    let session = std::rc::Rc::new(RefCell::new("sess-a"));
+    let exists = std::rc::Rc::new(RefCell::new(true));
+    let host = surface_parent_host(session.clone(), exists.clone());
+    crate::handlers::handle_spawn(
+        &scanner(),
+        &returns,
+        &host,
+        &spawn_params(json!({})),
+        None,
+        &tr(),
+    )
+    .unwrap();
+    let route = last_route(&host);
+
+    crate::codex_return::test_log::fail(true);
+    assert!(
+        returns
+            .remote_receive(&host, &turn("claude:q:t1", &route, "B1"), &tr())
+            .is_err()
+    );
+    crate::codex_return::test_log::fail(false);
+    let r = returns
+        .remote_receive(&host, &turn("claude:q:t1", &route, "B1"), &tr())
+        .unwrap();
+    assert_eq!(r["status"], json!("recorded"));
+    assert_eq!(crate::codex_return::test_log::take().len(), 1);
+
+    *session.borrow_mut() = "sess-b";
+    let r = returns
+        .remote_receive(&host, &turn("claude:q:t2", &route, "B2"), &tr())
+        .unwrap();
+    assert_eq!(r["status"], json!("recorded"));
+    *exists.borrow_mut() = false;
+    returns
+        .remote_receive(&host, &turn("claude:q:t3", &route, "B3"), &tr())
+        .unwrap();
+    assert!(crate::codex_return::test_log::take().is_empty());
+    let list = crate::codex_return::handle_remote_results(&returns, &json!({}), &tr()).unwrap();
+    let reasons: std::collections::BTreeMap<String, Value> = list["results"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| {
+            (
+                r["completion_key"].as_str().unwrap().to_string(),
+                r["undelivered"].clone(),
+            )
+        })
+        .collect();
+    assert_eq!(reasons["r.claude:q:t1"], Value::Null);
+    assert_eq!(reasons["r.claude:q:t2"], json!("parent_session_changed"));
+    assert_eq!(reasons["r.claude:q:t3"], json!("parent_gone"));
 }
 
 fn origin_params(extra: Value) -> Value {
@@ -901,7 +1095,9 @@ fn a_late_result_goes_to_the_parent_that_started_its_turn() {
     };
     for (key, route) in [("claude:r:t1", &route_a), ("claude:r:t2", &route_b)] {
         assert_eq!(
-            returns.remote_receive(&host, &result(key, route)).unwrap()["status"],
+            returns
+                .remote_receive(&host, &result(key, route), &tr())
+                .unwrap()["status"],
             json!("recorded")
         );
     }

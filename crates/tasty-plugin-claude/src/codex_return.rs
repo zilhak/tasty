@@ -26,6 +26,9 @@ use tasty_plugin_agent_common::host_call::HostCall;
 use tasty_plugin_agent_common::remote_attach;
 use tasty_plugin_sdk::{IpcMethodError, i18n::Translator};
 
+#[cfg(test)]
+pub(crate) use attach::test_log;
+pub(crate) use attach::{RouteTo, handle_remote_results};
 pub(crate) use parent::*;
 
 const STORE_DIR: &str = "codex-return";
@@ -208,7 +211,7 @@ pub(crate) fn now_ms() -> u64 {
 struct Book {
     routes: Vec<Route>,
     outbox: Vec<Outgoing>,
-    /// client: 원격 자식에게 보낸 spawn·tell 의 route 토큰과 그때의 수신처.
+    /// client: 원격 자식에게 보낸 spawn·tell 의 route 토큰과 그때의 수신처(Codex 대화나 물리 surface 부모).
     attach_routes: Vec<attach::AttachRoute>,
 }
 
@@ -315,6 +318,11 @@ impl Book {
                         Some(attach::AttachRoute {
                             token: r.get("token")?.as_str()?.to_string(),
                             receiver_id: r.get("receiver_id")?.as_str()?.to_string(),
+                            parent_surface: r
+                                .get("parent_surface")
+                                .and_then(Value::as_u64)
+                                .and_then(|n| u32::try_from(n).ok()),
+                            parent_session: opt_str(r, "parent_session"),
                             issued_at_ms: r.get("issued_at_ms")?.as_u64()?,
                         })
                     })
@@ -350,6 +358,8 @@ impl Book {
             "attach_routes": self.attach_routes.iter().map(|r| json!({
                 "token": r.token,
                 "receiver_id": r.receiver_id,
+                "parent_surface": r.parent_surface,
+                "parent_session": r.parent_session,
                 "issued_at_ms": r.issued_at_ms,
             })).collect::<Vec<_>>(),
         })

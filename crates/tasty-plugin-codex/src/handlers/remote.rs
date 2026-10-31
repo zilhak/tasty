@@ -4,8 +4,11 @@
 //!   서버의 같은 메서드(`codex.spawn`·`tell`·`kill`)로 보낸다. 서버로 보내는 인자는 허용 목록으로 고르며 이 Tasty 의
 //!   호출 문맥·수신처·부모는 보내지 않는다.
 //! - 서버(자식 쪽): host 가 넣은 원격 출처(`attach:o<n>` + 문맥 토큰)로 받은 호출이다. 서버의 Codex CLI·설정·
-//!   승인 정책으로 실행하고 이 부모에게는 알림 훅을 걸지 않는다. 부모가 Codex 대화면 확정한 턴을
+//!   승인 정책으로 실행하고 이 부모에게는 알림 훅을 걸지 않는다. client 가 route 토큰을 보냈으면 확정한 턴을
 //!   [`crate::delivery::attach_out`] 으로 돌려보낸다.
+//! - client 는 부모가 Codex 대화든 물리 surface 든 spawn·tell 마다 route 토큰을 발급한다. 물리 부모의 결과는 본문을
+//!   저장한 뒤 그 부모의 완료 로그에 결과 ID 와 조회 명령(`tasty codex remote-results --id`)을 남긴다
+//!   ([`tasty_plugin_agent_common::remote_results`]).
 //! - `codex.remote_receive` 는 결과를 내부 [`crate::delivery::deliver`] 로 직접 기록한다. 같은 worker 에서 자기
 //!   namespace(`codex.deliver`)를 host 로 다시 부르면 교착된다.
 //!
@@ -18,6 +21,7 @@ use std::time::{Duration, Instant};
 use tasty_plugin_agent_common::remote_attach::{
     self, AttachOrigin, CallError, Parent, RETURN_ROUTE_KEY, Received, Request, Target, TargetError,
 };
+use tasty_plugin_agent_common::remote_results;
 
 use super::*;
 use crate::delivery::ledger;
@@ -193,11 +197,6 @@ pub(crate) fn spawn<H: HostCall>(
     parent: &Map<String, Value>,
 ) -> Result<Value, IpcMethodError> {
     let mut remote = forward(params, SPAWN_KEYS);
-    if let Some(id) = receiver_id {
-        let token = ledger::issue_attach_route(delivery.root, id)
-            .map_err(|e| IpcMethodError::new(format!("codex child return record: {e}")))?;
-        remote.insert(RETURN_ROUTE_KEY.into(), json!(token));
-    }
     let parent_surface = match receiver_id {
         Some(_) => None,
         None => parent
@@ -205,6 +204,16 @@ pub(crate) fn spawn<H: HostCall>(
             .and_then(Value::as_u64)
             .and_then(|n| u32::try_from(n).ok()),
     };
+    let to = match (receiver_id, parent_surface) {
+        (Some(id), _) => Some(ledger::codex_route(id)),
+        (None, Some(surface)) => Some(surface_route(host, surface)),
+        (None, None) => None,
+    };
+    if let Some(to) = to {
+        let token = ledger::issue_attach_route(delivery.root, &to)
+            .map_err(|e| IpcMethodError::new(format!("codex child return record: {e}")))?;
+        remote.insert(RETURN_ROUTE_KEY.into(), json!(token));
+    }
     let reply = match remote_attach::call(
         host,
         Request {
@@ -406,7 +415,7 @@ pub(crate) fn receive<H: HostCall>(
         .and_then(|c| c.get(remote_attach::ROUTE_FIELD))
         .and_then(Value::as_str)
         .unwrap_or_default();
-    let Some(receiver_id) = ledger::attach_route_receiver(delivery.root, token)
+    let Some(route) = ledger::attach_route(delivery.root, token)
         .map_err(|e| IpcMethodError::new(format!("codex attach route: {e}")))?
     else {
         return Ok(Received::Rejected(format!(
@@ -414,6 +423,18 @@ pub(crate) fn receive<H: HostCall>(
         ))
         .json());
     };
+    if let Some(parent) = route.parent_surface {
+        return receive_for_surface(
+            host,
+            delivery,
+            parent,
+            route.parent_session.as_deref(),
+            surface,
+            payload,
+            tr,
+        );
+    }
+    let receiver_id = route.receiver_id;
     let Some(receiver) = ledger::read_receiver(delivery.root, &receiver_id)
         .map_err(|e| IpcMethodError::new(format!("codex receiver: {e}")))?
     else {
@@ -437,6 +458,85 @@ pub(crate) fn receive<H: HostCall>(
         Received::Recorded
     }
     .json())
+}
+
+/// 물리 surface 부모의 route 기록. 발급 때 그 surface 의 Claude 세션을 함께 둔다.
+pub(crate) fn surface_route<H: HostCall>(host: &H, surface: u32) -> ledger::AttachRoute {
+    ledger::AttachRoute {
+        receiver_id: String::new(),
+        parent_surface: Some(surface),
+        parent_session: remote_results::parent_session(host, surface),
+    }
+}
+
+/// 물리 surface 부모의 결과: 본문을 먼저 저장하고, 그 부모의 완료 로그에 결과 ID 와 조회 명령을 남긴 뒤 답한다.
+/// 부모 surface 가 없거나 지시 뒤 부모 세션이 바뀌었으면 저장만 하고 알리지 않는다.
+fn receive_for_surface<H: HostCall>(
+    host: &H,
+    delivery: &DeliveryCtx<'_>,
+    parent: u32,
+    session: Option<&str>,
+    surface: u32,
+    payload: &Value,
+    tr: &Translator,
+) -> Result<Value, IpcMethodError> {
+    let Some(completion) = payload
+        .get(crate::delivery::attach_out::PAYLOAD_KEY)
+        .filter(|c| c.is_object())
+    else {
+        return Ok(Received::Rejected("payload without a completion".into()).json());
+    };
+    let suppressed =
+        remote_results::suppression(host, parent, session).map_err(IpcMethodError::new)?;
+    let dir = delivery.root.join(remote_results::DIR);
+    remote_results::receive(&dir, parent, surface, completion, suppressed, |stored| {
+        let line = t_args(
+            tr,
+            "codex.notify.remote_result_message",
+            &[
+                ("{surface}", &stored.child_surface.to_string()),
+                ("{id}", &stored.id),
+                ("{status}", stored.status),
+            ],
+        );
+        append_line(stored.parent_surface, &line)
+            .map_err(|e| format!("completion log of s{}: {e}", stored.parent_surface))
+    })
+    .map(|r| r.json())
+    .map_err(IpcMethodError::new)
+}
+
+/// 부모의 완료 로그(notify mod·Monitor 가 읽는 곳)에 한 줄을 쓴다.
+#[cfg(not(test))]
+fn append_line(surface: u32, line: &str) -> std::io::Result<()> {
+    tasty_utils::notify::append_notify_line(surface, line)
+}
+
+/// 시험은 실제 완료 로그(`TASTY_PARENT_HOME`)에 쓰지 않고 이 스레드에 모은다.
+#[cfg(test)]
+fn append_line(surface: u32, line: &str) -> std::io::Result<()> {
+    test_log::LINES.with(|l| l.borrow_mut().push((surface, line.to_string())));
+    Ok(())
+}
+
+/// `codex.remote_results`: 물리 부모에게 온 원격 결과. `id` 가 있으면 본문까지 담은 한 건, 없으면 본문을 뺀 목록이다.
+pub(crate) fn results(
+    delivery: &DeliveryCtx<'_>,
+    params: &Value,
+    tr: &Translator,
+) -> Result<Value, IpcMethodError> {
+    let dir = delivery.root.join(remote_results::DIR);
+    remote_results::query(&dir, params).map_err(|e| match e {
+        remote_results::QueryError::BadId(id) => {
+            IpcMethodError::invalid_params(&tr.t_replace("codex.remote.result_bad_id", "{id}", &id))
+        }
+        remote_results::QueryError::NotFound(id) => IpcMethodError::invalid_params(&tr.t_replace(
+            "codex.remote.result_not_found",
+            "{id}",
+            &id,
+        )),
+        remote_results::QueryError::Io(m) => IpcMethodError::new(m),
+    })
 }
 
 fn late_spawn<H: HostCall>(
@@ -681,6 +781,20 @@ pub(crate) fn refuse_public<H: HostCall>(
             "{detail}",
             &e.to_string(),
         ))),
+    }
+}
+
+#[cfg(test)]
+pub(crate) mod test_log {
+    use std::cell::RefCell;
+
+    thread_local! {
+        pub(super) static LINES: RefCell<Vec<(u32, String)>> = const { RefCell::new(Vec::new()) };
+    }
+
+    /// 이 스레드에서 쓴 줄을 꺼낸다.
+    pub(crate) fn take() -> Vec<(u32, String)> {
+        LINES.with(|l| std::mem::take(&mut *l.borrow_mut()))
     }
 }
 

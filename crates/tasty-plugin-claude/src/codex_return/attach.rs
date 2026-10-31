@@ -1,5 +1,7 @@
 //! attach 원격 출처 부모의 턴 결과. 이 Tasty 는 부모의 수신처를 모르므로 결과를 서버 host 에 맡기고
 //! (`attach.child_notice`), client 의 같은 plugin 이 그 부모의 수신처로 기록한다([`super::Returns::remote_receive`]).
+//! 수신처는 Codex 대화(`codex.deliver`)이거나 물리 surface 부모다. 물리 부모의 결과는 본문을 먼저 저장하고 그 부모의
+//! 완료 로그에 결과 ID 와 조회 명령을 남긴다([`tasty_plugin_agent_common::remote_results`]).
 //!
 //! 영속 요청은 client 가 기록을 확인한(`delivered`) 뒤나 받을 수 없다고 한(`rejected`) 뒤에만 지운다.
 //! `pending` 은 송신 실패와 같이 같은 키로 늘어나는 간격을 두고 다시 묻는다.
@@ -9,7 +11,8 @@ use std::time::Duration;
 use serde_json::Value;
 use tasty_plugin_agent_common::host_call::HostCall;
 use tasty_plugin_agent_common::remote_attach::{self, NoticeStatus};
-use tasty_plugin_sdk::IpcMethodError;
+use tasty_plugin_agent_common::remote_results;
+use tasty_plugin_sdk::{IpcMethodError, i18n::Translator};
 
 use super::{DELIVER_CALL_TIMEOUT, Returns, ms, now_ms};
 
@@ -89,8 +92,45 @@ pub(super) fn local_request(
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct AttachRoute {
     pub(super) token: String,
+    /// Codex 대화 수신처. 물리 surface 부모면 비어 있다.
     pub(super) receiver_id: String,
+    /// 물리 surface 부모. 결과를 저장하고 이 surface 의 완료 로그에 알린다.
+    pub(super) parent_surface: Option<u32>,
+    /// 발급 때 그 부모 surface 의 Claude 세션. 결과가 올 때 세션이 바뀌었으면 알리지 않는다.
+    pub(super) parent_session: Option<String>,
     pub(super) issued_at_ms: u64,
+}
+
+/// route 토큰이 가리키는 수신처.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum RouteTo {
+    /// Codex 대화(receiver_id).
+    Codex(String),
+    /// 물리 surface 부모와 발급 때 그 surface 의 Claude 세션(셸 등이면 없다).
+    Surface {
+        surface: u32,
+        session: Option<String>,
+    },
+}
+
+/// 부모의 완료 로그(notify mod·Monitor 가 읽는 곳)에 한 줄을 쓴다.
+#[cfg(not(test))]
+fn append_line(surface: u32, line: &str) -> std::io::Result<()> {
+    tasty_utils::notify::append_notify_line(surface, line)
+}
+
+/// 시험은 실제 완료 로그(`TASTY_PARENT_HOME`)에 쓰지 않고 이 스레드에 모은다.
+#[cfg(test)]
+fn append_line(surface: u32, line: &str) -> std::io::Result<()> {
+    test_log::push(surface, line)
+}
+
+/// 물리 부모의 완료 로그에 남기는 줄. 조회 명령을 그대로 실어 부모가 바로 본문을 읽을 수 있게 한다.
+pub(crate) fn result_line(tr: &Translator, stored: &remote_results::Stored) -> String {
+    tr.t_args(
+        "claude.notify.remote_result_message",
+        &[&stored.child_surface.to_string(), &stored.id, stored.status],
+    )
 }
 
 /// route 토큰 기록을 두는 기간. 서버는 결과를 확인받을 때까지 다시 보내며 host 통지 보관은 24시간이다.
@@ -99,13 +139,14 @@ const ATTACH_ROUTE_KEPT: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 const ATTACH_ROUTES_MAX: usize = 4096;
 
 impl Returns {
-    /// client: 서버에서 온 원격 자식 결과를 그 mirror 자식 경로의 수신처로 기록한다(`claude.remote_receive`).
-    /// 같은 결과의 재전송은 같은 키라 Codex 원장이 중복으로 거른다. 기록하지 못하면 오류로 답해 host 가
-    /// 나중에 다시 보내게 한다. 경로는 mirror 가 사라져도 남아 있으므로 늦게 온 결과도 기록한다.
+    /// client: 서버에서 온 원격 자식 결과를 그 턴을 지시한 부모의 수신처로 기록한다(`claude.remote_receive`).
+    /// 같은 결과의 재전송은 같은 키라 Codex 원장이나 결과 보관이 중복으로 거른다. 기록하지 못하면 오류로 답해
+    /// host 가 나중에 다시 보내게 한다. 토큰 기록은 mirror 가 사라져도 남아 있으므로 늦게 온 결과도 기록한다.
     pub(crate) fn remote_receive<H: HostCall>(
         &self,
         host: &H,
         params: &Value,
+        tr: &Translator,
     ) -> Result<Value, IpcMethodError> {
         use tasty_plugin_agent_common::remote_attach::{Received, received};
         let Some((surface, payload)) = received(params) else {
@@ -118,17 +159,28 @@ impl Returns {
             .and_then(|c| c.get(remote_attach::ROUTE_FIELD))
             .and_then(Value::as_str)
             .filter(|t| remote_attach::is_route_token(t));
-        let receiver = match token {
-            Some(token) if self.is_available() => self
-                .update(|book| {
-                    let r = book
-                        .attach_routes
-                        .iter()
-                        .find(|r| r.token == token)
-                        .map(|r| r.receiver_id.clone());
-                    (r, false)
-                })
-                .map_err(IpcMethodError::new)?,
+        let to = match token {
+            Some(token) if self.is_available() => {
+                self.route_to(token).map_err(IpcMethodError::new)?
+            }
+            _ => None,
+        };
+        if let Some(RouteTo::Surface {
+            surface: parent,
+            session,
+        }) = to
+        {
+            return self.receive_for_surface(
+                host,
+                parent,
+                session.as_deref(),
+                surface,
+                payload,
+                tr,
+            );
+        }
+        let receiver = match to {
+            Some(RouteTo::Codex(r)) => Some(r),
             _ => None,
         };
         let request = match local_request(payload, surface, receiver) {
@@ -146,9 +198,60 @@ impl Returns {
         Ok(status.json())
     }
 
+    /// 토큰의 수신처. 기록이 없거나 지워졌으면 `None`.
+    fn route_to(&self, token: &str) -> Result<Option<RouteTo>, String> {
+        self.update(|book| {
+            let to = book
+                .attach_routes
+                .iter()
+                .find(|r| r.token == token)
+                .map(|r| match r.parent_surface {
+                    Some(parent) => RouteTo::Surface {
+                        surface: parent,
+                        session: r.parent_session.clone(),
+                    },
+                    None => RouteTo::Codex(r.receiver_id.clone()),
+                });
+            (to, false)
+        })
+    }
+
+    /// 물리 surface 부모의 결과: 본문을 먼저 저장하고, 그 부모의 완료 로그에 결과 ID 와 조회 명령을 남긴 뒤 답한다.
+    /// 부모 surface 가 없거나 지시 뒤 부모 세션이 바뀌었으면 저장만 하고 알리지 않는다.
+    fn receive_for_surface<H: HostCall>(
+        &self,
+        host: &H,
+        parent: u32,
+        session: Option<&str>,
+        surface: u32,
+        payload: &Value,
+        tr: &Translator,
+    ) -> Result<Value, IpcMethodError> {
+        use tasty_plugin_agent_common::remote_attach::Received;
+        let Some(completion) = payload.get(PAYLOAD_KEY).filter(|c| c.is_object()) else {
+            return Ok(Received::Rejected("payload without a completion".into()).json());
+        };
+        let dir = self
+            .results_dir()
+            .ok_or_else(|| IpcMethodError::new(tr.t("claude.codex.no_data_dir")))?;
+        let suppressed =
+            remote_results::suppression(host, parent, session).map_err(IpcMethodError::new)?;
+        remote_results::receive(&dir, parent, surface, completion, suppressed, |stored| {
+            append_line(stored.parent_surface, &result_line(tr, stored))
+                .map_err(|e| format!("completion log of s{}: {e}", stored.parent_surface))
+        })
+        .map(|r| r.json())
+        .map_err(IpcMethodError::new)
+    }
+
+    /// 물리 부모에게 온 원격 결과를 두는 폴더(plugin 데이터 폴더의 [`remote_results::DIR`]).
+    pub(crate) fn results_dir(&self) -> Option<std::path::PathBuf> {
+        Some(self.dir.as_deref()?.parent()?.join(remote_results::DIR))
+    }
+
     /// client: 원격 자식에게 보내는 spawn·tell 하나의 route 토큰을 발급한다. 토큰→수신처 기록은 경로를 풀거나 다시
     /// 묶어도 남고 [`ATTACH_ROUTE_KEPT`] 뒤에 지운다. 서버에는 토큰만 보낸다.
-    pub(crate) fn issue_attach_route(&self, receiver_id: &str) -> Result<String, String> {
+    pub(crate) fn issue_attach_route(&self, to: &RouteTo) -> Result<String, String> {
         if !self.is_available() {
             return Err("no plugin data directory".into());
         }
@@ -157,9 +260,17 @@ impl Returns {
         self.update(|book| {
             book.attach_routes
                 .retain(|r| now.saturating_sub(r.issued_at_ms) <= ms(ATTACH_ROUTE_KEPT));
+            let (receiver_id, parent_surface, parent_session) = match to {
+                RouteTo::Codex(r) => (r.clone(), None, None),
+                RouteTo::Surface { surface, session } => {
+                    (String::new(), Some(*surface), session.clone())
+                }
+            };
             book.attach_routes.push(AttachRoute {
                 token: token.clone(),
-                receiver_id: receiver_id.to_string(),
+                receiver_id,
+                parent_surface,
+                parent_session,
                 issued_at_ms: now,
             });
             if book.attach_routes.len() > ATTACH_ROUTES_MAX {
@@ -195,5 +306,53 @@ impl Returns {
                 "claude codex return: could not end the remote child s{child_surface}: {e}"
             );
         }
+    }
+}
+
+/// `claude.remote_results`: 물리 부모에게 온 원격 결과. `id` 가 있으면 본문까지 담은 한 건, 없으면 본문을 뺀 목록이다.
+pub(crate) fn handle_remote_results(
+    returns: &Returns,
+    params: &Value,
+    tr: &Translator,
+) -> Result<Value, IpcMethodError> {
+    let dir = returns
+        .results_dir()
+        .ok_or_else(|| IpcMethodError::new(tr.t("claude.codex.no_data_dir")))?;
+    remote_results::query(&dir, params).map_err(|e| match e {
+        remote_results::QueryError::BadId(id) => {
+            IpcMethodError::invalid_params(&tr.t_fmt("claude.remote.result_bad_id", &id))
+        }
+        remote_results::QueryError::NotFound(id) => {
+            IpcMethodError::invalid_params(&tr.t_fmt("claude.remote.result_not_found", &id))
+        }
+        remote_results::QueryError::Io(m) => IpcMethodError::new(m),
+    })
+}
+
+#[cfg(test)]
+pub(crate) mod test_log {
+    use std::cell::RefCell;
+
+    thread_local! {
+        static LINES: RefCell<Vec<(u32, String)>> = const { RefCell::new(Vec::new()) };
+        static FAIL: RefCell<bool> = const { RefCell::new(false) };
+    }
+
+    pub(super) fn push(surface: u32, line: &str) -> std::io::Result<()> {
+        if FAIL.with(|f| *f.borrow()) {
+            return Err(std::io::Error::other("injected"));
+        }
+        LINES.with(|l| l.borrow_mut().push((surface, line.to_string())));
+        Ok(())
+    }
+
+    /// 이 스레드에서 쓴 줄을 꺼낸다.
+    pub(crate) fn take() -> Vec<(u32, String)> {
+        LINES.with(|l| std::mem::take(&mut *l.borrow_mut()))
+    }
+
+    /// 쓰기를 실패하게 한다.
+    pub(crate) fn fail(on: bool) {
+        FAIL.with(|f| *f.borrow_mut() = on);
     }
 }

@@ -64,6 +64,7 @@ limit_body = "surface {}: API エラーが {} 回連続したため（{}）自�
 
 [claude.notify]
 done_message = "surface {}: 状態変更 ({} 経由)"
+remote_result_message = "surface {0}: ターン結果 {1} ({2}) を保存しました。読み取り: tasty claude remote-results --id {1}"
 stop_failure_hint = " — API エラー（{}）でターンが終了し、入力待ちです"
 stalled_message = "surface {}: エラー以降 出力が止まっています — 子が停止した可能性があります (まだ active、完了シグナルなし)"
 stalled_no_error_message = "surface {}: 長時間 出力も完了シグナルもありません — 子が停止している可能性があります (フックが届かないプロンプトで待機中かもしれません)"
@@ -92,6 +93,8 @@ attach_child = "サーフェス {} は接続中のリモート親の子です。
 attach_parent = "接続中のリモート親の子は、その親だけが attach 接続を通じて変更できます。"
 unsupported = "接続先サーバーの Tasty はリモート子エージェントに対応していません。サーバーの Tasty を更新してください。何も作成していません。"
 lookup_failed = "対象が接続中のリモートワークスペースかどうか確認できませんでした: {}"
+result_bad_id = "結果 ID の形式ではありません: {}（小文字16桁の16進数）"
+result_not_found = "保存されたリモート結果 {} はありません。保存期間（7日）が過ぎたか、届いていない可能性があります。--id なしの tasty claude remote-results で一覧を確認してください。"
 outcome_unknown = "サーバーで実行されたかどうか分かりません({})。子がサーバーにある場合もない場合もあります。再試行の前に children で確認してください。"
 path_not_absolute = "{} {} は絶対パスではありません。接続中のリモートワークスペースの子には、リモートコンピューター上の絶対パスを指定してください。"
 path_missing = "{} {} は子が実行されるリモートコンピューターにありません。"
@@ -196,6 +199,9 @@ description = "子インデックスでClaudeインスタンスを終了"
 
 [claude.cli.sub.codex-returns]
 description = "Codex を親に持つ子のターン結果のうち、まだ Codex プラグインに渡せていないものを返送先・本文・再試行状態とともに表示します。--retry は自動再試行が止まったものも含めて一覧の結果をすべて今すぐ送る順番に戻し、送信を待たずに戻ります。"
+
+[claude.cli.sub.remote-results]
+description = "surface 親（Claude セッションやシェル）に戻ってきたリモート attach 子のターン結果を一覧表示するか、1件を本文とともに表示します。結果は親の完了ログに ID を書く前に保存され、子が閉じた後も残ります。"
 
 [claude.cli.sub.respawn]
 description = "子Claudeインスタンスを再生成"
@@ -403,6 +409,9 @@ help = "適用する登録済みセッションプロファイル/Stopフック�
 
 [claude.cli.arg.codex_returns_args.retry]
 help = "自動再試行が止まったものも含め、残っている結果をすべて今すぐ送る順番に戻します。送信を待たないため、表示される一覧は要求時点で残っていた結果です"
+
+[claude.cli.arg.remote_results_args.id]
+help = "完了ログに書かれた結果 ID。その結果を本文とともに表示します。省略すると本文を除いた保存済み結果の一覧を表示します"
 
 [claude.cli.arg.children_args.workspace]
 help = "子があるワークスペース（ID または名前）。子が複数のワークスペースにある Codex 会話から呼び出すときだけ使います"

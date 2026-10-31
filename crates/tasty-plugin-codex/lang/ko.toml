@@ -24,6 +24,7 @@ codex = "Codex"
 
 [codex.notify]
 done_message = "surface {target} 상태 변경 (호출 방식: {kind})"
+remote_result_message = "surface {surface}: 턴 결과 {id} ({status})을(를) 저장했습니다. 읽기: tasty codex remote-results --id {id}"
 sandbox_hint = "⚠ 샌드박스 초기화에 실패한 것으로 보입니다(RTM_NEWADDR 감지). 이 환경은 중첩 샌드박스(bwrap)를 지원하지 않을 수 있습니다. --full-auto로 재시도하세요."
 
 [codex.reboot]
@@ -58,6 +59,8 @@ workspace_create_missing_id = "호스트 workspace.create 응답에 'id'가 없�
 [codex.remote]
 path_not_absolute = "{flag} {path}는 절대 경로가 아닙니다. 연결한 원격 워크스페이스의 자식에는 원격 컴퓨터 기준 절대 경로를 주세요."
 path_missing = "{flag} {path}가 자식이 실행되는 원격 컴퓨터에 없습니다."
+result_bad_id = "결과 ID 형식이 아닙니다: {id} (소문자 16자리 16진수)"
+result_not_found = "저장된 원격 결과 {id}이(가) 없습니다. 보존 기간(7일)이 지났거나 도착하지 않았을 수 있습니다. --id 없이 tasty codex remote-results로 목록을 확인하세요."
 attach_child = "서피스 {surface}는 연결된 원격 부모의 자식입니다. 그 부모만 attach 연결을 통해 바꿀 수 있습니다."
 attach_parent = "연결된 원격 부모의 자식은 그 부모만 attach 연결을 통해 바꿀 수 있습니다."
 unsupported = "연결한 서버의 Tasty가 원격 자식 에이전트를 지원하지 않습니다. 서버의 Tasty를 업데이트하세요. 아무것도 만들지 않았습니다."
@@ -298,11 +301,17 @@ help = "턴의 마지막 assistant 메시지. Stop 훅의 stdin JSON 'last_assis
 [codex.cli.sub.result]
 description = "이 Codex 대화로 돌아온 자식 결과를 읽습니다. 참조 메시지를 받은 Codex 세션에서 실행합니다. 읽어도 결과는 지워지지 않습니다."
 
+[codex.cli.sub.remote-results]
+description = "원격 attach Codex 자식이 surface 부모(Claude 세션이나 셸)에게 돌려준 턴 결과 목록을 보여 주거나, 한 건을 본문과 함께 보여 줍니다. Codex 대화로 돌아온 결과를 읽는 codex result와 다릅니다. 결과는 부모의 완료 로그에 ID를 쓰기 전에 저장되며 자식이 닫힌 뒤에도 남습니다."
+
 [codex.cli.sub.session-open]
 description = "내부용: 터미널에서 실행 중인 Codex 세션 helper의 새 세대를 등록합니다. 직접 사용하지 않습니다."
 
 [codex.cli.arg.result_args.event]
 help = "참조 메시지의 이벤트 ID"
+
+[codex.cli.arg.remote_results_args.id]
+help = "완료 로그에 적힌 결과 ID. 그 결과를 본문과 함께 보여 줍니다. 없으면 본문을 뺀 저장된 결과 목록을 보여 줍니다"
 
 [codex.cli.arg.session_open_args.surface]
 help = "helper가 실행되는 터미널 surface"

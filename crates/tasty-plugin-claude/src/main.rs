@@ -235,6 +235,9 @@ impl Plugin for ClaudePlugin {
             "claude.codex_returns" => {
                 codex_return::handle_returns(&self.returns, &ctx.params, &self.translator)
             }
+            "claude.remote_results" => {
+                codex_return::handle_remote_results(&self.returns, &ctx.params, &self.translator)
+            }
             "claude.notify_done" => handle_notify_done(&ctx.host, &ctx.params, &self.translator),
             "claude.notify_error" => handle_notify_error(&ctx.host, &ctx.params, &self.translator),
             "claude.notify_stop_failure" => {

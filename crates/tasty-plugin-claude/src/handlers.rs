@@ -17,7 +17,7 @@ use tasty_plugin_agent_common::prompt_file;
 use tasty_plugin_agent_common::remote_attach::AttachOrigin;
 use tasty_plugin_sdk::{HostHandle, IpcMethodError, i18n::Translator};
 
-use crate::codex_return::{Binding, ParentTarget, Returns, TerminalParent, parent_target};
+use crate::codex_return::{Binding, ParentTarget, Returns, RouteTo, TerminalParent, parent_target};
 use crate::error_scan::{ErrorScanner, ScanTarget};
 use crate::reboot::reboot_surface;
 
@@ -418,7 +418,7 @@ pub(crate) fn handle_tell<H: HostCall>(
         if remote.is_some() {
             route = Some(
                 returns
-                    .issue_attach_route(&resolved.receiver_id)
+                    .issue_attach_route(&RouteTo::Codex(resolved.receiver_id.clone()))
                     .map_err(|e| {
                         IpcMethodError::new(tr.t_fmt("claude.codex.route_not_saved", &e))
                     })?,
@@ -427,6 +427,24 @@ pub(crate) fn handle_tell<H: HostCall>(
     } else {
         // 일반 호출이 새 지시를 보내면 이 자식의 다음 결과는 그 호출자의 것이다. 보내기 전에 Codex 경로를 끊는다.
         release_codex_route(returns, surface_id, tr)?;
+        // 원격 자식의 본문은 서버에만 있으므로 호출 surface 에 결과를 돌려받을 토큰을 보낸다.
+        if remote.is_some()
+            && let Some(caller) = caller_surface_of(params)
+        {
+            require_returns(returns, tr)?;
+            route = Some(
+                returns
+                    .issue_attach_route(&RouteTo::Surface {
+                        surface: caller,
+                        session: tasty_plugin_agent_common::remote_results::parent_session(
+                            host, caller,
+                        ),
+                    })
+                    .map_err(|e| {
+                        IpcMethodError::new(tr.t_fmt("claude.codex.route_not_saved", &e))
+                    })?,
+            );
+        }
     }
     let resp = match remote {
         Some(anchor) => crate::remote::tell(host, anchor, surface_id, message, route, tr)?,
@@ -443,6 +461,14 @@ pub(crate) fn handle_tell<H: HostCall>(
     }
 
     Ok(resp)
+}
+
+/// 완료 알림을 받을 호출 surface.
+fn caller_surface_of(params: &Value) -> Option<u32> {
+    params
+        .get("caller_surface")
+        .and_then(Value::as_u64)
+        .and_then(|n| u32::try_from(n).ok())
 }
 
 /// 일반 호출(tell·respawn)이 자식에게 새 지시를 보내기 전에 이전 Codex 부모의 결과 경로를 끊는다.

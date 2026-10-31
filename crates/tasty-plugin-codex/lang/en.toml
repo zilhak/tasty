@@ -24,6 +24,7 @@ codex = "Codex"
 
 [codex.notify]
 done_message = "surface {target} state changed (via {kind})"
+remote_result_message = "surface {surface}: turn result {id} ({status}) is stored. Read it with: tasty codex remote-results --id {id}"
 sandbox_hint = "⚠ sandbox init appears to have failed (RTM_NEWADDR detected) — this environment may not support a nested sandbox (bwrap). Try again with --full-auto."
 
 [codex.reboot]
@@ -58,6 +59,8 @@ workspace_create_missing_id = "host workspace.create response is missing 'id': {
 [codex.remote]
 path_not_absolute = "{flag} {path} is not an absolute path. For a child on an attached remote workspace, give an absolute path on the remote computer."
 path_missing = "{flag} {path} does not exist on the remote computer where the child runs."
+result_bad_id = "Not a result id: {id} (expected 16 lowercase hex characters)"
+result_not_found = "No stored remote result {id}. It may have expired (kept 7 days) or never arrived; run tasty codex remote-results without --id to list them."
 attach_child = "Surface {surface} is a child of an attached remote parent. Only that parent can change it, through its attach connection."
 attach_parent = "Children of an attached remote parent can only be changed by that parent, through its attach connection."
 unsupported = "The Tasty on the attached server does not support remote child agents. Update Tasty on the server. Nothing was created."
@@ -298,11 +301,17 @@ help = "The assistant's final message of the turn. Auto-populated from stdin JSO
 [codex.cli.sub.result]
 description = "Read a child result that was returned to this Codex conversation. Run it from the Codex session that received the reference; reading does not delete the result."
 
+[codex.cli.sub.remote-results]
+description = "List turn results that remote attach Codex children returned to a surface parent (a Claude session or shell), or show one with its body. This is not codex result, which reads results returned to a Codex conversation. Each result is stored before its id is written to the parent's completion log, and stays after the child closes."
+
 [codex.cli.sub.session-open]
 description = "Internal: register a new session generation for the Codex session helper running in a terminal. Not intended for direct use."
 
 [codex.cli.arg.result_args.event]
 help = "Event ID from the reference message"
+
+[codex.cli.arg.remote_results_args.id]
+help = "Result id from the completion log. Shows that result with its body; without it the command lists stored results without bodies"
 
 [codex.cli.arg.session_open_args.surface]
 help = "Terminal surface the helper runs in"

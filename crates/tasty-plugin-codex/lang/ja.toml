@@ -24,6 +24,7 @@ codex = "Codex"
 
 [codex.notify]
 done_message = "surface {target} 状態変更 (呼び出し方式: {kind})"
+remote_result_message = "surface {surface}: ターン結果 {id} ({status}) を保存しました。読み取り: tasty codex remote-results --id {id}"
 sandbox_hint = "⚠ sandbox の初期化に失敗した可能性があります(RTM_NEWADDR を検出)— この実行環境は入れ子の sandbox(bwrap)に対応していない可能性があります。--full-auto で再試行してください。"
 
 [codex.reboot]
@@ -58,6 +59,8 @@ workspace_create_missing_id = "ホストの workspace.create 応答に 'id' が�
 [codex.remote]
 path_not_absolute = "{flag} {path} は絶対パスではありません。接続中のリモートワークスペースの子には、リモートコンピューター上の絶対パスを指定してください。"
 path_missing = "{flag} {path} は子が実行されるリモートコンピューターにありません。"
+result_bad_id = "結果 ID の形式ではありません: {id}（小文字16桁の16進数）"
+result_not_found = "保存されたリモート結果 {id} はありません。保存期間（7日）が過ぎたか、届いていない可能性があります。--id なしの tasty codex remote-results で一覧を確認してください。"
 attach_child = "サーフェス {surface} は接続中のリモート親の子です。その親だけが attach 接続を通じて変更できます。"
 attach_parent = "接続中のリモート親の子は、その親だけが attach 接続を通じて変更できます。"
 unsupported = "接続先サーバーの Tasty はリモートの子エージェントに対応していません。サーバーの Tasty を更新してください。何も作成していません。"
@@ -298,11 +301,17 @@ help = "ターンの最後のassistantメッセージ。Stopフックのstdin JS
 [codex.cli.sub.result]
 description = "この Codex の会話へ返された子の結果を読みます。参照メッセージを受け取った Codex セッションで実行します。読んでも結果は削除されません。"
 
+[codex.cli.sub.remote-results]
+description = "リモート attach Codex 子が surface 親（Claude セッションやシェル）に返したターン結果を一覧表示するか、1件を本文とともに表示します。Codex 会話に戻った結果を読む codex result とは別です。結果は親の完了ログに ID を書く前に保存され、子が閉じた後も残ります。"
+
 [codex.cli.sub.session-open]
 description = "内部用：ターミナルで実行中の Codex セッション helper の新しい世代を登録します。直接は使用しません。"
 
 [codex.cli.arg.result_args.event]
 help = "参照メッセージのイベント ID"
+
+[codex.cli.arg.remote_results_args.id]
+help = "完了ログに書かれた結果 ID。その結果を本文とともに表示します。省略すると本文を除いた保存済み結果の一覧を表示します"
 
 [codex.cli.arg.session_open_args.surface]
 help = "helper が実行されるターミナル surface"

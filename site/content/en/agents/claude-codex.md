@@ -1,4 +1,4 @@
-<!-- source-hash: bddfba8fc9d0 -->
+<!-- source-hash: 65a5d71548c3 -->
 # Working with Claude and Codex
 
 Connect Claude Code and Codex CLI to share work across several agents. One agent can launch others and receive their results, so implementation, testing, and review can run alongside each other.
@@ -256,6 +256,14 @@ tasty claude spawn --workspace 7 --prompt "Run the tests"    # 7 is the attached
 
 - Install the hooks on the remote computer as well (`tasty claude install`, `tasty codex install`), or completions will not come back. Without the Claude hooks, spawn shows a warning.
 - Completion notifications arrive in your parent's completion log, and when a Codex conversation is the parent, the replies return to that conversation. A late result still goes to the conversation that gave that instruction.
+- When a Claude session or a shell is the parent, the reply text is stored on your side and one line with a result id and the command to read it arrives in the completion log. It comes separately from the state-change line, so wait for the result line after the state line. You do not need to SSH into the remote computer.
+
+  ```sh
+  tasty claude remote-results --id 0123456789abcdef   # reply text of a Claude child (for a Codex child: tasty codex remote-results)
+  tasty claude remote-results                         # list stored results (without their text)
+  ```
+
+  Results stay for 7 days, even after the child is closed. If the parent's session changed or the parent was closed after the instruction, the result is stored without a notice; find it in the list. During a connection failure the same result line can arrive twice; it carries the same id, so reading it again is harmless.
 - If the connection drops, Tasty may report that it cannot tell whether the instruction ran. Check with `children` before trying again.
 - Give `--cwd` and `--profile-file` as absolute paths on the remote computer. A relative path, or a path that does not exist on the remote computer, is refused and no child is created.
 - While attached, the user on the remote side cannot `tell`, `kill`, `respawn`, or `reboot` that child. Only the attached side can drive it.

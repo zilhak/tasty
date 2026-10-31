@@ -137,6 +137,9 @@ impl Plugin for CodexPlugin {
                 self.with_delivery(&host, |d| handlers::remote::receive(&host, d, &params, tr))
             }
             "codex.result" => self.with_delivery(&host, |d| delivery::handle_result(d, &params)),
+            "codex.remote_results" => {
+                self.with_delivery(&host, |d| handlers::remote::results(d, &params, tr))
+            }
             "codex.delivery_outcome" => {
                 self.with_delivery(&host, |d| delivery::handle_outcome(d, &params))
             }
