@@ -354,6 +354,49 @@ fn a_failed_parent_session_lookup_stops_the_order_and_retries_the_result() {
     assert_eq!(test_log::take().len(), 1);
 }
 
+/// 새로 만든, 아직 소유자가 없는 원격 자식 L 의 기록.
+fn unowned_child(fx: &Fixture) {
+    tasty_plugin_agent_common::remote_owner::reset(
+        &fx.root().join(tasty_plugin_agent_common::remote_owner::DIR),
+        L,
+        None,
+    )
+    .unwrap();
+}
+
+/// 소유자 기록이 없는 원격 자식(기록 이전에 만든 자식, 유실)은 첫 tell 이 가져가지 못한다. 원격 호출 없이 거절한다.
+#[test]
+fn a_remote_child_without_an_owner_record_is_refused() {
+    let fx = Fixture::new();
+    let host = Host::new(&fx, surface_parent);
+    spawn(&fx, &host, json!({ "workspace": 3, "surface": 5 })).unwrap();
+    std::fs::remove_file(
+        fx.root()
+            .join(tasty_plugin_agent_common::remote_owner::DIR)
+            .join(format!("{L}.json")),
+    )
+    .unwrap();
+    for caller in [json!(5), json!(6), Value::Null] {
+        let err = fx
+            .with(|d| {
+                super::super::handle_tell(
+                    &host,
+                    &json!({ "surface": L, "message": "m", "caller_surface": caller }),
+                    &fx.tr,
+                    d,
+                )
+            })
+            .unwrap_err();
+        assert!(err.message.contains(&L.to_string()), "{}", err.message);
+    }
+    assert!(
+        !host
+            .params_of("attach.agent_call")
+            .iter()
+            .any(|c| c["method"] == json!("tell"))
+    );
+}
+
 /// 물리 부모 둘이 같은 원격 자식에 지시한다. 자식을 만든 부모만 지시할 수 있고, 다른 surface 는 결과가 왔든 아니든
 /// 원격 호출 없이 거절된다.
 #[test]
@@ -504,6 +547,7 @@ fn a_killed_remote_child_still_records_a_late_result() {
 fn a_remote_tell_binds_the_route_then_sends_to_the_server() {
     let fx = Fixture::new();
     owned_parent(&fx);
+    unowned_child(&fx);
     let host = Host::new(&fx, |m, p| match m {
         "terminal.parent" => {
             Ok(json!({ "parent_external": format!("codex:{PARENT}"), "status": "active" }))
@@ -921,6 +965,7 @@ fn the_server_takes_only_absolute_existing_paths() {
 fn an_unknown_remote_tell_keeps_the_new_route() {
     let fx = Fixture::new();
     owned_parent(&fx);
+    unowned_child(&fx);
     let unknown = std::rc::Rc::new(std::cell::Cell::new(true));
     let flag = unknown.clone();
     let host = Host::new(&fx, move |m, p| match m {

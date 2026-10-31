@@ -431,6 +431,9 @@ fn a_local_workspace_keeps_the_local_spawn() {
 #[test]
 fn a_tell_to_a_mirror_child_goes_to_the_server_after_the_route() {
     let (_d, returns) = store();
+    // 새로 만든, 아직 소유자가 없는 자식이다.
+    tasty_plugin_agent_common::remote_owner::reset(&returns.owners_dir().unwrap(), 15, None)
+        .unwrap();
     let host = client_host(true, || {
         Ok(json!({ "call_id": 8, "result": { "ok": true }, "children": [] }))
     });
@@ -843,6 +846,40 @@ fn a_physical_parent_cannot_order_another_parents_remote_child() {
     *session.borrow_mut() = "sess-b";
     assert!(tell(3).is_err());
     assert_eq!(tells(), 2);
+}
+
+/// 소유자 기록이 없는 원격 자식(기록 이전에 만든 자식, 유실)은 첫 tell 이 가져가지 못한다. 원격 호출 없이 거절한다.
+#[test]
+fn a_remote_child_without_an_owner_record_is_refused() {
+    let (_d, returns) = store();
+    let session = std::rc::Rc::new(RefCell::new("sess-a"));
+    let host = surface_parent_host(session, std::rc::Rc::new(RefCell::new(true)));
+    crate::handlers::handle_spawn(
+        &scanner(),
+        &returns,
+        &host,
+        &spawn_params(json!({})),
+        None,
+        &tr(),
+    )
+    .unwrap();
+    std::fs::remove_file(returns.owners_dir().unwrap().join("15.json")).unwrap();
+    for caller in [json!(3), json!(4), Value::Null] {
+        let err = crate::handlers::handle_tell(
+            &returns,
+            &host,
+            &json!({ "surface": 15, "message": "m", "caller_surface": caller }),
+            &tr(),
+        )
+        .unwrap_err();
+        assert!(err.message.contains("15"), "{}", err.message);
+    }
+    assert!(
+        !host
+            .params_of("attach.agent_call")
+            .iter()
+            .any(|c| c["method"] == json!("tell"))
+    );
 }
 
 fn origin_params(extra: Value) -> Value {

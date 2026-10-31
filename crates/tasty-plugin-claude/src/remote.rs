@@ -324,6 +324,9 @@ pub(crate) fn admit(
             "claude.remote.child_of_other_parent",
             &[&child.to_string(), &current],
         ))),
+        Ok(Admit::Unrecorded) => Err(IpcMethodError::invalid_params(
+            &tr.t_args("claude.remote.child_without_owner", &[&child.to_string()]),
+        )),
         Ok(admit) => Ok(admit),
         Err(e) => Err(IpcMethodError::new(
             tr.t_fmt("claude.codex.route_not_saved", &e),

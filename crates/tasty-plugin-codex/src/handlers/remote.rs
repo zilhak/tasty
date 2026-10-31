@@ -502,6 +502,11 @@ pub(crate) fn admit(
             "codex.remote.child_of_other_parent",
             &[("{surface}", &child.to_string()), ("{owner}", &current)],
         ))),
+        Ok(Admit::Unrecorded) => Err(IpcMethodError::invalid_params(&t_args(
+            tr,
+            "codex.remote.child_without_owner",
+            &[("{surface}", &child.to_string())],
+        ))),
         Ok(admit) => Ok(admit),
         Err(e) => Err(IpcMethodError::new(format!("codex attach owner: {e}"))),
     }

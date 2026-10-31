@@ -10,7 +10,8 @@
 //!   소유자가 된다.
 //! - 다른 소유자의 tell 은 완료·idle 여부와 관계없이 경로를 바꾸거나 보내기 전에 거절한다. 시간으로 풀지 않는다. 다른
 //!   부모는 새 자식을 만들어야 한다.
-//! - 기록은 mirror surface(L) 별 파일이며 자식을 닫으면 지운다.
+//! - 기록은 mirror surface(L) 별 파일이며 자식을 닫으면 지운다. 소유자 없음도 `owner: null` 로 기록한다. 기록이 없거나
+//!   읽을 수 없는 자식(이 기록 이전에 만든 자식, 유실)은 소유자를 알 수 없으므로 누구의 tell 도 거절한다.
 //!
 //! 계약: docs/plugins/remote-attach-children.md.
 
@@ -18,7 +19,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::json;
 
-use crate::remote_results::{lock, read, write};
+use crate::remote_results::{lock, write};
 
 /// plugin 데이터 폴더 아래 기록 폴더 이름.
 pub const DIR: &str = "attach-owners";
@@ -44,33 +45,53 @@ pub enum Admit {
     Claimed,
     /// 다른 부모의 자식이다.
     Other(String),
+    /// 소유자 기록이 없거나 읽을 수 없다. 새 자식을 만들어야 한다.
+    Unrecorded,
+}
+
+/// 저장된 소유자 기록.
+enum Record {
+    /// 기록 파일이 없다.
+    Missing,
+    /// 파일은 있으나 내용을 해석할 수 없다.
+    Invalid,
+    /// 새 자식이며 첫 tell 이 맡는다.
+    Unowned,
+    Owned(String),
 }
 
 fn file(dir: &Path, child: u32) -> PathBuf {
     dir.join(format!("{child}.json"))
 }
 
-fn owner_in(dir: &Path, child: u32) -> Result<Option<String>, String> {
-    Ok(read(&file(dir, child))?.and_then(|v| v.get("owner")?.as_str().map(String::from)))
+fn record(dir: &Path, child: u32) -> Result<Record, String> {
+    let path = file(dir, child);
+    let text = match std::fs::read_to_string(&path) {
+        Ok(text) => text,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Record::Missing),
+        Err(e) => return Err(format!("{}: {e}", path.display())),
+    };
+    let value: serde_json::Value = match serde_json::from_str(&text) {
+        Ok(value) => value,
+        Err(_) => return Ok(Record::Invalid),
+    };
+    Ok(match value.get("owner") {
+        Some(serde_json::Value::Null) => Record::Unowned,
+        Some(serde_json::Value::String(owner)) => Record::Owned(owner.clone()),
+        _ => Record::Invalid,
+    })
 }
 
 fn store(dir: &Path, child: u32, owner: Option<&str>) -> Result<(), String> {
-    let path = file(dir, child);
-    match owner {
-        Some(owner) => write(
-            dir,
-            &path,
-            &json!({ "owner": owner, "child_surface": child }),
-        ),
-        None => match std::fs::remove_file(&path) {
-            Ok(()) => Ok(()),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-            Err(e) => Err(format!("{}: {e}", path.display())),
-        },
-    }
+    write(
+        dir,
+        &file(dir, child),
+        &json!({ "owner": owner, "child_surface": child }),
+    )
 }
 
-/// 새로 만든 자식의 소유자를 쓴다. 같은 surface id 에 남은 이전 기록은 덮어쓴다. `None` 이면 첫 tell 이 맡는다.
+/// 새로 만든 자식의 소유자를 쓴다. 같은 surface id 에 남은 이전 기록은 덮어쓴다. `None` 이면 소유자 없음을 기록하고
+/// 첫 tell 이 맡는다.
 pub fn reset(dir: &Path, child: u32, owner: Option<&str>) -> Result<(), String> {
     let _guard = lock(dir)?;
     store(dir, child, owner)
@@ -79,28 +100,35 @@ pub fn reset(dir: &Path, child: u32, owner: Option<&str>) -> Result<(), String> 
 /// `owner` 의 tell 을 판정한다. 소유자가 없으면 `owner` 가 맡는다.
 pub fn admit(dir: &Path, child: u32, owner: &str) -> Result<Admit, String> {
     let _guard = lock(dir)?;
-    match owner_in(dir, child)? {
-        Some(current) if current == owner => Ok(Admit::Owner),
-        Some(current) => Ok(Admit::Other(current)),
-        None => {
+    match record(dir, child)? {
+        Record::Owned(current) if current == owner => Ok(Admit::Owner),
+        Record::Owned(current) => Ok(Admit::Other(current)),
+        Record::Unowned => {
             store(dir, child, Some(owner))?;
             Ok(Admit::Claimed)
         }
+        Record::Missing | Record::Invalid => Ok(Admit::Unrecorded),
     }
 }
 
-/// [`Admit::Claimed`] 로 맡은 자식의 tell 이 확정 실패했다. 소유자 없음으로 되돌린다.
+/// [`Admit::Claimed`] 로 맡은 자식의 tell 이 확정 실패했다. 소유자 없음 기록으로 되돌린다.
 pub fn unclaim(dir: &Path, child: u32, owner: &str) -> Result<(), String> {
     let _guard = lock(dir)?;
-    match owner_in(dir, child)? {
-        Some(current) if current == owner => store(dir, child, None),
+    match record(dir, child)? {
+        Record::Owned(current) if current == owner => store(dir, child, None),
         _ => Ok(()),
     }
 }
 
-/// 자식을 닫았다.
+/// 자식을 닫았다. 기록 파일을 지운다.
 pub fn forget(dir: &Path, child: u32) -> Result<(), String> {
-    reset(dir, child, None)
+    let _guard = lock(dir)?;
+    let path = file(dir, child);
+    match std::fs::remove_file(&path) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(format!("{}: {e}", path.display())),
+    }
 }
 
 #[cfg(test)]
@@ -144,7 +172,22 @@ mod tests {
         unclaim(d.path(), 15, &a).unwrap();
         assert_eq!(admit(d.path(), 15, &b).unwrap(), Admit::Claimed);
         forget(d.path(), 15).unwrap();
-        assert_eq!(admit(d.path(), 15, &a).unwrap(), Admit::Claimed);
+        assert_eq!(admit(d.path(), 15, &a).unwrap(), Admit::Unrecorded);
         forget(d.path(), 99).unwrap();
+    }
+
+    /// 기록이 없거나 깨진 자식(기록 이전에 만든 자식, 유실)은 첫 tell 이 가져가지 못한다.
+    #[test]
+    fn a_child_without_a_readable_record_is_not_claimed() {
+        let d = tempfile::tempdir().unwrap();
+        let a = codex_owner("r1");
+        assert_eq!(admit(d.path(), 15, &a).unwrap(), Admit::Unrecorded);
+        assert!(!file(d.path(), 15).exists());
+        for bad in ["not json", "{}", r#"{"owner":3}"#] {
+            std::fs::write(file(d.path(), 15), bad).unwrap();
+            assert_eq!(admit(d.path(), 15, &a).unwrap(), Admit::Unrecorded);
+            unclaim(d.path(), 15, &a).unwrap();
+            assert_eq!(std::fs::read_to_string(file(d.path(), 15)).unwrap(), bad);
+        }
     }
 }

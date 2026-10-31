@@ -665,6 +665,7 @@ API 오류에서 실제 이벤트를 받은 실험까지 완료한 것은 아니
 - Given Codex 대화가 원격 자식을 spawn 한 상태 When 서버에서 그 턴이 확정됨 Then 서버 plugin 은 `attach.child_notice` 로 결과를 맡기고 `delivered` 를 받기 전에는 영속 요청을 지우지 않으며, client plugin 은 그 결과를 `r.` 접두 키로 그 대화의 수신처에 한 번 기록한다. 같은 결과가 다시 와도 `duplicate` 로 답한다.
 - Given Claude 세션 surface 가 원격 자식을 spawn·tell 한 상태 When 서버에서 그 턴이 확정됨 Then client plugin 은 본문을 `attach-results/` 에 먼저 저장하고 그 부모 완료 로그에 결과 ID 와 `tasty claude remote-results --id <ID>` 를 남긴 뒤 `recorded` 로 답한다. 같은 결과가 다시 오면 알리지 않고 `duplicate` 로 답하며, 그 명령은 본문을 돌려준다.
 - Given 한 부모가 만든 원격 자식 When 다른 부모(다른 surface, 같은 surface 의 다른 Claude 세션, 다른 Codex 대화, 호출 surface 없음)가 그 자식에게 `tell` 함 Then client plugin 은 결과 수신·idle 여부와 관계없이 경로·토큰을 바꾸거나 원격에 보내지 않고 `child_of_other_parent` 로 거절하며, 만든 부모의 후속 `tell` 은 보낸다.
+- Given 소유자 기록 파일이 없거나 깨진 원격 자식 When 어느 부모든 그 자식에게 `tell` 함 Then client plugin 은 소유자를 새로 맡기지 않고 원격에 보내지 않은 채 `child_without_owner` 로 거절한다.
 - Given 원격 자식 기능을 모르는 서버의 mirror When `tasty claude spawn --workspace <mirror id>` Then 아무 터미널도 만들지 않고 오류를 돌려준다.
 - Given 서버 결과를 알 수 없게 끝난 원격 spawn When 그 call 의 자식이 늦게 생김 Then 기다리던 부모가 있으면 그 부모로 경로를 묶고, 없으면 그 자식을 닫는다.
 - Given `gate-register mygate --sentinel '[[MY-DONE]]' --rounds 2` 로 등록하고 `checklist-enable --gate mygate` 로 켜 둔 게이트 When `spawn --profile mygate` Then 그 자식의 `Stop` 훅으로 `checklist-hook --gate mygate` 가 걸리고, 센티넬 없이 턴을 끝내려 하면 **mygate 의 본문**(host 기본 체크리스트 본문이 아니라)이 주입되며 block 된다. `[[MY-DONE]]` 을 포함해 답하면 통과하고, 포함하지 않은 채 계속하면 **mygate 의 상한 2** 에서 백스톱으로 통과한다. 라운드는 `checklist/gates/mygate/rounds/<session>.json` 에 쌓이고 그 세션이 끝나면 정리된다.

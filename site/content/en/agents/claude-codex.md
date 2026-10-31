@@ -1,4 +1,4 @@
-<!-- source-hash: c5970d68a925 -->
+<!-- source-hash: f5347f31f99d -->
 # Working with Claude and Codex
 
 Connect Claude Code and Codex CLI to share work across several agents. One agent can launch others and receive their results, so implementation, testing, and review can run alongside each other.
@@ -264,7 +264,7 @@ tasty claude spawn --workspace 7 --prompt "Run the tests"    # 7 is the attached
   ```
 
   Results stay for 7 days, even after the child is closed. If the parent's session changed or the parent was closed after the instruction, the result is stored without a notice; find it in the list. During a connection failure the same result line can arrive twice; it carries the same id, so reading it again is harmless.
-- Only the parent that created a remote child can `tell` it. A `tell` from another parent (including a new Claude conversation started in the same pane) is refused so that replies cannot go to the wrong parent. Spawn a new child for that parent instead.
+- Only the parent that created a remote child can `tell` it. A `tell` from another parent (including a new Claude conversation started in the same pane) is refused so that replies cannot go to the wrong parent. Spawn a new child for that parent instead. A remote child whose creating parent is unknown, such as one spawned before this rule existed, refuses every `tell`; spawn a new one.
 - If the connection drops, Tasty may report that it cannot tell whether the instruction ran. Check with `children` before trying again. If you disconnect and attach again yourself, it is a new connection, and results of instructions sent over the earlier connection are not received.
 - Give `--cwd` and `--profile-file` as absolute paths on the remote computer. A relative path, or a path that does not exist on the remote computer, is refused and no child is created.
 - While attached, the user on the remote side cannot `tell`, `kill`, `respawn`, or `reboot` that child. Only the attached side can drive it.

@@ -633,6 +633,7 @@ tasty codex result <event_id>
 - Given Codex 대화가 부모이고 대상이 attach mirror workspace When `tasty codex spawn --workspace <mirror id>` Then 자식은 서버에서 서버 설정으로 실행되고, mirror 자식에 결과 경로를 묶은 뒤에만 서버가 통지를 보내며, 자식의 턴 결과는 부모 대화에 한 번 기록된다.
 - Given 셸이나 Claude 세션 surface 가 원격 Codex 자식을 spawn·tell 한 상태 When 서버에서 그 턴이 확정됨 Then client plugin 은 Codex 원장 대신 `attach-results/` 에 본문을 먼저 저장하고 부모 완료 로그에 결과 ID 와 `tasty codex remote-results --id <ID>` 를 남긴 뒤 `recorded` 로 답한다.
 - Given 한 부모가 만든 원격 자식 When 다른 부모(다른 surface, 같은 surface 의 다른 Claude 세션, 다른 Codex 대화, 호출 surface 없음)가 그 자식에게 `tell` 함 Then client plugin 은 결과 수신·idle 여부와 관계없이 경로·토큰을 바꾸거나 원격에 보내지 않고 `child_of_other_parent` 로 거절하며, 만든 부모의 후속 `tell` 은 보낸다.
+- Given 소유자 기록 파일이 없거나 깨진 원격 자식 When 어느 부모든 그 자식에게 `tell` 함 Then client plugin 은 소유자를 새로 맡기지 않고 원격에 보내지 않은 채 `child_without_owner` 로 거절한다.
 - Given 서버가 원격 자식의 턴을 확정했지만 client 가 아직 확인하지 않음 When 서버 plugin 이 다시 시작 Then 보낼 기록은 남아 있고 같은 키로 다시 맡기며, client 는 같은 결과를 한 번만 기록한다.
 - Given mirror 자식의 결과 경로를 묶지 못함 When spawn Then 통지를 풀지 않고(commit 없음) 서버의 그 자식을 닫은 뒤 오류로 끝난다.
 - Given Tasty helper 세션의 Codex 부모 When 그 대화에서 `tasty codex spawn --prompt "…"`를 실행하고 자식의 턴이 끝난다 Then 부모 thread의 대기열에 고정 형식의 참조가 한 번 들어가고 부모는 `tasty codex result <event_id>`로 본문을 읽는다.

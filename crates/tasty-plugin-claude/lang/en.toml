@@ -101,6 +101,7 @@ path_not_absolute = "{} {} is not an absolute path. For a child on an attached r
 path_missing = "{} {} does not exist on the remote computer where the child runs."
 bind_failed = "Child surface {} was created on the server, but where to report its completion could not be set ({}). Its notifications were not released; {}"
 child_of_other_parent = "Child surface {} belongs to another parent ({}). Its results go only to the parent that created it, so the order was not sent. Spawn a new child for this parent instead."
+child_without_owner = "Child surface {} has no result owner record (it was created before owner records or the record was lost), so the order was not sent. Spawn a new child instead."
 child_closed = "the child was closed."
 child_not_closed = "the child could not be closed ({}). Close it with kill."
 no_child = "The server ran spawn but reported no new child: {}"
