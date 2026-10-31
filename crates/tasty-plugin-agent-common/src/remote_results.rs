@@ -139,11 +139,25 @@ fn concluded(record: &Value) -> bool {
 
 /// 기간이 지났거나 상한을 넘은 결론 난 결과와 오래된 tmp 파일을 지운다. 지우지 못해도 받기는 계속한다.
 fn prune(dir: &Path, keep: &str) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
     let now = SystemTime::now();
     let age = |m: SystemTime| now.duration_since(m).unwrap_or_default();
+    let mut files = records(dir, &age);
+    files.sort();
+    let mut over = files.len().saturating_sub(MAX);
+    for (modified, path) in &files {
+        let old = age(*modified) > KEPT;
+        let is_keep = path.file_stem().is_some_and(|s| s == keep);
+        if (old || over > 0) && !is_keep && remove_concluded(path) {
+            over = over.saturating_sub(1);
+        }
+    }
+}
+
+/// 결과 기록 파일과 수정 시각. 오래된 tmp 파일은 여기서 지운다.
+fn records(dir: &Path, age: &dyn Fn(SystemTime) -> Duration) -> Vec<(SystemTime, PathBuf)> {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
     let mut files = Vec::new();
     for e in entries.filter_map(Result::ok) {
         let path = e.path();
@@ -160,21 +174,20 @@ fn prune(dir: &Path, keep: &str) {
             _ => {}
         }
     }
-    files.sort();
-    let mut over = files.len().saturating_sub(MAX);
-    for (modified, path) in &files {
-        let old = age(*modified) > KEPT;
-        let is_keep = path.file_stem().is_some_and(|s| s == keep);
-        if !(old || over > 0) || is_keep {
-            continue;
-        }
-        // 아직 알리지 못한 결과는 부모가 ID 를 모르므로 지우지 않는다. 읽을 수 없는 기록도 남긴다.
-        if !matches!(read(path), Ok(Some(r)) if concluded(&r)) {
-            continue;
-        }
-        match std::fs::remove_file(path) {
-            Ok(()) => over = over.saturating_sub(1),
-            Err(e) => tracing::warn!("attach results: could not prune {}: {e}", path.display()),
+    files
+}
+
+/// 결론 난 결과면 지운다. 지웠는지 돌려준다.
+fn remove_concluded(path: &Path) -> bool {
+    // 아직 알리지 못한 결과는 부모가 ID 를 모르므로 지우지 않는다. 읽을 수 없는 기록도 남긴다.
+    if !matches!(read(path), Ok(Some(r)) if concluded(&r)) {
+        return false;
+    }
+    match std::fs::remove_file(path) {
+        Ok(()) => true,
+        Err(e) => {
+            tracing::warn!("attach results: could not prune {}: {e}", path.display());
+            false
         }
     }
 }
