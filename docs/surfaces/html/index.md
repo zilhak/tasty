@@ -289,8 +289,9 @@ OS별 구현은 다음과 같다.
 `file://` 문서는 문서 폴더 밖의 상대 CSS·이미지·폰트와 링크·meta refresh 이동 대상도 읽는다. 로컬 파일을 화면에 그리는 것은 막을 대상이 아니다. 스크립트 실행은 위 스크립트 게이트가, 외부 전송은 원격 차단이 따로 막는다.
 
 - Linux·Windows: 일반 WebView에 폴더 범위 제한을 두지 않는다. Linux는 형제 폴더의 CSS·이미지 적용과 meta refresh 이동을 측정했다.
-- macOS: `load_url`은 `loadFileURL:allowingReadAccessToURL:`에 파일 시스템 루트를 준다(`file_read_scope::read_access_root`). WKWebView는 이 범위 밖의 하위 리소스를 알림 없이 거부하고, 처음 준 범위가 그 뒤 페이지 안 이동에도 쓰인다. 문서 폴더만 주면 배너·실패 표시 없이 스타일이 빠진 문서가 보였다. `reload`·`go_back`·`go_forward`는 처음 준 범위를 따른다.
-- 범위를 넓혀도 허용한 스크립트가 다른 로컬 파일 내용을 읽지는 못한다. macOS 27.2에서 `fetch`·`XMLHttpRequest`로 `file:///etc/hosts`와 문서 밖 일반 파일을 읽지 못했고, 문서 밖 일반 파일을 띄운 iframe은 로드되지만 `contentDocument`가 `null`이었다. `file:///etc/hosts` iframe은 로드되지 않았다. Linux도 같은 `fetch`·`XMLHttpRequest`·iframe 요청이 막혔다. 다른 macOS 버전과 Windows는 측정하지 않았다.
+- macOS: `load_url`은 `loadFileURL:allowingReadAccessToURL:`에 파일 시스템 루트를 준다(`file_read_scope::read_access_root`). WKWebView는 이 범위 밖의 하위 리소스를 알림 없이 거부하고, 처음 준 범위가 그 뒤 페이지 안 이동에도 쓰인다. 문서 폴더만 주면 배너·실패 표시 없이 스타일이 빠진 문서가 보였다. `reload`·`go_back`·`go_forward`는 범위를 다시 주지 않으므로 처음 준 범위를 따른다(코드 경로 기준, 측정하지 않았다).
+- 범위를 넓혀도 허용한 스크립트가 다른 로컬 파일 내용을 읽지 못했다(macOS 27.2 측정). `fetch`·`XMLHttpRequest`로 `file:///etc/hosts`와 문서 밖 형제 폴더의 일반 파일을 읽지 못했다. 그 일반 파일을 띄운 iframe은 로드되지만 `contentDocument`가 `null`이었다. `file:///etc/hosts` iframe은 로드되지 않아 빈 `about:blank` 문서만 남았고, 로드되지 않은 이유는 조사하지 않았다.
+- Linux는 `file:///etc/hosts`에 대한 `fetch`·`XMLHttpRequest`·iframe `contentDocument`가 막힌 것만 측정했다. 문서 밖 일반 파일은 측정하지 않았다. 다른 macOS 버전과 Windows는 측정하지 않았다.
 - markdown surface는 렌더한 HTML을 `load_html`로 올리므로 이 범위와 관계없다. 문서 밖 이미지는 [markdown 인라인 이미지 규칙](../markdown/index.md)을 따른다.
 - 원격 attach entry 모드는 custom scheme을 쓰므로 이 경로와 별개다.
 
