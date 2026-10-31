@@ -22,8 +22,8 @@ use tasty_plugin_agent_common::params::forward;
 use tasty_plugin_agent_common::remote_attach::{
     self, AttachOrigin, CallError, Parent, RETURN_ROUTE_KEY, Request, Target, TargetError,
 };
+use tasty_plugin_agent_common::remote_owner::{self, Admit};
 use tasty_plugin_agent_common::remote_results;
-use tasty_plugin_agent_common::remote_turns::{self, Opened};
 use tasty_plugin_sdk::{IpcMethodError, i18n::Translator};
 
 use crate::codex_return::{Binding, ParentTarget, Returns, RouteTo, TerminalParent};
@@ -47,6 +47,7 @@ const SPAWN_KEYS: &[&str] = &[
 struct PendingSpawn {
     target: ParentTarget,
     with_prompt: bool,
+    owner: Option<String>,
     at: Instant,
 }
 
@@ -163,8 +164,14 @@ pub(crate) fn spawn<H: HostCall>(
             session: remote_results::parent_session(host, *parent)
                 .map_err(|e| IpcMethodError::new(tr.t_fmt("claude.codex.route_not_saved", &e)))?,
         }),
-        // 받을 부모가 없어도 토큰을 보내 첫 턴의 결과가 도착했음을 셀 수 있게 한다.
-        ParentTarget::Legacy(None) => Some(RouteTo::Nobody),
+        ParentTarget::Legacy(None) => None,
+    };
+    let with_prompt = params.get("prompt").and_then(Value::as_str).is_some();
+    // 새 자식의 소유자는 만든 부모다. 부모 없이 만든 자식은 prompt 로 이미 턴을 열었으면 소유자 없음으로 고정하고,
+    // 아니면 첫 tell 이 맡는다.
+    let owner = match &to {
+        Some(to) => Some(to.owner()),
+        None => with_prompt.then(|| remote_owner::NOBODY.to_string()),
     };
     if let Some(to) = to {
         let token = returns
@@ -172,7 +179,6 @@ pub(crate) fn spawn<H: HostCall>(
             .map_err(|e| IpcMethodError::new(tr.t_fmt("claude.codex.route_not_saved", &e)))?;
         remote.insert(RETURN_ROUTE_KEY.into(), json!(token));
     }
-    let with_prompt = params.get("prompt").and_then(Value::as_str).is_some();
     let reply = match remote_attach::call(
         host,
         Request {
@@ -197,6 +203,7 @@ pub(crate) fn spawn<H: HostCall>(
                     PendingSpawn {
                         target: target.clone(),
                         with_prompt,
+                        owner: owner.clone(),
                         at: Instant::now(),
                     },
                 );
@@ -218,7 +225,15 @@ pub(crate) fn spawn<H: HostCall>(
     };
     // 경로를 묶은 뒤에만 통지를 풀어야 첫 완료가 수신처 없이 지나가지 않는다. 묶지 못했으면 commit 하지 않고
     // (통지는 서버에 보관된 채 남는다) 받을 곳이 없는 자식을 닫는다.
-    if let Err(e) = bind(returns, host, target, child.surface_id, with_prompt, tr) {
+    if let Err(e) = bind(
+        returns,
+        host,
+        target,
+        child.surface_id,
+        with_prompt,
+        owner.as_deref(),
+        tr,
+    ) {
         let cleanup = match remote_attach::call(
             host,
             child_request("kill", anchor, child.surface_id, Map::new()),
@@ -267,11 +282,15 @@ fn bind<H: HostCall>(
     target: &ParentTarget,
     child: u32,
     with_prompt: bool,
+    owner: Option<&str>,
     tr: &Translator,
 ) -> Result<(), IpcMethodError> {
-    if with_prompt {
-        open_turn(returns, child, &owner_of(target), tr)?;
-    }
+    // 새 자식이므로 같은 surface id 에 남은 기록과 관계없이 소유자를 새로 쓴다.
+    returns
+        .owners_dir()
+        .ok_or_else(|| tr.t("claude.codex.no_data_dir").to_string())
+        .and_then(|dir| remote_owner::reset(&dir, child, owner))
+        .map_err(|e| IpcMethodError::new(tr.t_fmt("claude.codex.route_not_saved", &e)))?;
     match target {
         ParentTarget::Codex(resolved) => returns
             .bind_new_child(child, &Binding::new(resolved), with_prompt)
@@ -289,45 +308,36 @@ fn bind<H: HostCall>(
     }
 }
 
-/// spawn 부모의 턴 소유자.
-fn owner_of(target: &ParentTarget) -> String {
-    match target {
-        ParentTarget::Codex(resolved) => remote_turns::codex_owner(&resolved.receiver_id),
-        ParentTarget::Legacy(Some(parent)) => remote_turns::surface_owner(*parent),
-        ParentTarget::Legacy(None) => remote_turns::NOBODY.to_string(),
-    }
-}
-
-/// client: 원격 자식에게 턴을 여는 지시를 기록한다. 다른 부모의 미완 지시가 있으면 그 턴의 결과가 이 지시의 토큰으로
-/// 가지 않도록 경로를 바꾸거나 보내기 전에 거절한다. 시간이 지나도 풀지 않는다.
-pub(crate) fn open_turn(
+/// client: 원격 자식에게 보내는 tell 을 판정한다. 자식의 소유자가 다른 부모면 그 턴의 결과가 이 지시의 토큰으로
+/// 가지 않도록 경로를 바꾸거나 보내기 전에 거절한다. 소유자가 없으면 이 부모가 맡는다.
+pub(crate) fn admit(
     returns: &Returns,
     child: u32,
     owner: &str,
     tr: &Translator,
-) -> Result<(), IpcMethodError> {
+) -> Result<Admit, IpcMethodError> {
     let dir = returns
-        .turns_dir()
+        .owners_dir()
         .ok_or_else(|| IpcMethodError::new(tr.t("claude.codex.no_data_dir")))?;
-    match remote_turns::open(&dir, child, owner) {
-        Ok(Opened::Opened) => Ok(()),
-        Ok(Opened::Busy { owner, open }) => Err(IpcMethodError::invalid_params(&tr.t_args(
-            "claude.remote.child_busy",
-            &[&child.to_string(), &owner, &open.to_string()],
+    match remote_owner::admit(&dir, child, owner) {
+        Ok(Admit::Other(current)) => Err(IpcMethodError::invalid_params(&tr.t_args(
+            "claude.remote.child_of_other_parent",
+            &[&child.to_string(), &current],
         ))),
+        Ok(admit) => Ok(admit),
         Err(e) => Err(IpcMethodError::new(
             tr.t_fmt("claude.codex.route_not_saved", &e),
         )),
     }
 }
 
-/// 보내지 못한 것이 확정된 지시의 기록을 되돌린다. 되돌리지 못하면 다른 부모가 거절될 뿐이라 경고만 남긴다.
-pub(crate) fn undo_turn(returns: &Returns, child: u32, owner: &str) {
-    let Some(dir) = returns.turns_dir() else {
+/// 이 tell 로 맡은 자식의 전송이 확정 실패했다. 되돌리지 못하면 경고만 남긴다(그 부모가 계속 소유한다).
+pub(crate) fn unclaim(returns: &Returns, child: u32, owner: &str) {
+    let Some(dir) = returns.owners_dir() else {
         return;
     };
-    if let Err(e) = remote_turns::undo(&dir, child, owner) {
-        tracing::warn!("claude remote turns: could not undo the order to s{child}: {e}");
+    if let Err(e) = remote_owner::unclaim(&dir, child, owner) {
+        tracing::warn!("claude remote owner: could not release s{child}: {e}");
     }
 }
 
@@ -375,7 +385,15 @@ fn late_spawn<H: HostCall>(
         (Some(_), false, _) => Some("a spawn call cannot create several children".into()),
     };
     if let (None, Some(p)) = (&reason, &waiting) {
-        match bind(returns, host, &p.target, children[0], p.with_prompt, tr) {
+        match bind(
+            returns,
+            host,
+            &p.target,
+            children[0],
+            p.with_prompt,
+            p.owner.as_deref(),
+            tr,
+        ) {
             Ok(()) => return Received::Recorded,
             Err(e) => return discard(host, &children, e.message, tr),
         }
@@ -477,10 +495,10 @@ pub(crate) fn kill<H: HostCall>(
     let killed = reply.result.get("killed").and_then(Value::as_bool) == Some(true);
     if killed {
         returns.end_remote_child(child);
-        if let Some(dir) = returns.turns_dir()
-            && let Err(e) = remote_turns::forget(&dir, child)
+        if let Some(dir) = returns.owners_dir()
+            && let Err(e) = remote_owner::forget(&dir, child)
         {
-            tracing::warn!("claude remote turns: could not forget the closed s{child}: {e}");
+            tracing::warn!("claude remote owner: could not forget the closed s{child}: {e}");
         }
     }
     let mut out = Map::new();

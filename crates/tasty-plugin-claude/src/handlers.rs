@@ -15,6 +15,7 @@ use tasty_plugin_agent_common::params::{
 };
 use tasty_plugin_agent_common::prompt_file;
 use tasty_plugin_agent_common::remote_attach::AttachOrigin;
+use tasty_plugin_agent_common::remote_owner::{self, Admit};
 use tasty_plugin_sdk::{HostHandle, IpcMethodError, i18n::Translator};
 
 use crate::codex_return::{Binding, ParentTarget, Returns, RouteTo, TerminalParent, parent_target};
@@ -410,18 +411,22 @@ pub(crate) fn handle_tell<H: HostCall>(
             &[&surface_id.to_string(), &e],
         ))
     })?;
-    // 원격 자식이면 다른 부모가 지시한 턴의 결과가 이 지시의 토큰으로 가지 않도록 소유를 연다.
-    let owner = remote.and(to.as_ref()).map(RouteTo::owner);
-    if let Some(owner) = &owner {
-        crate::remote::open_turn(returns, surface_id, owner, tr)?;
-    }
+    // 원격 자식의 결과 소유자는 만든 부모로 고정한다. 다른 부모의 tell 은 경로를 바꾸기 전에 거절한다.
+    let owner = remote.map(|_| {
+        to.as_ref()
+            .map_or_else(|| remote_owner::NOBODY.to_string(), RouteTo::owner)
+    });
+    let claimed = match &owner {
+        Some(owner) => crate::remote::admit(returns, surface_id, owner, tr)? == Admit::Claimed,
+        None => false,
+    };
     // 확정된 실패는 경로와 소유를 이전 상태로 되돌린다. 결과불명이면 서버에서 실행됐을 수 있으므로 그대로 둔다.
     let rollback = |e: IpcMethodError| {
         if let Err(r) = returns.restore_child(surface_id, saved.clone()) {
             tracing::warn!("claude tell: could not restore the route of s{surface_id}: {r}");
         }
-        if let Some(owner) = &owner {
-            crate::remote::undo_turn(returns, surface_id, owner);
+        if claimed && let Some(owner) = &owner {
+            crate::remote::unclaim(returns, surface_id, owner);
         }
         e
     };
@@ -464,7 +469,7 @@ fn caller_surface_of(params: &Value) -> Option<u32> {
 }
 
 /// tell 의 수신처를 정한다. 기록은 바꾸지 않는다. Codex 호출이면 대상이 그 대화의 자식인지 확인한다. 원격 자식에게
-/// 일반 호출이 보내면 호출 surface(없으면 받을 곳 없음)가 수신처다. 로컬 자식의 일반 호출은 수신처가 없다.
+/// 일반 호출이 보내면 호출 surface 가 수신처다. 호출 surface 가 없거나 로컬 자식의 일반 호출이면 수신처가 없다.
 fn tell_target<H: HostCall>(
     returns: &Returns,
     host: &H,
@@ -497,17 +502,16 @@ fn tell_target<H: HostCall>(
     if !remote {
         return Ok(None);
     }
-    // 원격 자식의 본문은 서버에만 있으므로 호출 surface 에 결과를 돌려받을 토큰을 보낸다. 호출 surface 가 없어도
-    // 토큰을 보내 그 턴의 결과가 도착했음을 셀 수 있게 한다(본문은 버린다).
+    // 원격 자식의 본문은 서버에만 있으므로 호출 surface 에 결과를 돌려받을 토큰을 보낸다.
+    let Some(caller) = caller_surface_of(params) else {
+        return Ok(None);
+    };
     require_returns(returns, tr)?;
-    Ok(Some(match caller_surface_of(params) {
-        Some(caller) => RouteTo::Surface {
-            surface: caller,
-            // 세션 조회 실패를 세션 없음으로 낮추면 세션 보호가 빠진 토큰이 나간다. 보내기 전에 실패한다.
-            session: tasty_plugin_agent_common::remote_results::parent_session(host, caller)
-                .map_err(|e| IpcMethodError::new(tr.t_fmt("claude.codex.route_not_saved", &e)))?,
-        },
-        None => RouteTo::Nobody,
+    Ok(Some(RouteTo::Surface {
+        surface: caller,
+        // 세션 조회 실패를 세션 없음으로 낮추면 세션 보호가 빠진 토큰이 나간다. 보내기 전에 실패한다.
+        session: tasty_plugin_agent_common::remote_results::parent_session(host, caller)
+            .map_err(|e| IpcMethodError::new(tr.t_fmt("claude.codex.route_not_saved", &e)))?,
     }))
 }
 

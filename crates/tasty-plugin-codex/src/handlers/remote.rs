@@ -21,8 +21,8 @@ use std::time::{Duration, Instant};
 use tasty_plugin_agent_common::remote_attach::{
     self, AttachOrigin, CallError, Parent, RETURN_ROUTE_KEY, Received, Request, Target, TargetError,
 };
+use tasty_plugin_agent_common::remote_owner::{self, Admit};
 use tasty_plugin_agent_common::remote_results;
-use tasty_plugin_agent_common::remote_turns::{self, Opened};
 
 use super::*;
 use crate::delivery::ledger;
@@ -42,7 +42,7 @@ const SPAWN_KEYS: &[&str] = &[
 struct PendingSpawn {
     receiver_id: Option<String>,
     parent_surface: Option<u32>,
-    with_prompt: bool,
+    owner: Option<String>,
     at: Instant,
 }
 
@@ -166,10 +166,6 @@ fn parent_of(parent: &Map<String, Value>) -> Option<Parent> {
 }
 
 /// client: 새 mirror 자식에 부모 경로를 묶는다. Codex 부모는 결과 수신처, 물리 부모는 완료 알림 훅이다.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "a new child's first turn owner is the same parent the route is bound to"
-)]
 fn bind<H: HostCall>(
     host: &H,
     delivery: &DeliveryCtx<'_>,
@@ -177,12 +173,11 @@ fn bind<H: HostCall>(
     index: Option<u32>,
     receiver_id: Option<&str>,
     parent_surface: Option<u32>,
-    with_prompt: bool,
-    tr: &Translator,
+    owner: Option<&str>,
 ) -> Result<(), IpcMethodError> {
-    if with_prompt {
-        open_turn(delivery, child, &owner_of(receiver_id, parent_surface), tr)?;
-    }
+    // 새 자식이므로 같은 surface id 에 남은 기록과 관계없이 소유자를 새로 쓴다.
+    remote_owner::reset(&delivery.root.join(remote_owner::DIR), child, owner)
+        .map_err(|e| IpcMethodError::new(format!("codex attach owner: {e}")))?;
     match receiver_id {
         Some(id) => ledger::set_child_receiver(delivery.root, child, id, index)
             .map_err(|e| IpcMethodError::new(format!("codex child return record: {e}"))),
@@ -193,45 +188,6 @@ fn bind<H: HostCall>(
             }
             Ok(())
         }
-    }
-}
-
-/// 지시한 부모의 턴 소유자. Codex 대화, 호출 surface, 둘 다 없음 순이다.
-pub(crate) fn owner_of(receiver_id: Option<&str>, parent_surface: Option<u32>) -> String {
-    match (receiver_id, parent_surface) {
-        (Some(id), _) => remote_turns::codex_owner(id),
-        (None, Some(surface)) => remote_turns::surface_owner(surface),
-        (None, None) => remote_turns::NOBODY.to_string(),
-    }
-}
-
-/// client: 원격 자식에게 턴을 여는 지시를 기록한다. 다른 부모의 미완 지시가 있으면 그 턴의 결과가 이 지시의 토큰으로
-/// 가지 않도록 경로를 바꾸거나 보내기 전에 거절한다. 시간이 지나도 풀지 않는다.
-pub(crate) fn open_turn(
-    delivery: &DeliveryCtx<'_>,
-    child: u32,
-    owner: &str,
-    tr: &Translator,
-) -> Result<(), IpcMethodError> {
-    match remote_turns::open(&delivery.root.join(remote_turns::DIR), child, owner) {
-        Ok(Opened::Opened) => Ok(()),
-        Ok(Opened::Busy { owner, open }) => Err(IpcMethodError::invalid_params(&t_args(
-            tr,
-            "codex.remote.child_busy",
-            &[
-                ("{surface}", &child.to_string()),
-                ("{owner}", &owner),
-                ("{open}", &open.to_string()),
-            ],
-        ))),
-        Err(e) => Err(IpcMethodError::new(format!("codex attach turns: {e}"))),
-    }
-}
-
-/// 보내지 못한 것이 확정된 지시의 기록을 되돌린다. 되돌리지 못하면 다른 부모가 거절될 뿐이라 경고만 남긴다.
-pub(crate) fn undo_turn(delivery: &DeliveryCtx<'_>, child: u32, owner: &str) {
-    if let Err(e) = remote_turns::undo(&delivery.root.join(remote_turns::DIR), child, owner) {
-        tracing::warn!("codex remote turns: could not undo the order to s{child}: {e}");
     }
 }
 
@@ -257,10 +213,17 @@ pub(crate) fn spawn<H: HostCall>(
     let to = match (receiver_id, parent_surface) {
         (Some(id), _) => Some(ledger::codex_route(id)),
         (None, Some(surface)) => Some(surface_route(host, surface)?),
-        // 받을 부모가 없어도 토큰을 보내 첫 턴의 결과가 도착했음을 셀 수 있게 한다.
-        (None, None) => Some(ledger::AttachRoute::default()),
+        (None, None) => None,
     };
-    let with_prompt = params.get("prompt").and_then(Value::as_str).is_some();
+    // 새 자식의 소유자는 만든 부모다. 부모 없이 만든 자식은 prompt 로 이미 턴을 열었으면 소유자 없음으로 고정하고,
+    // 아니면 첫 tell 이 맡는다.
+    let owner = match &to {
+        Some(to) => Some(route_owner(to)),
+        None => params
+            .get("prompt")
+            .and_then(Value::as_str)
+            .map(|_| remote_owner::NOBODY.to_string()),
+    };
     if let Some(to) = to {
         let token = ledger::issue_attach_route(delivery.root, &to)
             .map_err(|e| IpcMethodError::new(format!("codex child return record: {e}")))?;
@@ -290,7 +253,7 @@ pub(crate) fn spawn<H: HostCall>(
                     PendingSpawn {
                         receiver_id: receiver_id.map(str::to_string),
                         parent_surface,
-                        with_prompt,
+                        owner: owner.clone(),
                         at: Instant::now(),
                     },
                 );
@@ -318,8 +281,7 @@ pub(crate) fn spawn<H: HostCall>(
         child.index,
         receiver_id,
         parent_surface,
-        with_prompt,
-        tr,
+        owner.as_deref(),
     ) {
         let cleanup = match remote_attach::call(
             host,
@@ -441,8 +403,8 @@ pub(crate) fn kill<H: HostCall>(
     if killed && let Err(e) = ledger::end_child_receiver(delivery.root, child) {
         tracing::warn!("codex child return record for remote child {child}: {e}");
     }
-    if killed && let Err(e) = remote_turns::forget(&delivery.root.join(remote_turns::DIR), child) {
-        tracing::warn!("codex remote turns: could not forget the closed s{child}: {e}");
+    if killed && let Err(e) = remote_owner::forget(&delivery.root.join(remote_owner::DIR), child) {
+        tracing::warn!("codex remote owner: could not forget the closed s{child}: {e}");
     }
     let mut out = Map::new();
     if killed {
@@ -466,34 +428,6 @@ pub(crate) fn receive<H: HostCall>(
     let Some((surface, payload)) = remote_attach::received(params) else {
         return Ok(Received::Rejected("missing surface_id or payload".into()).json());
     };
-    let (owner, reply) = receive_routed(host, delivery, surface, payload, tr)?;
-    // 그 지시의 턴이 끝났다는 사실은 새로 받은 결과가 증명한다. 재전송 중복은 이미 셌다. 수신처가 결과를 거절해도
-    // 턴은 끝났다.
-    if let Some(owner) = owner
-        && matches!(
-            reply.get("status").and_then(Value::as_str),
-            Some("recorded" | "rejected")
-        )
-    {
-        let status = payload
-            .get(crate::delivery::attach_out::PAYLOAD_KEY)
-            .and_then(remote_turns::status_of);
-        let dir = delivery.root.join(remote_turns::DIR);
-        if let Err(e) = remote_turns::finish(&dir, surface, &owner, status) {
-            tracing::warn!("codex remote turns: could not close a turn of s{surface}: {e}");
-        }
-    }
-    Ok(reply)
-}
-
-/// 원격 결과를 토큰의 수신처로 기록하고, 그 지시의 턴 소유자와 답을 준다.
-fn receive_routed<H: HostCall>(
-    host: &H,
-    delivery: &DeliveryCtx<'_>,
-    surface: u32,
-    payload: &Value,
-    tr: &Translator,
-) -> Result<(Option<String>, Value), IpcMethodError> {
     // 수신처는 지금의 경로가 아니라 그 턴을 지시한 spawn·tell 때 발급한 토큰으로 찾는다. 그 사이 경로가 풀리거나
     // 다른 부모로 묶여도 그 턴의 결과는 지시한 부모에게 간다.
     let token = payload
@@ -504,18 +438,13 @@ fn receive_routed<H: HostCall>(
     let Some(route) = ledger::attach_route(delivery.root, token)
         .map_err(|e| IpcMethodError::new(format!("codex attach route: {e}")))?
     else {
-        return Ok((
-            None,
-            Received::Rejected(format!(
-                "no Codex return route for the result of s{surface}"
-            ))
-            .json(),
-        ));
+        return Ok(Received::Rejected(format!(
+            "no Codex return route for the result of s{surface}"
+        ))
+        .json());
     };
-    let receiver = (!route.receiver_id.is_empty()).then_some(route.receiver_id.as_str());
-    let owner = Some(owner_of(receiver, route.parent_surface));
     if let Some(parent) = route.parent_surface {
-        let reply = receive_for_surface(
+        return receive_for_surface(
             host,
             delivery,
             parent,
@@ -523,21 +452,13 @@ fn receive_routed<H: HostCall>(
             surface,
             payload,
             tr,
-        )?;
-        return Ok((owner, reply));
-    }
-    if route.receiver_id.is_empty() {
-        // 받을 곳이 없는 지시의 결과다. 도착만 센다.
-        return Ok((owner, Received::Recorded.json()));
+        );
     }
     let receiver_id = route.receiver_id;
     let Some(receiver) = ledger::read_receiver(delivery.root, &receiver_id)
         .map_err(|e| IpcMethodError::new(format!("codex receiver: {e}")))?
     else {
-        return Ok((
-            owner,
-            Received::Rejected(format!("receiver of s{surface} is gone")).json(),
-        ));
+        return Ok(Received::Rejected(format!("receiver of s{surface} is gone")).json());
     };
     let mut completion = match payload
         .get(crate::delivery::attach_out::PAYLOAD_KEY)
@@ -545,18 +466,52 @@ fn receive_routed<H: HostCall>(
         .and_then(crate::delivery::parse_completion)
     {
         Ok(c) => c,
-        Err(reason) => return Ok((owner, Received::Rejected(reason).json())),
+        Err(reason) => return Ok(Received::Rejected(reason).json()),
     };
     completion.completion_key = remote_attach::local_completion_key(&completion.completion_key);
     completion.child_surface = surface;
     let (_, duplicate) = crate::delivery::deliver(delivery, &receiver, completion)
         .map_err(|e| IpcMethodError::new(format!("codex ledger: {e}")))?;
-    let status = if duplicate {
+    Ok(if duplicate {
         Received::Duplicate
     } else {
         Received::Recorded
-    };
-    Ok((owner, status.json()))
+    }
+    .json())
+}
+
+/// route 기록의 수신처가 원격 자식의 소유자다.
+pub(crate) fn route_owner(route: &ledger::AttachRoute) -> String {
+    match route.parent_surface {
+        Some(surface) => remote_owner::surface_owner(surface, route.parent_session.as_deref()),
+        None => remote_owner::codex_owner(&route.receiver_id),
+    }
+}
+
+/// client: 원격 자식에게 보내는 tell 을 판정한다. 자식의 소유자가 다른 부모면 그 턴의 결과가 이 지시의 토큰으로
+/// 가지 않도록 경로를 바꾸거나 보내기 전에 거절한다. 소유자가 없으면 이 부모가 맡는다.
+pub(crate) fn admit(
+    delivery: &DeliveryCtx<'_>,
+    child: u32,
+    owner: &str,
+    tr: &Translator,
+) -> Result<Admit, IpcMethodError> {
+    match remote_owner::admit(&delivery.root.join(remote_owner::DIR), child, owner) {
+        Ok(Admit::Other(current)) => Err(IpcMethodError::invalid_params(&t_args(
+            tr,
+            "codex.remote.child_of_other_parent",
+            &[("{surface}", &child.to_string()), ("{owner}", &current)],
+        ))),
+        Ok(admit) => Ok(admit),
+        Err(e) => Err(IpcMethodError::new(format!("codex attach owner: {e}"))),
+    }
+}
+
+/// 이 tell 로 맡은 자식의 전송이 확정 실패했다. 되돌리지 못하면 경고만 남긴다(그 부모가 계속 소유한다).
+pub(crate) fn unclaim(delivery: &DeliveryCtx<'_>, child: u32, owner: &str) {
+    if let Err(e) = remote_owner::unclaim(&delivery.root.join(remote_owner::DIR), child, owner) {
+        tracing::warn!("codex remote owner: could not release s{child}: {e}");
+    }
 }
 
 /// 물리 surface 부모의 route 기록. 발급 때 그 surface 의 Claude 세션을 함께 둔다. 세션 조회가 실패하면 세션 보호가
@@ -682,8 +637,7 @@ fn late_spawn<H: HostCall>(
             *index,
             p.receiver_id.as_deref(),
             p.parent_surface,
-            p.with_prompt,
-            tr,
+            p.owner.as_deref(),
         ) {
             Ok(()) => return Received::Recorded,
             Err(e) => e.message,

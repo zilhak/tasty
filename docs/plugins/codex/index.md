@@ -17,7 +17,7 @@ Codex 대화에서 spawn한 자식의 턴 결과는 완료 로그와 별도로 [
 
 ### 원격 attach 자식
 
-attach 로 연결한 원격 워크스페이스(mirror)에 `spawn` 하면 자식은 서버 Tasty 에서 서버의 Codex CLI·plugin 설정·승인 정책으로 실행된다. 부모·Codex 결과 경로·완료 알림 훅은 이 Tasty 의 mirror surface 에 묶이고, `tell`·`kill` 은 서버의 같은 메서드로 간다. 서버에서 턴을 보고하는 것은 서버에 `tasty codex install` 로 설치한 기존 훅이다. 부모가 Codex 대화면 서버가 확정한 턴 결과가 그 대화의 대기열에 들어간다. 부모가 물리 surface(Claude 세션·셸)면 결과 본문을 plugin 데이터 폴더 `attach-results/` 에 저장하고 부모 완료 로그에 결과 ID 와 `tasty codex remote-results --id <ID>` 를 남긴다. 다른 부모가 지시한 턴의 결과가 아직 오지 않은 원격 자식에게 보내는 `tell` 은 원격에 보내기 전에 `child_busy` 로 거절한다. 세부 계약은 [원격 attach 자식](../remote-attach-children.md)에 있다.
+attach 로 연결한 원격 워크스페이스(mirror)에 `spawn` 하면 자식은 서버 Tasty 에서 서버의 Codex CLI·plugin 설정·승인 정책으로 실행된다. 부모·Codex 결과 경로·완료 알림 훅은 이 Tasty 의 mirror surface 에 묶이고, `tell`·`kill` 은 서버의 같은 메서드로 간다. 서버에서 턴을 보고하는 것은 서버에 `tasty codex install` 로 설치한 기존 훅이다. 부모가 Codex 대화면 서버가 확정한 턴 결과가 그 대화의 대기열에 들어간다. 부모가 물리 surface(Claude 세션·셸)면 결과 본문을 plugin 데이터 폴더 `attach-results/` 에 저장하고 부모 완료 로그에 결과 ID 와 `tasty codex remote-results --id <ID>` 를 남긴다. 원격 자식의 결과 소유자는 만든 부모로 고정되며, 다른 부모의 `tell` 은 원격에 보내기 전에 `child_of_other_parent` 로 거절한다. 세부 계약은 [원격 attach 자식](../remote-attach-children.md)에 있다.
 
 ## Tasty 자식에서 지우는 세션 변수
 
@@ -632,7 +632,7 @@ tasty codex result <event_id>
 
 - Given Codex 대화가 부모이고 대상이 attach mirror workspace When `tasty codex spawn --workspace <mirror id>` Then 자식은 서버에서 서버 설정으로 실행되고, mirror 자식에 결과 경로를 묶은 뒤에만 서버가 통지를 보내며, 자식의 턴 결과는 부모 대화에 한 번 기록된다.
 - Given 셸이나 Claude 세션 surface 가 원격 Codex 자식을 spawn·tell 한 상태 When 서버에서 그 턴이 확정됨 Then client plugin 은 Codex 원장 대신 `attach-results/` 에 본문을 먼저 저장하고 부모 완료 로그에 결과 ID 와 `tasty codex remote-results --id <ID>` 를 남긴 뒤 `recorded` 로 답한다.
-- Given 한 부모가 지시한 원격 자식의 턴 결과가 아직 오지 않은 상태 When 다른 부모(물리 surface·Codex 대화·호출 surface 없음)가 그 자식에게 `tell` 함 Then client plugin 은 경로·토큰을 바꾸거나 원격에 보내지 않고 `child_busy` 로 거절하며, 같은 부모의 후속 `tell` 은 보낸다. 그 소유자 토큰의 결과가 모두 오거나 `exited` 결과·kill 뒤에는 다른 부모의 `tell` 을 보낸다.
+- Given 한 부모가 만든 원격 자식 When 다른 부모(다른 surface, 같은 surface 의 다른 Claude 세션, 다른 Codex 대화, 호출 surface 없음)가 그 자식에게 `tell` 함 Then client plugin 은 결과 수신·idle 여부와 관계없이 경로·토큰을 바꾸거나 원격에 보내지 않고 `child_of_other_parent` 로 거절하며, 만든 부모의 후속 `tell` 은 보낸다.
 - Given 서버가 원격 자식의 턴을 확정했지만 client 가 아직 확인하지 않음 When 서버 plugin 이 다시 시작 Then 보낼 기록은 남아 있고 같은 키로 다시 맡기며, client 는 같은 결과를 한 번만 기록한다.
 - Given mirror 자식의 결과 경로를 묶지 못함 When spawn Then 통지를 풀지 않고(commit 없음) 서버의 그 자식을 닫은 뒤 오류로 끝난다.
 - Given Tasty helper 세션의 Codex 부모 When 그 대화에서 `tasty codex spawn --prompt "…"`를 실행하고 자식의 턴이 끝난다 Then 부모 thread의 대기열에 고정 형식의 참조가 한 번 들어가고 부모는 `tasty codex result <event_id>`로 본문을 읽는다.

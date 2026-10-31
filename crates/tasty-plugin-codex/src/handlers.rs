@@ -13,6 +13,7 @@ use tasty_plugin_agent_common::prompt_file;
 use tasty_plugin_sdk::{HostHandle, IpcMethodError, i18n::Translator};
 
 use tasty_plugin_agent_common::remote_attach::AttachOrigin;
+use tasty_plugin_agent_common::remote_owner::Admit;
 
 use crate::caller::CallerContext as CodexCaller;
 use crate::delivery::Ctx as DeliveryCtx;
@@ -339,30 +340,30 @@ pub(crate) fn handle_tell<H: HostCall>(
         None => None,
     };
     let caller_surface = require_u32(params, "caller_surface", tr).ok();
-    // 원격 자식이면 이 지시의 수신처. 호출 surface 가 없어도 토큰을 보내 그 턴의 결과가 도착했음을 셀 수 있게 한다.
+    // 원격 자식이면 이 지시의 수신처.
     let to = match (remote_anchor, &receiver, caller_surface) {
-        (None, _, _) => None,
+        (None, _, _) | (Some(_), None, None) => None,
         (Some(_), Some(r), _) => Some(crate::delivery::ledger::codex_route(&r.receiver_id)),
         (Some(_), None, Some(surface)) => Some(remote::surface_route(host, surface)?),
-        (Some(_), None, None) => Some(crate::delivery::ledger::AttachRoute::default()),
     };
-    let owner = to.as_ref().map(|_| {
-        remote::owner_of(
-            receiver.as_ref().map(|r| r.receiver_id.as_str()),
-            caller_surface,
-        )
-    });
     let previous = crate::delivery::ledger::child_receiver(delivery.root, surface_id)
         .map_err(|e| IpcMethodError::new(format!("codex child return record: {e}")))?;
-    // 원격 자식이면 다른 부모가 지시한 턴의 결과가 이 지시의 토큰으로 가지 않도록 소유를 연다.
-    if let Some(owner) = &owner {
-        remote::open_turn(delivery, surface_id, owner, tr)?;
-    }
+    // 원격 자식의 결과 소유자는 만든 부모로 고정한다. 다른 부모의 tell 은 경로를 바꾸기 전에 거절한다.
+    let owner = remote_anchor.map(|_| {
+        to.as_ref().map_or_else(
+            || tasty_plugin_agent_common::remote_owner::NOBODY.to_string(),
+            remote::route_owner,
+        )
+    });
+    let claimed = match &owner {
+        Some(owner) => remote::admit(delivery, surface_id, owner, tr)? == Admit::Claimed,
+        None => false,
+    };
     // 확정된 실패는 경로와 소유를 이전 상태로 되돌린다. 결과불명이면 서버에서 실행됐을 수 있으므로 그대로 둔다.
     let rollback = |e: IpcMethodError| {
         ownership::restore_route(delivery, surface_id, previous.clone());
-        if let Some(owner) = &owner {
-            remote::undo_turn(delivery, surface_id, owner);
+        if claimed && let Some(owner) = &owner {
+            remote::unclaim(delivery, surface_id, owner);
         }
         e
     };

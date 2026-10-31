@@ -354,20 +354,13 @@ fn a_failed_parent_session_lookup_stops_the_order_and_retries_the_result() {
     assert_eq!(test_log::take().len(), 1);
 }
 
-/// 물리 부모 둘이 같은 원격 자식에 지시한다. 다른 부모의 지시는 앞 부모의 미완 지시가 모두 결과를 받을 때까지
-/// 원격 호출 없이 거절된다. 같은 부모의 후속은 받는다. 확정 실패한 지시는 되돌려 다른 부모를 막지 않는다.
+/// 물리 부모 둘이 같은 원격 자식에 지시한다. 자식을 만든 부모만 지시할 수 있고, 다른 surface 는 결과가 왔든 아니든
+/// 원격 호출 없이 거절된다.
 #[test]
-fn a_physical_parent_cannot_take_a_child_with_another_parents_open_order() {
+fn a_physical_parent_cannot_order_another_parents_remote_child() {
     let fx = Fixture::new();
     test_log::take();
-    let refuse = std::rc::Rc::new(RefCell::new(false));
-    let r = refuse.clone();
-    let host = Host::new(&fx, move |method, params| {
-        if *r.borrow() && method == "attach.agent_call" && params["method"] == json!("tell") {
-            return fail(-32602, "refused by holder");
-        }
-        surface_parent(method, params)
-    });
+    let host = Host::new(&fx, surface_parent);
     let tell = |caller: u32| {
         fx.with(|d| {
             super::super::handle_tell(
@@ -390,23 +383,15 @@ fn a_physical_parent_cannot_take_a_child_with_another_parents_open_order() {
         json!({ "workspace": 3, "surface": 5, "prompt": "go" }),
     )
     .unwrap();
+    let r1 = route_of(&host);
+    assert!(tell(6).is_err());
+    assert_eq!(tells(), 0);
+    receive(&fx, &host, notice("codex:o:t1", &r1));
     assert!(tell(6).is_err());
     assert_eq!(tells(), 0);
     tell(5).unwrap();
-    let r5 = route_of(&host);
-    receive(&fx, &host, notice("codex:o:t1", &r5));
-    assert_eq!(
-        receive(&fx, &host, notice("codex:o:t1", &r5))["status"],
-        json!("duplicate")
-    );
-    assert!(tell(6).is_err());
-    receive(&fx, &host, notice("codex:o:t2", &r5));
-    tell(6).unwrap();
-    receive(&fx, &host, notice("codex:o:t3", &route_of(&host)));
-    *refuse.borrow_mut() = true;
-    assert!(tell(5).is_err());
-    *refuse.borrow_mut() = false;
-    tell(6).unwrap();
+    tell(5).unwrap();
+    assert_eq!(tells(), 2);
 }
 
 /// 일반 tell 의 조회 실패는 Codex 부모의 경로를 바꾸기 전에 끝난다.
@@ -822,11 +807,11 @@ fn server_local_public_calls_cannot_drive_attach_children() {
     assert!(host.params_of("terminal.tell").is_empty());
 }
 
-/// 결과의 수신처는 그 턴을 지시한 spawn·tell 의 토큰으로 정한다. A 의 턴이 서버에서 확정된 뒤 일반 tell 로 경로가
-/// 풀리거나 B 가 다시 묶어도, 늦게 온 A 턴의 결과는 A 에게, B 턴의 결과는 B 에게 간다. 일반 tell 의 턴 결과가 오기
-/// 전에는 B 의 지시를 원격 호출 없이 거절한다.
+/// 서버는 턴이 끝날 때 그 자식의 마지막 토큰을 싣는다. 그래서 원격 자식의 결과 소유자는 만든 부모로 고정하고, 다른
+/// 부모(일반 셸·호스트가 자식으로 넘겨받은 다른 Codex 대화)의 지시는 원격 호출·경로 변경 없이 거절한다. 같은 부모의
+/// 후속은 보내고 그 결과는 지시한 부모에게 간다.
 #[test]
-fn a_late_result_goes_to_the_parent_that_started_its_turn() {
+fn a_remote_child_takes_orders_only_from_its_creating_parent() {
     const OTHER: &str = "019f55e7-3dfa-7a00-8000-0000000000bb";
     let fx = Fixture::new();
     owned_parent(&fx);
@@ -851,68 +836,56 @@ fn a_late_result_goes_to_the_parent_that_started_its_turn() {
     spawn(&fx, &host, codex(json!({ "workspace": 3 }))).unwrap();
     let route_a = route_of(&host);
     let receiver_a = receiver_of_l(&fx);
-
-    // 일반 셸의 tell 이 경로를 푼다.
+    let refused = |p: &Value| {
+        let calls = host.params_of("attach.agent_call").len();
+        let before = ledger::child_receiver(fx.root(), L).unwrap();
+        let err = fx
+            .with(|d| super::super::handle_tell(&host, p, &fx.tr, d))
+            .unwrap_err();
+        assert!(err.message.contains(&L.to_string()), "{}", err.message);
+        assert_eq!(host.params_of("attach.agent_call").len(), calls);
+        assert_eq!(ledger::child_receiver(fx.root(), L).unwrap(), before);
+    };
+    refused(&json!({ "surface": L, "message": "plain" }));
+    assert_eq!(
+        receive(&fx, &host, notice("a1", &route_a))["status"],
+        json!("recorded")
+    );
+    // 결과가 온 뒤에도, 호스트가 B 를 부모로 답해도 B 는 거절된다.
+    *parent_now.borrow_mut() = format!("codex:{OTHER}");
+    let mut b = json!({ "surface": L, "message": "b" });
+    b["_tasty_context"] = json!({ "provider": "codex", "thread_id": OTHER });
+    refused(&b);
+    *parent_now.borrow_mut() = format!("codex:{PARENT}");
     fx.with(|d| {
         super::super::handle_tell(
             &host,
-            &json!({ "surface": L, "message": "plain" }),
+            &codex(json!({ "surface": L, "message": "a" })),
             &fx.tr,
             d,
         )
     })
     .unwrap();
-    assert_eq!(ledger::child_receiver(fx.root(), L).unwrap(), None);
-    let route_plain = route_of(&host);
-    // B 가 그 자식을 맡아 다시 묶는다. 일반 tell 의 턴 결과가 오기 전에는 거절된다.
-    *parent_now.borrow_mut() = format!("codex:{OTHER}");
-    let mut b = json!({ "surface": L, "message": "b" });
-    b["_tasty_context"] = json!({ "provider": "codex", "thread_id": OTHER });
-    let calls = host.params_of("attach.agent_call").len();
-    let busy = fx
-        .with(|d| super::super::handle_tell(&host, &b, &fx.tr, d))
-        .unwrap_err();
-    assert!(busy.message.contains(&L.to_string()), "{}", busy.message);
-    assert_eq!(host.params_of("attach.agent_call").len(), calls);
-    assert_eq!(ledger::child_receiver(fx.root(), L).unwrap(), None);
+    let route_a2 = route_of(&host);
+    assert_ne!(route_a, route_a2);
     assert_eq!(
-        receive(&fx, &host, notice("p1", &route_plain))["status"],
+        receive(&fx, &host, notice("a2", &route_a2))["status"],
         json!("recorded")
     );
-    fx.with(|d| super::super::handle_tell(&host, &b, &fx.tr, d))
-        .unwrap();
-    let route_b = route_of(&host);
-    let receiver_b = receiver_of_l(&fx);
-    assert_ne!(route_a, route_b);
-    assert_ne!(receiver_a, receiver_b);
-
-    assert_eq!(
-        receive(&fx, &host, notice("a1", &route_a))["status"],
-        json!("recorded")
-    );
-    assert_eq!(
-        receive(&fx, &host, notice("b1", &route_b))["status"],
-        json!("recorded")
-    );
-    let thread_of = |rid: &str| {
-        ledger::read_receiver(fx.root(), rid)
-            .unwrap()
-            .unwrap()
-            .thread
-    };
-    let keys_of = |rid: &str| -> Vec<String> {
-        ledger::pending_ids(fx.root(), &thread_of(rid))
-            .iter()
-            .map(|id| {
-                ledger::read_event(fx.root(), id)
-                    .unwrap()
-                    .unwrap()
-                    .completion_key
-            })
-            .collect()
-    };
-    assert_eq!(keys_of(&receiver_a), vec!["r.a1".to_string()]);
-    assert_eq!(keys_of(&receiver_b), vec!["r.b1".to_string()]);
+    let thread = ledger::read_receiver(fx.root(), &receiver_a)
+        .unwrap()
+        .unwrap()
+        .thread;
+    let keys: Vec<String> = ledger::pending_ids(fx.root(), &thread)
+        .iter()
+        .map(|id| {
+            ledger::read_event(fx.root(), id)
+                .unwrap()
+                .unwrap()
+                .completion_key
+        })
+        .collect();
+    assert_eq!(keys, vec!["r.a1".to_string(), "r.a2".to_string()]);
 }
 
 /// 서버: 원격 부모가 준 경로는 서버 기준 절대 경로여야 하고 서버에 있어야 한다. 터미널을 만들기 전에 거절한다.

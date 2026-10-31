@@ -23,6 +23,6 @@ pub mod params;
 pub mod prompt_file;
 pub mod reboot;
 pub mod remote_attach;
+pub mod remote_owner;
 pub mod remote_results;
-pub mod remote_turns;
 pub mod task_turn;

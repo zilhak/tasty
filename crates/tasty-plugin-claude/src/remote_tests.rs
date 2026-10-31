@@ -795,33 +795,15 @@ fn a_failed_parent_session_lookup_stops_the_order_and_retries_the_result() {
     assert_eq!(crate::codex_return::test_log::take().len(), 1);
 }
 
-/// 물리 부모 둘이 같은 원격 자식에 지시한다. 다른 부모의 지시는 앞 부모의 미완 지시가 모두 결과를 받을 때까지
-/// 원격 호출 없이 거절된다. 같은 부모의 후속은 받고 미완 수를 늘린다. 확정 실패한 지시는 되돌리고, 결과불명은 둔다.
-/// `exited` 결과와 kill 은 기록을 지운다. 시간이나 상태 통지로는 풀지 않는다.
+/// 물리 부모 둘이 같은 원격 자식에 지시한다. 자식을 만든 부모(surface 와 그때의 Claude 세션)만 지시할 수 있다. 다른
+/// surface 나 같은 surface 의 다른 세션은 결과가 왔든 아니든 원격 호출 없이 거절된다.
 #[test]
-fn a_physical_parent_cannot_take_a_child_with_another_parents_open_order() {
+fn a_physical_parent_cannot_order_another_parents_remote_child() {
     let (_d, returns) = store();
     crate::codex_return::test_log::take();
     let session = std::rc::Rc::new(RefCell::new("sess-a"));
     let exists = std::rc::Rc::new(RefCell::new(true));
-    let inner = surface_parent_host(session, exists);
-    let tell_fails = std::rc::Rc::new(RefCell::new(None::<bool>));
-    let flag = tell_fails.clone();
-    let host = Host::new(move |method, params| {
-        if method == "attach.agent_call" && params["method"] == json!("tell") {
-            match *flag.borrow() {
-                Some(true) => return fail(-32602, "refused by holder"),
-                Some(false) => {
-                    return fail(
-                        remote_attach::OUTCOME_UNKNOWN_CODE,
-                        "call 8 outcome unknown",
-                    );
-                }
-                None => {}
-            }
-        }
-        inner.call(method, params.clone())
-    });
+    let host = surface_parent_host(session.clone(), exists);
     let tell = |caller: u32| {
         crate::handlers::handle_tell(
             &returns,
@@ -846,62 +828,21 @@ fn a_physical_parent_cannot_take_a_child_with_another_parents_open_order() {
     )
     .unwrap();
     let r1 = last_route(&host);
-    // 부모 3 의 첫 턴이 미완이면 부모 4 는 거절, 부모 3 의 후속은 받는다(미완 2).
+    let err = tell(4).unwrap_err();
+    assert!(err.message.contains("15"), "{}", err.message);
+    assert_eq!(tells(), 0);
+    returns
+        .remote_receive(&host, &turn("claude:o:t1", &r1, "B1"), &tr())
+        .unwrap();
     assert!(tell(4).is_err());
     assert_eq!(tells(), 0);
     tell(3).unwrap();
-    let r2 = last_route(&host);
-    // 서버는 끝난 턴에 마지막 토큰을 싣는다. 결과 하나로는 아직 미완이 남는다.
-    returns
-        .remote_receive(&host, &turn("claude:o:t1", &r2, "B1"), &tr())
-        .unwrap();
-    assert!(tell(4).is_err());
-    // 같은 결과의 재전송은 미완 수를 줄이지 않는다.
-    let again = returns
-        .remote_receive(&host, &turn("claude:o:t1", &r2, "B1"), &tr())
-        .unwrap();
-    assert_eq!(again["status"], json!("duplicate"));
-    assert!(tell(4).is_err());
-    returns
-        .remote_receive(&host, &turn("claude:o:t2", &r2, "B2"), &tr())
-        .unwrap();
-    assert_ne!(r1, r2);
-    let before = tells();
-    tell(4).unwrap();
-    assert_eq!(tells(), before + 1);
-    let r4 = last_route(&host);
-
-    // 부모 4 의 결과 뒤, 확정 실패한 부모 3 의 지시는 되돌려 부모 4 를 막지 않는다.
-    returns
-        .remote_receive(&host, &turn("claude:o:t3", &r4, "B3"), &tr())
-        .unwrap();
-    *tell_fails.borrow_mut() = Some(true);
-    assert!(tell(3).is_err());
-    *tell_fails.borrow_mut() = None;
-    tell(4).unwrap();
-    returns
-        .remote_receive(&host, &turn("claude:o:t4", &last_route(&host), "B4"), &tr())
-        .unwrap();
-    // 결과불명이면 서버에서 실행됐을 수 있으므로 부모 3 의 소유가 남는다.
-    *tell_fails.borrow_mut() = Some(false);
-    assert!(tell(3).is_err());
-    *tell_fails.borrow_mut() = None;
-    assert!(tell(4).is_err());
-    // `exited` 결과는 남은 지시가 있어도 기록을 지운다.
-    let mut exited = turn("claude:o:t5", &last_route(&host), "B5");
-    exited["payload"]["completion"]["status"] = json!("exited");
-    returns.remote_receive(&host, &exited, &tr()).unwrap();
-    tell(4).unwrap();
-    // 닫으면 남은 지시 기록을 지운다.
-    crate::handlers::handle_kill(
-        &scanner(),
-        &returns,
-        &host,
-        &json!({ "surface": 3, "child_index": 2 }),
-        &tr(),
-    )
-    .unwrap();
     tell(3).unwrap();
+    assert_eq!(tells(), 2);
+    // 같은 surface 에서 새로 시작한 대화도 다른 부모다.
+    *session.borrow_mut() = "sess-b";
+    assert!(tell(3).is_err());
+    assert_eq!(tells(), 2);
 }
 
 fn origin_params(extra: Value) -> Value {
@@ -1218,10 +1159,10 @@ fn server_local_public_calls_cannot_drive_attach_children() {
     assert!(host.params_of("terminal.tell").is_empty());
 }
 
-/// client: 서버는 턴이 끝날 때 그 자식의 마지막 토큰을 싣는다. 그래서 다른 부모의 지시는 앞 부모가 지시한 턴의 결과가
-/// 올 때까지 경로를 바꾸거나 보내기 전에 거절한다. 결과가 온 뒤의 지시는 받고, 각 턴의 결과는 지시한 부모에게 간다.
+/// client: 서버는 턴이 끝날 때 그 자식의 마지막 토큰을 싣는다. 그래서 원격 자식의 결과 소유자는 만든 부모로 고정하고,
+/// 다른 부모(일반 셸·다른 Codex 대화)의 지시는 결과가 왔든 아니든 원격 호출 없이 거절한다. 같은 부모의 후속은 보낸다.
 #[test]
-fn an_order_from_another_parent_waits_for_the_open_turn_result() {
+fn a_remote_child_takes_orders_only_from_its_creating_parent() {
     const OTHER: &str = "0193a6f2-7c1e-7b3d-9a40-1f2e3d4c5b6b";
     const RECEIVER_B: &str = "fedcba9876543210fedcba9876543210";
     let (_d, returns) = store();
@@ -1247,35 +1188,29 @@ fn an_order_from_another_parent_waits_for_the_open_turn_result() {
     let shell = json!({ "surface": 15, "message": "x" });
     let b = json!({ "surface": 15, "message": "y",
         "_tasty_context": { "provider": "codex", "thread_id": OTHER } });
-    let busy = |p: &Value| {
+    let refused = |p: &Value| {
         let calls = host.params_of("attach.agent_call").len();
+        let saved = returns.child_routes(15).unwrap();
         let err = crate::handlers::handle_tell(&returns, &host, p, &tr()).unwrap_err();
         assert!(err.message.contains("15"), "{}", err.message);
         assert_eq!(host.params_of("attach.agent_call").len(), calls);
+        assert_eq!(returns.child_routes(15).unwrap(), saved);
     };
-    // A 의 첫 턴이 끝나기 전에는 일반 셸도 B 도 거절된다.
-    busy(&shell);
-    busy(&b);
-    assert_eq!(
-        returns
-            .remote_receive(&host, &result("claude:r:t1", &route_a), &tr())
-            .unwrap()["status"],
-        json!("recorded")
-    );
-    crate::handlers::handle_tell(&returns, &host, &shell, &tr()).unwrap();
-    let route_shell = last_route(&host);
-    busy(&b);
-    assert_eq!(
-        returns
-            .remote_receive(&host, &result("claude:r:t2", &route_shell), &tr())
-            .unwrap()["status"],
-        json!("recorded")
-    );
-    crate::handlers::handle_tell(&returns, &host, &b, &tr()).unwrap();
-    let route_b = last_route(&host);
-    assert_ne!(route_a, route_b);
+    refused(&shell);
+    refused(&b);
     returns
-        .remote_receive(&host, &result("claude:r:t3", &route_b), &tr())
+        .remote_receive(&host, &result("claude:r:t1", &route_a), &tr())
+        .unwrap();
+    // 결과가 온 뒤에도 다른 부모는 거절된다.
+    refused(&shell);
+    refused(&b);
+    let a = json!({ "surface": 15, "message": "z",
+        "_tasty_context": { "provider": "codex", "thread_id": THREAD } });
+    crate::handlers::handle_tell(&returns, &host, &a, &tr()).unwrap();
+    let route_a2 = last_route(&host);
+    assert_ne!(route_a, route_a2);
+    returns
+        .remote_receive(&host, &result("claude:r:t2", &route_a2), &tr())
         .unwrap();
     let delivered = host.params_of("codex.deliver");
     let to: Vec<(&str, &str)> = delivered
@@ -1287,17 +1222,16 @@ fn an_order_from_another_parent_waits_for_the_open_turn_result() {
             )
         })
         .collect();
-    // 일반 셸의 턴 결과는 받을 곳이 없어 어느 대화에도 가지 않는다.
     assert_eq!(
         to,
-        vec![("r.claude:r:t1", RECEIVER), ("r.claude:r:t3", RECEIVER_B)]
+        vec![("r.claude:r:t1", RECEIVER), ("r.claude:r:t2", RECEIVER)]
     );
 }
 
-/// client: 일반 tell 의 조회 실패와 확정된 전송 실패는 Codex 부모의 경로를 바꾸지 않은 채로 끝난다. 결과불명이면 서버에서
-/// 실행됐을 수 있으므로 끊은 경로와 연 소유를 그대로 둔다.
+/// client: 일반 tell 의 조회 실패는 Codex 부모의 경로를 바꾸기 전에 끝난다. 소유 부모의 tell 이 확정 실패하면 경로를
+/// 되돌리고, 결과불명이면 서버에서 실행됐을 수 있으므로 새 경로를 그대로 둔다.
 #[test]
-fn a_failed_plain_tell_leaves_the_codex_route_as_it_was() {
+fn a_failed_tell_leaves_the_codex_route_as_it_was() {
     let (_d, returns) = store();
     let mode = std::rc::Rc::new(RefCell::new(""));
     let m = mode.clone();
@@ -1318,33 +1252,22 @@ fn a_failed_plain_tell_leaves_the_codex_route_as_it_was() {
         spawn_params(json!({ "_tasty_context": { "provider": "codex", "thread_id": THREAD } }));
     params.as_object_mut().unwrap().remove("surface");
     crate::handlers::handle_spawn(&scanner(), &returns, &host, &params, None, &tr()).unwrap();
-    let first = json!({ "surface_id": 15, "key": "claude:f:t1", "payload": { "completion": {
-        "completion_key": "claude:f:t1", "provider": "claude", "child_surface": 99,
-        "status": "turn_ended", "route": last_route(&host) } } });
-    returns.remote_receive(&host, &first, &tr()).unwrap();
+    // 끝난 경로로 둔다. 소유 부모의 tell 은 이 경로를 다시 열므로 되돌림을 관찰할 수 있다.
+    returns.observe("session-start", 15, Some("sA"), None);
+    returns.end_remote_child(15);
     let saved = returns.child_routes(15).unwrap();
+    *mode.borrow_mut() = "meta";
     let plain = json!({ "surface": 15, "message": "x", "caller_surface": 3 });
-    let tell = || crate::handlers::handle_tell(&returns, &host, &plain, &tr());
-    for failing in ["meta", "refused"] {
-        *mode.borrow_mut() = failing;
-        assert!(tell().is_err(), "{failing}");
-        assert_eq!(returns.child_routes(15).unwrap(), saved, "{failing}");
-    }
-    // 확정 실패는 소유도 되돌려 Codex 부모의 다음 지시를 막지 않는다.
-    *mode.borrow_mut() = "";
-    let codex = json!({ "surface": 15, "message": "y",
+    assert!(crate::handlers::handle_tell(&returns, &host, &plain, &tr()).is_err());
+    assert_eq!(returns.child_routes(15).unwrap(), saved);
+    let a = json!({ "surface": 15, "message": "y",
         "_tasty_context": { "provider": "codex", "thread_id": THREAD } });
-    crate::handlers::handle_tell(&returns, &host, &codex, &tr()).unwrap();
-    let next = json!({ "surface_id": 15, "key": "claude:f:t2", "payload": { "completion": {
-        "completion_key": "claude:f:t2", "provider": "claude", "child_surface": 99,
-        "status": "turn_ended", "route": last_route(&host) } } });
-    returns.remote_receive(&host, &next, &tr()).unwrap();
-    // 결과불명은 일반 tell 의 소유를 남긴다. Codex 부모는 그 결과가 올 때까지 거절된다.
+    *mode.borrow_mut() = "refused";
+    assert!(crate::handlers::handle_tell(&returns, &host, &a, &tr()).is_err());
+    assert_eq!(returns.child_routes(15).unwrap(), saved);
     *mode.borrow_mut() = "unknown";
-    assert!(tell().is_err());
+    assert!(crate::handlers::handle_tell(&returns, &host, &a, &tr()).is_err());
     assert_ne!(returns.child_routes(15).unwrap(), saved);
-    *mode.borrow_mut() = "";
-    assert!(crate::handlers::handle_tell(&returns, &host, &codex, &tr()).is_err());
 }
 
 /// 서버: Stop 때 그 턴의 토큰을 고정한다. claim 뒤 다른 지시가 경로를 새 토큰으로 묶어도 앞 턴의 결과는 앞 토큰을 싣는다.
