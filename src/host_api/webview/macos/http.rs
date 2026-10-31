@@ -17,9 +17,10 @@ use objc2_foundation::{
     NSURLCredentialPersistence, NSURLProtectionSpace, NSURLSessionAuthChallengeDisposition,
 };
 use objc2_web_kit::{
-    WKContentRuleList, WKContentRuleListStore, WKWebView, WKWebViewConfiguration,
-    WKWebsiteDataStore, WKWebsiteDataTypeDiskCache, WKWebsiteDataTypeFetchCache,
-    WKWebsiteDataTypeMemoryCache, WKWebsiteDataTypeServiceWorkerRegistrations,
+    WKContentRuleList, WKContentRuleListStore, WKUserScript, WKUserScriptInjectionTime, WKWebView,
+    WKWebViewConfiguration, WKWebsiteDataStore, WKWebsiteDataTypeDiskCache,
+    WKWebsiteDataTypeFetchCache, WKWebsiteDataTypeMemoryCache,
+    WKWebsiteDataTypeServiceWorkerRegistrations,
 };
 use sha2::{Digest, Sha256};
 use std::{
@@ -165,6 +166,24 @@ pub(super) struct HttpView {
     /// A load requested before the loopback rule was installed.
     deferred: Rc<RefCell<Option<String>>>,
 }
+/// Adds the WebRTC mitigation to every frame at document start, before the view exists.
+/// `addUserScript` reports no failure, so there is no error path to surface.
+fn mitigate_webrtc(config: &WKWebViewConfiguration, mtm: MainThreadMarker) {
+    let source = NSString::from_str(super::super::http_native::WEBRTC_MITIGATION);
+    // SAFETY: main thread; a fresh page-world script retained by the controller below.
+    let script = unsafe {
+        WKUserScript::initWithSource_injectionTime_forMainFrameOnly(
+            mtm.alloc(),
+            &source,
+            WKUserScriptInjectionTime::AtDocumentStart,
+            false,
+        )
+    };
+    // SAFETY: main thread WebKit property read on the configuration.
+    let controller = unsafe { config.userContentController() };
+    // SAFETY: main thread, before the view exists; the controller retains the script.
+    unsafe { controller.addUserScript(&script) };
+}
 impl HttpView {
     /// A private store whose every request goes through this document's endpoint.
     pub(super) fn configure(
@@ -183,6 +202,7 @@ impl HttpView {
             .configure(&store, port)?;
         // SAFETY: main thread, before the view exists; the configuration retains the store.
         unsafe { config.setWebsiteDataStore(&store) };
+        mitigate_webrtc(config, mtm);
         Ok(Self {
             document: Rc::new(document),
             store,

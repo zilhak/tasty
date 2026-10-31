@@ -1,5 +1,6 @@
 //! WebView2 context for a remote HTTP document. Every request goes through the document
-//! endpoint as an authenticated HTTP proxy, including loopback hosts; no direct route exists.
+//! endpoint as an authenticated HTTP proxy, including loopback hosts. WebRTC is the one direct
+//! path; `mitigate_webrtc` narrows it.
 use super::super::http_native::NativeDocument;
 use crate::app::http_session::HttpSession;
 use base64::Engine;
@@ -7,9 +8,9 @@ use sha2::{Digest, Sha256};
 use std::{ffi::c_void, rc::Weak};
 use tasty_remote::html_http_client::ReceiveState;
 use webview2_com::{
-    BasicAuthenticationRequestedEventHandler, ClearBrowsingDataCompletedHandler,
-    CoreWebView2EnvironmentOptions, Microsoft::Web::WebView2::Win32::*,
-    ServerCertificateErrorDetectedEventHandler,
+    AddScriptToExecuteOnDocumentCreatedCompletedHandler, BasicAuthenticationRequestedEventHandler,
+    ClearBrowsingDataCompletedHandler, CoreWebView2EnvironmentOptions,
+    Microsoft::Web::WebView2::Win32::*, ServerCertificateErrorDetectedEventHandler,
 };
 use windows::{Win32::System::Com::CoTaskMemFree, core::*};
 
@@ -52,6 +53,32 @@ impl HttpEnvironment {
             folder,
         })
     }
+}
+
+/// Registers the WebRTC mitigation for every frame before the first navigation. A refused
+/// registration fails view creation, so no remote document opens without the mitigation.
+fn mitigate_webrtc(webview: &ICoreWebView2) -> Result<()> {
+    let script: Vec<u16> = super::super::http_native::WEBRTC_MITIGATION
+        .encode_utf16()
+        .chain(Some(0))
+        .collect();
+    let (sender, receiver) = std::sync::mpsc::channel();
+    let handler =
+        AddScriptToExecuteOnDocumentCreatedCompletedHandler::create(Box::new(move |result, _| {
+            if sender.send(result).is_err() {
+                tracing::warn!("WebRTC mitigation registration result was dropped");
+            }
+            Ok(())
+        }));
+    // SAFETY: live WebView on its COM apartment thread; the buffer is NUL-terminated and
+    // outlives the call, which copies it.
+    unsafe { webview.AddScriptToExecuteOnDocumentCreated(PCWSTR(script.as_ptr()), &handler) }?;
+    webview2_com::wait_with_pump(receiver).map_err(|error| {
+        Error::new(
+            windows::Win32::Foundation::E_FAIL,
+            format!("WebRTC mitigation registration wait failed: {error:?}"),
+        )
+    })?
 }
 
 fn take_string(value: PWSTR) -> String {
@@ -137,6 +164,7 @@ pub(in crate::host_api::webview) fn install(
         settings4.SetIsPasswordAutosaveEnabled(false)?;
         settings4.SetIsGeneralAutofillEnabled(false)?;
     }
+    mitigate_webrtc(webview)?;
     super::entry_adapter::deny_new_windows(webview)
 }
 

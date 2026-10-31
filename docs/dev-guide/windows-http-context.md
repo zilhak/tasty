@@ -4,7 +4,8 @@ A Windows GUI client shows a remote HTTP(S) document in WebView2. Every request 
 that WebView reaches the document endpoint, which forwards it to the remote host
 as described in the [HTTP bridge](html-http-bridge.md). The client never connects
 to the logical target. WebRTC in a document whose scripts are allowed is the
-exception described under [Direct network paths](#direct-network-paths).
+exception, which the view only narrows, described under
+[Direct network paths](#direct-network-paths).
 
 ## Why an HTTP proxy front
 
@@ -101,13 +102,21 @@ successor binds it, the successor fails and the failure is shown.
 
 ## Direct network paths
 
-WebRTC and DNS prefetch do not use the proxy. WebView2 has no setting for either,
-and the view does not change them.
+WebRTC and DNS prefetch do not use the proxy, and WebView2 has no setting for
+either.
 
-- WebRTC stays available. A document whose scripts are allowed can gather ICE
-  candidates. Its STUN requests go over UDP from the client to any address the page
-  names, and a STUN server name is resolved by the client. A document whose
-  scripts are blocked cannot reach WebRTC.
+- Before the first navigation, the view registers one script with
+  `AddScriptToExecuteOnDocumentCreated`. It runs in every frame when its document
+  is created and deletes `RTCPeerConnection`, `webkitRTCPeerConnection`,
+  `RTCDataChannel`, `RTCSessionDescription` and `RTCIceCandidate`. If WebView2
+  refuses the registration, view creation fails with that error and no remote
+  document opens. Local and entry views do not get the script.
+- This is a mitigation of the measured paths, not a guarantee. Without it, a
+  document whose scripts are allowed sent STUN over UDP from the client to an
+  address the page named and resolved the STUN server name itself. With it, the
+  constructors were absent in the main frame, in a child frame from the document's
+  origin and in an `about:blank` frame the page created, and no STUN packet was
+  sent. Other ways to reach a constructor were not measured.
 - No DNS prefetch lookup was observed with the view's proxy arguments.
   `X-DNS-Prefetch-Control: off` did not stop a `dns-prefetch` link without a
   proxy, so the endpoint does not add it.
@@ -115,15 +124,11 @@ and the view does not change them.
   switch but not a documented WebView2 flag. It had no effect on STUN UDP, so the
   view does not pass it.
 
-A script added with `AddScriptToExecuteOnDocumentCreated` that deleted the
-WebRTC constructors stopped STUN traffic from the main frame and from a new
-`about:blank` frame. This would only reduce the exposure, since other ways to
-reach a constructor were not measured, and the view does not install it.
-
 These results come from a standalone WebView2 host with the same browser
-arguments and `webview2-com` binding, an unauthenticated local proxy, a UDP trap
-and the browser network log. It ran in the interactive session with a hidden
-window on runtime 156.0.4314.50. The Tasty client itself was not measured.
+arguments, the same `webview2-com` binding and the same script file. It used an
+unauthenticated local proxy, a UDP trap and the browser network log, and ran in
+the interactive session with a hidden window on runtime 156.0.4314.50. The Tasty
+client itself was not measured.
 
 ## Limits
 

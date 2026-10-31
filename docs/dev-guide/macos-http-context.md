@@ -4,8 +4,8 @@ A macOS GUI client on macOS 27 or later shows a remote HTTP(S) document in a
 WKWebView. Every request of that view reaches the document endpoint, which
 forwards it to the remote host as described in the [HTTP bridge](html-http-bridge.md).
 The client never connects to the logical target. WebRTC in a document whose
-scripts are allowed is the exception described under
-[Direct network paths](#direct-network-paths). macOS 11–13 have no per-store
+scripts are allowed is the exception, which the view only narrows, described
+under [Direct network paths](#direct-network-paths). macOS 11–13 have no per-store
 proxy configuration, so those clients do not advertise the HTTP viewer and keep
 the remote HTTP placeholder.
 
@@ -95,25 +95,33 @@ view.
 ## Direct network paths
 
 WebRTC and DNS prefetch do not follow `proxyConfigurations`. WebKit has no public
-setting for either apart from Lockdown Mode, and the view does not change them.
+setting for either apart from Lockdown Mode.
 
-- WebRTC stays available. A document whose scripts are allowed can gather ICE
-  candidates, and its STUN requests go over UDP from the client to any address the
-  page names. A document whose scripts are blocked cannot reach WebRTC.
+- Before the view exists, its configuration gets one `WKUserScript` at document
+  start for all frames. It deletes the same WebRTC constructors as on
+  [Windows](windows-http-context.md#direct-network-paths) from the same script
+  file. `addUserScript` reports no failure, so there is no error to surface. Local
+  and entry views do not get the script.
+- This is a mitigation of the measured paths, not a guarantee. Without it, a
+  document whose scripts are allowed sent STUN over UDP from the client to an
+  address the page named. With it, the constructors were absent in the main frame,
+  in a child frame from the document's origin and in an `about:blank` frame the
+  page created, and no STUN packet was sent. `WebAssembly`, CSS and images were
+  unchanged. Other ways to reach a constructor were not measured.
 - No DNS prefetch lookup was observed with the per-store proxy.
   `X-DNS-Prefetch-Control: off` did not stop a `dns-prefetch` link without a
   proxy, so the endpoint does not add it.
-- `WKWebpagePreferences.lockdownModeEnabled` removed `RTCPeerConnection` and
-  stopped the STUN traffic, but it also removed `WebAssembly`. The header does not
-  say it affects WebRTC, and other changes such as fonts and JIT were not
-  measured, so the view does not enable it.
+- `WKWebpagePreferences.lockdownModeEnabled` also removed `RTCPeerConnection`,
+  but it removed `WebAssembly` too. The header does not say it affects WebRTC,
+  and other changes such as fonts and JIT were not measured, so the view does not
+  enable it.
 
-These results come from a standalone WKWebView with a nonpersistent store and the
-same single HTTP CONNECT proxy configuration on macOS 27.2. A UDP trap counted STUN
-packets and a multicast DNS listener counted system resolver lookups of `.local`
-names. Whether STUN server names are resolved was not determined, because no
-control showed that this listener sees WebRTC's own lookups. The Tasty client
-itself was not measured.
+These results come from a standalone WKWebView with a nonpersistent store, the
+same single HTTP CONNECT proxy configuration and the same script file on macOS
+27.2. A UDP trap counted STUN packets and a multicast DNS listener counted system
+resolver lookups of `.local` names. Whether STUN server names are resolved
+without the script was not determined, because no control showed that this
+listener sees WebRTC's own lookups. The Tasty client itself was not measured.
 
 ## Measured behaviour
 

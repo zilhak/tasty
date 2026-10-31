@@ -7,6 +7,12 @@ use std::{
     sync::{Arc, Weak},
 };
 
+/// Page-world script that every frame of a remote HTTP view runs when its document is created.
+/// WebRTC sends STUN over UDP from the client and neither engine has a setting that keeps it on
+/// the proxy, so the script deletes the WebRTC constructors. This narrows the measured paths; it
+/// is not a guarantee. Contract: `docs/design/systems/webview.md`.
+pub(crate) const WEBRTC_MITIGATION: &str = include_str!("webrtc_mitigation.js");
+
 pub(crate) struct PendingNative {
     session: Arc<HttpSession>,
 }
