@@ -735,6 +735,19 @@ plugin CLI 의 `path_kind` 인자는 보통 CLI 가 자기 디렉터리 기준 �
 - 재연결은 같은 컴퓨터의 두 인스턴스 사이에 둔 TCP 중계를 끊었다 같은 주소로 되살려 확인했다(Linux). 끊긴 동안 `liveness: unknown`, 그동안 서버에 쌓인 통지는 복구 뒤 한 번만 기록됐고 자식 매핑은 그대로였다. SSH 터널 경유와 force-detach 뒤 재연결은 실제 실행으로 확인하지 않았다.
 - 구 서버에 대한 거절은 capability 판정과 plugin 단위 시험으로 확인했고, 구 버전 서버 실제 실행으로는 확인하지 않았다.
 
+## mirror 터미널 읽기 (`ipc.stream.terminal-read`)
+
+mirror 터미널은 attach snapshot(보이는 화면·커서·주요 모드)과 그 뒤의 출력으로 화면을 다시 만든다. 보이는 화면은 원본과 같지만 그 출력 보관 버퍼는 원본이 아니다. attach 이전 원문과 scrollback 이 없고, 버퍼 앞에는 합성 snapshot 바이트가 있으며, 손실(`Loss`) 뒤 재동기화로 버린 원문은 `skipped` 에 남지 않는다. 그래서 client 는 mirror 터미널의 `surface.screen_text`·`surface.read_since_mark`·`surface.set_mark` 를 holder 연결로 서버 원본에 보낸다. 시험 `tasty-terminal` 의 `a_mirror_matches_the_visible_screen_but_not_the_output_ring_or_scrollback` 가 이 차이를 고정한다.
+
+- **capability**: 서버는 workspace attach descriptor 의 `stream_capabilities` 에 `ipc.stream.terminal-read` 를 싣는다. 없는 구 서버의 mirror 에서 세 메서드는 로컬 사본으로 답하지 않고 `-32000`·`data.reason: "remote_read_unsupported"` 로 답한다. 연결이 Connected 가 아니면 `remote_disconnected` 다. mirror 가 아닌 surface 와 헤드리스 인스턴스는 기존 로컬 경로 그대로다.
+- **wire**: client → 서버 `terminal_read_request{request_id, surface_id(원격), op}`, 서버 → client `terminal_read_result{request_id, outcome}`(`crates/tasty-ipc/src/terminal_read.rs`). op 는 `screen_text{lines?, show_dim}`·`output{from, max_bytes?, strip_ansi}`·`position` 이다. `from` 은 `cursor{cursor, stream}` 또는 `start` 이며 서버의 공유 마크는 읽지도 바꾸지도 않는다. 결과는 로컬 IPC 응답과 같은 `result` 또는 `code`·`message`·`data(reason)` 다.
+- **대상 검사**: 서버(`src/remote/terminal_read.rs`)는 GUI 의 창·parked engine 과 헤드리스 engine 중 그 터미널이 있는 engine 을 먼저 찾고, 요청 연결이 그 터미널의 hard lock holder 일 때만 읽는다. 다른 workspace 를 점유했다는 사실만으로는 읽지 않는다(`not_attached`). 어느 engine 에도 터미널이 없으면 `no_terminal` 이다.
+- **추출**: 화면은 `surface.screen_text` 핸들러, 원문은 `surface.read_since_mark` 와 같은 `read_output_response` 를 서버 터미널에 실행한다. 그래서 `dim_omitted_rows`·`scrollback_len`·`alt_screen`·`stream`·`retention_*`·`skipped`·오류 reason 이 원본 값이다.
+- **프레임 크기**: 결과 한 프레임의 JSON 은 `MAX_FRAME_LEN`(1 MiB)의 절반 이하로 둔다. 원문은 제어 문자가 JSON 에서 최대 6바이트가 되므로 서버가 한 번에 읽는 원문을 256 KiB 이하로 줄이고, 그래도 넘으면 절반씩 줄여 다시 읽는다. 줄인 만큼은 `next_cursor < retention_end` 로 남으므로 기존처럼 `next_cursor` 로 이어 읽는다. 화면 읽기가 넘으면 줄 수를 몰래 줄이지 않고 `too_large` 로 거절한다.
+- **client 대기**(`src/remote/terminal_read/client.rs`): 핸들러는 요청을 넣고 `attach.agent_call` 처럼 응답을 미룬다(상한 10초, 넘으면 `remote_timeout`). 메인 루프의 `about_to_wait` 와 attach 출력 처리가 `pump_terminal_reads` 로 세션 상태를 알리고 요청을 보낸다. 요청은 보낸 연결 세대(`ConnectionEpoch`)를 기록하며 다른 세대로 온 결과는 버린다. 세션이 Connected 가 아니게 되거나 세대가 바뀌면 대기 읽기는 `remote_disconnected` 로 끝난다. 응답의 `surface_id` 는 로컬 mirror id 로 바꾸고 `remote_surface_id`·`remote: true` 를 붙인다.
+- **mirror 마크**: client 는 (mirror workspace, 원격 surface) 마다 서버 stream·위치를 보관한다. `set_mark` 는 서버에 `position` 을 묻고, 답을 받은 뒤 로컬 마크(로컬 `parse_since_mark` 용)와 mirror 마크를 함께 바꾼다. 실패하면 둘 다 그대로다. cursor 없는 `read_since_mark` 는 mirror 마크부터, 마크가 없으면 서버 보관 시작부터 읽는다(잃은 앞부분은 `skipped`). 마크의 stream 이 서버와 다르면(서버 터미널 교체) 처음부터 조용히 읽지 않고 `stream_mismatch` 로 답하며 마크를 지우고 set mark 를 다시 하라고 알린다. 호출자가 준 cursor 의 오류는 바꾸지 않고 그대로 전달한다.
+- **범위 밖**: `parse_since_mark`·`read_since_scan_mark`·명령 인덱스·output observe 는 mirror 에서 로컬 사본 기준이다. 화면 렌더도 스트림 재구성이다.
+
 ## IPC 표면 (`attach.*`)
 
 `src/adapters/ipc/handler/attach.rs`.

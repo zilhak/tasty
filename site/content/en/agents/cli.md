@@ -1,4 +1,4 @@
-<!-- source-hash: 2e4dafdccca5 -->
+<!-- source-hash: 120883690f82 -->
 # Driving terminals with the tasty CLI
 
 Use the `tasty` CLI to create terminals, send commands, and read results. Control a running Tasty from a script, or let an AI agent set up the terminals it needs. Agents such as Claude Code and Codex use the same commands.
@@ -111,6 +111,8 @@ tasty is-typing --surface 42                  # whether a person pressed a key o
 ```
 
 By default, `read screen` excludes dimmed autocomplete suggestions (for example Claude Code's grey suggestion text). Use `--show-dim` to include them. This applies to every dimmed character, not only suggestions. If `dim_omitted_rows` in the response is greater than 0, some rows changed because dimmed text was left out, so read again with `--show-dim` and compare.
+
+On a mirror terminal opened through a remote connection (attach), `read screen`, `read since-mark` and `set mark` read the original terminal on the remote computer. One response may carry less output, so continue with `next_cursor` from the response. If the remote Tasty does not support this or the connection is down, the command answers with an error; update the remote Tasty to the same version or read again after it reconnects.
 
 If `--lines N` returns fewer lines than requested, check `scrollback_len` in the response. A value of `0` means there is no more scrollback to read, which can happen when you first open a full-screen app (TUI). If scrollback remains but the requested lines are missing, check the output query. `alt_screen` tells you whether a full-screen app is in use.
 

@@ -41,8 +41,18 @@ pub(crate) fn handle_read_since_mark(
         Ok(v) => v,
         Err(e) => return *e,
     };
+    read_output_response(engine, id, surface_id, &req, continuing)
+}
 
-    match engine.read_output(surface_id, &req) {
+/// 원문 조회 한 번의 응답. attach holder 의 원본 읽기(`crate::remote::terminal_read`)도 같은 응답을 쓴다.
+pub(crate) fn read_output_response(
+    engine: &mut EngineMut<'_>,
+    id: serde_json::Value,
+    surface_id: u32,
+    req: &tasty_terminal::OutputReadRequest,
+    continuing: bool,
+) -> JsonRpcResponse {
+    match engine.read_output(surface_id, req) {
         Some(Ok(read)) => answered(id, surface_id, read),
         Some(Err(tasty_terminal::OutputReadError::StreamMismatch { expected, actual })) => refused(
             id,
@@ -107,14 +117,14 @@ fn answered(
 }
 
 /// GUI와 헤드리스가 공유하는 원문 출력 조회 인자.
-struct OutputReadParams {
-    req: tasty_terminal::OutputReadRequest,
+pub(super) struct OutputReadParams {
+    pub(super) req: tasty_terminal::OutputReadRequest,
     /// cursor/stream 중 하나라도 지정했는지. 터미널이 없으면 이어 읽기를 거절한다.
-    continuing: bool,
+    pub(super) continuing: bool,
 }
 
 impl OutputReadParams {
-    fn parse(
+    pub(super) fn parse(
         params: &serde_json::Value,
         id: &serde_json::Value,
     ) -> Result<Self, Box<JsonRpcResponse>> {

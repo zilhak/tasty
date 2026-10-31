@@ -158,7 +158,7 @@ impl OccupancyRegistry {
         self.soft.remove(&surface_id).is_some()
     }
 
-    #[cfg(test)]
+    /// 터미널 surface 의 hard lock holder. 원본 터미널 읽기(`crate::remote::terminal_read`)의 대상 검사다.
     pub fn holder(&self, surface_id: SurfaceId) -> Option<AttachClientId> {
         self.surface_locks.get(&surface_id).map(|l| l.holder)
     }

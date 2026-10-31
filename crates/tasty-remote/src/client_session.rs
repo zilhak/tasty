@@ -105,6 +105,11 @@ pub enum MirrorEvent {
     ExplorerOp(Value),
     /// 원격 자식 에이전트의 출처 확인·실행 결과·완료 통지. 부모 registry 를 가진 호스트가 처리한다.
     AgentChild(tasty_ipc::agent_child::AgentServerMsg),
+    /// holder 가 요청한 원본 터미널 읽기의 결과. 대기 응답을 가진 호스트가 연결 세대를 확인해 적용한다.
+    TerminalRead {
+        request_id: u64,
+        outcome: tasty_ipc::terminal_read::ReadOutcome,
+    },
     Html(tasty_ipc::html_transfer::HtmlReply),
     Http(tasty_ipc::html_http::HttpReply),
     /// 서버 전송 손실. 데이터가 연속이라는 가정을 버리고 재동기화를 요청한다.
@@ -316,6 +321,8 @@ pub struct ClientTransport {
     pub workspace_close: bool,
     /// 서버가 원격 자식 에이전트 요청과 완료 통지를 받는다. 구 서버 descriptor 에는 이 기능이 없다.
     pub agent_children: bool,
+    /// 서버가 holder 의 원본 터미널 읽기를 받는다. 구 서버 descriptor 에는 이 기능이 없다.
+    pub terminal_read: bool,
     /// 이 연결로 출처 hello 를 보냈다. 재연결하면 새 transport 라 다시 보낸다.
     pub agent_hello_sent: bool,
     /// 받은 원격 explorer 작업 통지. 작업 상태를 가진 App 이 도착 순서대로 꺼낸다.
@@ -481,6 +488,9 @@ impl MirrorEvent {
                 .saturating_add(text(image_reason)),
             Self::ExplorerOp(value) => json(value),
             Self::AgentChild(msg) => serde_json::to_value(msg).map_or(0, |value| json(&value)),
+            Self::TerminalRead { outcome, .. } => {
+                serde_json::to_value(outcome).map_or(0, |value| json(&value))
+            }
             Self::Html(reply) => reply.retained_bytes(),
             Self::Http(reply) => reply.retained_bytes(),
             Self::ListDirResult {

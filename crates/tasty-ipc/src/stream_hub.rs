@@ -88,6 +88,8 @@ pub struct PumpOutcome {
     pub explorer_ops: Vec<(StreamClientId, crate::explorer_op::ExplorerOpMsg)>,
     /// 원격 자식 에이전트의 출처 선언·실행 요청·통지 응답. 별도의 event 태그를 가진 Control JSON이다.
     pub agent_children: Vec<(StreamClientId, crate::agent_child::AgentClientMsg)>,
+    /// holder 의 원본 터미널 읽기. 별도의 event 태그를 가진 Control JSON이다.
+    pub terminal_reads: Vec<(StreamClientId, crate::terminal_read::TerminalReadMsg)>,
     /// bulk begin·chunk·commit을 도착 순서대로 보관한다. 태그별로 나누면 같은 배치의
     /// chunk를 begin보다 먼저 처리할 수 있다. 결속 workspace는 연결의 bulk_workspace에서 찾는다.
     pub bulk_events: Vec<(StreamClientId, BulkEvent)>,
@@ -844,6 +846,10 @@ impl StreamHub {
             serde_json::from_slice::<crate::agent_child::AgentClientMsg>(payload)
         {
             out.agent_children.push((client_id, msg));
+        } else if let Ok(msg) =
+            serde_json::from_slice::<crate::terminal_read::TerminalReadMsg>(payload)
+        {
+            out.terminal_reads.push((client_id, msg));
         }
     }
 }
@@ -1867,6 +1873,27 @@ mod tests {
         assert!(out.structural_ops.is_empty());
         assert!(out.resize_requests.is_empty());
         assert!(out.input_events.is_empty());
+    }
+
+    #[test]
+    fn pump_inbound_classifies_terminal_read_request() {
+        use crate::terminal_read::{ReadOp, TerminalReadMsg};
+        let hub = StreamHub::new();
+        let (tx, inbound_rx) = mpsc::channel();
+        let req = TerminalReadMsg::TerminalReadRequest {
+            request_id: 4,
+            surface_id: 42,
+            op: ReadOp::Position,
+        };
+        tx.send(StreamInbound::Frame {
+            client_id: 3,
+            frame: frame(StreamTag::Control, &serde_json::to_vec(&req).unwrap()),
+        })
+        .unwrap();
+        let out = hub.pump_inbound(&inbound_rx);
+        assert_eq!(out.terminal_reads, vec![(3, req)]);
+        assert!(out.git_query_requests.is_empty());
+        assert!(out.agent_children.is_empty());
     }
 
     #[test]

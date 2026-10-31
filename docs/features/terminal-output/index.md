@@ -42,6 +42,14 @@
 독립적인 이어 읽기의 선택 근거는 출력 위치 조회,
 사건에 같은 방식을 적용한 근거는 [이벤트 피드](../../reference/event-catalog.md)에 있다.
 
+### attach mirror 에서 읽기
+
+attach mirror 터미널의 출력 보관 버퍼는 attach 화면으로 다시 만든 사본이라 attach 이전 원문이 없고 유실을 `skipped` 로 알리지 못한다.
+그래서 mirror 의 `read since-mark`·`set mark`·`read screen` 은 서버 원본 터미널을 읽는다. stream·cursor·보존 범위·`skipped` 는 서버 값이다.
+mirror 의 마크는 client 가 보관하므로 서버 쪽 다른 소비자의 공유 마크를 바꾸지 않는다. 서버 터미널이 바뀌어 마크의 stream 이 맞지 않으면 `stream_mismatch` 로 거절하고 set mark 를 다시 하라고 알린다.
+서버가 이 기능을 지원하지 않거나 연결이 끊긴 동안은 로컬 사본으로 답하지 않고 오류로 답한다. `parse_since_mark`·스캐너 커서·명령 인덱스는 mirror 의 로컬 사본 기준이다.
+전송 계약은 [Attach 메커니즘](../../dev-guide/attach-behavior.md#mirror-터미널-읽기-ipcstreamterminal-read)에 있다.
+
 ### 출력 스캐너 전용 커서
 
 `surface.read_since_scan_mark`는 TerminalRead 권한으로 읽고 커서를 전진시킨다.

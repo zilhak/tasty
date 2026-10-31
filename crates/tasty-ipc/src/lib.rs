@@ -27,5 +27,6 @@ pub mod server;
 pub mod session;
 pub mod stream;
 pub mod stream_hub;
+pub mod terminal_read;
 
 pub use host_port::{AuditCallerMarker, AuditDecision, IpcHostFacade, SessionResolution};

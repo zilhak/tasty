@@ -68,7 +68,22 @@ pub(super) fn mirror_event_from_control(payload: &[u8]) -> Option<MirrorEvent> {
                 serde_json::from_slice::<tasty_ipc::agent_child::AgentServerMsg>(payload)
                     .ok()
                     .map(MirrorEvent::AgentChild)
-            }),
+            })
+            .or_else(|| parse_terminal_read_result(payload)),
+    }
+}
+
+fn parse_terminal_read_result(payload: &[u8]) -> Option<MirrorEvent> {
+    use tasty_ipc::terminal_read::TerminalReadMsg;
+    match serde_json::from_slice::<TerminalReadMsg>(payload).ok()? {
+        TerminalReadMsg::TerminalReadResult {
+            request_id,
+            outcome,
+        } => Some(MirrorEvent::TerminalRead {
+            request_id,
+            outcome,
+        }),
+        TerminalReadMsg::TerminalReadRequest { .. } => None,
     }
 }
 

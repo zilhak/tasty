@@ -14,6 +14,7 @@ mod kinds;
 mod list;
 mod mark;
 pub(crate) mod query;
+pub(crate) mod remote_read;
 mod send;
 
 pub(crate) use attention::{handle_attention_clear, handle_attention_get};
@@ -30,6 +31,7 @@ pub(crate) use kinds::handle_surface_kinds;
 pub(crate) use list::handle_surface_list;
 pub(crate) use mark::{
     handle_parse_since_mark, handle_read_since_mark, handle_read_since_scan_mark, handle_set_mark,
+    read_output_response,
 };
 pub(crate) use query::{
     handle_cursor_position, handle_foreground_process, handle_mouse_tracking, handle_screen_text,

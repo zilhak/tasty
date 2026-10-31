@@ -295,6 +295,12 @@ fn apply_file_requests(app: &mut App, engine: &mut EngineMut<'_>, outcome: &mut 
             &dir,
         );
     }
+    for (client_id, msg) in std::mem::take(&mut outcome.terminal_reads) {
+        use crate::remote::terminal_read as reads;
+        if !reads::handle(engine, &app.stream_hub, client_id, &msg) {
+            reads::reply_missing(&app.stream_hub, client_id, &msg);
+        }
+    }
     for (client_id, msg) in std::mem::take(&mut outcome.git_query_requests) {
         use tasty_ipc::stream_hub::GitQueryRequestMsg;
         let GitQueryRequestMsg::GitQueryRequest {

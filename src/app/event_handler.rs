@@ -535,6 +535,7 @@ impl ApplicationHandler<AppEvent> for App {
         self.dispatch_pending_list_dir_forwards();
         self.dispatch_pending_git_query_forwards();
         self.dispatch_pending_markdown_content_forwards();
+        self.pump_terminal_reads();
         self.dispatch_pending_mesh_full_resend_forwards();
         self.dispatch_pending_attention_clear_forwards();
 
@@ -1523,6 +1524,12 @@ impl App {
         }
         for (client_id, msg) in outcome.markdown_content_requests.drain(..) {
             self.apply_markdown_content_request_msg(client_id, msg, hub);
+        }
+        for (client_id, msg) in outcome.terminal_reads.drain(..) {
+            use crate::remote::terminal_read as reads;
+            if !self.any_engine(|engine| reads::handle(engine, hub, client_id, &msg)) {
+                reads::reply_missing(hub, client_id, &msg);
+            }
         }
         // begin보다 chunk가 먼저 처리되지 않도록 bulk 이벤트는 도착 순서를 유지한다.
         for (client_id, event) in outcome.bulk_events.drain(..) {

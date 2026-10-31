@@ -100,6 +100,7 @@ pub(crate) fn test_session_with_frames(
             explorer_write: true,
             workspace_close: true,
             agent_children: true,
+            terminal_read: true,
             agent_hello_sent: false,
             explorer_inbox: Vec::new(),
             html: Default::default(),

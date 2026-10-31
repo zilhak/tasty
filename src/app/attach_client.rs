@@ -17,6 +17,7 @@ mod projection;
 mod resize_sync;
 mod resources;
 mod survivors;
+mod terminal_read;
 mod user_waits;
 mod wire;
 pub(crate) mod workspace_close;

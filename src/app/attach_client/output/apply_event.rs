@@ -159,6 +159,14 @@ pub(super) fn apply_one_mirror_event(
         MirrorEvent::AgentChild(msg) => {
             crate::remote::agent_children::client_receive(sess.state.local_workspace, msg)
         }
+        MirrorEvent::TerminalRead {
+            request_id,
+            outcome,
+        } => crate::remote::terminal_read::client::receive(
+            &sess.transport.frame_tx.epoch(),
+            request_id,
+            outcome,
+        ),
         MirrorEvent::CaptureResult {
             upload_id,
             ok,

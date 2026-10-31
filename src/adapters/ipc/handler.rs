@@ -603,7 +603,9 @@ fn route_engine_handler(
             surface::handle_surface_send_combo(core, engine, id, &request.params)
         }
         "surface.send_to" => surface::handle_surface_send_to(core, engine, id, &request.params),
-        "surface.set_mark" => surface::handle_set_mark(out, engine, id, &request.params),
+        "surface.set_mark" => {
+            surface::remote_read::set_mark(core, out, engine, id, &request.params)
+        }
         "surface.completion" => surface::handle_completion(out, engine, id, &request.params),
         "surface.attention.get" => {
             surface::handle_attention_get(&engine.as_ref(), id, &request.params)
@@ -611,7 +613,9 @@ fn route_engine_handler(
         "surface.attention.clear" => {
             surface::handle_attention_clear(out, engine, id, &request.params)
         }
-        "surface.read_since_mark" => surface::handle_read_since_mark(engine, id, &request.params),
+        "surface.read_since_mark" => {
+            surface::remote_read::read_since_mark(core, engine, id, &request.params)
+        }
         "surface.read_since_scan_mark" => {
             surface::handle_read_since_scan_mark(engine, id, &request.params)
         }
@@ -625,7 +629,9 @@ fn route_engine_handler(
         "output.observe_info" => {
             output::handle_observe_info(core, &engine.as_ref(), id, &request.params)
         }
-        "surface.screen_text" => surface::handle_screen_text(&engine.as_ref(), id, &request.params),
+        "surface.screen_text" => {
+            surface::remote_read::screen_text(core, engine, id, &request.params)
+        }
         "surface.cursor_position" => {
             surface::handle_cursor_position(&engine.as_ref(), id, &request.params)
         }
