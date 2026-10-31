@@ -72,7 +72,7 @@ Linux는 이 모드마다 별도 ephemeral `WebContext`에 `tasty-html-entry` sc
 
 ## 원격 HTTP 직접 경로
 
-원격 HTTP(S) 문서 view의 HTTP 요청은 모두 문서 endpoint를 거친다. proxy 설정 밖으로 나갈 수 있는 WebRTC(ICE UDP)와 DNS prefetch(client resolver 조회)는 OS별로 다음과 같이 다룬다. Linux는 HTTP view와 TLS 확인용 보조 view에 WebRTC·media stream·DNS prefetch 끄기를 명시한다. hyperlink auditing은 proxy를 거치는 요청이라 HTTP view에서는 끄지 않는다. 실측 범위는 [HTTP bridge](../../dev-guide/html-http-bridge.md#linux-native-context-component)에 있다. Windows와 macOS의 차단 수단은 아직 정해지지 않았다.
+원격 HTTP(S) 문서 view의 HTTP 요청은 모두 문서 endpoint를 거친다. proxy 설정 밖으로 나갈 수 있는 WebRTC(ICE UDP)와 DNS prefetch(client resolver 조회)는 OS별로 다음과 같이 다룬다. Linux는 HTTP view와 TLS 확인용 보조 view에 WebRTC·media stream·DNS prefetch 끄기를 명시한다. hyperlink auditing은 proxy를 거치는 요청이라 HTTP view에서는 끄지 않는다. 실측 범위는 [HTTP bridge](../../dev-guide/html-http-bridge.md#linux-native-context-component)에 있다. Windows(WebView2)와 macOS(WKWebView)는 두 기능을 끄는 설정이 없어 바꾸지 않는다. proxy를 지정한 두 view에서는 DNS prefetch 조회가 관측되지 않았다. WebRTC는 스크립트를 허용한 문서에서 client가 직접 STUN UDP를 보낼 수 있는 잔여 경로로 남는다. 근거와 측정 범위는 [Windows HTTP context](../../dev-guide/windows-http-context.md#direct-network-paths)와 [macOS HTTP context](../../dev-guide/macos-http-context.md#direct-network-paths)에 있다.
 
 ## macOS HTTP context
 

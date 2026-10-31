@@ -3,7 +3,8 @@
 A Windows GUI client shows a remote HTTP(S) document in WebView2. Every request of
 that WebView reaches the document endpoint, which forwards it to the remote host
 as described in the [HTTP bridge](html-http-bridge.md). The client never connects
-to the logical target.
+to the logical target. WebRTC in a document whose scripts are allowed is the
+exception described under [Direct network paths](#direct-network-paths).
 
 ## Why an HTTP proxy front
 
@@ -97,6 +98,32 @@ one whose first load failed or whose peer did not negotiate Reload, is replaced
 by a new view instead. That view requests the entry URL with GET and starts
 without the previous cookies. If another process takes the port before the
 successor binds it, the successor fails and the failure is shown.
+
+## Direct network paths
+
+WebRTC and DNS prefetch do not use the proxy. WebView2 has no setting for either,
+and the view does not change them.
+
+- WebRTC stays available. A document whose scripts are allowed can gather ICE
+  candidates. Its STUN requests go over UDP from the client to any address the page
+  names, and a STUN server name is resolved by the client. A document whose
+  scripts are blocked cannot reach WebRTC.
+- No DNS prefetch lookup was observed with the view's proxy arguments.
+  `X-DNS-Prefetch-Control: off` did not stop a `dns-prefetch` link without a
+  proxy, so the endpoint does not add it.
+- `--force-webrtc-ip-handling-policy=disable_non_proxied_udp` is a Chromium
+  switch but not a documented WebView2 flag. It had no effect on STUN UDP, so the
+  view does not pass it.
+
+A script added with `AddScriptToExecuteOnDocumentCreated` that deleted the
+WebRTC constructors stopped STUN traffic from the main frame and from a new
+`about:blank` frame. This would only reduce the exposure, since other ways to
+reach a constructor were not measured, and the view does not install it.
+
+These results come from a standalone WebView2 host with the same browser
+arguments and `webview2-com` binding, an unauthenticated local proxy, a UDP trap
+and the browser network log. It ran in the interactive session with a hidden
+window on runtime 156.0.4314.50. The Tasty client itself was not measured.
 
 ## Limits
 

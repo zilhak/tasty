@@ -3,7 +3,9 @@
 A macOS GUI client on macOS 27 or later shows a remote HTTP(S) document in a
 WKWebView. Every request of that view reaches the document endpoint, which
 forwards it to the remote host as described in the [HTTP bridge](html-http-bridge.md).
-The client never connects to the logical target. macOS 11–13 have no per-store
+The client never connects to the logical target. WebRTC in a document whose
+scripts are allowed is the exception described under
+[Direct network paths](#direct-network-paths). macOS 11–13 have no per-store
 proxy configuration, so those clients do not advertise the HTTP viewer and keep
 the remote HTTP placeholder.
 
@@ -89,6 +91,29 @@ clears the disk, memory and fetch caches and service-worker registrations, keeps
 cookies, and calls `reload`, which resends the current entry with its original
 method, body and cookies. A document without a Reload receipt is replaced by a new
 view.
+
+## Direct network paths
+
+WebRTC and DNS prefetch do not follow `proxyConfigurations`. WebKit has no public
+setting for either apart from Lockdown Mode, and the view does not change them.
+
+- WebRTC stays available. A document whose scripts are allowed can gather ICE
+  candidates, and its STUN requests go over UDP from the client to any address the
+  page names. A document whose scripts are blocked cannot reach WebRTC.
+- No DNS prefetch lookup was observed with the per-store proxy.
+  `X-DNS-Prefetch-Control: off` did not stop a `dns-prefetch` link without a
+  proxy, so the endpoint does not add it.
+- `WKWebpagePreferences.lockdownModeEnabled` removed `RTCPeerConnection` and
+  stopped the STUN traffic, but it also removed `WebAssembly`. The header does not
+  say it affects WebRTC, and other changes such as fonts and JIT were not
+  measured, so the view does not enable it.
+
+These results come from a standalone WKWebView with a nonpersistent store and the
+same single HTTP CONNECT proxy configuration on macOS 27.2. A UDP trap counted STUN
+packets and a multicast DNS listener counted system resolver lookups of `.local`
+names. Whether STUN server names are resolved was not determined, because no
+control showed that this listener sees WebRTC's own lookups. The Tasty client
+itself was not measured.
 
 ## Measured behaviour
 
