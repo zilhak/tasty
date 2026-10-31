@@ -104,6 +104,23 @@ pub(in crate::app::attach_client) fn synchronize(
                 return true;
             }
         }
+        for old in mirror.take_retries() {
+            let Some(id) = sess
+                .transport
+                .html
+                .entry_id(remote, mirror.binding, mirror.generation)
+            else {
+                mirror.disconnect();
+                return true;
+            };
+            if let Some(request) = mirror.bind_retry(old, id)
+                && !send(sess, request)
+            {
+                mirror.disconnect();
+                return true;
+            }
+            changed = true;
+        }
         if mirror.needs_request() {
             let Some(id) = sess
                 .transport

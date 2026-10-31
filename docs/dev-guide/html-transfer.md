@@ -18,7 +18,7 @@ wire DTO는 `crates/tasty-ipc/src/html_transfer.rs`에 있다. 모든 요청/응
 
 1. `html_entry_request`는 서버 surface ID와 transfer identity를 받는다. client가 파일 경로를 지정하는 필드는 없다. 서버가 현재 HTML source를 결정한다.
 2. worker가 정규 파일 여부·크기·root를 열린 handle로 확인하고 `html_metadata`를 보낸다. metadata에는 typed source, source generation, root, cwd, size, regular가 있다. HTTP source는 regular=false metadata 뒤 proxy 미지원 실패로 끝나며 HTTP 실행이나 client network fallback이 없다. 파일 종류·경로 확인 실패는 oversized로 분류하지 않는다.
-3. `html_read`는 정확한 다음 raw offset과 allowance를 보낸다. 100000 bytes 이하는 별도 크기 허용 없이 credit을 발급한다. 초과 파일은 metadata 뒤 Allow를 기다린다. Decline은 cancel이다. 처음 보낼 때도 metadata와 body를 분리한다.
+3. `html_read`는 정확한 다음 raw offset과 allowance를 보낸다. 100000 bytes 이하는 별도 크기 허용 없이 credit을 발급한다. 초과 파일은 metadata 뒤 Allow를 기다린다. 살아 있는 transfer의 Decline은 cancel이다. 처음 보낼 때도 metadata와 body를 분리한다.
 4. credit 하나는 최대 48KiB raw bytes의 base64 `html_chunk` 하나를 허용한다. 마지막 chunk 뒤 `html_complete`가 온다. 빈 파일은 credit 뒤 complete만 온다. 큰 본문 전체를 JSON 하나로 만들지 않는다.
 5. `html_cancel`, source 교체·surface 수명 종료·connection retirement·30초 credit 무응답은 worker의 handle과 buffer를 해제한다. 취소는 credit queue를 기다리지 않고 atomic 표지를 설정한다. 명시적 취소는 `html_cancelled`, 파일 판 변경이나 timeout은 `html_failure`다. 끊긴 registration에 대한 응답을 새 registration으로 넘기지 않는다.
 
@@ -57,7 +57,7 @@ completed body만 `Resource::body`로 제공한다. 완료 시 수신 buffer의 
 
 `HtmlMirror`는 연결 epoch와 surface binding마다 문서 세대를 소유한다. 새 Reload는 기존 scan을 취소하고 body store를 비운 뒤 단조 증가하는 request/transfer로 entry를 다시 요청한다. script Allow는 네트워크 요청 없이 검사가 끝난 같은 공유 body를 사용한다. 응답은 source generation도 보존한다. 검사 worker는 취소를 읽기 경계에서 확인하며, 취소·문서 교체·연결 종료 뒤 늦은 결과는 게시할 수 없다.
 
-서버의 metadata 이후 30초 credit timeout은 사용자 크기 질문 중에도 흐른다. 시간이 지나 failure를 받으면 질문과 receiving을 끝내고, 늦은 Allow는 credit을 발급하지 않는다. Reload만 새 요청을 만들며 이전 크기 허용·누적량·skipped를 초기화한다. entry Decline은 취소와 skipped를 기록하고 본문 없는 종료 상태가 된다. 연결이 끊기면 미완성 수신을 취소하고 이미 완료한 본문은 보존한다.
+서버의 metadata 이후 30초 credit timeout은 사용자 크기 질문 중에도 흐르며, 서버는 그때 worker와 file handle을 반납한다. 동작이 있는 배너는 시간 경과만으로 사라지지 않으므로([배너의 자동 닫힘](../principles/feedback-and-recovery.md#배너의-생명주기와-자동-닫힘)) client는 크기 질문 중 받은 failure를 실패로 끝내지 않는다. 질문·receiving 화면과 native 대기자를 그대로 두고 resource를 만료로 표시한다. failure 사유는 문자열이라 timeout만 골라내지 않고, 질문 중의 모든 failure를 같은 만료로 다룬다. 만료된 질문의 Allow는 같은 문서 세대·연결 epoch 안에서 새 transfer ID로 같은 대상을 다시 요청한다. entry는 `HtmlEntryRequest`(하위 HTML로 이동한 문서는 현재 source에서 다시 인가하는 `HtmlFileEntryRequest`), 하위 파일은 같은 entry·source generation·relative·query의 `HtmlResourceRequest`다. 새 요청은 사용자가 본 크기를 기억해, metadata 크기가 같으면 묻지 않고 `allow: true` credit을 보내고 다르면 다시 묻는다. 만료된 질문의 Decline은 서버 transfer가 이미 끝났으므로 cancel 없이 skipped만 기록한다. 메시지 형식은 바뀌지 않아 이전 서버와도 동작한다. Reload·문서 교체·연결 종료·source 교체는 만료된 질문도 지금처럼 끝내며, Reload는 이전 크기 허용·누적량·skipped를 초기화한다. 새 요청이 실패하면(source 교체 뒤 stale 거절 등) 그 파일은 일반 실패로 끝나고 다시 묻지 않는다. entry Decline은 skipped를 기록하고 본문 없는 종료 상태가 된다. 연결이 끊기면 미완성 수신을 취소하고 이미 완료한 본문은 보존한다.
 
 ## Host 연결과 원격 파일 열기
 
@@ -76,7 +76,7 @@ completed body만 `Resource::body`로 제공한다. 완료 시 수신 buffer의 
 
 ## Client 하위 파일 수신 driver
 
-공유 mirror는 native 대기자의 요청을 최대4개 동시 resource 전송으로 묶고, 실제 송신 순서로 할당한 transfer ID에 연결한다. credit은 준비된 resource 사이를 순환하며 문서 누적 예약량을 함께 적용한다. 완료 응답은 같은 immutable 할당으로 native 대기자와 cache에 게시한다. 개별 Decline·실패는 해당 대기자를 끝내고 skipped를 기록하며 entry 실패로 전파하지 않는다. Stop은 완료한 entry와 cache를 보존하고 나머지 대기와 새 resource를 종료한다. 이 driver는 파일 GET용이며 HTTP POST 응답 identity를 URI cache로 대체하지 않는다.
+공유 mirror는 native 대기자의 요청을 최대4개 동시 resource 전송으로 묶고, 실제 송신 순서로 할당한 transfer ID에 연결한다. credit은 준비된 resource 사이를 순환하며 문서 누적 예약량을 함께 적용한다. 완료 응답은 같은 immutable 할당으로 native 대기자와 cache에 게시한다. 개별 Decline·실패는 해당 대기자를 끝내고 skipped를 기록하며 entry 실패로 전파하지 않는다. 크기 질문이나 누적 정지 중의 만료는 실패가 아니므로 native 대기자를 끝내지 않고, 재요청 transfer ID로 같은 대기자를 옮겨 받은 본문을 게시한다. 옮길 때 대기자가 모두 사라졌으면 그 파일을 skipped로 끝낸다. 대기자 상한(URI당 32, 문서당 256, native task 256)은 만료 중에도 그대로 적용한다. Stop은 완료한 entry와 cache를 보존하고 나머지 대기와 새 resource를 종료한다. 이 driver는 파일 GET용이며 HTTP POST 응답 identity를 URI cache로 대체하지 않는다.
 
 native 주 문서 이동 의도는 원 entry identity·source generation·root 상대 target을 캡처한다. transport owner가 새 document를 만들 때 이전 entry cancel은 생략하고 서버의 root handoff 요청으로 이전 문서 전체를 취소한다. 하위 전송 취소는 그대로 보낸다. 사용자 Reload는 그 target을 현재 서버 source의 새 root에서 연다. Linux는 `resource-load-started`의 WebResource가 같은 시점 WebView의 main resource인지 비교하고 그 이벤트의 URIRequest를 사용한다. 주 문서 이동은 이전 source를 먼저 retire한 뒤 native load를 멈춘다. 뒤늦은 scheme callback에도 본문을 제공하지 않는다. 같은 URL의 fetch나 iframe을 주 문서로 추정하지 않는다. Stop은 새 하위 수신을 막되 살아 있는 연결에서 새 주 문서로 이동할 수 있고, disconnect는 새 주 문서 요청도 막는다.
 
@@ -93,4 +93,4 @@ Linux의 MIME·CSP·no-store·nosniff 응답 헤더 구성은 본문 stream 생�
 
 Linux 하위 파일 응답은 native GIO read의 cancellable에 직접 연결한다. body가 완성되기 전에는 바이트를 내보내지 않고, 첫 read 완료 전에 MIME·CSP·길이 헤더를 확정한다. native Abort는 그 read의 waiter만 해제하며 같은 URI의 다른 waiter를 취소하지 않는다. 첫 read 전 스트림과 진행 중 read를 각각 256개로 제한하고, view 종료 시 아직 시작하지 않은 waiter와 async read를 함께 취소한다. 마지막 WebView가 사라진 뒤에도 준비된 GTask 완료 콜백은 GTK에서 처리한다. 브라우저가 소비한 바이트와 응답 MIME은 native component 시험으로 확인하며 WebResource 자료 조회와 전체 App 렌더 검증을 구분한다.
 
-누적 Continue/Stop 질문은 마지막 활성 파일이 실패·취소되어도 receiving 상태를 유지한다. 아직 transfer admission을 받지 않은 native 대기 큐도 같은 수신 상태에 포함한다. Continue는 남은 큐를 이어 가며 이미 실패한 요청을 다시 열지 않는다. Stop은 대기·질문을 끝내고 완료 entry는 보존한다. 실패한 파일의 새 시도는 사용자 Reload의 새 문서 identity로 처리하며 이전 질문의 늦은 결정은 적용하지 않는다.
+누적 Continue/Stop 질문은 마지막 활성 파일이 실패·취소되어도 receiving 상태를 유지한다. 아직 transfer admission을 받지 않은 native 대기 큐도 같은 수신 상태에 포함한다. 정지 동안 metadata를 받고 credit을 기다리다 서버 timeout으로 끝난 파일은 만료로 두고, Continue 때 위의 재요청 경로로 다시 요청한다(받은 일부 바이트는 누적량에서 빼고 처음부터 다시 받는다). metadata 전 실패(root 밖 경로·서버 오류 등)와 그 밖의 실패는 다시 열지 않는다. Continue는 남은 큐도 이어 간다. Stop은 대기·질문을 끝내고 완료 entry는 보존한다. 실패한 파일의 새 시도는 사용자 Reload의 새 문서 identity로 처리하며 이전 질문의 늦은 결정은 적용하지 않는다.

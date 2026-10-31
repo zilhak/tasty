@@ -538,3 +538,78 @@ fn html_nested_navigation_and_fresh_reload_preserve_root_and_provenance() {
     );
     event(&mut stream, "html_complete");
 }
+
+/// Waits past the server's 30-second credit timeout; heartbeats keep the attach connection alive.
+fn event_after_credit_timeout(stream: &mut AttachStream, name: &str) -> Value {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+    loop {
+        match attach_common::read_frame_result(stream) {
+            Ok((attach_common::TAG_CONTROL, payload)) => {
+                let value: Value = serde_json::from_slice(&payload).unwrap();
+                if value["event"] == name {
+                    return value;
+                }
+            }
+            Ok(_) => {}
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+                ) && std::time::Instant::now() < deadline => {}
+            Err(error) => panic!("waiting for {name}: {error:?}"),
+        }
+    }
+}
+
+#[test]
+fn html_expired_size_question_is_answered_by_a_fresh_allowed_request() {
+    let server = server();
+    let dir = tempfile::tempdir().unwrap();
+    let body: Vec<_> = (0..300_000).map(|i| (i % 251) as u8).collect();
+    let file = dir.path().join("expired.html");
+    std::fs::write(&file, &body).unwrap();
+    let ws = server.create_workspace("html-transport-expired-question");
+    let sid = open(server, ws.id, file.to_str().unwrap());
+    let (mut stream, id) = attach(server, ws.id, sid);
+    request(&mut stream, HtmlRequest::HtmlEntryRequest { id });
+    assert_eq!(
+        event(&mut stream, "html_metadata")["metadata"]["size"],
+        300_000
+    );
+    // No credit while the size question is open: the server ends the worker on its own.
+    let failure = event_after_credit_timeout(&mut stream, "html_failure");
+    assert!(failure["reason"].as_str().unwrap().contains("timeout"));
+    let retry = TransferId {
+        request: 2,
+        transfer: 2,
+        ..id
+    };
+    request(&mut stream, HtmlRequest::HtmlEntryRequest { id: retry });
+    assert_eq!(
+        event(&mut stream, "html_metadata")["metadata"]["size"],
+        300_000
+    );
+    let mut received = Vec::new();
+    while received.len() < body.len() {
+        request(
+            &mut stream,
+            HtmlRequest::HtmlRead {
+                id: retry,
+                offset: received.len() as u64,
+                allow: true,
+            },
+        );
+        let HtmlReply::HtmlChunk { data_b64, .. } =
+            serde_json::from_value(event(&mut stream, "html_chunk")).unwrap()
+        else {
+            unreachable!()
+        };
+        received.extend(
+            base64::engine::general_purpose::STANDARD
+                .decode(data_b64)
+                .unwrap(),
+        );
+    }
+    assert_eq!(event(&mut stream, "html_complete")["size"], 300_000);
+    assert_eq!(Sha256::digest(received), Sha256::digest(body));
+}

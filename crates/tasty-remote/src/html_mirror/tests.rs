@@ -58,19 +58,17 @@ fn scan(m: &mut HtmlMirror) {
     assert!(m.poll_scan(notify));
 }
 #[test]
-fn notice_timeout_and_late_allow_are_terminal_until_reload() {
+fn reload_still_ends_an_expired_size_question() {
     let mut m = mirror();
     m.begin(id());
     m.receive(metadata(id(), 300_000));
-    assert!(m.credit().is_none());
     m.receive(HtmlReply::HtmlFailure {
         id: id(),
         reason: "credit timeout".into(),
     });
-    assert!(!m.allow(id()));
-    assert!(m.credit().is_none());
-    assert!(!m.document.as_ref().unwrap().receiving());
     assert!(m.user_reload());
+    assert!(!m.allow(id()));
+    assert!(m.take_retries().is_empty());
     let retry = TransferId {
         document: 2,
         request: 2,
@@ -187,3 +185,4 @@ fn reload_retires_old_replies_and_notice_choices_before_the_next_request_is_sent
 }
 
 mod resources;
+mod retry;

@@ -172,14 +172,16 @@ impl NativeResources {
         }
         result
     }
-    pub fn bind(&mut self, ticket: u64, id: TransferId) -> bool {
+    fn admits(&self, id: TransferId) -> bool {
         let entry = self.entry.response().generation();
-        if !self.allows_requests()
-            || id.transfer <= entry.transfer
-            || self.slots.values().any(|slot| slot.id == Some(id))
-            || (id.epoch, id.surface_id, id.binding, id.document)
-                != (entry.epoch, entry.surface_id, entry.binding, entry.document)
-        {
+        self.allows_requests()
+            && id.transfer > entry.transfer
+            && !self.slots.values().any(|slot| slot.id == Some(id))
+            && (id.epoch, id.surface_id, id.binding, id.document)
+                == (entry.epoch, entry.surface_id, entry.binding, entry.document)
+    }
+    pub fn bind(&mut self, ticket: u64, id: TransferId) -> bool {
+        if !self.admits(id) {
             return false;
         }
         let Some(slot) = self.slots.values_mut().find(|slot| slot.ticket == ticket) else {
@@ -191,6 +193,24 @@ impl NativeResources {
         slot.id = Some(id);
         slot.state = State::Active(id);
         true
+    }
+    /// Move live waiters from an expired transfer to its fresh request; returns that target.
+    pub fn rebind(&mut self, old: TransferId, new: TransferId) -> Option<(String, Option<String>)> {
+        if !self.admits(new) {
+            return None;
+        }
+        let slot = self
+            .slots
+            .values_mut()
+            .find(|slot| matches!(slot.state, State::Active(current) if current == old))?;
+        slot.waiters.retain(ResponseTarget::live);
+        if slot.waiters.is_empty() {
+            slot.state = State::Failed(ResourceFailure::Cancelled);
+            return None;
+        }
+        slot.id = Some(new);
+        slot.state = State::Active(new);
+        Some((slot.relative.clone(), slot.query.clone()))
     }
     pub fn publish(&mut self, id: TransferId, body: Arc<NativeBodyResponse>) -> bool {
         if !self.allows_requests() {

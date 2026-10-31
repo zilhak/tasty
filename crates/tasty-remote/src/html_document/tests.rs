@@ -136,30 +136,35 @@ fn disconnect_reset_discards_late_complete_and_old_capabilities() {
 }
 
 #[test]
-fn timeout_during_size_question_retires_allowance_until_a_fresh_request() {
+fn timeout_during_size_question_keeps_the_question_until_a_fresh_request() {
     let mut d = document(300_000);
     assert_eq!(d.resources[&id()].state, ReceiveState::SizeNotice);
     assert!(d.receive(HtmlReply::HtmlFailure {
         id: id(),
         reason: "credit timeout".into()
     }));
-    assert!(!d.receiving());
-    assert!(d.notices.is_empty());
-    assert!(d.allow_next().is_none());
+    assert!(d.receiving());
+    assert_eq!(d.notices.front(), Some(&id()));
+    assert!(d.resources[&id()].expired());
     assert!(d.credit(id()).is_none());
-    assert!(d.request(id()).is_none());
-    d.reset(1, 9, 2);
+    assert!(d.retries().is_empty());
+    assert_eq!(d.allow_next(), Some(id()));
+    assert!(d.credit(id()).is_none());
+    assert_eq!(d.retries(), vec![id()]);
     let retry = TransferId {
-        document: 2,
         request: 2,
         transfer: 2,
         ..id()
     };
-    assert!(d.request(retry).is_some());
-    d.receive(metadata(retry, 300_000));
-    assert_eq!(d.allow_next(), Some(retry));
-    assert!(d.credit(retry).is_some());
+    assert!(d.retry(id(), retry));
+    assert!(!d.retry(id(), retry));
     assert!(!d.receive(HtmlReply::HtmlCancelled { id: id() }));
+    assert!(d.receive(metadata(retry, 300_000)));
+    assert!(d.notices.is_empty());
+    assert!(matches!(
+        d.credit(retry),
+        Some(HtmlRequest::HtmlRead { allow: true, .. })
+    ));
 }
 
 #[test]
@@ -183,7 +188,9 @@ fn cumulative_pause_remains_receiving_after_the_last_worker_ends() {
             "aggregate consent is still pending after the last worker ends"
         );
         document.continue_receiving();
-        assert!(!document.receiving());
+        // A credit wait that expired during the pause is requested again on Continue.
+        assert_eq!(document.receiving(), !cancelled);
+        assert_eq!(document.retries().is_empty(), cancelled);
         document.paused = true;
         document.stop();
         assert!(!document.receiving());

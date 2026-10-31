@@ -210,6 +210,49 @@ fn cancel_generation_close_timeout_and_reused_connection_release_owned_worker() 
     f.join();
 }
 #[test]
+fn expired_size_question_is_served_by_a_fresh_allowed_request() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("large.html");
+    let expected = vec![b'z'; 300_000];
+    std::fs::write(&path, &expected).unwrap();
+    let mut f = Fixture::url(path.to_str().unwrap(), Duration::from_millis(10));
+    assert!(matches!(reply(&f.rx), HtmlReply::HtmlMetadata { .. }));
+    assert!(
+        matches!(reply(&f.rx),HtmlReply::HtmlFailure {reason,..} if reason.contains("timeout"))
+    );
+    f.join();
+    // The client keeps the question; its consent starts a new worker that reads to the end.
+    let mut f = Fixture::new(&path);
+    assert!(matches!(
+        reply(&f.rx),
+        HtmlReply::HtmlMetadata {
+            metadata: HtmlMetadata { size: 300_000, .. },
+            ..
+        }
+    ));
+    let mut received = 0u64;
+    loop {
+        f.read(received, true);
+        match reply(&f.rx) {
+            HtmlReply::HtmlChunk { data_b64, .. } => {
+                received += base64::engine::general_purpose::STANDARD
+                    .decode(data_b64)
+                    .unwrap()
+                    .len() as u64;
+            }
+            other => panic!("{other:?}"),
+        }
+        if received == expected.len() as u64 {
+            break;
+        }
+    }
+    assert!(matches!(
+        reply(&f.rx),
+        HtmlReply::HtmlComplete { size: 300_000, .. }
+    ));
+    f.join();
+}
+#[test]
 fn http_metadata_is_typed_and_never_read_as_file() {
     let mut f = Fixture::url("http://127.0.0.1:9/not-a-file", Duration::from_secs(1));
     assert!(matches!(

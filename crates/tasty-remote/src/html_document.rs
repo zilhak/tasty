@@ -28,8 +28,32 @@ pub struct Resource {
     completed: Option<Arc<Vec<u8>>>,
     credit: bool,
     allowed: bool,
+    /// The server ended this transfer while it waited for the user (size or aggregate consent).
+    /// The question stays; consent issues a fresh request instead of reviving the old transfer.
+    expired: bool,
+    /// Consent arrived after expiry; the owner must bind a fresh transfer identity.
+    retry: bool,
+    /// The exact size the user already accepted. A different size asks again.
+    allowed_size: Option<u64>,
 }
 impl Resource {
+    fn fresh(id: TransferId) -> Self {
+        Self {
+            id,
+            metadata: None,
+            state: ReceiveState::Metadata,
+            body: Vec::new(),
+            completed: None,
+            credit: false,
+            allowed: false,
+            expired: false,
+            retry: false,
+            allowed_size: None,
+        }
+    }
+    pub fn expired(&self) -> bool {
+        self.expired
+    }
     pub fn id(&self) -> TransferId {
         self.id
     }
@@ -86,18 +110,7 @@ impl HtmlDocument {
         {
             return None;
         }
-        self.resources.insert(
-            id,
-            Resource {
-                id,
-                metadata: None,
-                state: ReceiveState::Metadata,
-                body: Vec::new(),
-                completed: None,
-                credit: false,
-                allowed: false,
-            },
-        );
+        self.resources.insert(id, Resource::fresh(id));
         Some(HtmlRequest::HtmlEntryRequest { id })
     }
     /// Returns false for stale/unsolicited replies. Invalid current replies terminate only that resource.
@@ -115,17 +128,21 @@ impl HtmlDocument {
                 | ReceiveState::Skipped
                 | ReceiveState::Failed
                 | ReceiveState::Cancelled
-        ) {
+        ) || r.expired
+        {
             return false;
         }
         let valid = match reply {
             HtmlReply::HtmlMetadata { metadata, .. }
                 if r.state == ReceiveState::Metadata && metadata.regular =>
             {
-                r.state = if metadata.size > AUTO_BYTES {
+                let accepted = r.allowed_size.take() == Some(metadata.size);
+                r.state = if metadata.size > AUTO_BYTES && !accepted {
+                    r.allowed = false;
                     self.notices.push_back(id);
                     ReceiveState::SizeNotice
                 } else {
+                    r.allowed = metadata.size > AUTO_BYTES;
                     ReceiveState::Ready
                 };
                 r.metadata = Some(metadata);
@@ -170,6 +187,18 @@ impl HtmlDocument {
                 r.state = ReceiveState::Complete;
                 true
             }
+            // The server's credit timeout cannot be told apart from other failures without
+            // comparing reason text, so every failure while waiting on the user keeps the
+            // question; a changed or missing file is reported again by the fresh request.
+            HtmlReply::HtmlFailure { .. }
+                if r.state == ReceiveState::SizeNotice
+                    || (self.paused && r.state == ReceiveState::Ready && !r.credit) =>
+            {
+                self.received = self.received.saturating_sub(r.body.len() as u64);
+                r.body.clear();
+                r.expired = true;
+                true
+            }
             HtmlReply::HtmlFailure { .. } => {
                 r.state = ReceiveState::Failed;
                 r.body.clear();
@@ -203,7 +232,7 @@ impl HtmlDocument {
             return None;
         }
         let r = self.resources.get_mut(&id)?;
-        if r.state != ReceiveState::Ready || r.credit {
+        if r.state != ReceiveState::Ready || r.credit || r.expired {
             return None;
         }
         let size = r.metadata.as_ref()?.size;
@@ -241,8 +270,14 @@ impl HtmlDocument {
     pub fn allow_next(&mut self) -> Option<TransferId> {
         let id = self.notices.pop_front()?;
         let r = self.resources.get_mut(&id)?;
-        r.allowed = true;
-        r.state = ReceiveState::Ready;
+        if r.expired {
+            r.retry = true;
+            r.state = ReceiveState::Metadata;
+            r.allowed_size = r.metadata.as_ref().map(|m| m.size);
+        } else {
+            r.allowed = true;
+            r.state = ReceiveState::Ready;
+        }
         Some(id)
     }
     pub fn decline(&mut self, id: TransferId) -> Option<HtmlRequest> {
@@ -259,13 +294,60 @@ impl HtmlDocument {
         r.body.clear();
         r.credit = false;
         r.state = ReceiveState::Skipped;
+        // An expired transfer has no server worker left to cancel.
+        let cancel = (!r.expired).then_some(HtmlRequest::HtmlCancel { id });
+        r.retry = false;
         self.skipped += 1;
         self.notices.retain(|n| *n != id);
-        Some(HtmlRequest::HtmlCancel { id })
+        cancel
     }
+    /// Files whose transfer expired during the pause are requested again, keeping their consent.
     pub fn continue_receiving(&mut self) {
         self.paused = false;
         self.continued = true;
+        for r in self.resources.values_mut() {
+            if r.expired && r.state == ReceiveState::Ready {
+                r.retry = true;
+                r.state = ReceiveState::Metadata;
+                r.allowed_size = r
+                    .allowed
+                    .then(|| r.metadata.as_ref().map(|m| m.size))
+                    .flatten();
+            }
+        }
+    }
+    /// Expired transfers the user already answered, oldest first; empty while paused or stopped.
+    pub fn retries(&self) -> Vec<TransferId> {
+        if self.paused || self.stopped {
+            return vec![];
+        }
+        let mut ids: Vec<_> = self
+            .resources
+            .values()
+            .filter(|r| r.retry)
+            .map(|r| r.id)
+            .collect();
+        ids.sort_by_key(|id| id.transfer);
+        ids
+    }
+    /// Replace an answered expired transfer with a fresh identity in the same document.
+    pub fn retry(&mut self, old: TransferId, new: TransferId) -> bool {
+        if !self.matches(new)
+            || self.paused
+            || self.stopped
+            || self.resources.contains_key(&new)
+            || self.resources.get(&old).is_none_or(|r| !r.retry)
+        {
+            return false;
+        }
+        let Some(old) = self.resources.remove(&old) else {
+            return false;
+        };
+        let mut fresh = Resource::fresh(new);
+        fresh.metadata = old.metadata;
+        fresh.allowed_size = old.allowed_size;
+        self.resources.insert(new, fresh);
+        true
     }
     pub fn stop(&mut self) -> Vec<HtmlRequest> {
         let ids: Vec<_> = self.resources.keys().copied().collect();

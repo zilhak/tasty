@@ -6,14 +6,14 @@ use std::{
     task::{Context, Poll, Waker},
 };
 use tasty_ipc::html_transfer::{CHUNK_BYTES, DOCUMENT_BYTES, HtmlFileMetadata};
-fn next(n: u64) -> TransferId {
+pub(super) fn next(n: u64) -> TransferId {
     TransferId {
         request: n,
         transfer: n,
         ..id()
     }
 }
-fn css_metadata(id: TransferId, size: u64) -> HtmlReply {
+pub(super) fn css_metadata(id: TransferId, size: u64) -> HtmlReply {
     let mut reply = metadata(id, size);
     if let HtmlReply::HtmlMetadata { metadata, .. } = &mut reply {
         metadata.file = Some(HtmlFileMetadata {
@@ -27,10 +27,12 @@ fn css_metadata(id: TransferId, size: u64) -> HtmlReply {
     }
     reply
 }
-fn poll(wait: &mut ResponseWait) -> Poll<Result<Arc<NativeBodyResponse>, ResourceFailure>> {
+pub(super) fn poll(
+    wait: &mut ResponseWait,
+) -> Poll<Result<Arc<NativeBodyResponse>, ResourceFailure>> {
     Pin::new(wait).poll(&mut Context::from_waker(Waker::noop()))
 }
-fn ready() -> HtmlMirror {
+pub(super) fn ready() -> HtmlMirror {
     let mut mirror = completed(b"entry");
     scan(&mut mirror);
     mirror.enable_resources(true);
@@ -43,11 +45,11 @@ fn uri(m: &HtmlMirror, path: &str) -> String {
         .unwrap()
         .into()
 }
-fn request(m: &HtmlMirror, path: &str) -> ResponseWait {
+pub(super) fn request(m: &HtmlMirror, path: &str) -> ResponseWait {
     let target = uri(m, path);
     m.body_store().request_resource(&target)
 }
-fn start(m: &mut HtmlMirror, path: &str, n: u64) -> ResponseWait {
+pub(super) fn start(m: &mut HtmlMirror, path: &str, n: u64) -> ResponseWait {
     let wait = request(m, path);
     let fetch = m.take_resource_fetches().pop().unwrap();
     assert!(m.bind_resource(fetch, next(n)).is_some());
@@ -89,13 +91,13 @@ fn child_completion_reuses_exact_allocation_and_has_no_extra_credit_or_request()
     assert!(m.failure.is_none());
 }
 #[test]
-fn child_notice_fifo_decline_and_timeout_leave_entry_and_end_receiving() {
+fn child_notice_fifo_decline_and_real_failure_leave_entry_and_end_receiving() {
     let mut m = ready();
     let entry = Arc::clone(m.body_store().current().unwrap());
     let mut a = start(&mut m, "a.css", 2);
     let mut b = start(&mut m, "b.css", 3);
     m.receive(css_metadata(next(2), 300_000));
-    m.receive(css_metadata(next(3), 300_000));
+    m.receive(css_metadata(next(3), 3));
     assert!(!m.allow(next(3)));
     assert_eq!(m.decline(next(2)).unwrap().id(), Some(next(2)));
     assert!(matches!(
@@ -104,14 +106,13 @@ fn child_notice_fifo_decline_and_timeout_leave_entry_and_end_receiving() {
     ));
     m.receive(HtmlReply::HtmlFailure {
         id: next(3),
-        reason: "credit timeout".into(),
+        reason: "file vanished".into(),
     });
     m.poll_resources();
     assert!(matches!(
         poll(&mut b),
         Poll::Ready(Err(ResourceFailure::Failed))
     ));
-    assert!(!m.allow(next(3)));
     let document = m.document.as_ref().unwrap();
     assert_eq!(document.skipped, 2);
     assert!(!document.receiving());

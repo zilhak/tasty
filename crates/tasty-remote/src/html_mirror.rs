@@ -1,6 +1,7 @@
 //! Client entry state shared by transport effects and host chrome; no native or local-file access.
 mod http_source;
 mod resources;
+mod retry;
 pub use http_source::{HttpSource, HttpView};
 
 use crate::{
@@ -117,7 +118,13 @@ impl HtmlMirror {
         let accepted = document.receive(reply);
         if accepted {
             if self.id == Some(id) {
-                self.failure = failure;
+                // An expired size question keeps its card; only a real end is a load failure.
+                self.failure = failure.filter(|_| {
+                    document
+                        .resources
+                        .get(&id)
+                        .is_some_and(|r| r.state == ReceiveState::Failed)
+                });
             } else if document
                 .resources
                 .get(&id)

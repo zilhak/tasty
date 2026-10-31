@@ -34,15 +34,18 @@ impl ResourceDriver {
                 fragment: navigation.target.fragment,
             };
         }
-        match &self.target {
-            Some(target) => HtmlRequest::HtmlFileEntryRequest {
+        self.entry_request(id).unwrap_or(default)
+    }
+    /// A nested entry is authorized again from the current server source, as a reload is.
+    pub(super) fn entry_request(&self, id: TransferId) -> Option<HtmlRequest> {
+        self.target
+            .as_ref()
+            .map(|target| HtmlRequest::HtmlFileEntryRequest {
                 id,
                 relative: target.relative.clone(),
                 query: target.query.clone(),
                 fragment: target.fragment.clone(),
-            },
-            None => default,
-        }
+            })
     }
 }
 impl HtmlMirror {
