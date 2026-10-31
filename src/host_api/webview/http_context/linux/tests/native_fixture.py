@@ -23,6 +23,11 @@ ROOT.mkdir(parents=True, exist_ok=False)
 os.chmod(ROOT, 0o700)
 BINARY = str(Path(sys.argv[1]).resolve())
 BINARY_HASH = hashlib.sha256(Path(BINARY).read_bytes()).hexdigest()
+# The checkout the fixture runs from. The binary hash alone does not name the source commit.
+def git(*args):
+    run = subprocess.run(["git", *args], cwd=Path(__file__).resolve().parent, capture_output=True, text=True)
+    return run.stdout.strip() if run.returncode == 0 else None
+SOURCE = {"head": git("rev-parse", "HEAD"), "dirty": git("status", "--porcelain", "--untracked-files=no") != ""}
 ctypes.CDLL(None).prctl(36, 1, 0, 0, 0)
 OWNED = {}
 CLEANUP = []
@@ -344,9 +349,10 @@ def response(path, case):
     if path == "/asset":
         return b"asset", b"Cache-Control: max-age=3600\r\n"
     if path in ("/direct", "/direct-header-on", "/direct-meta-on"):
-        # A remote document that reaches past the proxy when the engine allows it: a DNS prefetch
-        # hint and an anchor need no script, and WebRTC gathers ICE toward the fixture's UDP trap.
-        # The .invalid names never resolve; only the client resolver attempt is observed.
+        # A remote document that would reach past the proxy if the engine allowed it: a DNS
+        # prefetch hint and an anchor need no script, and WebRTC gathers ICE toward the fixture's
+        # UDP trap. The fixture counts only the UDP trap and the TCP direct sentinels; it does not
+        # observe the client resolver. The .invalid names keep any lookup off real DNS.
         # The -on variants ask the engine to re-enable DNS prefetch from the origin's response.
         meta = b'<meta http-equiv="x-dns-prefetch-control" content="on">' if path == "/direct-meta-on" else b""
         extra = b"X-DNS-Prefetch-Control: on\r\n" if path == "/direct-header-on" else b""
@@ -483,9 +489,9 @@ try:
     direct_counts = [{"port": direct.port, "positive_control": direct.baseline,
                       "native_direct_connections": direct.accepted - direct.baseline} for direct in DIRECT]
     assert all(row["positive_control"] == 2 and row["native_direct_connections"] == 0 for row in direct_counts), direct_counts
-    result = {"rc": 0, "cases": rows, "display": display, "binary_sha256": BINARY_HASH, "direct_sentinels": direct_counts}
+    result = {"rc": 0, "cases": rows, "display": display, "binary_sha256": BINARY_HASH, "source": SOURCE, "direct_sentinels": direct_counts}
 except BaseException as error:
-    result = {"rc": 1, "error": repr(error), "cases": rows, "binary_sha256": BINARY_HASH}
+    result = {"rc": 1, "error": repr(error), "cases": rows, "binary_sha256": BINARY_HASH, "source": SOURCE}
 finally:
     cleanup()
     if xvfb:

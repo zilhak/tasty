@@ -1,8 +1,8 @@
 use super::*;
 /// `direct_paths` checks the view as the host prepares it. The `_header_on` and `_meta_on` cases
-/// serve a document that asks the engine to re-enable DNS prefetch. `direct_paths_control` reopens
-/// the features on the same view so the fixture's UDP trap and resolver observation can show that
-/// they detect the traffic the closed view must not produce.
+/// serve a document that asks the engine to re-enable DNS prefetch. `direct_paths_control`
+/// re-enables the features on the same view and only records the page result; the fixture does
+/// not require it to produce traffic, because a WebKitGTK build without WebRTC produces none.
 pub(super) fn run(case: &str) {
     let live = Arc::new(AtomicBool::new(true));
     let store = data_store();
