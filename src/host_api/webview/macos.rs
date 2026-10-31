@@ -247,9 +247,10 @@ define_class!(
                 );
                 return;
             }
-            // SAFETY: main thread WebKit delegate 호출. targetFrame()/isMainFrame()은 이 호출 동안
-            // 유효한 navigation_action을 읽는다.
-            let main_frame = unsafe { navigation_action.targetFrame().map(|f| f.isMainFrame()) };
+            // SAFETY: main thread WebKit delegate 호출 동안 유효한 navigation_action을 읽는다.
+            let target_frame = unsafe { navigation_action.targetFrame() };
+            // SAFETY: 이 delegate 호출 동안 retain된 frame info를 main thread에서 읽는다.
+            let main_frame = target_frame.map(|f| unsafe { f.isMainFrame() });
             log_navigation_action(self.ivars().surface_id, navigation_action, main_frame);
             // Native targetFrame distinguishes main navigation from iframe loads.
             // A cached child must still become a new received/scanned document when main.
