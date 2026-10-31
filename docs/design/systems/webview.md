@@ -157,6 +157,8 @@ macOS의 WKNavigationAction 공개 API에는 같은 값이 없다. `navigationTy
 - `KeyWebView`의 `mouseDown:`이 클릭을 기록하고 `mouseUp:`이 시각을 뗀 때로 옮긴다. 이 경로는 포커스 알림(`note_focus`)과 같다. 페이지 스크립트의 `dispatchEvent`·`click()`·`location.hash` 변경은 NSResponder를 거치지 않으므로 클릭을 만들지 못한다.
 - 클릭 뒤 1초 안에 탐색 결정에 들어온 main frame 탐색 하나만 `user_gesture`가 참이다. 1초는 WebKit이 사용자 제스처를 타이머로 넘겨주는 상한(`UserGestureToken::maximumIntervalForUserGestureForwarding`)과 같다. 클릭 처리기 안의 `location.hash` 변경(Markdown 폴더 버튼)이 여기에 해당한다.
 - 서브프레임 탐색은 참이 되지 않고 클릭을 소비하지도 않는다. 시간이 지난 클릭은 버린다.
+- 키보드로 링크·버튼을 활성화한 탐색(Enter·Space)은 OS 클릭이 아니므로 참이 되지 않는다. Linux·Windows 엔진은 키 입력도 제스처로 보고하므로 이 점이 다르다.
+- 사용 API의 최소 macOS(MacOSX SDK 26.2 헤더): `NSResponder` `mouseDown:`·`mouseUp:`은 가용성 표기가 없다. `WKNavigationAction`의 macOS용 `buttonNumber`·`modifierFlags`는 개별 표기 없이 클래스의 `API_AVAILABLE(macos(10.10))`을 따른다. `loadFileURL:allowingReadAccessToURL:`은 `macos(10.11)`이다. 모두 macOS 11 이전부터 있다. 실행은 macOS 27.2에서만 확인했다.
 - 호스트가 시작한 `load_url`·`load_html`·`reload`·`go_back`·`go_forward`는 남은 클릭을 지운다. 에이전트·IPC 로드가 앞선 클릭을 이어받지 않게 하기 위해서다.
 - 남은 한계: 클릭 뒤 1초 안에 페이지 스크립트가 시작한 다른 탐색도 참이 된다. Linux·Windows 엔진의 제스처 전달과 같은 성질이다. 호스트 로드 요청과 그 탐색 결정 사이에 사용자가 클릭하면 그 호스트 탐색이 클릭을 소비할 수 있다. 증명은 소유 plugin 작성 페이지·URL 일치·한 번 소비 규칙을 함께 통과해야 쓰인다.
 - debug 로그(`WKNavigationAction input`)가 탐색마다 `navigationType`·`buttonNumber`·`modifierFlags`·main frame 여부를 남긴다. 판정에는 쓰지 않으며 실측 대조용이다.
