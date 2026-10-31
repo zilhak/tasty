@@ -37,6 +37,8 @@ impl App {
 }
 
 /// foreground 세대가 바뀌면 마우스 캡처 배너만 닫는다. 같은 surface의 다른 배너는 유지한다.
+/// 그 배너에서 연 더보기 메뉴도 함께 닫는다. 메뉴는 클릭할 때 foreground 이름을 읽으므로,
+/// 남겨 두면 배너를 띄운 프로그램이 아닌 다음 프로그램(또는 이름 없음)에 설정을 저장한다.
 fn close_stale_mouse_capture_banners(
     state: &mut crate::state::MainViewState,
     core_state: &crate::runtime::engine_read::EngineRead<'_>,
@@ -60,5 +62,113 @@ fn close_stale_mouse_capture_banners(
         state
             .banners
             .close_shown_if_id(&scope, BANNER_MOUSE_CAPTURE);
+        close_mouse_capture_menu_for(state, &scope);
+    }
+}
+
+/// `scope` 배너에 딸린 더보기 메뉴가 열려 있으면 닫고 대상을 비운다. 다른 surface의 메뉴는 그대로 둔다.
+fn close_mouse_capture_menu_for(
+    state: &mut crate::state::MainViewState,
+    scope: &crate::adapters::ui::BannerScope,
+) {
+    use crate::adapters::ui::BannerScope;
+    use crate::adapters::ui::mouse_capture_menu::MOUSE_CAPTURE_BANNER_MENU_POPUP_ID;
+
+    let BannerScope::Surface(sid) = scope else {
+        return;
+    };
+    if state.dialogs.mouse_capture_banner_menu_target != Some(*sid) {
+        return;
+    }
+    // intent-exempt: 닫힌 배너에 딸린 메뉴의 수명 정리. 포커스·선택은 바꾸지 않는다.
+    state.popups.close(MOUSE_CAPTURE_BANNER_MENU_POPUP_ID);
+    state.dialogs.mouse_capture_banner_menu_target = None;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::close_stale_mouse_capture_banners;
+    use crate::adapters::ui::banner::defs::BANNER_MOUSE_CAPTURE;
+    use crate::adapters::ui::mouse_capture_menu::MOUSE_CAPTURE_BANNER_MENU_POPUP_ID;
+    use crate::adapters::ui::{BannerScope, BannerState};
+
+    /// surface `sid` 에 foreground 세대 `generation` 의 캡처 배너를 띄우고 그 배너의 메뉴를 연다.
+    fn open_menu(state: &mut crate::state::MainViewState, sid: u32, generation: u64) {
+        state.banners.push(
+            BannerState::persistent(BANNER_MOUSE_CAPTURE, BannerScope::Surface(sid))
+                .with_origin_generation(generation),
+        );
+        state.dialogs.mouse_capture_banner_menu_target = Some(sid);
+        state.popups.open(MOUSE_CAPTURE_BANNER_MENU_POPUP_ID);
+    }
+
+    fn menu_open(state: &crate::state::MainViewState) -> bool {
+        state.popups.is_open(MOUSE_CAPTURE_BANNER_MENU_POPUP_ID)
+    }
+
+    #[test]
+    fn a_foreground_name_change_closes_the_open_menu_of_that_banner() {
+        let (mut state, mut session) = crate::state::tests::test_state();
+        let e = session.borrow_mut();
+        e.live.foreground_names.insert(42, "vim".into());
+        e.live.foreground_generation.insert(42, 1);
+        open_menu(&mut state, 42, 1);
+        assert!(menu_open(&state));
+
+        // 같은 세대면 메뉴는 남는다.
+        close_stale_mouse_capture_banners(&mut state, &e.read());
+        assert!(menu_open(&state));
+
+        e.live.foreground_names.insert(42, "htop".into());
+        e.live.foreground_generation.insert(42, 2);
+        close_stale_mouse_capture_banners(&mut state, &e.read());
+        assert!(!menu_open(&state));
+        assert_eq!(state.dialogs.mouse_capture_banner_menu_target, None);
+    }
+
+    /// 이름을 더 관측하지 못하면 세대 항목이 사라져 0으로 읽힌다.
+    #[test]
+    fn a_lost_foreground_name_closes_the_open_menu_of_that_banner() {
+        let (mut state, mut session) = crate::state::tests::test_state();
+        let e = session.borrow_mut();
+        e.live.foreground_names.insert(42, "vim".into());
+        e.live.foreground_generation.insert(42, 1);
+        open_menu(&mut state, 42, 1);
+
+        e.live.foreground_names.remove(&42);
+        e.live.foreground_generation.remove(&42);
+        close_stale_mouse_capture_banners(&mut state, &e.read());
+        assert!(!menu_open(&state));
+        assert_eq!(state.dialogs.mouse_capture_banner_menu_target, None);
+    }
+
+    #[test]
+    fn a_stale_banner_on_another_surface_leaves_the_open_menu_alone() {
+        let (mut state, mut session) = crate::state::tests::test_state();
+        let e = session.borrow_mut();
+        e.live.foreground_generation.insert(42, 1);
+        e.live.foreground_generation.insert(43, 1);
+        state.banners.push(
+            BannerState::persistent(BANNER_MOUSE_CAPTURE, BannerScope::Surface(43))
+                .with_origin_generation(1),
+        );
+        open_menu(&mut state, 42, 1);
+
+        e.live.foreground_generation.insert(43, 2);
+        close_stale_mouse_capture_banners(&mut state, &e.read());
+        assert!(menu_open(&state));
+        assert_eq!(state.dialogs.mouse_capture_banner_menu_target, Some(42));
+        assert!(
+            state
+                .banners
+                .shown_banners()
+                .any(|b| b.scope == BannerScope::Surface(42))
+        );
+        assert!(
+            !state
+                .banners
+                .shown_banners()
+                .any(|b| b.scope == BannerScope::Surface(43))
+        );
     }
 }
