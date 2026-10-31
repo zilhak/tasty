@@ -201,7 +201,7 @@ webview 적격 조건은 native 엔진의 user gesture와 현재 페이지를 �
 작성자가 외부에서 소유 plugin으로 바뀐 첫 drain 프레임은 이전 페이지 클릭과 혼동할 수 있어 인정하지 않는다.
 표지는 시도를 모두 처리한 뒤 지운다. 이전 클릭이 그 프레임 이후에 늦게 도착하는 경우까지 막는다고 보장하지 않는다.
 
-macOS는 동등한 공개 gesture 판정이 없어 plugin webview 링크가 항상 PluginUnverified다. 선택은 유지하지만 매칭 핸들러가 없으면 picker는 뜬다.
+macOS는 동등한 공개 gesture 판정이 없어 WebView가 OS에서 받은 클릭 뒤 1초 안의 main frame 탐색을 gesture로 본다([WebView 탐색](../../design/systems/webview.md#탐색-상태와-실행-소유)). 실제 클릭 결과는 측정하지 않았다.
 Linux의 실행 확인과 Windows의 코드·컴파일 확인은 구별한다.
 같은 프레임의 앞 클릭이나 재로드가 끼어든 정당 클릭도 PluginUnverified가 될 수 있다.
 사용자 원인은 적용 실패 toast에도 쓰고 Agent·PluginUnverified 실패는 로그로 알린다(원격에 열 수 없음 toast는 위 예외).

@@ -32,7 +32,7 @@ PlatformWebView는 OS별 타입 중 cfg가 하나를 선택한다. 공통 호출
 | `load_url` | `&str` | — | Linux 는 로드가 끝난(`Done`) 상태에서 지금 문서의 `#fragment` 주소를 받으면 `Loading` 을 세우지 않는다. `Failed`·`Loading` 상태의 같은 경우와 표기 정규화 차이는 남은 한계다. WebKitGTK 가 이 이동을 load 신호 없이 처리해서다(측정, [html surface §문서 주소와 히스토리](../../surfaces/html/index.md#내부-동작)). macOS·Windows 는 이 경우를 따로 다루지 않으며 미측정이다 |
 | `load_html` | `&str` | — | |
 | `nav_state` | — | `NavState` | |
-| `take_pending_navigations` | — | `Vec<PendingNavigation>` | `user_gesture` 는 Linux 가 `is_user_gesture`, Windows 가 `IsUserInitiated` 에서 옮긴다. macOS 는 늘 `false` 다 — 아래 "탐색" |
+| `take_pending_navigations` | — | `Vec<PendingNavigation>` | `user_gesture` 는 Linux 가 `is_user_gesture`, Windows 가 `IsUserInitiated` 에서 옮긴다. macOS 는 그 뷰가 받은 OS 클릭으로 정한다 — 아래 "탐색" |
 | `set_zoom` | `f64` | — | |
 | `set_javascript_enabled` | `bool` | — | 스크립트 게이트가 붙은 webview 에서는 값을 전역 sandbox 설정으로 `gate.set_sandbox` 에 넘기고, 적용하는 값은 문서별 판정이다([HTML Viewer (`com.tasty.html`)](../../surfaces/html/index.md)). macOS 는 전역 preference 를 켜 두고 문서별 값을 navigation 정책의 webpage preferences 로 준다 |
 | `attach_script_gate` | `ScriptGate` | — | 첫 로드 전에 부른다. Linux 만 page cache 를 꺼서 뒤로·앞으로 가기도 응답 단계를 거치게 한다([HTML Viewer (`com.tasty.html`)](../../surfaces/html/index.md)) |
@@ -151,7 +151,15 @@ HTML 배너는 [값 snapshot과 요청](../../../src/runtime/html_script.rs)을 
 사용자 navigation proof의 원본은 AppServices가 보유한 `NavigationProofs`다. App adapter는 plugin 통지 전에 원 View·surface·페이지 작성자·resource identity를 기록하고, 프레임 끝에 owner takeover와 사라진 surface를 반영한다. IPC `RequestScope`는 원 View의 weak identity와 현재 Engine 실행 문맥으로 proof를 한 번 소비한다. 닫힌 View나 교체된 resource의 기록은 새 대상에 사용할 수 없다.
 
 PendingNavigation은 URL과 user_gesture를 포함한다. Linux는 WebKit is_user_gesture,
-Windows는 IsUserInitiated를 사용하며 실패 시 warning과 false로 처리한다. macOS는 항상 false다.
+Windows는 IsUserInitiated를 사용하며 실패 시 warning과 false로 처리한다.
+macOS의 WKNavigationAction 공개 API에는 같은 값이 없다. `navigationType`·`buttonNumber`·`modifierFlags`는 스크립트가 만든 합성 이벤트에도 채워질 수 있어 근거로 쓰지 않는다.
+대신 WebView가 OS에서 직접 받은 왼쪽 클릭을 근거로 한다(`click_gesture::ClickGesture`).
+- `KeyWebView`의 `mouseDown:`이 클릭을 기록하고 `mouseUp:`이 시각을 뗀 때로 옮긴다. 이 경로는 포커스 알림(`note_focus`)과 같다. 페이지 스크립트의 `dispatchEvent`·`click()`·`location.hash` 변경은 NSResponder를 거치지 않으므로 클릭을 만들지 못한다.
+- 클릭 뒤 1초 안에 탐색 결정에 들어온 main frame 탐색 하나만 `user_gesture`가 참이다. 1초는 WebKit이 사용자 제스처를 타이머로 넘겨주는 상한(`UserGestureToken::maximumIntervalForUserGestureForwarding`)과 같다. 클릭 처리기 안의 `location.hash` 변경(Markdown 폴더 버튼)이 여기에 해당한다.
+- 서브프레임 탐색은 참이 되지 않고 클릭을 소비하지도 않는다. 시간이 지난 클릭은 버린다.
+- 호스트가 시작한 `load_url`·`load_html`·`reload`·`go_back`·`go_forward`는 남은 클릭을 지운다. 에이전트·IPC 로드가 앞선 클릭을 이어받지 않게 하기 위해서다.
+- 남은 한계: 클릭 뒤 1초 안에 페이지 스크립트가 시작한 다른 탐색도 참이 된다. Linux·Windows 엔진의 제스처 전달과 같은 성질이다. 호스트 로드 요청과 그 탐색 결정 사이에 사용자가 클릭하면 그 호스트 탐색이 클릭을 소비할 수 있다. 증명은 소유 plugin 작성 페이지·URL 일치·한 번 소비 규칙을 함께 통과해야 쓰인다.
+- debug 로그(`WKNavigationAction input`)가 탐색마다 `navigationType`·`buttonNumber`·`modifierFlags`·main frame 여부를 남긴다. 판정에는 쓰지 않으며 실측 대조용이다.
 이 값과 webview.set_url의 페이지 작성자를 이용한 파일 열기 판정은
 [파일 핸들러의 origin 규칙](../../features/file-handler/index.md#origin-소유권과-비동기-완료)을 따른다.
 그 절에 기록의 한 번 소비·작성자 전이·늦게 도착한 navigation 한계를 함께 둔다.
@@ -651,7 +659,7 @@ headless가 사용하지 않는 GUI 의존성은 [빌드 경계](../../dev-guide
 
 각 OS의 컴파일은 공유 호출부와 타입을 검사한다. 실제 클릭·단축키·IME·크기·종료·리소스 차단까지 검사한 것은 아니다.
 기존 근거에서 Linux/X11의 실행 확인과 macOS·Windows의 소스·컴파일 확인은 구별돼 있다.
-Windows의 fragment navigation과 사용자 제스처 전달, macOS 메뉴바와 키 중복 처리는 실제 환경에서 확인해야 하는 항목이다.
+Windows의 fragment navigation과 사용자 제스처 전달, macOS의 실제 클릭 제스처 판정, macOS 메뉴바와 키 중복 처리는 실제 환경에서 확인해야 하는 항목이다.
 이 문서의 소스 설명만으로 해당 플랫폼의 실행 검증을 대신하지 않는다.
 
 ## 설정 출처 — kind 를 등록한 plugin

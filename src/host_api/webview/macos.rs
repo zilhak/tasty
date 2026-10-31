@@ -15,6 +15,7 @@ use delegate_state::PendingDecision;
 use std::cell::{Cell, RefCell};
 use std::ptr::NonNull;
 use std::rc::{Rc, Weak};
+use std::time::Instant;
 
 use block2::{DynBlock, RcBlock};
 use objc2::rc::Retained;
@@ -35,11 +36,18 @@ use objc2_web_kit::{
 use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
 use self::keyboard::{macos_keycode_to_physical, ns_chars_to_winit_key, nsevent_mods_to_winit};
+use super::click_gesture::ClickGesture;
 use super::entry_response::EntryResponseSource;
 use super::keys::WebViewKeySink;
 use super::load_generation::CancelledDecisions;
 use super::script_gate::{Response, ScriptGate};
 use super::{NavState, PendingNavigation, WebViewBounds};
+
+/// 차단 여부와 별도로 기록한 탐색 시도 큐와, user_gesture 근거인 이 뷰의 OS 클릭.
+struct NavigationRecorder {
+    attempts: Rc<RefCell<Vec<PendingNavigation>>>,
+    click: Rc<ClickGesture>,
+}
 
 struct NavDelegateIvars {
     surface_id: u32,
@@ -49,8 +57,7 @@ struct NavDelegateIvars {
     /// A navigation cancelled to continue on its loopback alias; its interruption is no failure.
     alias_cancelled: Cell<bool>,
     nav_state: Rc<Cell<NavState>>,
-    /// 차단 여부와 별도로 기록한 탐색 시도 큐.
-    pending_navigations: Rc<RefCell<Vec<PendingNavigation>>>,
+    navigations: NavigationRecorder,
     /// html surface의 문서 단위 스크립트 허용. 없으면 탐색 단위 JS를 바꾸지 않는다.
     script_gate: Rc<RefCell<Option<ScriptGate>>>,
     /// 게이트가 정책 결정에서 로드를 시작했고 그 provisional 시작을 아직 받지 않았다.
@@ -240,6 +247,10 @@ define_class!(
                 );
                 return;
             }
+            // SAFETY: main thread WebKit delegate 호출. targetFrame()/isMainFrame()은 이 호출 동안
+            // 유효한 navigation_action을 읽는다.
+            let main_frame = unsafe { navigation_action.targetFrame().map(|f| f.isMainFrame()) };
+            log_navigation_action(self.ivars().surface_id, navigation_action, main_frame);
             // Native targetFrame distinguishes main navigation from iframe loads.
             // A cached child must still become a new received/scanned document when main.
             if let Some(source) = &self.ivars().entry_source {
@@ -294,7 +305,7 @@ define_class!(
                                         handler: decision_handler.copy(),
                                         preferences: preferences.retain(),
                                     });
-                                self.record_navigation(url.clone());
+                                self.record_navigation(url.clone(), main_frame);
                                 return;
                             }
                         }
@@ -309,12 +320,36 @@ define_class!(
                 }
             }
             if let Some(url) = url {
-                self.record_navigation(url);
+                self.record_navigation(url, main_frame);
             }
             decision_handler.call((WKNavigationActionPolicy::Allow, NonNull::from(preferences)));
         }
     }
 );
+
+/// 사용자 클릭 판정을 실측과 대조할 수 있게 WebKit 이 준 입력 정보를 남긴다. 판정에는 쓰지 않는다.
+fn log_navigation_action(surface_id: u32, action: &WKNavigationAction, main_frame: Option<bool>) {
+    if !tracing::enabled!(tracing::Level::DEBUG) {
+        return;
+    }
+    // SAFETY: main thread WebKit delegate 호출 동안 유효한 navigation_action 의 값 읽기.
+    #[allow(clippy::multiple_unsafe_ops_per_block)]
+    let (kind, button, modifiers) = unsafe {
+        (
+            action.navigationType().0,
+            action.buttonNumber(),
+            action.modifierFlags().0,
+        )
+    };
+    tracing::debug!(
+        surface_id,
+        ?main_frame,
+        navigation_type = kind,
+        button_number = button,
+        modifier_flags = modifiers,
+        "WKNavigationAction input"
+    );
+}
 
 impl NavDelegate {
     /// The endpoint decides scripts from the verified main response with a response policy, so
@@ -362,19 +397,25 @@ impl NavDelegate {
             document.session().expect_main_response(url);
         }
         if let Some(url) = url {
-            self.record_navigation(url);
+            self.record_navigation(url, main);
         }
         decision_handler.call((WKNavigationActionPolicy::Allow, NonNull::from(preferences)));
     }
 
-    fn record_navigation(&self, url: String) {
-        self.ivars()
-            .pending_navigations
+    /// 탐색 시도를 기록한다. 이 뷰의 OS 클릭 뒤 시간 창 안의 main frame 탐색만 사용자 조작으로 표시한다.
+    fn record_navigation(&self, url: String, main_frame: Option<bool>) {
+        let navigations = &self.ivars().navigations;
+        let user_gesture = navigations.click.take(Instant::now(), main_frame);
+        tracing::debug!(
+            surface_id = self.ivars().surface_id,
+            ?main_frame,
+            user_gesture,
+            "navigation attempt recorded"
+        );
+        navigations
+            .attempts
             .borrow_mut()
-            .push(PendingNavigation {
-                url,
-                user_gesture: false,
-            });
+            .push(PendingNavigation { url, user_gesture });
     }
 }
 
@@ -383,7 +424,7 @@ impl NavDelegate {
         mtm: MainThreadMarker,
         surface_id: u32,
         nav_state: Rc<Cell<NavState>>,
-        pending_navigations: Rc<RefCell<Vec<PendingNavigation>>>,
+        navigations: NavigationRecorder,
         script_gate: Rc<RefCell<Option<ScriptGate>>>,
         entry_source: Option<EntryResponseSource>,
         http: Option<Weak<super::http_native::NativeDocument>>,
@@ -394,7 +435,7 @@ impl NavDelegate {
             http,
             alias_cancelled: Cell::new(false),
             nav_state,
-            pending_navigations,
+            navigations,
             script_gate,
             gate_load_pending: Cell::new(false),
             gate_navigation: RefCell::new(None),
@@ -411,6 +452,8 @@ impl NavDelegate {
 struct KeyWebViewIvars {
     surface_id: u32,
     key_bridge: Rc<dyn WebViewKeySink>,
+    /// OS 가 이 뷰에 보낸 왼쪽 클릭. 탐색 delegate 가 user_gesture 근거로 꺼낸다.
+    click: Rc<ClickGesture>,
     /// 위에 egui가 그리는 안내 카드 영역(이 뷰 좌표). 이 안의 포인터는 받지 않고 부모로 보낸다.
     clip_holes: RefCell<Vec<NSRect>>,
     /// 대상 팝업이 보이는 동안 참이다. 그림은 그대로 두고 뷰 전체의 포인터를 부모(winit 뷰)로 보낸다.
@@ -456,12 +499,23 @@ define_class!(
         }
 
         /// native 클릭을 host에 알리고 원래 이벤트 처리는 super에 맡긴다.
+        /// 페이지 스크립트가 만든 이벤트는 여기 오지 않으므로 OS 클릭의 증명으로 쓴다.
         #[unsafe(method(mouseDown:))]
         fn mouse_down(&self, event: &NSEvent) {
             let ivars = self.ivars();
+            tracing::debug!(surface_id = ivars.surface_id, "WebView OS mouse down");
+            ivars.click.press(Instant::now());
             ivars.key_bridge.note_focus(ivars.surface_id);
             // SAFETY: main thread AppKit. super 구현에 위임.
             unsafe { msg_send![super(self), mouseDown: event] }
+        }
+
+        /// 페이지의 click 이벤트는 버튼을 뗄 때 생기므로 클릭 증명의 시각을 뗀 때로 옮긴다.
+        #[unsafe(method(mouseUp:))]
+        fn mouse_up(&self, event: &NSEvent) {
+            self.ivars().click.release(Instant::now());
+            // SAFETY: main thread AppKit. super 구현에 위임.
+            unsafe { msg_send![super(self), mouseUp: event] }
         }
 
         /// 안내 카드 아래의 포인터는 받지 않아 뒤의 host 뷰로 간다. layer mask는 그림만 가리므로 따로 뺀다.
@@ -494,10 +548,12 @@ impl KeyWebView {
         config: &WKWebViewConfiguration,
         surface_id: u32,
         key_bridge: Rc<dyn WebViewKeySink>,
+        click: Rc<ClickGesture>,
     ) -> Retained<Self> {
         let this = Self::alloc(mtm).set_ivars(KeyWebViewIvars {
             surface_id,
             key_bridge,
+            click,
             clip_holes: RefCell::new(Vec::new()),
             host_pointer: Cell::new(false),
         });
@@ -720,7 +776,9 @@ impl PlatformWebView {
 
             let frame = logical_to_nsrect(ns_view, bounds, scale_factor);
 
-            let webview = KeyWebView::new(mtm, frame, &config, surface_id, key_bridge);
+            let click = Rc::new(ClickGesture::default());
+            let webview =
+                KeyWebView::new(mtm, frame, &config, surface_id, key_bridge, click.clone());
 
             ns_view.addSubview(&webview);
 
@@ -733,7 +791,10 @@ impl PlatformWebView {
                 mtm,
                 surface_id,
                 nav_state.clone(),
-                pending_navigations.clone(),
+                NavigationRecorder {
+                    attempts: pending_navigations.clone(),
+                    click,
+                },
                 script_gate.clone(),
                 entry_source.clone(),
                 http.as_ref().map(|http| Rc::downgrade(&http.document)),
@@ -971,6 +1032,7 @@ impl PlatformWebView {
     /// 로드를 요청하며 chrome을 Loading으로 둔다. 시작 신호 없이 끝나는 로드가 Loading에 남지 않게
     /// chrome 세대를 비워(모름 = 현재) 다음 시작 신호 전의 종료를 이 로드의 것으로 본다.
     fn begin_load(&self) {
+        self.webview.ivars().click.cancel();
         self._nav_delegate.ivars().cancel_pending_decision();
         self.nav_state.set(NavState::Loading);
         *self._nav_delegate.ivars().chrome_navigation.borrow_mut() = None;
@@ -1061,6 +1123,7 @@ impl PlatformWebView {
     }
 
     pub fn reload(&self) {
+        self.webview.ivars().click.cancel();
         self._nav_delegate.ivars().cancel_pending_decision();
         // SAFETY: main thread WKWebView API.
         if unsafe { self.webview.reload() }.is_none() {
@@ -1069,6 +1132,7 @@ impl PlatformWebView {
     }
 
     pub fn go_back(&self) {
+        self.webview.ivars().click.cancel();
         self._nav_delegate.ivars().cancel_pending_decision();
         // SAFETY: main thread WKWebView API.
         if unsafe { self.webview.goBack() }.is_none() {
@@ -1077,6 +1141,7 @@ impl PlatformWebView {
     }
 
     pub fn go_forward(&self) {
+        self.webview.ivars().click.cancel();
         self._nav_delegate.ivars().cancel_pending_decision();
         // SAFETY: main thread WKWebView API.
         if unsafe { self.webview.goForward() }.is_none() {
