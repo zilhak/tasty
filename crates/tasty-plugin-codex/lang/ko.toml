@@ -69,6 +69,7 @@ outcome_unknown = "서버에서 실행됐는지 알 수 없습니다({detail}). 
 no_child = "서버가 spawn을 실행했지만 새 자식을 알려 주지 않았습니다: {resp}"
 commit_failed = "자식은 만들었지만 알림 전달을 시작하지 못했습니다({detail}). 완료 알림은 서버에 남아 있습니다."
 bind_failed = "서버에 자식 서피스 {surface}를 만들었지만 완료를 알릴 곳을 정하지 못했습니다({detail}). 알림 전달은 시작하지 않았고, {cleanup}"
+child_busy = "자식 서피스 {surface}는 다른 부모({owner})의 지시를 아직 처리 중입니다(받지 못한 결과 {open}개). 그 턴의 결과가 다른 부모에게 가지 않도록 지시를 보내지 않았습니다. 그 결과가 온 뒤 다시 시도하거나 자식을 닫으세요."
 child_closed = "그 자식은 닫았습니다."
 child_not_closed = "그 자식을 닫지 못했습니다({detail}). kill로 닫으세요."
 no_target = "요청이 이 attach 부모의 자식을 지정하지 않았습니다."

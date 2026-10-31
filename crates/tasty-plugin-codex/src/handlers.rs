@@ -322,11 +322,8 @@ pub(crate) fn handle_tell<H: HostCall>(
         .get("message")
         .and_then(|v| v.as_str())
         .ok_or_else(|| IpcMethodError::invalid_params(tr.t("codex.params.missing_message")))?;
-    // 반환 경로는 지시를 보내기 전에 정한다. 자식의 첫 훅이 그 기록을 읽는다.
-    let mut warning = None;
-    // 원격 자식이면 이 지시의 route 토큰. 서버는 이 지시로 시작한 턴의 결과에 토큰을 실어 돌려준다.
-    let mut route = None;
-    let previous = match &caller {
+    // 조회와 검사는 경로를 바꾸기 전에 끝낸다. 여기서 실패하면 아무 기록도 바뀌지 않는다.
+    let receiver = match &caller {
         Some(c) => {
             let (receiver, _) = crate::delivery::prepare_receiver(delivery, c)?;
             let key = ownership::caller_key(c);
@@ -337,51 +334,67 @@ pub(crate) fn handle_tell<H: HostCall>(
                     &surface_id.to_string(),
                 )));
             }
-            if remote_anchor.is_some() {
-                route = Some(
-                    crate::delivery::ledger::issue_attach_route(
-                        delivery.root,
-                        &crate::delivery::ledger::codex_route(&receiver.receiver_id),
-                    )
-                    .map_err(|e| IpcMethodError::new(format!("codex attach route: {e}")))?,
-                );
-            }
-            if remote_anchor.is_some() || ownership::is_codex_child(delivery, surface_id) {
-                Some(ownership::bind_route(
-                    delivery,
-                    surface_id,
-                    &receiver.receiver_id,
-                )?)
-            } else {
-                // Codex 훅이 없는 surface에는 완료를 만들지 못하는 경로를 두지 않는다.
-                ownership::invalidate_route(delivery, surface_id)?;
-                warning = Some(tr.t_replace(
-                    "codex.owner.not_codex_child",
-                    "{surface}",
-                    &surface_id.to_string(),
-                ));
-                None
-            }
+            Some(receiver)
         }
-        None => {
-            ownership::invalidate_route(delivery, surface_id)?;
-            // 원격 자식의 본문은 서버에만 있으므로 호출 surface 에 결과를 돌려받을 토큰을 보낸다.
-            if remote_anchor.is_some()
-                && let Ok(caller_surface) = require_u32(params, "caller_surface", tr)
-            {
-                route = Some(
-                    crate::delivery::ledger::issue_attach_route(
-                        delivery.root,
-                        &remote::surface_route(host, caller_surface)?,
-                    )
-                    .map_err(|e| IpcMethodError::new(format!("codex attach route: {e}")))?,
-                );
-            }
-            None
-        }
+        None => None,
     };
+    let caller_surface = require_u32(params, "caller_surface", tr).ok();
+    // 원격 자식이면 이 지시의 수신처. 호출 surface 가 없어도 토큰을 보내 그 턴의 결과가 도착했음을 셀 수 있게 한다.
+    let to = match (remote_anchor, &receiver, caller_surface) {
+        (None, _, _) => None,
+        (Some(_), Some(r), _) => Some(crate::delivery::ledger::codex_route(&r.receiver_id)),
+        (Some(_), None, Some(surface)) => Some(remote::surface_route(host, surface)?),
+        (Some(_), None, None) => Some(crate::delivery::ledger::AttachRoute::default()),
+    };
+    let owner = to.as_ref().map(|_| {
+        remote::owner_of(
+            receiver.as_ref().map(|r| r.receiver_id.as_str()),
+            caller_surface,
+        )
+    });
+    let previous = crate::delivery::ledger::child_receiver(delivery.root, surface_id)
+        .map_err(|e| IpcMethodError::new(format!("codex child return record: {e}")))?;
+    // 원격 자식이면 다른 부모가 지시한 턴의 결과가 이 지시의 토큰으로 가지 않도록 소유를 연다.
+    if let Some(owner) = &owner {
+        remote::open_turn(delivery, surface_id, owner, tr)?;
+    }
+    // 확정된 실패는 경로와 소유를 이전 상태로 되돌린다. 결과불명이면 서버에서 실행됐을 수 있으므로 그대로 둔다.
+    let rollback = |e: IpcMethodError| {
+        ownership::restore_route(delivery, surface_id, previous.clone());
+        if let Some(owner) = &owner {
+            remote::undo_turn(delivery, surface_id, owner);
+        }
+        e
+    };
+    // 반환 경로는 지시를 보내기 전에 정한다. 자식의 첫 훅이 그 기록을 읽는다.
+    let mut warning = None;
+    let bound = match &receiver {
+        Some(receiver)
+            if remote_anchor.is_some() || ownership::is_codex_child(delivery, surface_id) =>
+        {
+            ownership::bind_route(delivery, surface_id, &receiver.receiver_id).map(|_| ())
+        }
+        Some(_) => {
+            // Codex 훅이 없는 surface에는 완료를 만들지 못하는 경로를 두지 않는다.
+            warning = Some(tr.t_replace(
+                "codex.owner.not_codex_child",
+                "{surface}",
+                &surface_id.to_string(),
+            ));
+            ownership::invalidate_route(delivery, surface_id)
+        }
+        None => ownership::invalidate_route(delivery, surface_id),
+    };
+    bound.map_err(rollback)?;
+    // 원격 자식이면 이 지시의 route 토큰. 서버는 이 지시로 시작한 턴의 결과에 토큰을 실어 돌려준다.
+    let route = to
+        .map(|to| {
+            crate::delivery::ledger::issue_attach_route(delivery.root, &to)
+                .map_err(|e| IpcMethodError::new(format!("codex attach route: {e}")))
+        })
+        .transpose()
+        .map_err(rollback)?;
     // 개행과 제출 처리는 호스트의 terminal.tell에 맡긴다. 원격 자식은 서버의 같은 메서드로 보낸다.
-    // 결과불명이면 서버에서 그 지시가 실행됐을 수 있으므로 새 경로와 토큰을 그대로 둔다. 확정된 실패만 되돌린다.
     let sent = match remote_anchor {
         Some(anchor) => remote::tell(host, anchor, surface_id, message, route, tr)
             .map_err(|e| (e.error, e.unknown)),
@@ -394,12 +407,8 @@ pub(crate) fn handle_tell<H: HostCall>(
     };
     let resp = match sent {
         Ok(resp) => resp,
-        Err((e, unknown)) => {
-            if !unknown && let Some(previous) = previous {
-                ownership::restore_route(delivery, surface_id, previous);
-            }
-            return Err(e);
-        }
+        Err((e, true)) => return Err(e),
+        Err((e, false)) => return Err(rollback(e)),
     };
 
     if caller.is_none()

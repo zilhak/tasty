@@ -104,7 +104,7 @@ fn now_ms() -> u64 {
         .unwrap_or(0)
 }
 
-fn read(path: &Path) -> Result<Option<Value>, String> {
+pub(crate) fn read(path: &Path) -> Result<Option<Value>, String> {
     match std::fs::read_to_string(path) {
         Ok(text) => serde_json::from_str(&text)
             .map(Some)
@@ -115,7 +115,7 @@ fn read(path: &Path) -> Result<Option<Value>, String> {
 }
 
 /// tmp 파일에 쓰고 디스크에 내린 뒤 이름을 바꾼다. 중간에 끊겨도 이전 내용이나 새 내용 중 하나가 남는다.
-fn write(dir: &Path, path: &Path, value: &Value) -> Result<(), String> {
+pub(crate) fn write(dir: &Path, path: &Path, value: &Value) -> Result<(), String> {
     use std::io::Write;
     let tmp = path.with_extension(format!("{}.tmp", std::process::id()));
     let mut f = std::fs::File::create(&tmp).map_err(|e| format!("{}: {e}", tmp.display()))?;
@@ -201,7 +201,7 @@ fn slot(dir: &Path, identity: &Identity) -> Result<(String, Option<Value>), Stri
 }
 
 /// 결과 폴더 잠금. 파일이 닫히면 풀린다.
-fn lock(dir: &Path) -> Result<std::fs::File, String> {
+pub(crate) fn lock(dir: &Path) -> Result<std::fs::File, String> {
     std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     let path = dir.join(LOCK_FILE);
     let f = std::fs::OpenOptions::new()

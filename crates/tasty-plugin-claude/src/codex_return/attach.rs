@@ -12,6 +12,7 @@ use serde_json::Value;
 use tasty_plugin_agent_common::host_call::HostCall;
 use tasty_plugin_agent_common::remote_attach::{self, NoticeStatus};
 use tasty_plugin_agent_common::remote_results;
+use tasty_plugin_agent_common::remote_turns;
 use tasty_plugin_sdk::{IpcMethodError, i18n::Translator};
 
 use super::{DELIVER_CALL_TIMEOUT, Returns, ms, now_ms};
@@ -111,6 +112,19 @@ pub(crate) enum RouteTo {
         surface: u32,
         session: Option<String>,
     },
+    /// 결과를 받을 곳이 없는 지시(호출 surface 없는 tell). 결과가 왔다는 사실만 센다.
+    Nobody,
+}
+
+impl RouteTo {
+    /// 이 수신처의 턴 소유자([`remote_turns`]).
+    pub(crate) fn owner(&self) -> String {
+        match self {
+            Self::Codex(r) => remote_turns::codex_owner(r),
+            Self::Surface { surface, .. } => remote_turns::surface_owner(*surface),
+            Self::Nobody => remote_turns::NOBODY.to_string(),
+        }
+    }
 }
 
 /// 부모의 완료 로그(notify mod·Monitor 가 읽는 곳)에 한 줄을 쓴다.
@@ -148,9 +162,35 @@ impl Returns {
         params: &Value,
         tr: &Translator,
     ) -> Result<Value, IpcMethodError> {
+        let (to, reply) = self.receive_routed(host, params, tr)?;
+        // 그 지시의 턴이 끝났다는 사실은 새로 받은 결과가 증명한다. 재전송 중복은 이미 셌다. 수신처가 결과를 거절해도
+        // 턴은 끝났다.
+        if let Some(to) = to
+            && matches!(
+                reply.get("status").and_then(Value::as_str),
+                Some("recorded" | "rejected")
+            )
+            && let Some((surface, payload)) = remote_attach::received(params)
+        {
+            let status = payload.get(PAYLOAD_KEY).and_then(remote_turns::status_of);
+            self.finish_turn(surface, &to.owner(), status);
+        }
+        Ok(reply)
+    }
+
+    /// 원격 결과를 토큰의 수신처로 기록하고, 찾은 수신처와 답을 준다.
+    fn receive_routed<H: HostCall>(
+        &self,
+        host: &H,
+        params: &Value,
+        tr: &Translator,
+    ) -> Result<(Option<RouteTo>, Value), IpcMethodError> {
         use tasty_plugin_agent_common::remote_attach::{Received, received};
         let Some((surface, payload)) = received(params) else {
-            return Ok(Received::Rejected("missing surface_id or payload".into()).json());
+            return Ok((
+                None,
+                Received::Rejected("missing surface_id or payload".into()).json(),
+            ));
         };
         // 수신처는 지금의 경로가 아니라 그 턴을 지시한 spawn·tell 때 발급한 토큰으로 찾는다. 그 사이 경로가
         // 풀리거나 다른 부모로 묶여도 그 턴의 결과는 지시한 부모에게 간다.
@@ -165,27 +205,31 @@ impl Returns {
             }
             _ => None,
         };
-        if let Some(RouteTo::Surface {
-            surface: parent,
-            session,
-        }) = to
-        {
-            return self.receive_for_surface(
-                host,
-                parent,
-                session.as_deref(),
-                surface,
-                payload,
-                tr,
-            );
+        match &to {
+            Some(RouteTo::Surface {
+                surface: parent,
+                session,
+            }) => {
+                let reply = self.receive_for_surface(
+                    host,
+                    *parent,
+                    session.as_deref(),
+                    surface,
+                    payload,
+                    tr,
+                )?;
+                return Ok((to, reply));
+            }
+            Some(RouteTo::Nobody) => return Ok((to, Received::Recorded.json())),
+            _ => {}
         }
-        let receiver = match to {
-            Some(RouteTo::Codex(r)) => Some(r),
+        let receiver = match &to {
+            Some(RouteTo::Codex(r)) => Some(r.clone()),
             _ => None,
         };
         let request = match local_request(payload, surface, receiver) {
             Ok(r) => r,
-            Err(reason) => return Ok(Received::Rejected(reason).json()),
+            Err(reason) => return Ok((to, Received::Rejected(reason).json())),
         };
         let response = host
             .call_within("codex.deliver", request, DELIVER_CALL_TIMEOUT)
@@ -195,7 +239,7 @@ impl Returns {
         } else {
             Received::Recorded
         };
-        Ok(status.json())
+        Ok((to, status.json()))
     }
 
     /// 토큰의 수신처. 기록이 없거나 지워졌으면 `None`.
@@ -210,6 +254,7 @@ impl Returns {
                         surface: parent,
                         session: r.parent_session.clone(),
                     },
+                    None if r.receiver_id.is_empty() => RouteTo::Nobody,
                     None => RouteTo::Codex(r.receiver_id.clone()),
                 });
             (to, false)
@@ -244,6 +289,19 @@ impl Returns {
         .map_err(IpcMethodError::new)
     }
 
+    /// 원격 자식의 미완 지시 소유 기록 폴더(plugin 데이터 폴더의 [`remote_turns::DIR`]).
+    pub(crate) fn turns_dir(&self) -> Option<std::path::PathBuf> {
+        Some(self.dir.as_deref()?.parent()?.join(remote_turns::DIR))
+    }
+
+    /// 그 소유자에게 자식의 새 결과가 왔다. 기록하지 못하면 남은 기록 탓에 다른 부모가 거절될 뿐이라 경고만 남긴다.
+    pub(crate) fn finish_turn(&self, child: u32, owner: &str, status: Option<&str>) {
+        let Some(dir) = self.turns_dir() else { return };
+        if let Err(e) = remote_turns::finish(&dir, child, owner, status) {
+            tracing::warn!("claude remote turns: could not close a turn of s{child}: {e}");
+        }
+    }
+
     /// 물리 부모에게 온 원격 결과를 두는 폴더(plugin 데이터 폴더의 [`remote_results::DIR`]).
     pub(crate) fn results_dir(&self) -> Option<std::path::PathBuf> {
         Some(self.dir.as_deref()?.parent()?.join(remote_results::DIR))
@@ -265,6 +323,7 @@ impl Returns {
                 RouteTo::Surface { surface, session } => {
                     (String::new(), Some(*surface), session.clone())
                 }
+                RouteTo::Nobody => (String::new(), None, None),
             };
             book.attach_routes.push(AttachRoute {
                 token: token.clone(),

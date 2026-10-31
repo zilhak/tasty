@@ -69,6 +69,7 @@ outcome_unknown = "It is not known whether the server ran this ({detail}). The c
 no_child = "The server ran spawn but did not report a new child: {resp}"
 commit_failed = "The child was created, but its notifications could not be started ({detail}). Its completions are kept on the server."
 bind_failed = "Child surface {surface} was created on the server, but where to report its completion could not be set ({detail}). Its notifications were not released; {cleanup}"
+child_busy = "Child surface {surface} is still running an order from another parent ({owner}, {open} result(s) not received yet). The order was not sent, so that turn's result cannot go to the wrong parent. Try again after its result arrives, or close the child."
 child_closed = "the child was closed."
 child_not_closed = "the child could not be closed ({detail}). Close it with kill."
 no_target = "The request did not name a child of this attach parent."

@@ -354,6 +354,87 @@ fn a_failed_parent_session_lookup_stops_the_order_and_retries_the_result() {
     assert_eq!(test_log::take().len(), 1);
 }
 
+/// 물리 부모 둘이 같은 원격 자식에 지시한다. 다른 부모의 지시는 앞 부모의 미완 지시가 모두 결과를 받을 때까지
+/// 원격 호출 없이 거절된다. 같은 부모의 후속은 받는다. 확정 실패한 지시는 되돌려 다른 부모를 막지 않는다.
+#[test]
+fn a_physical_parent_cannot_take_a_child_with_another_parents_open_order() {
+    let fx = Fixture::new();
+    test_log::take();
+    let refuse = std::rc::Rc::new(RefCell::new(false));
+    let r = refuse.clone();
+    let host = Host::new(&fx, move |method, params| {
+        if *r.borrow() && method == "attach.agent_call" && params["method"] == json!("tell") {
+            return fail(-32602, "refused by holder");
+        }
+        surface_parent(method, params)
+    });
+    let tell = |caller: u32| {
+        fx.with(|d| {
+            super::super::handle_tell(
+                &host,
+                &json!({ "surface": L, "message": "m", "caller_surface": caller }),
+                &fx.tr,
+                d,
+            )
+        })
+    };
+    let tells = || {
+        host.params_of("attach.agent_call")
+            .iter()
+            .filter(|c| c["method"] == json!("tell"))
+            .count()
+    };
+    spawn(
+        &fx,
+        &host,
+        json!({ "workspace": 3, "surface": 5, "prompt": "go" }),
+    )
+    .unwrap();
+    assert!(tell(6).is_err());
+    assert_eq!(tells(), 0);
+    tell(5).unwrap();
+    let r5 = route_of(&host);
+    receive(&fx, &host, notice("codex:o:t1", &r5));
+    assert_eq!(
+        receive(&fx, &host, notice("codex:o:t1", &r5))["status"],
+        json!("duplicate")
+    );
+    assert!(tell(6).is_err());
+    receive(&fx, &host, notice("codex:o:t2", &r5));
+    tell(6).unwrap();
+    receive(&fx, &host, notice("codex:o:t3", &route_of(&host)));
+    *refuse.borrow_mut() = true;
+    assert!(tell(5).is_err());
+    *refuse.borrow_mut() = false;
+    tell(6).unwrap();
+}
+
+/// 일반 tell 의 조회 실패는 Codex 부모의 경로를 바꾸기 전에 끝난다.
+#[test]
+fn a_failed_parent_lookup_leaves_the_codex_route_as_it_was() {
+    let fx = Fixture::new();
+    owned_parent(&fx);
+    let host = Host::new(&fx, client);
+    spawn(&fx, &host, codex(json!({ "workspace": 3 }))).unwrap();
+    let before = ledger::child_receiver(fx.root(), L).unwrap();
+    assert!(before.is_some());
+    let broken = Host::new(&fx, |method, params| match method {
+        "surface.meta.get" => fail(-32000, "meta store busy"),
+        _ => client(method, params),
+    });
+    let told = fx.with(|d| {
+        super::super::handle_tell(
+            &broken,
+            &json!({ "surface": L, "message": "plain", "caller_surface": 5 }),
+            &fx.tr,
+            d,
+        )
+    });
+    assert!(told.is_err());
+    assert_eq!(ledger::child_receiver(fx.root(), L).unwrap(), before);
+    assert!(broken.params_of("attach.agent_call").is_empty());
+}
+
 /// 경로를 묶지 못하면 commit 하지 않고(첫 완료를 풀지 않는다) 서버의 자식을 닫는다.
 #[test]
 fn a_child_whose_route_cannot_be_bound_is_not_committed_and_is_closed() {
@@ -742,7 +823,8 @@ fn server_local_public_calls_cannot_drive_attach_children() {
 }
 
 /// 결과의 수신처는 그 턴을 지시한 spawn·tell 의 토큰으로 정한다. A 의 턴이 서버에서 확정된 뒤 일반 tell 로 경로가
-/// 풀리거나 B 가 다시 묶어도, 늦게 온 A 턴의 결과는 A 에게, B 턴의 결과는 B 에게 간다.
+/// 풀리거나 B 가 다시 묶어도, 늦게 온 A 턴의 결과는 A 에게, B 턴의 결과는 B 에게 간다. 일반 tell 의 턴 결과가 오기
+/// 전에는 B 의 지시를 원격 호출 없이 거절한다.
 #[test]
 fn a_late_result_goes_to_the_parent_that_started_its_turn() {
     const OTHER: &str = "019f55e7-3dfa-7a00-8000-0000000000bb";
@@ -781,10 +863,22 @@ fn a_late_result_goes_to_the_parent_that_started_its_turn() {
     })
     .unwrap();
     assert_eq!(ledger::child_receiver(fx.root(), L).unwrap(), None);
-    // B 가 그 자식을 맡아 다시 묶는다.
+    let route_plain = route_of(&host);
+    // B 가 그 자식을 맡아 다시 묶는다. 일반 tell 의 턴 결과가 오기 전에는 거절된다.
     *parent_now.borrow_mut() = format!("codex:{OTHER}");
     let mut b = json!({ "surface": L, "message": "b" });
     b["_tasty_context"] = json!({ "provider": "codex", "thread_id": OTHER });
+    let calls = host.params_of("attach.agent_call").len();
+    let busy = fx
+        .with(|d| super::super::handle_tell(&host, &b, &fx.tr, d))
+        .unwrap_err();
+    assert!(busy.message.contains(&L.to_string()), "{}", busy.message);
+    assert_eq!(host.params_of("attach.agent_call").len(), calls);
+    assert_eq!(ledger::child_receiver(fx.root(), L).unwrap(), None);
+    assert_eq!(
+        receive(&fx, &host, notice("p1", &route_plain))["status"],
+        json!("recorded")
+    );
     fx.with(|d| super::super::handle_tell(&host, &b, &fx.tr, d))
         .unwrap();
     let route_b = route_of(&host);

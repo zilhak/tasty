@@ -390,11 +390,91 @@ pub(crate) fn handle_tell<H: HostCall>(
         .and_then(|v| v.as_str())
         .ok_or_else(|| IpcMethodError::invalid_params(tr.t("claude.params.missing_message")))?;
     let remote = crate::remote::child_anchor(host, surface_id, tr)?;
-    let codex = crate::codex_return::codex_caller(params, tr)?;
-    // 원격 자식이면 이 지시의 route 토큰. 서버는 이 지시로 시작한 턴의 결과에 토큰을 실어 돌려준다.
-    let mut route = None;
-    if let Some(caller) = codex {
-        let resolved = crate::codex_return::resolve_parent(host, &caller, tr)?;
+    let resolved = match crate::codex_return::codex_caller(params, tr)? {
+        Some(caller) => Some(crate::codex_return::resolve_parent(host, &caller, tr)?),
+        None => None,
+    };
+    // 조회와 검사는 경로를 바꾸기 전에 끝낸다. 여기서 실패하면 아무 기록도 바뀌지 않는다.
+    let to = tell_target(
+        returns,
+        host,
+        params,
+        surface_id,
+        remote.is_some(),
+        &resolved,
+        tr,
+    )?;
+    let saved = returns.child_routes(surface_id).map_err(|e| {
+        IpcMethodError::new(tr.t_args(
+            "claude.codex.route_not_released",
+            &[&surface_id.to_string(), &e],
+        ))
+    })?;
+    // 원격 자식이면 다른 부모가 지시한 턴의 결과가 이 지시의 토큰으로 가지 않도록 소유를 연다.
+    let owner = remote.and(to.as_ref()).map(RouteTo::owner);
+    if let Some(owner) = &owner {
+        crate::remote::open_turn(returns, surface_id, owner, tr)?;
+    }
+    // 확정된 실패는 경로와 소유를 이전 상태로 되돌린다. 결과불명이면 서버에서 실행됐을 수 있으므로 그대로 둔다.
+    let rollback = |e: IpcMethodError| {
+        if let Err(r) = returns.restore_child(surface_id, saved.clone()) {
+            tracing::warn!("claude tell: could not restore the route of s{surface_id}: {r}");
+        }
+        if let Some(owner) = &owner {
+            crate::remote::undo_turn(returns, surface_id, owner);
+        }
+        e
+    };
+    let route = tell_route(
+        returns,
+        surface_id,
+        resolved.as_ref(),
+        remote.and(to.as_ref()),
+        tr,
+    )
+    .map_err(rollback)?;
+    let resp = match remote {
+        Some(anchor) => match crate::remote::tell(host, anchor, surface_id, message, route, tr) {
+            Ok(resp) => resp,
+            Err(e) if e.unknown => return Err(e.error),
+            Err(e) => return Err(rollback(e.error)),
+        },
+        None => host_call(
+            host,
+            "terminal.tell",
+            json!({ "surface": surface_id, "text": message }),
+        )
+        .map_err(rollback)?,
+    };
+
+    // 알림을 받을 caller_surface가 없으면 훅 등록만 생략하고 tell 결과는 유지한다.
+    if let Some(caller_surface) = params.get("caller_surface").and_then(|v| v.as_u64()) {
+        register_notify_hooks(host, caller_surface as u32, surface_id, "tell");
+    }
+
+    Ok(resp)
+}
+
+/// 완료 알림을 받을 호출 surface.
+fn caller_surface_of(params: &Value) -> Option<u32> {
+    params
+        .get("caller_surface")
+        .and_then(Value::as_u64)
+        .and_then(|n| u32::try_from(n).ok())
+}
+
+/// tell 의 수신처를 정한다. 기록은 바꾸지 않는다. Codex 호출이면 대상이 그 대화의 자식인지 확인한다. 원격 자식에게
+/// 일반 호출이 보내면 호출 surface(없으면 받을 곳 없음)가 수신처다. 로컬 자식의 일반 호출은 수신처가 없다.
+fn tell_target<H: HostCall>(
+    returns: &Returns,
+    host: &H,
+    params: &Value,
+    surface_id: u32,
+    remote: bool,
+    resolved: &Option<crate::codex_return::ResolvedParent>,
+    tr: &Translator,
+) -> Result<Option<RouteTo>, IpcMethodError> {
+    if let Some(resolved) = resolved {
         require_returns(returns, tr)?;
         let target = ParentTarget::Codex(resolved.clone());
         let mut parent = serde_json::Map::new();
@@ -412,66 +492,45 @@ pub(crate) fn handle_tell<H: HostCall>(
                 &tr.t_fmt("claude.codex.not_a_child", &surface_id.to_string()),
             ));
         }
-        returns
-            .bind_tell(surface_id, &Binding::new(&resolved))
-            .map_err(|e| IpcMethodError::new(tr.t_fmt("claude.codex.route_not_saved", &e)))?;
-        if remote.is_some() {
-            route = Some(
-                returns
-                    .issue_attach_route(&RouteTo::Codex(resolved.receiver_id.clone()))
-                    .map_err(|e| {
-                        IpcMethodError::new(tr.t_fmt("claude.codex.route_not_saved", &e))
-                    })?,
-            );
-        }
-    } else {
-        // 일반 호출이 새 지시를 보내면 이 자식의 다음 결과는 그 호출자의 것이다. 보내기 전에 Codex 경로를 끊는다.
-        release_codex_route(returns, surface_id, tr)?;
-        // 원격 자식의 본문은 서버에만 있으므로 호출 surface 에 결과를 돌려받을 토큰을 보낸다.
-        if remote.is_some()
-            && let Some(caller) = caller_surface_of(params)
-        {
-            require_returns(returns, tr)?;
+        return Ok(Some(RouteTo::Codex(resolved.receiver_id.clone())));
+    }
+    if !remote {
+        return Ok(None);
+    }
+    // 원격 자식의 본문은 서버에만 있으므로 호출 surface 에 결과를 돌려받을 토큰을 보낸다. 호출 surface 가 없어도
+    // 토큰을 보내 그 턴의 결과가 도착했음을 셀 수 있게 한다(본문은 버린다).
+    require_returns(returns, tr)?;
+    Ok(Some(match caller_surface_of(params) {
+        Some(caller) => RouteTo::Surface {
+            surface: caller,
             // 세션 조회 실패를 세션 없음으로 낮추면 세션 보호가 빠진 토큰이 나간다. 보내기 전에 실패한다.
-            let session = tasty_plugin_agent_common::remote_results::parent_session(host, caller)
-                .map_err(|e| {
-                IpcMethodError::new(tr.t_fmt("claude.codex.route_not_saved", &e))
-            })?;
-            route = Some(
-                returns
-                    .issue_attach_route(&RouteTo::Surface {
-                        surface: caller,
-                        session,
-                    })
-                    .map_err(|e| {
-                        IpcMethodError::new(tr.t_fmt("claude.codex.route_not_saved", &e))
-                    })?,
-            );
-        }
-    }
-    let resp = match remote {
-        Some(anchor) => crate::remote::tell(host, anchor, surface_id, message, route, tr)?,
-        None => host_call(
-            host,
-            "terminal.tell",
-            json!({ "surface": surface_id, "text": message }),
-        )?,
-    };
-
-    // 알림을 받을 caller_surface가 없으면 훅 등록만 생략하고 tell 결과는 유지한다.
-    if let Some(caller_surface) = params.get("caller_surface").and_then(|v| v.as_u64()) {
-        register_notify_hooks(host, caller_surface as u32, surface_id, "tell");
-    }
-
-    Ok(resp)
+            session: tasty_plugin_agent_common::remote_results::parent_session(host, caller)
+                .map_err(|e| IpcMethodError::new(tr.t_fmt("claude.codex.route_not_saved", &e)))?,
+        },
+        None => RouteTo::Nobody,
+    }))
 }
 
-/// 완료 알림을 받을 호출 surface.
-fn caller_surface_of(params: &Value) -> Option<u32> {
-    params
-        .get("caller_surface")
-        .and_then(Value::as_u64)
-        .and_then(|n| u32::try_from(n).ok())
+/// 정한 수신처로 경로를 바꾼다. Codex 호출이면 경로를 묶고, 일반 호출이면 이전 Codex 경로를 끊는다. 원격 자식이면
+/// 이 지시의 route 토큰을 준다. 서버는 이 지시로 시작한 턴의 결과에 토큰을 실어 돌려준다.
+fn tell_route(
+    returns: &Returns,
+    surface_id: u32,
+    resolved: Option<&crate::codex_return::ResolvedParent>,
+    remote_to: Option<&RouteTo>,
+    tr: &Translator,
+) -> Result<Option<String>, IpcMethodError> {
+    let route_err = |e: String| IpcMethodError::new(tr.t_fmt("claude.codex.route_not_saved", &e));
+    match resolved {
+        Some(resolved) => returns
+            .bind_tell(surface_id, &Binding::new(resolved))
+            .map_err(route_err)?,
+        // 일반 호출이 새 지시를 보내면 이 자식의 다음 결과는 그 호출자의 것이다. 보내기 전에 Codex 경로를 끊는다.
+        None => release_codex_route(returns, surface_id, tr)?,
+    }
+    remote_to
+        .map(|to| returns.issue_attach_route(to).map_err(route_err))
+        .transpose()
 }
 
 /// 일반 호출(tell·respawn)이 자식에게 새 지시를 보내기 전에 이전 Codex 부모의 결과 경로를 끊는다.

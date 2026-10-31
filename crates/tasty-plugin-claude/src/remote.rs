@@ -23,6 +23,7 @@ use tasty_plugin_agent_common::remote_attach::{
     self, AttachOrigin, CallError, Parent, RETURN_ROUTE_KEY, Request, Target, TargetError,
 };
 use tasty_plugin_agent_common::remote_results;
+use tasty_plugin_agent_common::remote_turns::{self, Opened};
 use tasty_plugin_sdk::{IpcMethodError, i18n::Translator};
 
 use crate::codex_return::{Binding, ParentTarget, Returns, RouteTo, TerminalParent};
@@ -162,7 +163,8 @@ pub(crate) fn spawn<H: HostCall>(
             session: remote_results::parent_session(host, *parent)
                 .map_err(|e| IpcMethodError::new(tr.t_fmt("claude.codex.route_not_saved", &e)))?,
         }),
-        ParentTarget::Legacy(None) => None,
+        // 받을 부모가 없어도 토큰을 보내 첫 턴의 결과가 도착했음을 셀 수 있게 한다.
+        ParentTarget::Legacy(None) => Some(RouteTo::Nobody),
     };
     if let Some(to) = to {
         let token = returns
@@ -267,6 +269,9 @@ fn bind<H: HostCall>(
     with_prompt: bool,
     tr: &Translator,
 ) -> Result<(), IpcMethodError> {
+    if with_prompt {
+        open_turn(returns, child, &owner_of(target), tr)?;
+    }
     match target {
         ParentTarget::Codex(resolved) => returns
             .bind_new_child(child, &Binding::new(resolved), with_prompt)
@@ -281,6 +286,48 @@ fn bind<H: HostCall>(
             Ok(())
         }
         ParentTarget::Legacy(None) => Ok(()),
+    }
+}
+
+/// spawn 부모의 턴 소유자.
+fn owner_of(target: &ParentTarget) -> String {
+    match target {
+        ParentTarget::Codex(resolved) => remote_turns::codex_owner(&resolved.receiver_id),
+        ParentTarget::Legacy(Some(parent)) => remote_turns::surface_owner(*parent),
+        ParentTarget::Legacy(None) => remote_turns::NOBODY.to_string(),
+    }
+}
+
+/// client: 원격 자식에게 턴을 여는 지시를 기록한다. 다른 부모의 미완 지시가 있으면 그 턴의 결과가 이 지시의 토큰으로
+/// 가지 않도록 경로를 바꾸거나 보내기 전에 거절한다. 시간이 지나도 풀지 않는다.
+pub(crate) fn open_turn(
+    returns: &Returns,
+    child: u32,
+    owner: &str,
+    tr: &Translator,
+) -> Result<(), IpcMethodError> {
+    let dir = returns
+        .turns_dir()
+        .ok_or_else(|| IpcMethodError::new(tr.t("claude.codex.no_data_dir")))?;
+    match remote_turns::open(&dir, child, owner) {
+        Ok(Opened::Opened) => Ok(()),
+        Ok(Opened::Busy { owner, open }) => Err(IpcMethodError::invalid_params(&tr.t_args(
+            "claude.remote.child_busy",
+            &[&child.to_string(), &owner, &open.to_string()],
+        ))),
+        Err(e) => Err(IpcMethodError::new(
+            tr.t_fmt("claude.codex.route_not_saved", &e),
+        )),
+    }
+}
+
+/// 보내지 못한 것이 확정된 지시의 기록을 되돌린다. 되돌리지 못하면 다른 부모가 거절될 뿐이라 경고만 남긴다.
+pub(crate) fn undo_turn(returns: &Returns, child: u32, owner: &str) {
+    let Some(dir) = returns.turns_dir() else {
+        return;
+    };
+    if let Err(e) = remote_turns::undo(&dir, child, owner) {
+        tracing::warn!("claude remote turns: could not undo the order to s{child}: {e}");
     }
 }
 
@@ -364,6 +411,13 @@ fn discard<H: HostCall>(
 }
 
 /// client: 원격 자식에게 입력을 보낸다. 결과 경로는 호출자가 이미 정했다(경로 먼저, 입력 나중).
+/// 원격 tell 의 실패. 서버가 실행했는지 모르는 결과불명은 확정된 실패와 구분한다.
+pub(crate) struct TellError {
+    pub error: IpcMethodError,
+    /// 서버에서 실행됐을 수 있다. 호출자는 새로 정한 결과 경로와 턴 소유를 되돌리지 않는다.
+    pub unknown: bool,
+}
+
 pub(crate) fn tell<H: HostCall>(
     host: &H,
     anchor: u32,
@@ -371,13 +425,18 @@ pub(crate) fn tell<H: HostCall>(
     message: &str,
     route: Option<String>,
     tr: &Translator,
-) -> Result<Value, IpcMethodError> {
+) -> Result<Value, TellError> {
     let mut params = Map::from_iter([("message".to_string(), json!(message))]);
     if let Some(token) = route {
         params.insert(RETURN_ROUTE_KEY.to_string(), json!(token));
     }
-    let reply = remote_attach::call(host, child_request("tell", anchor, child, params))
-        .map_err(|e| call_error(e, tr))?;
+    let reply =
+        remote_attach::call(host, child_request("tell", anchor, child, params)).map_err(|e| {
+            TellError {
+                unknown: matches!(e, CallError::Unknown(_)),
+                error: call_error(e, tr),
+            }
+        })?;
     let mut out = match reply.result {
         Value::Object(m) => m,
         _ => Map::new(),
@@ -418,6 +477,11 @@ pub(crate) fn kill<H: HostCall>(
     let killed = reply.result.get("killed").and_then(Value::as_bool) == Some(true);
     if killed {
         returns.end_remote_child(child);
+        if let Some(dir) = returns.turns_dir()
+            && let Err(e) = remote_turns::forget(&dir, child)
+        {
+            tracing::warn!("claude remote turns: could not forget the closed s{child}: {e}");
+        }
     }
     let mut out = Map::new();
     out.insert("killed".into(), json!(killed));

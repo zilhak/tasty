@@ -483,7 +483,7 @@ fn attach_route_file(root: &Path, token: &str) -> PathBuf {
 
 /// client: 원격 자식에게 보낸 지시 하나의 route 토큰과 그때의 수신처. 수신처는 Codex 대화(`receiver_id`)이거나
 /// 물리 surface 부모(`parent_surface`, 발급 때 그 surface 의 Claude 세션 `parent_session`)다.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub(crate) struct AttachRoute {
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub receiver_id: String,

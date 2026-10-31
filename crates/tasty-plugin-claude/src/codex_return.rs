@@ -14,6 +14,7 @@
 mod attach;
 mod observe;
 mod parent;
+mod snapshot;
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
