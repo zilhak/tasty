@@ -44,6 +44,17 @@ impl TerminalState {
         result
     }
 
+    /// Visible screen rows whose text changes when dim cells are left out. A reader that got
+    /// little text with `include_dim=false` uses this to tell "the screen is nearly empty" from
+    /// "an app drew its content dim". Scrollback rows are not counted.
+    pub fn dim_omitted_rows(&self) -> usize {
+        self.surface()
+            .screen_lines()
+            .iter()
+            .filter(|line| line_text(line, false).trim_end() != line_text(line, true).trim_end())
+            .count()
+    }
+
     /// Return up to n lines ending at the last nonblank screen row, then fill any
     /// shortage from the primary scrollback, including when the alternate screen is active.
     /// Skip only trailing blank screen rows; keep blank lines inside content and scrollback.
@@ -271,6 +282,25 @@ mod tests {
 
         assert_eq!(t.screen_text(false).trim_end(), "real");
         assert!(t.screen_text(true).contains("ghost"));
+    }
+
+    /// 본문을 통째로 dim 으로 그린 화면은 기본 읽기에서 비어 보인다. 행 수가 그 차이를 알린다.
+    #[test]
+    fn dim_omitted_rows_counts_rows_the_default_read_changes() {
+        let mut t = Terminal::new_detached(20, 4);
+        t.feed_bytes(SGR_FAINT);
+        t.feed_bytes(b"answer one\r\nanswer two\r\n");
+        t.feed_bytes(SGR_RESET);
+        t.feed_bytes(b"> ");
+        t.feed_bytes(SGR_FAINT);
+        t.feed_bytes(b"ghost");
+        t.feed_bytes(SGR_RESET);
+
+        assert_eq!(t.screen_text(false).trim(), ">");
+        assert_eq!(t.dim_omitted_rows(), 3);
+        let mut plain = Terminal::new_detached(20, 4);
+        plain.feed_bytes(b"answer\r\n> ");
+        assert_eq!(plain.dim_omitted_rows(), 0);
     }
 
     #[test]

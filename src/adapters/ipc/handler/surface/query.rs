@@ -10,6 +10,8 @@ use super::require_surface_id;
 pub(crate) struct ScreenDiag {
     pub scrollback_len: usize,
     pub alt_screen: bool,
+    /// show_dim=false 일 때 dim 셀을 빼서 내용이 달라진 보이는 화면 행 수. show_dim=true 면 0.
+    pub dim_omitted_rows: usize,
 }
 
 /// 터미널이 없는 상태를 스크롤백 0과 구분해 is_terminal:false와 null로 반환한다.
@@ -23,11 +25,13 @@ pub(crate) fn with_screen_diagnostics(
             map.insert("is_terminal".into(), json!(true));
             map.insert("scrollback_len".into(), json!(d.scrollback_len));
             map.insert("alt_screen".into(), json!(d.alt_screen));
+            map.insert("dim_omitted_rows".into(), json!(d.dim_omitted_rows));
         }
         None => {
             map.insert("is_terminal".into(), json!(false));
             map.insert("scrollback_len".into(), serde_json::Value::Null);
             map.insert("alt_screen".into(), serde_json::Value::Null);
+            map.insert("dim_omitted_rows".into(), serde_json::Value::Null);
         }
     }
     obj
@@ -60,6 +64,7 @@ pub(crate) fn handle_screen_text(
                 Some(ScreenDiag {
                     scrollback_len: view.scrollback_len(),
                     alt_screen: view.is_alternate_screen(),
+                    dim_omitted_rows: if show_dim { 0 } else { view.dim_omitted_rows() },
                 }),
             )
         }),
@@ -262,6 +267,7 @@ mod tests {
             "0 이 아니라 null 이어야 한다"
         );
         assert!(out["alt_screen"].is_null());
+        assert!(out["dim_omitted_rows"].is_null());
         assert_eq!(out["surface_id"], json!(7));
         assert_eq!(out["text"], json!(""));
     }
@@ -273,6 +279,7 @@ mod tests {
             Some(ScreenDiag {
                 scrollback_len: 0,
                 alt_screen: true,
+                dim_omitted_rows: 0,
             }),
         );
         assert_eq!(out["is_terminal"], json!(true));
@@ -288,10 +295,12 @@ mod tests {
             Some(ScreenDiag {
                 scrollback_len: 402,
                 alt_screen: false,
+                dim_omitted_rows: 3,
             }),
         );
         assert_eq!(out["scrollback_len"], json!(402));
         assert_eq!(out["alt_screen"], json!(false));
+        assert_eq!(out["dim_omitted_rows"], json!(3));
         assert_eq!(out["id"], json!(3), "pty.read 의 키도 보존한다");
     }
 

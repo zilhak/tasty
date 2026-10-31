@@ -1,4 +1,4 @@
-<!-- source-hash: 2cf34617e9f8 -->
+<!-- source-hash: 2e4dafdccca5 -->
 # Driving terminals with the tasty CLI
 
 Use the `tasty` CLI to create terminals, send commands, and read results. Control a running Tasty from a script, or let an AI agent set up the terminals it needs. Agents such as Claude Code and Codex use the same commands.
@@ -110,7 +110,7 @@ tasty read screen --surface 42 --lines 5     # bottom 5 lines of the screen (rea
 tasty is-typing --surface 42                  # whether a person pressed a key or pasted in the last 5 seconds
 ```
 
-By default, `read screen` excludes dimmed autocomplete suggestions (for example Claude Code's grey suggestion text). Use `--show-dim` to include them.
+By default, `read screen` excludes dimmed autocomplete suggestions (for example Claude Code's grey suggestion text). Use `--show-dim` to include them. This applies to every dimmed character, not only suggestions. If `dim_omitted_rows` in the response is greater than 0, some rows changed because dimmed text was left out, so read again with `--show-dim` and compare.
 
 If `--lines N` returns fewer lines than requested, check `scrollback_len` in the response. A value of `0` means there is no more scrollback to read, which can happen when you first open a full-screen app (TUI). If scrollback remains but the requested lines are missing, check the output query. `alt_screen` tells you whether a full-screen app is in use.
 

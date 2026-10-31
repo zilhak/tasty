@@ -203,3 +203,39 @@ fn same_size_attach_request_confirms_the_current_size_in_order() {
         Err(mpsc::TryRecvError::Empty)
     ));
 }
+
+/// mirror 는 snapshot 과 이후 출력으로 보이는 화면을 맞춘다. 출력 링·scrollback 은 원본과 다르다
+/// — attach 이전 원문이 없고 합성 snapshot 바이트가 앞에 있다. mirror 읽기를 서버 원본으로 보내는 근거다.
+#[test]
+fn a_mirror_matches_the_visible_screen_but_not_the_output_ring_or_scrollback() {
+    let mut source = Terminal::new_detached(20, 3);
+    source.feed_bytes(b"old0\r\nold1\r\nold2\r\nold3\r\nold4");
+    let mut subscription = source.snapshot_and_stream();
+    source.feed_bytes(b"\r\nnew");
+    let mut mirror = Terminal::new_detached(subscription.cols, subscription.rows);
+    mirror.feed_bytes(&subscription.snapshot);
+    while let Ok(AttachEvent::Output(bytes)) = subscription.events.try_recv() {
+        mirror.feed_bytes(&bytes);
+    }
+    assert_eq!(source.screen_text(true), mirror.screen_text(true));
+    assert_ne!(
+        source.screen_text_lines(6, true),
+        mirror.screen_text_lines(6, true)
+    );
+    let whole = |t: &mut Terminal| {
+        t.read_output(&crate::OutputReadRequest {
+            from: crate::OutputCursor::At(0),
+            max_bytes: crate::OUTPUT_RETENTION_MAX_BYTES,
+            strip_ansi: false,
+            expect_stream: None,
+        })
+        .expect("readable")
+    };
+    let (src, mir) = (whole(&mut source), whole(&mut mirror));
+    assert!(src.text.starts_with("old0"));
+    assert!(
+        mir.text.starts_with("\x1b[2J"),
+        "mirror ring starts with the synthetic snapshot"
+    );
+    assert_ne!(src.stream, mir.stream);
+}

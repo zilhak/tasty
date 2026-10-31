@@ -233,6 +233,9 @@ impl crate::TerminalReadView<'_> {
     pub fn screen_text_lines(&self, n: usize, include_dim: bool) -> String {
         self.state.screen_text_lines(n, include_dim)
     }
+    pub fn dim_omitted_rows(&self) -> usize {
+        self.state.dim_omitted_rows()
+    }
     pub fn screen_row(&self, row: usize, include_dim: bool) -> String {
         self.state.screen_row(row, include_dim)
     }

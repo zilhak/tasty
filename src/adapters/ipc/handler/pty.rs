@@ -193,6 +193,7 @@ pub(crate) fn handle_read(
             Some(ScreenDiag {
                 scrollback_len: t.scrollback_len(),
                 alt_screen: t.is_alternate_screen(),
+                dim_omitted_rows: if show_dim { 0 } else { t.dim_omitted_rows() },
             }),
         ),
         None => (String::new(), None),

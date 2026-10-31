@@ -86,6 +86,10 @@ impl Terminal {
         self.lock_state().screen_text_lines(n, include_dim)
     }
 
+    pub fn dim_omitted_rows(&self) -> usize {
+        self.lock_state().dim_omitted_rows()
+    }
+
     pub fn screen_row(&self, row: usize, include_dim: bool) -> String {
         self.lock_state().screen_row(row, include_dim)
     }

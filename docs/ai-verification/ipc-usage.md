@@ -76,7 +76,8 @@ ssh 비밀번호/`sudo` 암호/OTP 프롬프트, 대화형 REPL, 설치 마법�
 ### 한계
 
 - **실시간이 아니다(폴링)** — `send` 와 `read` 사이에 프로그램이 아직 프롬프트를 안 띄웠을 수 있다. `send` 전후로 `read screen` 해 상태를 확인하고, 화면 상태와 보낸 키가 어긋나는 desync 를 경계한다.
-- **ghost-suggestion 혼동 주의** — Claude Code CLI 등은 빈 입력창에 아직 아무도 타이핑하지 않은 자동완성 제안(dim 텍스트)을 그려둔다. `read screen`(`surface.screen_text`/`pty.read`)은 이런 dim 셀을 **기본 제외**해 실제 입력된 텍스트만 반환하므로, child 의 입력 버퍼 상태를 오독할 위험이 낮다. 제안 텍스트 자체를 보고 싶을 때만 `--show-dim`.
+- **ghost-suggestion 혼동 주의** — Claude Code CLI 등은 빈 입력창에 아직 아무도 타이핑하지 않은 자동완성 제안(dim 텍스트)을 그려둔다. `read screen`(`surface.screen_text`/`pty.read`)은 이런 dim 셀을 **기본 제외**해 실제 입력된 텍스트만 반환하므로, child 의 입력 버퍼 상태를 오독할 위험이 낮다. 제안 텍스트 자체를 보고 싶을 때만 `--show-dim`. 이 제외는 커서 행에 한정되지 않고 흐리게 그린 모든 셀에 적용된다. 응답의 `dim_omitted_rows` 가 0 보다 크면 dim 때문에 바뀐 행이 있다는 뜻이므로 `--show-dim` 결과와 비교한다.
+- **전체 화면 Claude Code 는 지난 대화를 화면 읽기로 돌려주지 않는다** — Claude Code 2.1.314 는 alternate screen 에 그리므로 `alt_screen: true`, `scrollback_len: 0` 이다. 화면 밖으로 밀린 답변은 원본에도 남지 않는다. 지난 턴 본문은 화면이 아니라 결과 전달 경로나 출력 조회(`read since-mark`)로 받는다.
 - **비밀번호는 에코되지 않는다** — 비번 입력은 surface 에 표시되지 않으므로 입력이 들어갔는지 화면으로 확인할 수 없다. 다음 화면 상태(프롬프트 통과/재요청)로만 역추론한다.
 - **자격증명을 만들어내지는 못한다** — 능력 ≠ 비밀 우회. 모르는 비밀번호/OTP 를 surface 가 대신 알아내 주지 않는다.
 
