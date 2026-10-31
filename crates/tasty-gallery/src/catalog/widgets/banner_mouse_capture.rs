@@ -22,17 +22,23 @@ const ELASTIC_GAP: LogicalPx = LogicalPx(18.0);
 const ELASTIC_LABEL_GAP: LogicalPx = LogicalPx(6.0);
 /// 기각된 기록용 메뉴의 흐림 — `opacity: 0.75`.
 const REJECTED_OPACITY: f32 = 0.75;
-/// 메뉴 행의 고정 문구 — 시안 `BannerMoreMenuG` 의 행 문구.
-fn suppress_prefix() -> &'static str {
-    crate::i18n::t("popup.mouse_capture_banner_menu.suppress_prefix")
+/// 메뉴 행의 고정 문구(앞, 뒤) — 시안 `BannerMoreMenuG` 의 행 문구. 본체 `row_labels` 와 같은 키 쌍이다.
+fn suppress_text() -> (&'static str, &'static str) {
+    (
+        crate::i18n::t("popup.mouse_capture_banner_menu.suppress_prefix"),
+        crate::i18n::t("popup.mouse_capture_banner_menu.suppress_suffix"),
+    )
 }
-fn disable_prefix() -> &'static str {
-    crate::i18n::t("popup.mouse_capture_banner_menu.disable_prefix")
+fn disable_text() -> (&'static str, &'static str) {
+    (
+        crate::i18n::t("popup.mouse_capture_banner_menu.disable_prefix"),
+        crate::i18n::t("popup.mouse_capture_banner_menu.disable_suffix"),
+    )
 }
-/// ja 줄바꿈 예제의 고정 문구 — 시안 `BannerMoreMenuG` 의 `texts`.
-const JA_TEXTS: [&str; 2] = [
-    "vim の通知をオフにする ",
-    "このプログラムのマウスキャプチャを常に無効にする ",
+/// ja 줄바꿈 예제의 고정 문구 — 시안 `BannerMoreMenuG` 의 `texts`. 시안이 앞 문구로만 준다.
+const JA_TEXTS: [(&str, &str); 2] = [
+    ("vim の通知をオフにする ", ""),
+    ("このプログラムのマウスキャプチャを常に無効にする ", ""),
 ];
 
 /// bg-app 무대 — 가운데 정렬 세로 묶음.
@@ -265,7 +271,7 @@ fn more_menu(ui: &mut egui::Ui, theme: &Theme, app: &str, hovered: Option<usize>
     more_menu_texts(
         ui,
         theme,
-        [suppress_prefix(), disable_prefix()],
+        [suppress_text(), disable_text()],
         app,
         hovered,
         danger,
@@ -277,7 +283,7 @@ fn more_menu(ui: &mut egui::Ui, theme: &Theme, app: &str, hovered: Option<usize>
 fn more_menu_texts(
     ui: &mut egui::Ui,
     theme: &Theme,
-    texts: [&str; 2],
+    texts: [(&'static str, &'static str); 2],
     app: &str,
     hovered: Option<usize>,
     danger: bool,
@@ -285,14 +291,14 @@ fn more_menu_texts(
     let pad = theme.banner_more_menu_padding().value();
     let bw = theme.border_width.value();
     let chrome = (pad + bw) * 2.0;
-    let label = |text| BannerMoreLabel {
-        prefix: text,
+    let label = |(prefix, suffix): (&'static str, &'static str)| BannerMoreLabel {
+        prefix,
         app,
-        suffix: "",
+        suffix,
     };
     let row_w = texts
         .iter()
-        .map(|t| banner_more_row_natural_width(ui.ctx(), theme, label(t)))
+        .map(|t| banner_more_row_natural_width(ui.ctx(), theme, label(*t)))
         .fold(0.0_f32, f32::max);
     let outer = (row_w + chrome).clamp(
         theme.banner_more_menu_min_width().value(),

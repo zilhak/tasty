@@ -867,7 +867,7 @@ fn mouse_capture_menu(ui: &mut egui::Ui, theme: &Theme, app: &str, width: f32) {
                 icons::BELL,
                 crate::i18n::t("popup.mouse_capture_banner_menu.suppress_prefix"),
                 app,
-                "",
+                crate::i18n::t("popup.mouse_capture_banner_menu.suppress_suffix"),
                 true,
             );
             mouse_capture_menu_row(
@@ -876,7 +876,7 @@ fn mouse_capture_menu(ui: &mut egui::Ui, theme: &Theme, app: &str, width: f32) {
                 icons::MOUSE,
                 crate::i18n::t("popup.mouse_capture_banner_menu.disable_prefix"),
                 app,
-                "",
+                crate::i18n::t("popup.mouse_capture_banner_menu.disable_suffix"),
                 false,
             );
         });
