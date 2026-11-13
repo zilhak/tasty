@@ -45,6 +45,10 @@ struct CollectedPluginEvents {
     new_invalidated_banners: Vec<u64>,
     // 플러그인 egui의 복사 결과. 채널의 플러그인 id를 담는다.
     new_copied_texts: Vec<super::PluginCopiedText>,
+    // hello 로 편집 결과 회신을 약속한 채널.
+    edit_capable: Vec<String>,
+    // 편집 요청의 회신. 채널의 플러그인 id를 담는다.
+    new_edit_outcomes: Vec<super::edit_outcome::ReceivedEditOutcome>,
     // plugin 이 폐기한 shared buffer (성장 재생성 등): (plugin_id, buffer_id).
     // host 매핑을 해제하지 않으면 구세대 버퍼가 plugin 수명 내내 남는다.
     released_buffers: Vec<(String, SharedBufferId)>,
@@ -415,8 +419,16 @@ impl PluginManager {
     fn classify_event(&self, id: &str, ev: PluginEvent, out: &mut CollectedPluginEvents) {
         match ev {
             PluginEvent::Hello {
-                plugin_id, version, ..
+                plugin_id,
+                version,
+                capabilities,
             } => {
+                if capabilities
+                    .iter()
+                    .any(|c| c == tasty_plugin_protocol::CAPABILITY_EDIT_OUTCOME)
+                {
+                    out.edit_capable.push(id.to_string());
+                }
                 out.hello_log
                     .push((id.to_string(), plugin_id.clone(), version));
                 if !self.registered_plugins.contains(&plugin_id) {
@@ -558,10 +570,20 @@ impl PluginManager {
                     None => tracing::debug!("[plugin {}] copy_text with unknown target", id),
                 }
             }
-            PluginEvent::EditOutcome { edit_id, .. } => {
-                // 호스트가 아직 편집 요청을 보내지 않으므로 받을 결과가 없다.
-                tracing::debug!("[plugin {}] edit outcome {} without a request", id, edit_id);
-            }
+            PluginEvent::EditOutcome {
+                target,
+                edit_id,
+                result,
+                copied,
+            } => out
+                .new_edit_outcomes
+                .push(super::edit_outcome::ReceivedEditOutcome {
+                    channel: id.to_string(),
+                    target,
+                    edit_id,
+                    result,
+                    copied,
+                }),
             PluginEvent::Unknown => {
                 // forward-compat fallback — 신버전 plugin 의 미지 이벤트는 무시.
                 tracing::debug!("[plugin {}] unknown event kind (ignored)", id);
@@ -590,6 +612,8 @@ impl PluginManager {
             new_invalidated_banners,
             released_buffers,
             new_copied_texts,
+            edit_capable,
+            new_edit_outcomes,
             disconnected,
         } = collected;
 
@@ -620,6 +644,7 @@ impl PluginManager {
             }
             super::copied_text::push_bounded(&mut self.copied_texts, item);
         }
+        self.apply_edit_events(edit_capable, new_edit_outcomes, &disconnected);
         for (plugin_id, buffer_id) in released_buffers {
             self.release_plugin_buffer(&plugin_id, buffer_id);
         }
@@ -655,6 +680,7 @@ impl PluginManager {
     fn clear_dead_plugin_frames(&mut self, disconnected: &[String]) {
         for dead in disconnected {
             self.forget_copied_texts(dead);
+            self.forget_edit_requests(dead);
             self.egui_mesh_frames.retain(|_, f| &f.plugin_id != dead);
             self.popup_mesh_frames.retain(|_, f| &f.plugin_id != dead);
             self.banner_mesh_frames.retain(|_, f| &f.plugin_id != dead);
@@ -1403,6 +1429,58 @@ mod tests {
             ]
         );
         assert!(mgr.take_copied_texts().is_empty());
+    }
+
+    /// hello 의 회신 약속은 hello 가 주장한 id 가 아니라 채널 id 로 기록하고, 회신은 그 채널의 요청 결과가 된다.
+    /// 연결이 끊기면 기다리던 요청은 `Gone`으로 끝난다.
+    #[test]
+    fn edit_outcome_events_reach_the_request_through_the_channel() {
+        use tasty_plugin_protocol::{CAPABILITY_EDIT_OUTCOME, CopyTargetWire, EditResultWire};
+        let mut mgr = mgr();
+        let channel = "com.tasty.markdown";
+        let (process, _tap) = crate::process::PluginProcess::stub_with_request_rx(channel);
+        mgr.processes.insert(channel.into(), process);
+        let mut out = CollectedPluginEvents::default();
+        mgr.classify_event(
+            channel,
+            PluginEvent::Hello {
+                plugin_id: "com.tasty.claimed".into(),
+                version: "1.0.0".into(),
+                capabilities: vec![CAPABILITY_EDIT_OUTCOME.into()],
+            },
+            &mut out,
+        );
+        mgr.apply_collected_events(out);
+        assert!(mgr.supports_edit_outcome(channel));
+        assert!(!mgr.supports_edit_outcome("com.tasty.claimed"));
+
+        let target = crate::PluginCopyTarget::Popup(3);
+        let request = mgr.begin_edit_request(channel, target).unwrap();
+        let mut out = CollectedPluginEvents::default();
+        mgr.classify_event(
+            channel,
+            PluginEvent::EditOutcome {
+                target: CopyTargetWire::Popup { instance_id: 3 },
+                edit_id: request.edit_id,
+                result: EditResultWire::Acted,
+                copied: Some("hi".into()),
+            },
+            &mut out,
+        );
+        mgr.apply_collected_events(out);
+        let got = mgr.take_edit_outcomes();
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].request.edit_id, request.edit_id);
+        assert_eq!(got[0].result, crate::PluginEditResult::Acted);
+        assert_eq!(got[0].copied.as_deref(), Some("hi"));
+
+        let waiting = mgr.begin_edit_request(channel, target).unwrap();
+        mgr.clear_dead_plugin_frames(&[channel.to_string()]);
+        let got = mgr.take_edit_outcomes();
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].request.edit_id, waiting.edit_id);
+        assert_eq!(got[0].result, crate::PluginEditResult::Gone);
+        assert!(!mgr.supports_edit_outcome(channel));
     }
 
     /// 같은 배치에서 연결이 끊긴 플러그인의 복사 결과는 이미 담긴 것과 새로 모은 것 모두

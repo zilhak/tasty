@@ -190,6 +190,7 @@ impl PluginManager {
             invalidated_popups: Vec::new(),
             invalidated_banners: Vec::new(),
             copied_texts: std::collections::VecDeque::new(),
+            edit_outcomes: Default::default(),
             sys: sysinfo::System::new(),
             pending_rss_samples: Vec::new(),
             file_format,
@@ -788,6 +789,7 @@ impl PluginManager {
         self.cancel_pending_namespace_calls(plugin_id, reason);
         self.plugin_buffers.remove(plugin_id);
         self.forget_copied_texts(plugin_id);
+        self.forget_edit_requests(plugin_id);
         self.settings_pages.unregister_plugin(plugin_id);
         // 다음 hello에서 권한과 설정 페이지 등을 다시 등록할 수 있게 한다.
         self.registered_plugins.remove(plugin_id);

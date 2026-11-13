@@ -41,8 +41,8 @@ pub use builtin::{
 pub use discovery::{discover, plugin_root};
 pub use listener::HostListener;
 pub use manager::{
-    EguiMeshFrame, PluginCopiedText, PluginCopyTarget, PluginManager, PopupInstance,
-    next_popup_z_seq,
+    EguiMeshFrame, PluginCopiedText, PluginCopyTarget, PluginEditOutcome, PluginEditRequest,
+    PluginEditResult, PluginManager, PopupInstance, next_popup_z_seq,
 };
 pub use process::PluginProcess;
 pub use registry_state::PluginsConfig;
