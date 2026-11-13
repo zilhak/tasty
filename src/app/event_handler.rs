@@ -553,6 +553,7 @@ impl ApplicationHandler<AppEvent> for App {
         };
         self.finalize_plugin_hello(hello_pairs);
         self.settle_plugin_edit_holds(now);
+        self.deliver_plugin_copied_texts();
         self.report_plugin_failures();
         self.record_plugin_rss_samples_if_present();
         self.forward_mesh_frames_for_parked();

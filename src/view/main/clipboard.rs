@@ -324,6 +324,19 @@ impl MainView {
         )
     }
 
+    /// Writes what a plugin popup text field of this window copied or cut through the copy door.
+    /// A popup belongs to no surface, so the toast is window wide.
+    pub(crate) fn copy_plugin_popup_text(&mut self, text: &str) {
+        self.copy_text(
+            text,
+            false,
+            "toast.copied",
+            Vec::new(),
+            crate::adapters::ui::ToastScope::Window,
+        );
+        self.base.mark_dirty();
+    }
+
     /// Writes what an egui widget of this window copied through the copy door. Runs after both
     /// render outcomes, because egui ran before presenting.
     pub(super) fn copy_egui_text(&mut self) {

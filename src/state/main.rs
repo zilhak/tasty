@@ -169,6 +169,11 @@ pub struct MainViewState {
     /// 다음 렌더에 플러그인 팝업 입력으로 보낼 편집 요청(instance id, 요청). App이 원래 키를 보류하며 넣는다.
     #[cfg(feature = "gui")]
     pub(crate) plugin_popup_edit_requests: Vec<(u64, tasty_plugin_protocol::RawInputEventWire)>,
+    /// 이 창이 플러그인 팝업에 복사·잘라내기를 보낸 순번(instance id → 전역 순번). 팝업은 창
+    /// 정보가 없고 Window 범위 팝업은 여러 창에 함께 보이므로, 복사 결과는 가장 최근에 보낸 창이
+    /// 받는다(`App::deliver_plugin_copied_texts`). 팝업이 닫히면 지운다.
+    #[cfg(feature = "gui")]
+    pub(crate) plugin_popup_edit_sent: std::collections::HashMap<u64, u64>,
     /// 이전 프레임에 플러그인 팝업을 실제로 배치한 범위. 좁은 surface 라 창 범위로 연
     /// 팝업의 자식 파일 피커가 선언이 아니라 이 범위를 따른다. 숨은 팝업은 들어 있지 않다.
     #[cfg(feature = "gui")]

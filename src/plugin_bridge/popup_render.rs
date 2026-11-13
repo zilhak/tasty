@@ -48,6 +48,7 @@ pub fn draw_plugin_popups(
         state.webview_overlay.prev_plugin_rects.clear();
         state.plugin_mesh_popup_forward.clear();
         state.plugin_popup_user_activated.clear();
+        state.plugin_popup_edit_sent.clear();
         return;
     };
 
@@ -66,6 +67,9 @@ pub fn draw_plugin_popups(
     state
         .plugin_popup_edit_requests
         .retain(|(k, _)| live_mesh.contains(k));
+    state
+        .plugin_popup_edit_sent
+        .retain(|k, _| live_mesh.contains(k));
 
     let screen_rect = ctx.screen_rect();
     let pointer_pos = ctx.input(|i| i.pointer.hover_pos());
@@ -229,6 +233,11 @@ pub fn draw_plugin_popups(
         let h_px = physical.height.value().round().max(1.0) as u32;
         let geom = (w_px, h_px, ppp.to_bits());
         let has_input = !raw_input.events.is_empty();
+        if sends_edit(&raw_input) {
+            state
+                .plugin_popup_edit_sent
+                .insert(snap.instance_id, next_edit_seq());
+        }
         if is_user_activation(&raw_input) {
             state
                 .plugin_popup_user_activated
@@ -390,6 +399,20 @@ fn place_visible(
             Some((snap, rect))
         })
         .collect()
+}
+
+/// 창마다 플러그인 팝업에 편집을 보낸 순서. 모든 창이 함께 쓰므로 가장 최근에 보낸 창을 고를 수 있다.
+static EDIT_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+
+fn next_edit_seq() -> u64 {
+    EDIT_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+}
+
+/// 복사 결과가 돌아올 편집(복사·잘라내기)을 보내는지.
+fn sends_edit(raw: &RawInputWire) -> bool {
+    raw.events
+        .iter()
+        .any(|ev| matches!(ev, RawInputEventWire::Copy | RawInputEventWire::Cut))
 }
 
 /// App 이 `instance`에 보내려고 줄 세운 편집 요청을 넣은 순서대로 꺼낸다. 다른 팝업의 요청은 남긴다.

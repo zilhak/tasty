@@ -667,6 +667,8 @@ pub(crate) mod frame_effect;
 mod view_frame;
 
 #[cfg(feature = "gui")]
+mod plugin_copied_texts;
+#[cfg(feature = "gui")]
 mod plugin_surface_dirty;
 #[cfg(feature = "gui")]
 mod view_mesh;
