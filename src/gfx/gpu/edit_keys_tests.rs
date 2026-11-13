@@ -480,14 +480,13 @@ fn a_stalled_hold_retracts_the_edit_and_replays() {
 }
 
 /// A native Wayland read in flight holds the paste. Text for the same field is pasted; an empty or
-/// failed read replays the key; text for a field that lost focus drops both; a read that never
-/// ends is cancelled and replayed.
+/// failed read replays the key; a field that lost focus drops both whatever the read returned; a
+/// read that never ends is cancelled and replayed.
 #[test]
 fn a_pending_wayland_read_holds_the_paste() {
     let mut ui = Ui::new();
     ui.focus("field");
     ui.clipboard = ClipText::Pending;
-    let tag = id("field").value();
     let now = Instant::now();
 
     let mut state = bound();
@@ -497,7 +496,7 @@ fn a_pending_wayland_read_holds_the_paste() {
         EguiKey::Taken
     );
     assert!(state.awaits_text() && pending.is_empty());
-    state.text_arrived(Some("WL".into()), tag, &mut pending);
+    state.text_arrived(Some("WL".into()), &ui.ctx, &mut pending);
     assert_eq!(pending, vec![egui::Event::Paste("WL".into())]);
     ui.pass(&mut state, pending);
     assert_eq!(ui.field, "helloWL");
@@ -506,7 +505,7 @@ fn a_pending_wayland_read_holds_the_paste() {
     for text in [None, Some(String::new())] {
         let mut pending = Vec::new();
         ui.judge(&mut state, &press("v"), &mut pending, now);
-        state.text_arrived(text, tag, &mut pending);
+        state.text_arrived(text, &ui.ctx, &mut pending);
         assert!(pending.is_empty());
         assert_eq!(
             released(&mut state).replay,
@@ -514,15 +513,21 @@ fn a_pending_wayland_read_holds_the_paste() {
         );
     }
 
-    let mut pending = Vec::new();
-    ui.judge(&mut state, &press("v"), &mut pending, now);
-    state.text_arrived(Some("WL".into()), tag + 1, &mut pending);
-    assert!(pending.is_empty());
-    assert!(
-        released(&mut state).replay.is_none(),
-        "focus moved: dropped"
-    );
+    for text in [Some("WL".to_string()), Some(String::new()), None] {
+        ui.focus("field");
+        let mut pending = Vec::new();
+        ui.judge(&mut state, &press("v"), &mut pending, now);
+        ui.focus("next");
+        state.text_arrived(text.clone(), &ui.ctx, &mut pending);
+        assert!(pending.is_empty());
+        assert!(
+            released(&mut state).replay.is_none(),
+            "focus moved, read {text:?}: dropped"
+        );
+    }
+    assert_eq!(ui.next, "", "nothing reached the field focus moved to");
 
+    ui.focus("field");
     let mut pending = Vec::new();
     ui.judge(&mut state, &press("v"), &mut pending, now);
     let mut cancelled = false;

@@ -313,12 +313,13 @@ impl<E: HeldEvent> EditKeyState<E> {
         output
     }
 
-    /// The native Wayland read for a held paste finished. `text` is `None` when it failed.
-    /// `focused` is the widget focused now: if focus moved, the text and the key are dropped.
+    /// The native Wayland read for a held paste finished. `text` is `None` when it failed. If the
+    /// user moved focus away from the field the paste was asked for, the text and the key are both
+    /// dropped, whatever the read returned.
     pub(crate) fn text_arrived(
         &mut self,
         text: Option<String>,
-        focused: u64,
+        ctx: &egui::Context,
         events: &mut Vec<egui::Event>,
     ) {
         let Some(held) = self.hold.as_mut() else {
@@ -327,11 +328,12 @@ impl<E: HeldEvent> EditKeyState<E> {
         let Phase::AwaitText { tag } = held.phase else {
             return;
         };
+        if tag != focus_tag(ctx) {
+            tracing::debug!("held paste dropped: its text field lost focus");
+            self.resolve_now(Outcome::TargetGone);
+            return;
+        }
         match text.filter(|t| !t.is_empty()) {
-            Some(_) if tag != focused => {
-                tracing::debug!("held paste dropped: its text field lost focus");
-                self.resolve_now(Outcome::TargetGone);
-            }
             Some(text) => {
                 events.push(egui::Event::Paste(text));
                 held.phase = Phase::Injected;
@@ -503,9 +505,8 @@ impl super::GpuState {
         if !self.edit_keys.awaits_text() {
             return false;
         }
-        let focused = focus_tag(&self.egui_ctx);
         let events = &mut self.egui_state.egui_input_mut().events;
-        self.edit_keys.text_arrived(text, focused, events);
+        self.edit_keys.text_arrived(text, &self.egui_ctx, events);
         true
     }
 
