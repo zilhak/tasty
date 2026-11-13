@@ -277,3 +277,56 @@ fn a_wheel_after_a_queued_pointer_move_waits_too() {
     let release = state.take_release(owner).expect("released");
     assert_eq!(release.queued, vec![moved, wheel, pinch]);
 }
+
+/// A click a Wayland read let through is still unprocessed when the read finishes. Its pass runs
+/// first: a click into another field drops the text and the key whatever the read returned, and a
+/// click inside the same field still gets the paste.
+#[test]
+fn a_wayland_read_waits_for_a_click_it_let_through() {
+    let click = |at: egui::Pos2| {
+        let button = |pressed| egui::Event::PointerButton {
+            pos: at,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        vec![egui::Event::PointerMoved(at), button(true), button(false)]
+    };
+    let mut ui = Ui::new();
+    ui.clipboard = ClipText::Pending;
+    let mut state = bound();
+    let now = Instant::now();
+    for text in [Some("WL".to_string()), Some(String::new()), None] {
+        ui.focus("field");
+        let mut pending = Vec::new();
+        ui.judge(&mut state, &press("v"), &mut pending, now);
+        assert_eq!(
+            ui.judge(&mut state, &Ev::Pointer("click"), &mut pending, now),
+            EguiKey::Free,
+            "a click goes on while the read waits"
+        );
+        pending.extend(click(ui.next_at.center()));
+        state.text_arrived(text.clone(), &ui.ctx, &mut pending, now);
+        assert!(
+            !pending.iter().any(|e| matches!(e, egui::Event::Paste(_))),
+            "the paste does not ride the click's pass"
+        );
+        ui.pass(&mut state, pending);
+        assert!(
+            released(&mut state).replay.is_none(),
+            "focus moved, read {text:?}: dropped"
+        );
+    }
+    assert_eq!(ui.next, "", "nothing reached the clicked field");
+    assert_eq!(ui.field, "hello");
+
+    ui.focus("field");
+    let mut pending = Vec::new();
+    ui.judge(&mut state, &press("v"), &mut pending, now);
+    let field_at = ui.next_at.center() - egui::vec2(0.0, ui.next_at.height() + 4.0);
+    pending.extend(click(field_at));
+    state.text_arrived(Some("WL".into()), &ui.ctx, &mut pending, now);
+    ui.pass(&mut state, pending);
+    assert!(ui.field.contains("WL"), "pasted in place: {}", ui.field);
+    assert!(released(&mut state).replay.is_none());
+}

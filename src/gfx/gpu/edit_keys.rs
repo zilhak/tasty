@@ -158,6 +158,15 @@ struct HostHold<E> {
     recheck: bool,
     /// Where an injected paste starts, to tell an applied paste from an ignored one.
     paste_at: Option<PasteMark>,
+    /// A Wayland read that finished while input it let through was still unprocessed. It is
+    /// applied once that input's pass has settled the focus.
+    arrived: Option<Arrived>,
+}
+
+/// A finished Wayland read for the widget tagged `tag`. `text` is `None` when the read failed.
+struct Arrived {
+    tag: u64,
+    text: Option<String>,
 }
 
 /// The focused field and the start of its selection (or cursor) when a paste went in.
@@ -315,6 +324,7 @@ impl<E: HeldEvent> EditKeyState<E> {
             owner,
             recheck,
             paste_at: None,
+            arrived: None,
         });
     }
 
@@ -361,6 +371,10 @@ impl<E: HeldEvent> EditKeyState<E> {
         }
         if has_pending_input(cx.events) {
             held.phase = Phase::Settle;
+            return;
+        }
+        if let Some(Arrived { tag, text }) = held.arrived.take() {
+            self.apply_text(tag, text, cx.ctx, cx.events, now);
             return;
         }
         let ctx = cx.ctx;
@@ -428,7 +442,8 @@ impl<E: HeldEvent> EditKeyState<E> {
 
     /// The native Wayland read for a held paste finished. `text` is `None` when it failed. If the
     /// user moved focus away from the field the paste was asked for, the text and the key are both
-    /// dropped, whatever the read returned.
+    /// dropped, whatever the read returned. Input the read let through (a click) that egui has not
+    /// processed yet may still move focus, so the result waits for that input's pass first.
     pub(crate) fn text_arrived(
         &mut self,
         text: Option<String>,
@@ -440,6 +455,27 @@ impl<E: HeldEvent> EditKeyState<E> {
             return;
         };
         let Phase::AwaitText { tag } = held.phase else {
+            return;
+        };
+        if has_pending_input(events) {
+            held.arrived = Some(Arrived { tag, text });
+            held.phase = Phase::Settle;
+            return;
+        }
+        self.apply_text(tag, text, ctx, events, now);
+    }
+
+    /// Applies a finished Wayland read on settled focus: the text goes in for the field it was
+    /// asked for, an empty or failed read replays the key, and a field that lost focus drops both.
+    fn apply_text(
+        &mut self,
+        tag: u64,
+        text: Option<String>,
+        ctx: &egui::Context,
+        events: &mut Vec<egui::Event>,
+        now: Instant,
+    ) {
+        let Some(held) = self.hold.as_mut() else {
             return;
         };
         if tag != focus_tag(ctx) {

@@ -69,6 +69,8 @@ struct Ui {
     secret: String,
     clipboard: ClipText,
     label: egui::Rect,
+    /// Where the second field was drawn, to click into it.
+    next_at: egui::Rect,
 }
 
 impl Ui {
@@ -80,6 +82,7 @@ impl Ui {
             secret: "pass".into(),
             clipboard: ClipText::Text("CLIP".into()),
             label: egui::Rect::NOTHING,
+            next_at: egui::Rect::NOTHING,
         }
     }
 
@@ -94,12 +97,12 @@ impl Ui {
             ..Default::default()
         };
         let (field, next, secret) = (&mut self.field, &mut self.next, &mut self.secret);
-        let label = &mut self.label;
+        let (label, next_at) = (&mut self.label, &mut self.next_at);
         self.ctx
             .run(input, |ctx| {
                 egui::CentralPanel::default().show(ctx, |ui| {
                     ui.add(egui::TextEdit::singleline(field).id(id("field")));
-                    ui.add(egui::TextEdit::singleline(next).id(id("next")));
+                    *next_at = ui.add(egui::TextEdit::singleline(next).id(id("next"))).rect;
                     let mut read_only: &str = "mirror://address";
                     ui.add(egui::TextEdit::singleline(&mut read_only).id(id("ro")));
                     ui.add(
