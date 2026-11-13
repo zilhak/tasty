@@ -12,9 +12,9 @@ use crate::adapters::ui::input::edit_key::{
     self, Capability, EditBindings, EditKey, EditKeyHold, Outcome, Release, Verdict,
 };
 
-/// A held edit whose egui event waits for a frame that never comes (a stalled or hidden window) is
-/// taken back out of egui's input and its key replayed after this long. egui answers in the next
-/// pass, so a live window never reaches it.
+/// A held edit in a window whose frames stopped (minimized or hidden) is taken back out of egui's
+/// input and its key replayed once this long has passed since the edit went in. A window that still
+/// draws is never timed out: its next frame, however late, runs the edit and decides.
 const HOST_HOLD_LIMIT: Duration = Duration::from_secs(1);
 
 /// A native Wayland read that has not answered after the selection's own read limit is given up.
@@ -114,6 +114,7 @@ impl HeldEvent for WindowEvent {
 struct HostHold<E> {
     hold: EditKeyHold<E>,
     phase: Phase,
+    /// When the key came, then when the edit went into egui's input.
     since: Instant,
     owner: EditKeyOwner,
 }
@@ -251,7 +252,7 @@ impl<E: HeldEvent> EditKeyState<E> {
 
     /// Judges a held edit again once the input before it has run: it passes, acts or goes into
     /// egui's input. Input that arrived since gets a pass of its own first.
-    pub(crate) fn rejudge(&mut self, cx: KeyCx<'_>) {
+    pub(crate) fn rejudge(&mut self, cx: KeyCx<'_>, now: Instant) {
         let Some(held) = self.hold.as_mut() else {
             return;
         };
@@ -265,7 +266,10 @@ impl<E: HeldEvent> EditKeyState<E> {
         match start(held.hold.edit(), cx) {
             Start::Pass => self.resolve_now(Outcome::NotActed),
             Start::Act => self.resolve_now(Outcome::Acted),
-            Start::Hold(phase) => held.phase = phase,
+            Start::Hold(phase) => {
+                held.phase = phase;
+                held.since = now;
+            }
         }
     }
 
@@ -321,6 +325,7 @@ impl<E: HeldEvent> EditKeyState<E> {
         text: Option<String>,
         ctx: &egui::Context,
         events: &mut Vec<egui::Event>,
+        now: Instant,
     ) {
         let Some(held) = self.hold.as_mut() else {
             return;
@@ -337,32 +342,35 @@ impl<E: HeldEvent> EditKeyState<E> {
             Some(text) => {
                 events.push(egui::Event::Paste(text));
                 held.phase = Phase::Injected;
+                held.since = now;
             }
             None => self.resolve_now(Outcome::NotActed),
         }
     }
 
-    /// Gives up a hold whose result did not come in time. An edit still waiting in egui's input is
-    /// taken back first, so the replayed key is the only effect. `cancel_read` stops a Wayland read.
+    /// Gives up a hold whose result did not come in time. A Wayland read is cancelled past its
+    /// limit. A hold waiting for a frame is given up only while `frames_stopped` (the window is
+    /// minimized or hidden): an edit still waiting in egui's input is taken back first, so the
+    /// replayed key is the only effect. `cancel_read` stops a Wayland read.
     pub(crate) fn expire(
         &mut self,
         now: Instant,
         events: &mut Vec<egui::Event>,
         cancel_read: impl FnOnce(),
+        frames_stopped: bool,
     ) {
         let Some(held) = self.hold.as_ref() else {
             return;
         };
         let age = now.saturating_duration_since(held.since);
+        let stale = frames_stopped && age >= HOST_HOLD_LIMIT;
         let outcome = match held.phase {
             Phase::AwaitText { .. } if age >= AWAIT_TEXT_LIMIT => {
                 cancel_read();
                 Outcome::TimedOut
             }
-            Phase::Settle | Phase::Settling | Phase::Rejudge if age >= HOST_HOLD_LIMIT => {
-                Outcome::TimedOut
-            }
-            Phase::Injected if age >= HOST_HOLD_LIMIT => {
+            Phase::Settle | Phase::Settling | Phase::Rejudge if stale => Outcome::TimedOut,
+            Phase::Injected if stale => {
                 if retract_edit(events, held.hold.edit()) {
                     Outcome::TimedOut
                 } else {
@@ -415,8 +423,13 @@ impl super::GpuState {
     }
 
     /// Judges a window event before egui-winit. `owner` says who replays a released key.
-    pub fn judge_egui_key(&mut self, event: &WindowEvent, owner: EditKeyOwner) -> EguiKey {
-        self.expire_edit_hold();
+    pub fn judge_egui_key(
+        &mut self,
+        window: &winit::window::Window,
+        event: &WindowEvent,
+        owner: EditKeyOwner,
+    ) -> EguiKey {
+        self.expire_edit_hold(frames_stopped(window));
         self.with_key_cx(|state, cx| state.judge(event, owner, Instant::now(), cx))
     }
 
@@ -458,7 +471,7 @@ impl super::GpuState {
         window: &winit::window::Window,
         event: &WindowEvent,
     ) -> (bool, bool) {
-        match self.judge_egui_key(event, EditKeyOwner::EguiOnly) {
+        match self.judge_egui_key(window, event, EditKeyOwner::EguiOnly) {
             EguiKey::Taken => (true, true),
             EguiKey::Free | EguiKey::Pass(_) => self.handle_egui_event(window, event),
         }
@@ -472,7 +485,8 @@ impl super::GpuState {
 
     /// Before a frame takes egui's input: gives up a stale hold and replays an egui-only release.
     pub(super) fn edit_keys_before_input(&mut self, window: &winit::window::Window) {
-        self.expire_edit_hold();
+        // A frame is being drawn: whatever waits for one gets it now.
+        self.expire_edit_hold(false);
         let Some(release) = self.edit_keys.take_release(EditKeyOwner::EguiOnly) else {
             return;
         };
@@ -492,7 +506,7 @@ impl super::GpuState {
     ) -> egui::PlatformOutput {
         let output = self.edit_keys.after_pass(output);
         if self.edit_keys.needs_rejudge() {
-            self.with_key_cx(|state, cx| state.rejudge(cx));
+            self.with_key_cx(|state, cx| state.rejudge(cx, Instant::now()));
         }
         if self.edit_keys.busy() {
             window.request_redraw();
@@ -506,7 +520,8 @@ impl super::GpuState {
             return false;
         }
         let events = &mut self.egui_state.egui_input_mut().events;
-        self.edit_keys.text_arrived(text, &self.egui_ctx, events);
+        self.edit_keys
+            .text_arrived(text, &self.egui_ctx, events, Instant::now());
         true
     }
 
@@ -514,15 +529,24 @@ impl super::GpuState {
         self.edit_keys.busy()
     }
 
-    fn expire_edit_hold(&mut self) {
+    fn expire_edit_hold(&mut self, frames_stopped: bool) {
         let selection = &mut self.text_selection;
         let events = &mut self.egui_state.egui_input_mut().events;
-        self.edit_keys.expire(Instant::now(), events, || {
+        let cancel_read = || {
             if let Some(selection) = selection.as_mut() {
                 selection.cancel();
             }
-        });
+        };
+        self.edit_keys
+            .expire(Instant::now(), events, cancel_read, frames_stopped);
     }
+}
+
+/// The window draws no frames: it is minimized or hidden. winit cannot tell on every platform
+/// (Wayland answers neither), and an unknown answer counts as drawing. An occluded window is not
+/// told apart either: Tasty keeps no occlusion state, and an occluded X11 window still draws.
+fn frames_stopped(window: &winit::window::Window) -> bool {
+    window.is_minimized() == Some(true) || window.is_visible() == Some(false)
 }
 
 /// What a bound edit does on a settled state: the key passes on, a label copy acts at once, or the

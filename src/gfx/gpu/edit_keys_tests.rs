@@ -165,11 +165,14 @@ impl Ui {
         let clip = self.clipboard.clone();
         let mut read = |_tag: u64| clip.clone();
         let mut next = Vec::new();
-        state.rejudge(KeyCx {
-            ctx: &self.ctx,
-            events: &mut next,
-            clipboard: &mut read,
-        });
+        state.rejudge(
+            KeyCx {
+                ctx: &self.ctx,
+                events: &mut next,
+                clipboard: &mut read,
+            },
+            Instant::now(),
+        );
         let later = self.pass(state, next);
         later.or(copied)
     }
@@ -457,7 +460,8 @@ fn later_events_queue_behind_the_held_key() {
     assert_eq!(release.queued, vec![Ev::Other("release"), press("c")]);
 }
 
-/// A held edit whose frame never comes is taken back out of the input and its key replayed.
+/// A held edit in a window whose frames stopped is taken back out of the input and its key
+/// replayed once the limit has passed.
 #[test]
 fn a_stalled_hold_retracts_the_edit_and_replays() {
     let mut ui = Ui::new();
@@ -469,9 +473,9 @@ fn a_stalled_hold_retracts_the_edit_and_replays() {
         ui.judge(&mut state, &press("v"), &mut pending, now),
         EguiKey::Taken
     );
-    state.expire(now + Duration::from_millis(10), &mut pending, || {});
+    state.expire(now + Duration::from_millis(10), &mut pending, || {}, true);
     assert!(state.take_release(EditKeyOwner::EguiOnly).is_none());
-    state.expire(now + HOST_HOLD_LIMIT, &mut pending, || {});
+    state.expire(now + HOST_HOLD_LIMIT, &mut pending, || {}, true);
     assert!(pending.is_empty(), "the edit left the input");
     assert_eq!(
         released(&mut state).replay,
@@ -496,7 +500,7 @@ fn a_pending_wayland_read_holds_the_paste() {
         EguiKey::Taken
     );
     assert!(state.awaits_text() && pending.is_empty());
-    state.text_arrived(Some("WL".into()), &ui.ctx, &mut pending);
+    state.text_arrived(Some("WL".into()), &ui.ctx, &mut pending, now);
     assert_eq!(pending, vec![egui::Event::Paste("WL".into())]);
     ui.pass(&mut state, pending);
     assert_eq!(ui.field, "helloWL");
@@ -505,7 +509,7 @@ fn a_pending_wayland_read_holds_the_paste() {
     for text in [None, Some(String::new())] {
         let mut pending = Vec::new();
         ui.judge(&mut state, &press("v"), &mut pending, now);
-        state.text_arrived(text, &ui.ctx, &mut pending);
+        state.text_arrived(text, &ui.ctx, &mut pending, now);
         assert!(pending.is_empty());
         assert_eq!(
             released(&mut state).replay,
@@ -518,7 +522,7 @@ fn a_pending_wayland_read_holds_the_paste() {
         let mut pending = Vec::new();
         ui.judge(&mut state, &press("v"), &mut pending, now);
         ui.focus("next");
-        state.text_arrived(text.clone(), &ui.ctx, &mut pending);
+        state.text_arrived(text.clone(), &ui.ctx, &mut pending, now);
         assert!(pending.is_empty());
         assert!(
             released(&mut state).replay.is_none(),
@@ -531,7 +535,12 @@ fn a_pending_wayland_read_holds_the_paste() {
     let mut pending = Vec::new();
     ui.judge(&mut state, &press("v"), &mut pending, now);
     let mut cancelled = false;
-    state.expire(now + AWAIT_TEXT_LIMIT, &mut pending, || cancelled = true);
+    state.expire(
+        now + AWAIT_TEXT_LIMIT,
+        &mut pending,
+        || cancelled = true,
+        false,
+    );
     assert!(cancelled);
     assert_eq!(
         released(&mut state).replay,

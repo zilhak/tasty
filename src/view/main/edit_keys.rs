@@ -35,6 +35,7 @@ impl MainView {
         }
         let target =
             matches!(event, WindowEvent::KeyboardInput { .. }) && self.edit_key_target(engine);
+        let window = &self.base.winit;
         let gpu = &mut self.base.gpu;
         if !target && !gpu.edit_keys_busy() {
             return EguiKey::Free;
@@ -42,7 +43,7 @@ impl MainView {
         gpu.set_edit_bindings(
             target.then(|| EditBindings::from_settings(&engine.settings.keybindings)),
         );
-        gpu.judge_egui_key(event, EditKeyOwner::Window)
+        gpu.judge_egui_key(window, event, EditKeyOwner::Window)
     }
 
     /// 키를 host egui 입력칸이 받는지. 오버레이(팝업·모달·주소 띠·무대)가 열렸거나, egui로 그리는
