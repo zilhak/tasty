@@ -19,6 +19,8 @@
 
 `copy`/`paste` 바인딩 목록 중 하나와 매칭되면 동작(다중 바인딩). 기본값(tasty 프리셋)은 OS 와 무관하게 세 조합을 모두 묶는다(`ctrl+c`·`alt+c`·`ctrl+shift+c`, paste 동형). OS 별 조합은 Mac/Windows/Linux 프리셋을 고를 때의 값이다. 바인딩 편집은 [keybindings](../keybindings/index.md). 위치 기반 매핑은 [key-mapping](../../design/policies/key-mapping.md).
 
+host egui 입력칸(메인 창 팝업·모달·HTML 주소 띠·탐색기 주소와 이름 입력, 설정·Preset·Plugins·종료 확인 창, 셸 경로 설정·부팅 오류·홈 사용 중 화면)에서 `copy`·`cut`·`paste` 바인딩은 egui-winit보다 먼저 판정한다. 편집이 실제로 일어났을 때만 키를 소비하고, 실행할 수 없으면(선택 없음, 빈 클립보드, 읽기 전용·비밀번호 입력칸) 원래 키를 그대로 넘긴다. 원칙과 계약의 정본은 [편집 키 판정](../../design/policies/key-mapping.md#편집-키-판정)이다.
+
 - **소프트 랩 인지 복사**: 셸이 너비에 맞춰 자동 줄바꿈한 라인은 복사 시 한 줄로 합쳐지고, 진짜 hard newline 은 보존.
 - **붙여넣기**: bracketed paste(DECSET 2004) 지원. 텍스트 없고 이미지가 있으면 PNG 로 저장 후 경로를 붙여넣기(AI 에이전트가 이미지 참조 가능). 로컬 이미지는 요청마다 별도 임시 디렉터리에 저장해 같은 파일명의 붙여넣기가 서로 덮어쓰지 않는다. 받는 셸이 나중에 읽을 수 있도록 경로를 입력한 파일은 임시 디렉터리 정리 시점까지 유지한다. 아래 "로컬 이미지 붙여넣기 저장" 절의 규칙을 따른다.
 - **Paste 후 Ctrl+C 보호(500ms)**: paste 직후 500ms 내 Ctrl+C 는 무시(SIGINT·복사 안 함) — Ctrl+V 옆 키 오타로 입력을 날리는 사고 방지, 무시 시 토스트.
