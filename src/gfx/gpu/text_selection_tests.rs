@@ -274,20 +274,24 @@ fn a_plugin_popup_paste_reaches_only_that_popup() {
     assert_eq!(pastes_for(finished(), asked), ["text"]);
 }
 
-/// Focus input reaching a plugin popup ends its waiting pastes, since the field that asked may
-/// have lost focus inside the popup. Other input and other targets' pastes are left alone.
+/// Focus input reaching a plugin popup ends its waiting pastes, even while that popup still has
+/// the keys, since the field that asked may have lost focus inside it. Other input and other
+/// targets' pastes are left alone.
 #[test]
 fn focus_input_to_a_plugin_popup_ends_its_waiting_pastes() {
     let now = Instant::now();
     let popup = plugin_popup_tag(1);
+    for moving in [click(), key(egui::Key::Tab, true)] {
+        let mut h = HeldPastes::default();
+        h.add(vec![(popup, "popup".to_string())], now);
+        assert!(!h.hidden_focus_input(&[egui::Event::Text("a".into())], popup));
+        assert!(!h.is_empty());
+        assert!(h.hidden_focus_input(std::slice::from_ref(&moving), popup));
+        assert!(h.is_empty(), "{moving:?}");
+        assert!(h.frame(&[], popup, now).is_empty());
+    }
     let mut h = HeldPastes::default();
-    h.add(
-        vec![(popup, "popup".to_string()), (7, "host".to_string())],
-        now,
-    );
-    assert!(!h.hidden_focus_input(&[egui::Event::Text("a".into())], popup));
+    h.add(vec![(7, "host".to_string())], now);
     assert!(h.hidden_focus_input(&[click()], popup));
-    assert!(h.hidden_focus_input(&[key(egui::Key::Tab, true)], popup));
     assert_eq!(h.frame(&[], 7, now), ["host"]);
-    assert!(h.is_empty());
 }
