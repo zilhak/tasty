@@ -401,11 +401,22 @@ Copy·Paste 는 위 표대로 각각 `egui_copy`·`egui_paste` capability 를 �
 와 SDK 매핑만 있고 호스트는 아직 보내지 않는다. attach mesh mirror 와 popup 미러 경로에는 Copy·Paste
 전달이 없다.
 
-복사·잘라내기 결과는 프레임과 별개인 `PluginEvent::CopyText { target, text }` 로 나간다. `target` 은
+편집 키 결과를 회신하는 plugin(hello `capabilities` 의 `edit_outcome`)에는 호스트가 위 편집 이벤트 대신
+`EditRequest { edit_id, edit }` 를 보낸다. `edit` 은 `copy`·`cut`·`paste_text { text }`·`paste` 이고 SDK 가 위와
+같은 egui 이벤트로 바꾼다. 요청이 든 입력은 요청 앞, 요청 하나, 요청 뒤로 나눠 각각 egui 패스로 돈다. 그림·IME
+위치·다음 렌더 요청은 마지막 패스의 것을, 텍스처 변경은 모든 패스의 것을 순서대로 합쳐 프레임 하나로 보낸다. 요청이
+없는 입력은 예전처럼 패스 하나다. plugin 은 요청마다 `PluginEvent::EditOutcome { target, edit_id, result, copied }`
+를 한 번 보낸다. 판정·약속·보고 API 는 [plugin 개발 가이드의 편집 결과 회신](plugin-development.md#편집-결과-회신)에
+있다. 지금 호스트에는 요청을 보내는 경로가 아직 없다.
+
+요청과 무관한 복사·잘라내기(id 없는 `Copy`·`Cut` 이벤트, 버튼의 복사 등)의 결과는 프레임과 별개인
+`PluginEvent::CopyText { target, text }` 로 나간다. `EditRequest` 패스의 복사는 `CopyText` 로 보내지 않고 그
+요청의 `EditOutcome.copied` 에 싣는다. `target` 은
 `CopyTargetWire::Surface { surface_id }` 또는 `Popup { instance_id }` 중 하나다. SDK 의 surface·popup
 `paint`·`repaint_last` 는 egui 패스 직후, 출력이 같아 프레임 송신을 생략하는 판정보다 먼저 이 알림을
-보낸다. 선택만 복사하면 화면이 바뀌지 않아 프레임이 생략되기 때문이다. 알린 값은 소비하므로
-`take_copied_text` 로 다시 나오지 않고, 한 패스에 복사가 여럿이면 마지막 값을 쓴다. banner 는 키 입력을
+보낸다. `EditOutcome` 회신도 같은 자리에서 `CopyText` 바로 뒤에 보낸다. 선택만 복사하면 화면이 바뀌지 않아
+프레임이 생략되기 때문이다. 알린 값은 소비하므로 `take_copied_text` 로 다시 나오지 않고, 요청 패스가 아닌 패스들의
+복사가 여럿이면 마지막 값을 쓴다. banner 는 키 입력을
 받지 않으므로 대상이 아니다. host 는 이 알림을 채널의 plugin id 와 함께 일회성 큐에 담는다
 (`PluginManager::take_copied_texts`, 상한을 넘으면 오래된 결과부터 버린다). 이 함수는 surface·popup
 결과를 함께 꺼낸다. wire 와 결과에는 창 id 가 없으므로 GUI 에서는 pump 직후 한 번 꺼내 대상을 가진

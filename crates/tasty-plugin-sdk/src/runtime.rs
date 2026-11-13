@@ -73,6 +73,15 @@ impl DispatchError {
     }
 }
 
+/// hello 에 실을 선택 기능 목록.
+fn hello_capabilities<P: Plugin>(plugin: &P) -> Vec<String> {
+    let mut capabilities = Vec::new();
+    if plugin.reports_edit_outcomes() {
+        capabilities.push(tasty_plugin_protocol::CAPABILITY_EDIT_OUTCOME.to_string());
+    }
+    capabilities
+}
+
 pub fn run<P: Plugin>(plugin: P) -> Result<()> {
     let env = PluginEnv::load()?;
     run_with_env(plugin, &env)
@@ -98,7 +107,7 @@ fn run_with_env<P: Plugin>(plugin: P, env: &PluginEnv) -> Result<()> {
     let hello = PluginEvent::Hello {
         plugin_id: plugin.id().to_string(),
         version: plugin.version().to_string(),
-        capabilities: Vec::new(),
+        capabilities: hello_capabilities(&plugin),
     };
     send_event(&writer, &hello)?;
 

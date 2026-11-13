@@ -155,7 +155,7 @@ pub(super) fn map_event(e: &RawInputEventWire) -> Option<Event> {
         RawInputEventWire::Paste => Event::Paste(String::new()),
         RawInputEventWire::PasteText { text } => Event::Paste(text.clone()),
         RawInputEventWire::Cut => Event::Cut,
-        // 회신을 약속한 플러그인에만 오는 요청이다. 이 SDK 는 아직 약속하지 않는다.
+        // 편집 요청은 `edit::split_passes` 가 요청 패스로 떼어 처리한다.
         RawInputEventWire::EditRequest { .. } | RawInputEventWire::Unknown => return None,
     })
 }

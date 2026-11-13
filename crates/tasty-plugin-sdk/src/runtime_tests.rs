@@ -943,3 +943,27 @@ fn a_stale_ctx_copy_cannot_defer_another_call() {
     assert_eq!(second.id, 2);
     assert_eq!(second.result, Some(json!("own answer")), "{second:?}");
 }
+
+struct EditOutcomePlugin;
+impl Plugin for EditOutcomePlugin {
+    fn id(&self) -> &str {
+        "test.edit"
+    }
+    fn create_surface(&mut self, _ctx: SurfaceCreateCtx) -> SurfaceResult {
+        SurfaceResult::default()
+    }
+    fn reports_edit_outcomes(&self) -> bool {
+        true
+    }
+}
+
+/// hello 는 회신을 약속한 플러그인만 `edit_outcome` 기능을 알린다. 기본 플러그인은 알리지 않아 호스트가
+/// 편집 요청을 보내지 않는다.
+#[test]
+fn hello_lists_edit_outcome_only_for_plugins_that_opt_in() {
+    assert!(hello_capabilities(&DefaultPlugin).is_empty());
+    assert_eq!(
+        hello_capabilities(&EditOutcomePlugin),
+        vec![tasty_plugin_protocol::CAPABILITY_EDIT_OUTCOME.to_string()]
+    );
+}

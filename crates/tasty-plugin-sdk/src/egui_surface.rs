@@ -5,6 +5,7 @@
 //! Context와 폰트 atlas는 플러그인 소유다. 호스트와 글꼴을 맞추려면
 //! context().set_fonts로 같은 폰트를 설치한다.
 
+pub mod edit;
 mod input;
 use input::build_raw_input;
 #[cfg(test)]
@@ -100,6 +101,10 @@ struct EguiMeshCore {
     last_copied_text: Option<String>,
     /// 직전 렌더의 IME 위젯 위치. 콘텐츠 영역의 논리 좌표로 호스트에 전달한다.
     last_ime_cursor: Option<ImeCursorWire>,
+    /// 아직 보내지 않은 편집 요청 회신. paint·repaint_last 가 프레임 생략과 관계없이 보낸다.
+    edit_outcomes: Vec<edit::EditOutcome>,
+    /// egui 패스 밖에서 플러그인이 알린 편집 결과. 다음 렌더의 요청 패스가 쓴다.
+    reported_edits: edit::Reported,
 }
 
 /// 한 번의 렌더가 만든 송신 후보 frame — 인코드된 mesh 바이트 + full 마킹.
@@ -146,6 +151,8 @@ impl EguiMeshCore {
             pending_self_repaint: None,
             last_copied_text: None,
             last_ime_cursor: None,
+            edit_outcomes: Vec::new(),
+            reported_edits: edit::Reported::default(),
         }
     }
 
@@ -171,8 +178,14 @@ impl EguiMeshCore {
             focused: raw_input.focused,
             theme: theme.cloned(),
         });
-        let raw = build_raw_input(width_px, height_px, ppp, raw_input);
-        self.render(raw, need_full, run_ui)
+        let mut raw = build_raw_input(width_px, height_px, ppp, raw_input);
+        let passes = if edit::edit_requests(raw_input).next().is_none() {
+            vec![edit::Pass { raw, edit: None }]
+        } else {
+            raw.events.clear();
+            edit::split_passes(raw, raw_input)
+        };
+        self.render(passes, need_full, run_ui)
     }
 
     /// 캐시한 크기·배율·포커스로 다시 그리되 사용자 이벤트는 넣지 않는다.
@@ -187,7 +200,7 @@ impl EguiMeshCore {
             ..Default::default()
         };
         let raw = build_raw_input(width_px, height_px, ppp, &wire);
-        self.render(raw, false, run_ui)
+        self.render(vec![edit::Pass { raw, edit: None }], false, run_ui)
     }
 
     /// 직전 set_context 의 theme 스냅샷. plugin 의 재-paint closure 가 캐시된 theme 으로
@@ -227,14 +240,40 @@ impl EguiMeshCore {
 
     /// 렌더링과 인코딩 후 출력 해시와 IME 위치를 비교한다. 둘 다 같으면 None을 반환한다.
     /// need_full이면 해시 비교로 생략하지 않고 누적 텍스처 전체를 넣는다.
+    /// 편집 요청이 있으면 패스를 여럿 돌린다([`edit`]). 그림·IME·다음 렌더 요청은 마지막 패스의 것이고
+    /// 텍스처 변경은 모든 패스의 것을 순서대로 합친다.
     fn render(
         &mut self,
-        raw: RawInput,
+        passes: Vec<edit::Pass>,
         need_full: bool,
-        run_ui: impl FnMut(&Context),
+        mut run_ui: impl FnMut(&Context),
     ) -> Option<MeshFrame> {
-        let full = self.ctx.run(raw, run_ui);
-        self.last_copied_text = pick_copied_text(&full.platform_output);
+        let mut textures_delta = TexturesDelta::default();
+        let mut copied_text = None;
+        let mut last = None;
+        for pass in passes {
+            if let Some((edit_id, request)) = &pass.edit {
+                edit::begin(&self.ctx, *edit_id, request);
+            }
+            let mut full = self.ctx.run(pass.raw, &mut run_ui);
+            let copied = pick_copied_text(&full.platform_output);
+            match &pass.edit {
+                Some((edit_id, request)) => {
+                    let reported = self.reported_edits.take(*edit_id);
+                    let outcome = edit::finish(&self.ctx, *edit_id, request, copied, reported);
+                    self.edit_outcomes.push(outcome);
+                }
+                None if copied.is_some() => copied_text = copied,
+                None => {}
+            }
+            let delta = std::mem::take(&mut full.textures_delta);
+            self.accumulate_textures(&delta);
+            textures_delta.append(delta);
+            last = Some(full);
+        }
+        self.reported_edits.clear();
+        let full = last?;
+        self.last_copied_text = copied_text;
         self.last_ime_cursor = full.platform_output.ime.map(|ime| ImeCursorWire {
             rect: rect_wire(ime.rect),
             cursor_rect: rect_wire(ime.cursor_rect),
@@ -246,8 +285,8 @@ impl EguiMeshCore {
             .map(|v| v.repaint_delay)
             .filter(|d| *d < Duration::MAX);
         let primitives = self.ctx.tessellate(full.shapes, full.pixels_per_point);
-        // 이 frame 의 delta 를 누적 상태에 먼저 반영한다 — full 재구성은 항상 최신 상태 기준.
-        let naturally_full = self.accumulate_textures(&full.textures_delta);
+        // delta 는 위에서 누적 상태에 먼저 반영했다 — full 재구성은 항상 최신 상태 기준.
+        let naturally_full = self.covers_texture_state(&textures_delta);
         let (bytes, full_textures) = if need_full {
             (
                 encode_paint(
@@ -259,7 +298,7 @@ impl EguiMeshCore {
             )
         } else {
             (
-                encode_paint(&primitives, &full.textures_delta, full.pixels_per_point),
+                encode_paint(&primitives, &textures_delta, full.pixels_per_point),
                 naturally_full,
             )
         };
@@ -302,6 +341,22 @@ impl EguiMeshCore {
         for id in &delta.free {
             self.tex_state.remove(id);
         }
+        self.covers_texture_state(delta)
+    }
+
+    /// 편집 요청 없는 입력 하나로 렌더한다.
+    #[cfg(test)]
+    fn render_raw(
+        &mut self,
+        raw: RawInput,
+        need_full: bool,
+        run_ui: impl FnMut(&Context),
+    ) -> Option<MeshFrame> {
+        self.render(vec![edit::Pass { raw, edit: None }], need_full, run_ui)
+    }
+
+    /// `delta` 가 누적 상태의 모든 텍스처를 full image 로 담는지.
+    fn covers_texture_state(&self, delta: &TexturesDelta) -> bool {
         self.tex_state.keys().all(|id| {
             delta
                 .set
@@ -719,6 +774,12 @@ impl EguiMeshSurface {
                 surface_id: self.surface_id,
             },
         )?;
+        self.core.notify_edit_outcomes(
+            host,
+            CopyTargetWire::Surface {
+                surface_id: self.surface_id,
+            },
+        )?;
         let Some(frame) = frame else {
             return Ok(None);
         };
@@ -759,6 +820,12 @@ impl EguiMeshSurface {
         let frame = self.core.repaint_last(run_ui);
         self.schedule_self_repaint(host);
         self.core.notify_copied_text(
+            host,
+            CopyTargetWire::Surface {
+                surface_id: self.surface_id,
+            },
+        )?;
+        self.core.notify_edit_outcomes(
             host,
             CopyTargetWire::Surface {
                 surface_id: self.surface_id,
@@ -870,6 +937,12 @@ impl EguiMeshPopup {
                 instance_id: self.instance_id,
             },
         )?;
+        self.core.notify_edit_outcomes(
+            host,
+            CopyTargetWire::Popup {
+                instance_id: self.instance_id,
+            },
+        )?;
         let Some(frame) = frame else {
             return Ok(None);
         };
@@ -895,6 +968,12 @@ impl EguiMeshPopup {
         let frame = self.core.repaint_last(run_ui);
         self.schedule_self_repaint(host);
         self.core.notify_copied_text(
+            host,
+            CopyTargetWire::Popup {
+                instance_id: self.instance_id,
+            },
+        )?;
+        self.core.notify_edit_outcomes(
             host,
             CopyTargetWire::Popup {
                 instance_id: self.instance_id,
@@ -1808,7 +1887,7 @@ mod tests {
         let mut core = EguiMeshCore::new();
         // bootstrap — 폰트 atlas 업로드 등 첫 frame 특유의 요청을 먼저 소진시킨다.
         for _ in 0..16 {
-            core.render(raw_with(Vec::new()), false, draw_scroll_area);
+            core.render_raw(raw_with(Vec::new()), false, draw_scroll_area);
             if core.pending_self_repaint().is_none() {
                 break;
             }
@@ -1817,10 +1896,10 @@ mod tests {
             core.pending_self_repaint().is_none(),
             "bootstrap must settle before measuring"
         );
-        core.render(raw_with(events), false, draw_scroll_area);
+        core.render_raw(raw_with(events), false, draw_scroll_area);
         let mut extra = 0;
         while core.pending_self_repaint().is_some() && extra < 64 {
-            core.render(raw_with(Vec::new()), false, draw_scroll_area);
+            core.render_raw(raw_with(Vec::new()), false, draw_scroll_area);
             extra += 1;
         }
         extra
@@ -1935,7 +2014,7 @@ mod tests {
         let frame = |events: Vec<Event>, core: &mut EguiMeshCore| {
             let mut raw = build_raw_input(w, h, ppp, &RawInputWire::default());
             raw.events = events;
-            core.render(raw, false, |ctx| draw_scroll_area_measured(ctx, &offset));
+            core.render_raw(raw, false, |ctx| draw_scroll_area_measured(ctx, &offset));
         };
 
         // bootstrap — 폰트 atlas 등 첫 frame 특유의 요청을 소진시키고 hover 를 세운다.
@@ -1967,7 +2046,7 @@ mod tests {
         let idle_frame = |events: Vec<Event>, core: &mut EguiMeshCore| {
             let mut raw = build_raw_input(w, h, ppp, &RawInputWire::default());
             raw.events = events;
-            core.render(raw, false, |ctx| draw_scroll_area_measured(ctx, &idle));
+            core.render_raw(raw, false, |ctx| draw_scroll_area_measured(ctx, &idle));
         };
         for _ in 0..16 {
             idle_frame(Vec::new(), &mut never_hovered);
@@ -2505,6 +2584,87 @@ mod tests {
                 CopyTargetWire::Surface { surface_id: 4 },
                 "hello".to_string()
             )]
+        );
+    }
+
+    /// 화면 출력이 같아 PaintFrame 이 생략되는 편집 요청도 회신은 한 번 나간다. 요청의 복사 글자는 회신에
+    /// 실리고 CopyText 로 따로 나가지 않는다. popup 도 같다.
+    #[cfg(any(unix, windows))]
+    #[test]
+    fn paint_replies_to_an_edit_request_even_when_the_frame_is_skipped() {
+        use tasty_plugin_protocol::{EditRequestWire, EditResultWire};
+        let (host, host_side) = loopback_host();
+        let id = egui::Id::new("edit_reply_notify");
+        let mut buf = "hello world".to_string();
+        let request = |edit_id| RawInputEventWire::EditRequest {
+            edit_id,
+            edit: EditRequestWire::Copy,
+        };
+
+        let mut surface = EguiMeshSurface::new(4);
+        let mut params = ctx_params(400, 100, 1.0);
+        params.surface_id = 4;
+        for _ in 0..8 {
+            surface.run_frame(&params, selected_text_edit_ui(id, &mut buf));
+        }
+        let mut edit_params = params.clone();
+        edit_params.raw_input.events = vec![request(31)];
+        let sent = surface.paint(&host, &edit_params, selected_text_edit_ui(id, &mut buf));
+        assert!(
+            matches!(sent, Ok(None)),
+            "같은 출력은 프레임을 생략한다: {sent:?}"
+        );
+        let sent = surface.paint(&host, &params, selected_text_edit_ui(id, &mut buf));
+        assert!(matches!(sent, Ok(None)), "{sent:?}");
+
+        let mut popup = EguiMeshPopup::new(9);
+        let popup_params = PopupSetContextParams {
+            instance_id: 9,
+            width_px: 400,
+            height_px: 100,
+            pixels_per_point: 1.0,
+            raw_input: RawInputWire::default(),
+            theme: None,
+            need_full_textures: false,
+        };
+        for _ in 0..8 {
+            popup.run_frame(&popup_params, selected_text_edit_ui(id, &mut buf));
+        }
+        let mut edit_params = popup_params.clone();
+        edit_params.raw_input.events = vec![request(32)];
+        let sent = popup.paint(&host, &edit_params, selected_text_edit_ui(id, &mut buf));
+        assert!(matches!(sent, Ok(None)), "{sent:?}");
+
+        let events = read_events(&host_side);
+        assert!(copied(&events).is_empty(), "{events:?}");
+        let replies: Vec<_> = events
+            .iter()
+            .filter_map(|e| match e {
+                PluginEvent::EditOutcome {
+                    target,
+                    edit_id,
+                    result,
+                    copied,
+                } => Some((*target, *edit_id, *result, copied.clone())),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            replies,
+            vec![
+                (
+                    CopyTargetWire::Surface { surface_id: 4 },
+                    31,
+                    EditResultWire::Acted,
+                    Some("hello".to_string())
+                ),
+                (
+                    CopyTargetWire::Popup { instance_id: 9 },
+                    32,
+                    EditResultWire::Acted,
+                    Some("hello".to_string())
+                ),
+            ]
         );
     }
 

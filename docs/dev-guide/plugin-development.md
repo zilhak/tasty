@@ -384,6 +384,37 @@ plugin `build.rs` 의 `ICONS` 목록에 한 줄. 근거·대안은 [테마 시�
 - Copy·Cut 이 복사한 글자는 같은 회신의 `copied`에 싣고 `CopyText`로 따로 보내지 않는다. 둘을 따로 보내면 하나만
   잃었을 때 "선택은 지워졌는데 클립보드는 그대로"가 생긴다. 요청과 무관한 복사(버튼의 복사 등)는 지금처럼 `CopyText`다.
 
+SDK(`tasty_plugin_sdk::egui_surface::edit`)가 회신을 만든다.
+
+- 약속: `Plugin::reports_edit_outcomes`가 true 를 돌려주면 hello 가 `edit_outcome`을 알린다. 기본값은 false 다. 편집
+  입력칸을 모두 아래 어댑터로 그리고, 패스 밖에서 처리하는 붙여넣기는 결과를 알리는 plugin 만 true 로 한다.
+- 패스 나누기: 요청이 든 입력은 요청 앞, 요청 하나, 요청 뒤로 나눠 각각 egui 패스로 돌린다. 앞뒤의 글자 입력·클릭이 바꾼
+  내용을 편집 결과로 세지 않기 위해서다. 그림·IME 위치·다음 렌더 요청은 마지막 패스의 것이고 텍스처 변경은 모든 패스의
+  것을 순서대로 합친다. 요청이 없는 입력은 예전처럼 패스 하나다.
+- 입력칸 어댑터 `EditField`: `egui::TextEdit` 대신 `EditField::singleline(&mut text).id_salt(..).read_only(..)
+  .password(..).show(ui, |t| t.hint_text(..))`로 그린다. 포커스를 가진 어댑터가 요청을 받으면 적용 전후를 비교한다.
+  - 잘라내기: 편집 가능한 칸의 버퍼가 바뀌었으면(선택 삭제) `acted`. 읽기 전용 칸은 지우지 못하므로 요청을 위젯에 주기
+    전에 걷어내고 `not_acted`, 복사 글자 없음이다. egui 는 읽기 전용 칸에서도 잘라내기로 선택을 접기 때문이다. 걷어내면
+    선택이 남아, 호스트가 넘긴 원래 키가 다음 처리자에서 복사로 동작할 수 있다. 비밀번호 칸은 egui 가 복사하지 않고 지우기만
+    하므로 `acted`, 복사 글자 없음이다.
+  - 붙여넣기: 버퍼가 바뀌었거나, 글자 붙여넣기(`paste_text`) 뒤 커서·선택 범위가 요청 전과 달라졌으면 `acted`다. 같은
+    글자로 덮어써 버퍼가 같아도 선택이 붙여넣은 글자 뒤의 커서로 접힌다. 내용 없는 붙여넣기(`paste`, 빈 `paste_text`)는
+    egui 가 무시해 버퍼도 커서도 그대로이므로 `not_acted`다. 선택 방향(커서가 선택의 어느 끝에 있는지)은 판정에 쓰지 않는다.
+    읽기 전용 칸은 `not_acted`다.
+- 복사는 어댑터와 관계없이 요청 패스에 복사 출력이 났으면 `acted`, 아니면 `not_acted`다. 비밀번호 칸은 egui 가 복사하지
+  않으므로 `not_acted`다.
+- 보고 API: 패스 안에서 편집을 직접 처리하는 코드는 `edit_request(ctx)`로 요청을 읽고 `report_edit(ctx, acted)`로
+  알린다. 패스 밖에서 처리하는 코드(클립보드 이미지를 직접 읽는 붙여넣기 등)는 `edit_requests(&raw_input)`로 요청을
+  읽고 `EguiMeshSurface::report_edit_outcome`·`EguiMeshPopup::report_edit_outcome`으로 알린다. 알린 값이 어댑터의
+  판정보다 앞선다.
+- 그 밖(어댑터를 쓰지 않은 입력칸의 잘라내기·붙여넣기)은 SDK 가 일어났는지 알 수 없으므로 `unknown`이다.
+  `not_acted`가 아닌 결과의 복사 글자만 회신에 싣는다. 일어나지 않은 편집의 복사(plugin 이 `not_acted`로 알린 편집이
+  낸 egui 복사 등)는 버린다. 호스트가 원래 키를 넘기면 그 다음 처리자가 복사한다.
+- 회신은 `paint`·`repaint_last`가 프레임 송신 생략 판정 전에 보낸다. `run_frame`만 쓰면 `take_edit_outcomes`로 꺼낸다.
+
+잘라내기의 `acted`는 "그 입력칸에서 선택이 지워짐"이다. 그래서 회신에 "지운 글자 있음" 같은 별도 필드가 없다. 읽기 전용
+칸의 잘라내기는 `acted`가 아니므로 호스트는 그 결과를 잘라내기로 보이지 않는다.
+
 ## 5. 호스트 IPC 호출
 
 `HostHandle::call("surface.list", json!({}))` — 매니페스트에 해당 권한 선언 + grant 필요. `?` 한 번으로 `PluginError → IpcMethodError` 변환. 주요 에러 variant: `HostCall{message}`(permission_denied 등) · `HostCallTimeout` · `HandshakeRejected/Timeout` · `HostClosed`. 권한↔메서드 매핑은 [plugin-permissions](plugin-permissions.md).

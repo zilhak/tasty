@@ -348,6 +348,15 @@ pub trait Plugin: Send + 'static {
         "0.0.0"
     }
 
+    /// 편집 요청(복사·잘라내기·붙여넣기)마다 결과를 회신하는지. true 면 hello 가 `edit_outcome` 기능을 알리고
+    /// 호스트가 결과를 기다리는 편집 요청을 보낸다. 편집 입력칸을 모두 `egui_surface::edit::EditField`로 그리고,
+    /// 패스 밖에서 처리하는 붙여넣기는 `report_edit_outcome`으로 알리는 플러그인만 true 로 한다. 어댑터 밖
+    /// 입력칸의 잘라내기·붙여넣기는 결과를 모름으로 회신해 호스트가 키를 넘기지 못한다. 기본값 false 면
+    /// 호스트는 이 플러그인 입력칸의 편집 키를 넘긴다.
+    fn reports_edit_outcomes(&self) -> bool {
+        false
+    }
+
     /// `surface.create`에 응답. display_name/snapshot 반환.
     fn create_surface(&mut self, ctx: SurfaceCreateCtx) -> SurfaceResult;
 
