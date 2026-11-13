@@ -396,7 +396,8 @@ fn is_user_activation(raw: &RawInputWire) -> bool {
 }
 
 /// 포인터는 가리지 않은 콘텐츠 영역의 입력만 전달하며 좌표는 콘텐츠 기준 논리 포인트다.
-/// PointerGone은 영역과 관계없이 전달한다. 키·텍스트·IME는 최상단 팝업에만 보낸다.
+/// PointerGone은 영역과 관계없이 전달한다. 키·텍스트·IME·편집(붙여넣기·복사·잘라내기)은 최상단
+/// 팝업에만 보낸다. 빈 붙여넣기는 보내지 않는다.
 fn collect_mesh_popup_input(
     ctx: &Context,
     content_rect: Rect,
@@ -477,6 +478,12 @@ fn collect_mesh_popup_input(
                         },
                     });
                 }
+                // 편집 이벤트는 창의 키 처리가 단축키 설정대로 바꿔 둔 것이다. 여기서는 다시 판정하지 않는다.
+                Event::Paste(text) if has_key_focus && !text.is_empty() => {
+                    events.push(RawInputEventWire::PasteText { text: text.clone() });
+                }
+                Event::Copy if has_key_focus => events.push(RawInputEventWire::Copy),
+                Event::Cut if has_key_focus => events.push(RawInputEventWire::Cut),
                 Event::PointerGone => events.push(RawInputEventWire::PointerGone),
                 _ => {}
             }
@@ -1028,6 +1035,28 @@ mod tests {
             got.is_empty(),
             "포커스 없는 팝업에 IME 입력이 전달됐다: {got:?}"
         );
+    }
+
+    /// 붙여넣기·복사·잘라내기는 키를 받는 팝업에만 그 순서대로 가고, 빈 붙여넣기는 버린다.
+    #[test]
+    fn edit_events_reach_only_the_key_focused_popup() {
+        let edits = || {
+            vec![
+                Event::Paste("a".into()),
+                Event::Paste(String::new()),
+                Event::Copy,
+                Event::Cut,
+            ]
+        };
+        assert_eq!(
+            collected_events(edits(), true),
+            vec![
+                RawInputEventWire::PasteText { text: "a".into() },
+                RawInputEventWire::Copy,
+                RawInputEventWire::Cut,
+            ]
+        );
+        assert!(collected_events(edits(), false).is_empty());
     }
 
     #[test]
