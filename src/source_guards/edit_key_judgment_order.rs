@@ -90,3 +90,29 @@ fn auxiliary_windows_skip_their_own_handling_for_a_taken_key() {
         );
     }
 }
+
+/// 공통 판정이 넘긴 키라는 표시가 HTML 주소 띠의 바인딩 판정 두 곳에 간다. 빠지면 넘긴 복사 키가 같은 키의
+/// 새로고침을 다시 편집으로 골라 아무것도 하지 않는다.
+#[test]
+fn the_address_band_hears_that_the_edit_key_passed() {
+    let read = |rel: &str| {
+        std::fs::read_to_string(repo_root().join(rel))
+            .unwrap_or_else(|e| panic!("{rel} 을 읽지 못했다: {e}"))
+            .replace("\r\n", "\n")
+    };
+    for (rel, call) in [
+        (
+            "src/view/main/keyboard.rs",
+            "self.try_consume_address_refresh_key(engine, event, edit_judged.is_some())",
+        ),
+        (
+            "src/view/main.rs",
+            "self.remap_html_address_keys(engine, &event, from, edit_judged.is_some())",
+        ),
+    ] {
+        assert!(
+            strip_comments(&read(rel)).contains(call),
+            "{rel}: `{call}` 가 없다. 넘긴 편집 키 표시가 주소 띠 판정에 가지 않는다."
+        );
+    }
+}
