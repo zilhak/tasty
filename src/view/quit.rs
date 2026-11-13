@@ -52,47 +52,12 @@ impl View for QuitView {
     }
 
     fn handle_event(&mut self, event: WindowEvent, _ctx: &mut ViewCtx<'_>) -> ViewAction {
-        // RedrawRequested 를 egui 에 넘기면 항상 repaint=true → mark_dirty →
-        // request_redraw → RedrawRequested 무한 루프(busy-loop)가 된다. 렌더는
-        // 아래 RedrawRequested arm 이 담당하므로 egui input 으로 넘기지 않는다.
-        if !matches!(&event, WindowEvent::RedrawRequested) {
-            let (_, egui_repaint) = self
-                .base
-                .gpu
-                .handle_egui_event_with_edit_keys(&self.base.winit, &event);
-            if egui_repaint {
-                self.mark_dirty();
-            }
+        if matches!(event, WindowEvent::RedrawRequested)
+            && let Some(action) = crate::view::replay_edit_keys(self, Self::handle_judged_event)
+        {
+            return action;
         }
-
-        match event {
-            WindowEvent::CloseRequested => return ViewAction::Close,
-            WindowEvent::Resized(new_size) => {
-                self.base.gpu.resize(new_size);
-                self.mark_dirty();
-            }
-            WindowEvent::RedrawRequested => {
-                self.render();
-            }
-            WindowEvent::CursorMoved { .. } => {
-                self.mark_dirty();
-            }
-            WindowEvent::KeyboardInput { ref event, .. } => {
-                use winit::event::ElementState;
-                use winit::keyboard::{Key, NamedKey};
-                if event.state == ElementState::Pressed
-                    && let Key::Named(NamedKey::Escape) = &event.logical_key
-                {
-                    return self.on_escape();
-                }
-            }
-            _ => {}
-        }
-
-        match &self.pending_action {
-            ViewAction::None => ViewAction::None,
-            _ => std::mem::replace(&mut self.pending_action, ViewAction::None),
-        }
+        self.handle_judged_event(event, None)
     }
 
     fn render(&mut self) {
@@ -188,3 +153,59 @@ impl ModalView for QuitView {
 }
 
 impl sealed::Sealed for QuitView {}
+
+impl QuitView {
+    /// 창 이벤트 하나. 편집 키 판정이 가져간 이벤트는 egui와 창 자체 처리 모두 건너뛰고, 보류가 풀리면
+    /// `replay_edit_keys`로 다시 온다. `judged`는 그때 원래 키가 판정받은 편집이다.
+    fn handle_judged_event(
+        &mut self,
+        event: WindowEvent,
+        judged: Option<crate::adapters::ui::input::edit_key::EditKey>,
+    ) -> ViewAction {
+        // RedrawRequested 를 egui 에 넘기면 항상 repaint=true → mark_dirty →
+        // request_redraw → RedrawRequested 무한 루프(busy-loop)가 된다. 렌더는
+        // 아래 RedrawRequested arm 이 담당하므로 egui input 으로 넘기지 않는다.
+        if !matches!(&event, WindowEvent::RedrawRequested) {
+            let Some((_, egui_repaint)) =
+                self.base
+                    .gpu
+                    .handle_egui_event_for_window(&self.base.winit, &event, judged)
+            else {
+                self.mark_dirty();
+                return ViewAction::None;
+            };
+            if egui_repaint {
+                self.mark_dirty();
+            }
+        }
+
+        match event {
+            WindowEvent::CloseRequested => return ViewAction::Close,
+            WindowEvent::Resized(new_size) => {
+                self.base.gpu.resize(new_size);
+                self.mark_dirty();
+            }
+            WindowEvent::RedrawRequested => {
+                self.render();
+            }
+            WindowEvent::CursorMoved { .. } => {
+                self.mark_dirty();
+            }
+            WindowEvent::KeyboardInput { ref event, .. } => {
+                use winit::event::ElementState;
+                use winit::keyboard::{Key, NamedKey};
+                if event.state == ElementState::Pressed
+                    && let Key::Named(NamedKey::Escape) = &event.logical_key
+                {
+                    return self.on_escape();
+                }
+            }
+            _ => {}
+        }
+
+        match &self.pending_action {
+            ViewAction::None => ViewAction::None,
+            _ => std::mem::replace(&mut self.pending_action, ViewAction::None),
+        }
+    }
+}

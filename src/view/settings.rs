@@ -180,6 +180,107 @@ impl View for SettingsView {
     }
 
     fn handle_event(&mut self, event: WindowEvent, _ctx: &mut ViewCtx<'_>) -> ViewAction {
+        if matches!(event, WindowEvent::RedrawRequested)
+            && let Some(action) = crate::view::replay_edit_keys(self, Self::handle_judged_event)
+        {
+            return action;
+        }
+        self.handle_judged_event(event, None)
+    }
+
+    fn render(&mut self) {
+        if !self.base.state.dirty {
+            return;
+        }
+        self.base.begin_frame();
+
+        let raw_input = self.base.gpu.take_egui_input(&self.base.winit);
+        let mut settings = self.settings.clone();
+        let reduced_motion = settings.accessibility.reduced_motion;
+        let ui_state = &mut self.settings_ui_state;
+        let captured_dt = &mut self.captured_double_tap;
+        let toasts = &mut self.toasts;
+        let mut action: Option<bool> = None;
+
+        let file_format = self.file_format.clone();
+        let file_handler = self.file_handler.clone();
+        let full_output = self.base.gpu.run_egui(raw_input, |ctx| {
+            action = settings_ui::draw_settings_panel(
+                ctx,
+                settings_ui::SettingsPanelCtx {
+                    settings: &mut settings,
+                    ui_state,
+                    captured_double_tap: captured_dt,
+                    file_format: &file_format,
+                    file_handler: &file_handler,
+                },
+            );
+
+            let empty_layout = LayoutContext {
+                active_workspace: 0,
+                active_workspace_id: 0,
+                pane_rects: Vec::new(),
+                surface_rects: Vec::new(),
+                active_tabs: Vec::new(),
+                active_tab_ids: Vec::new(),
+                workspace_rect: None,
+            };
+            toasts.draw(ctx, &empty_layout, reduced_motion);
+        });
+
+        self.settings_ui_state.invalidate_edited_export();
+        self.settings = settings;
+        if action.is_some() {
+            self.should_close = true;
+            self.committed = action == Some(true);
+        }
+        if let Some(msg) = self.settings_ui_state.take_import_export_toast() {
+            self.toasts.push(
+                msg,
+                crate::adapters::ui::ToastKind::Success,
+                ToastScope::Window,
+            );
+            self.mark_dirty();
+        }
+
+        self.base
+            .gpu
+            .finish_egui_frame(&self.base.winit, full_output);
+        if crate::clipboard::copy::copy_egui_text(
+            &mut self.base.gpu,
+            &mut self.clipboard,
+            &mut self.toasts,
+        ) {
+            self.mark_dirty();
+        }
+
+        self.reveal_after_first_render();
+
+        if self.base.state.dirty {
+            self.base.winit.request_redraw();
+        }
+    }
+}
+
+impl ModalView for SettingsView {
+    fn shown(&self) -> bool {
+        self.shown
+    }
+    fn set_shown(&mut self, v: bool) {
+        self.shown = v;
+    }
+}
+
+impl sealed::Sealed for SettingsView {}
+
+impl SettingsView {
+    /// 창 이벤트 하나. 편집 키 판정이 가져간 이벤트는 egui와 창 자체 처리 모두 건너뛰고, 보류가 풀리면
+    /// `replay_edit_keys`로 다시 온다. `judged`는 그때 원래 키가 판정받은 편집이다.
+    fn handle_judged_event(
+        &mut self,
+        event: WindowEvent,
+        judged: Option<crate::adapters::ui::input::edit_key::EditKey>,
+    ) -> ViewAction {
         // 녹화 중이면 키보드 이벤트를 egui에 전달하지 않는다.
         // egui가 Cmd+C 등을 시맨틱 커맨드(Copy)로 소비하면 캡처가 안 되기 때문.
         let is_recording = self.settings_ui_state.is_recording();
@@ -188,10 +289,14 @@ impl View for SettingsView {
         // RedrawRequested는 아래에서 렌더링한다. egui 입력에도 넣으면 재그리기가 반복된다.
         let is_redraw = matches!(&event, WindowEvent::RedrawRequested);
         if !skip_egui && !is_redraw {
-            let (_, egui_repaint) = self
-                .base
-                .gpu
-                .handle_egui_event_with_edit_keys(&self.base.winit, &event);
+            let Some((_, egui_repaint)) =
+                self.base
+                    .gpu
+                    .handle_egui_event_for_window(&self.base.winit, &event, judged)
+            else {
+                self.mark_dirty();
+                return ViewAction::None;
+            };
             if egui_repaint {
                 self.mark_dirty();
             }
@@ -294,88 +399,4 @@ impl View for SettingsView {
             ViewAction::None
         }
     }
-
-    fn render(&mut self) {
-        if !self.base.state.dirty {
-            return;
-        }
-        self.base.begin_frame();
-
-        let raw_input = self.base.gpu.take_egui_input(&self.base.winit);
-        let mut settings = self.settings.clone();
-        let reduced_motion = settings.accessibility.reduced_motion;
-        let ui_state = &mut self.settings_ui_state;
-        let captured_dt = &mut self.captured_double_tap;
-        let toasts = &mut self.toasts;
-        let mut action: Option<bool> = None;
-
-        let file_format = self.file_format.clone();
-        let file_handler = self.file_handler.clone();
-        let full_output = self.base.gpu.run_egui(raw_input, |ctx| {
-            action = settings_ui::draw_settings_panel(
-                ctx,
-                settings_ui::SettingsPanelCtx {
-                    settings: &mut settings,
-                    ui_state,
-                    captured_double_tap: captured_dt,
-                    file_format: &file_format,
-                    file_handler: &file_handler,
-                },
-            );
-
-            let empty_layout = LayoutContext {
-                active_workspace: 0,
-                active_workspace_id: 0,
-                pane_rects: Vec::new(),
-                surface_rects: Vec::new(),
-                active_tabs: Vec::new(),
-                active_tab_ids: Vec::new(),
-                workspace_rect: None,
-            };
-            toasts.draw(ctx, &empty_layout, reduced_motion);
-        });
-
-        self.settings_ui_state.invalidate_edited_export();
-        self.settings = settings;
-        if action.is_some() {
-            self.should_close = true;
-            self.committed = action == Some(true);
-        }
-        if let Some(msg) = self.settings_ui_state.take_import_export_toast() {
-            self.toasts.push(
-                msg,
-                crate::adapters::ui::ToastKind::Success,
-                ToastScope::Window,
-            );
-            self.mark_dirty();
-        }
-
-        self.base
-            .gpu
-            .finish_egui_frame(&self.base.winit, full_output);
-        if crate::clipboard::copy::copy_egui_text(
-            &mut self.base.gpu,
-            &mut self.clipboard,
-            &mut self.toasts,
-        ) {
-            self.mark_dirty();
-        }
-
-        self.reveal_after_first_render();
-
-        if self.base.state.dirty {
-            self.base.winit.request_redraw();
-        }
-    }
 }
-
-impl ModalView for SettingsView {
-    fn shown(&self) -> bool {
-        self.shown
-    }
-    fn set_shown(&mut self, v: bool) {
-        self.shown = v;
-    }
-}
-
-impl sealed::Sealed for SettingsView {}

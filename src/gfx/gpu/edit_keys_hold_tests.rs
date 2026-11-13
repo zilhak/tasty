@@ -164,3 +164,30 @@ fn an_unsettled_key_goes_back_to_its_owner_after_the_earlier_input() {
     assert!(release.replay.is_none());
     assert_eq!(release.queued, vec![press("v"), press("q")]);
 }
+
+/// A window replaying a finished hold gives the released key once, marked with its edit, then the
+/// queued events unmarked, and stops when the window closes.
+#[test]
+fn a_release_replays_in_order_and_stops_when_the_window_closes() {
+    let release = Release {
+        replay: Some((press("c"), EditKey::Copy)),
+        queued: vec![Ev::Other("escape"), Ev::Other("after")],
+    };
+    let mut seen = Vec::new();
+    let closed = replay_release(
+        release,
+        |closed: &bool| *closed,
+        |event, judged| {
+            seen.push((event.clone(), judged));
+            event == Ev::Other("escape")
+        },
+    );
+    assert_eq!(closed, Some(true));
+    assert_eq!(
+        seen,
+        vec![
+            (press("c"), Some(EditKey::Copy)),
+            (Ev::Other("escape"), None)
+        ]
+    );
+}

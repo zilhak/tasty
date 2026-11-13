@@ -565,7 +565,31 @@ impl super::GpuState {
         }
     }
 
-    /// A finished hold of the main window: the key to replay once (not judged again) and the events
+    /// [`Self::handle_egui_event`] for an egui-only window that also reads keys itself (settings,
+    /// quit, preset, plugins). `None` when the judgment took the event: the window skips its own
+    /// handling as well and gets the event back from [`Self::take_edit_release`], to run through
+    /// [`replay_release`]. `replayed` marks that released key, already judged, which goes on as is.
+    pub fn handle_egui_event_for_window(
+        &mut self,
+        window: &winit::window::Window,
+        event: &WindowEvent,
+        replayed: Option<EditKey>,
+    ) -> Option<(bool, bool)> {
+        let judged = match replayed {
+            Some(edit) => EguiKey::Pass(edit),
+            None => self.judge_egui_key(window, event, EditKeyOwner::Window),
+        };
+        match judged {
+            EguiKey::Taken => {
+                window.request_redraw();
+                None
+            }
+            EguiKey::Free | EguiKey::Pass(_) => Some(self.handle_egui_event(window, event)),
+        }
+    }
+
+    /// A finished hold of a window that replays keys itself (the main window, and egui-only windows
+    /// with key handling of their own): the key to replay once (not judged again) and the events
     /// queued behind it.
     pub fn take_edit_release(&mut self) -> Option<Release<WindowEvent>> {
         self.edit_keys.take_release(EditKeyOwner::Window)
@@ -635,6 +659,25 @@ impl super::GpuState {
 /// told apart either: Tasty keeps no occlusion state, and an occluded X11 window still draws.
 fn frames_stopped(window: &winit::window::Window) -> bool {
     window.is_minimized() == Some(true) || window.is_visible() == Some(false)
+}
+
+/// Runs a finished hold's events through a window's own event handling, in order: the released key
+/// once, marked with the edit it was judged for, then the queued events unmarked (judged again).
+/// Stops at the first result `done` accepts (the window closed) and returns it.
+pub(crate) fn replay_release<E, A>(
+    release: Release<E>,
+    done: impl Fn(&A) -> bool,
+    mut handle: impl FnMut(E, Option<EditKey>) -> A,
+) -> Option<A> {
+    let replay = release.replay.map(|(event, edit)| (event, Some(edit)));
+    let queued = release.queued.into_iter().map(|event| (event, None));
+    for (event, judged) in replay.into_iter().chain(queued) {
+        let result = handle(event, judged);
+        if done(&result) {
+            return Some(result);
+        }
+    }
+    None
 }
 
 /// What a bound edit does on a settled state: the key passes on, a label copy acts at once, or the
