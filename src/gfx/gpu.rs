@@ -2,6 +2,7 @@ mod boot_error;
 #[cfg(debug_assertions)]
 mod debug_surface;
 mod delayed_repaint;
+pub(crate) mod edit_keys;
 mod egui_bridge;
 mod egui_mesh_prepare;
 mod fonts;
@@ -87,6 +88,8 @@ pub struct GpuState {
     pub(super) held_pastes: text_selection::HeldPastes,
     /// Text an egui widget copied, waiting for the window's owner (`take_egui_copy`).
     pub(super) egui_copy: Option<String>,
+    /// Edit keys judged before egui-winit (`edit_keys.rs`).
+    pub(super) edit_keys: edit_keys::EditKeyState,
     pub(super) egui_renderer: egui_wgpu::Renderer,
     /// native WebView 위 창 단위 오버레이 host 와 그 surface. 그림 위치가 오버레이 창인 모드가 필요할 때
     /// WebView 동기화 뒤 훅이 붙인다. OS host 를 만들지 못하면 `None` 이다.
@@ -282,6 +285,7 @@ impl GpuState {
             text_selection: None,
             held_pastes: text_selection::HeldPastes::default(),
             egui_copy: None,
+            edit_keys: edit_keys::EditKeyState::default(),
             egui_renderer,
             overlay_surface: None,
             scale_factor,
@@ -314,9 +318,11 @@ impl GpuState {
         match event {
             winit::event::WindowEvent::ModifiersChanged(m) => {
                 tasty_key_match::note_modifiers(&self.egui_ctx, m.state());
+                self.edit_keys.set_modifiers(m.state());
             }
             winit::event::WindowEvent::Focused(false) => {
                 tasty_key_match::note_modifiers(&self.egui_ctx, Default::default());
+                self.edit_keys.set_modifiers(Default::default());
             }
             _ => {}
         }
@@ -328,11 +334,6 @@ impl GpuState {
     /// 다음 egui 프레임에 넣을 입력 이벤트. 호스트 입력 위젯의 키 재해석이 쓴다.
     pub fn egui_input_events_mut(&mut self) -> &mut Vec<egui::Event> {
         &mut self.egui_state.egui_input_mut().events
-    }
-
-    /// 지금 붙여 넣을 egui 클립보드 텍스트. 네이티브 Wayland에서 다른 앱의 선택은 나중에 Paste로 온다.
-    pub fn egui_clipboard_text(&mut self) -> Option<String> {
-        self.clipboard_text_now()
     }
 
     /// 메뉴를 닫는 클릭처럼 egui에 전달하지 않은 입력 뒤에 PointerGone을 넣어

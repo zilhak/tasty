@@ -153,6 +153,40 @@ impl TextSelection {
     pub(crate) fn own_png(&mut self) -> Result<Option<std::sync::Arc<[u8]>>, String> {
         self.0.own_png()
     }
+    /// A paste key's read held until it ends. `None` while another app's selection is being
+    /// read (it comes later from `poll_with_failures`); `Some(None)` when there is nothing to
+    /// paste or the read failed.
+    pub(crate) fn request_held_text(&mut self, tag: u64) -> Option<Option<String>> {
+        match self.request_text(tag) {
+            Ok(SelectionPaste::Ready(text)) => Some(Some(text).filter(|t| !t.is_empty())),
+            Ok(SelectionPaste::Empty) => Some(None),
+            Ok(SelectionPaste::Pending) => None,
+            Err(error) => {
+                tracing::warn!(%error, "could not read the Wayland clipboard");
+                Some(None)
+            }
+        }
+    }
+    /// Finished reads for a held paste key, a failed one as `None`.
+    pub(crate) fn poll_with_failures(&mut self) -> Vec<(u64, Option<String>)> {
+        match self.poll_received() {
+            Ok(received) => received
+                .into_iter()
+                .map(|(tag, r)| match r {
+                    SelectionReceived::Text(text) => (tag, Some(text)),
+                    SelectionReceived::Png(_) => (tag, None),
+                    SelectionReceived::Failed(error) => {
+                        tracing::debug!(%error, "clipboard read for a held paste failed");
+                        (tag, None)
+                    }
+                })
+                .collect(),
+            Err(error) => {
+                tracing::warn!(%error, "Wayland clipboard queue failed");
+                Vec::new()
+            }
+        }
+    }
 }
 #[cfg(target_os = "linux")]
 pub(crate) use wayland::{Paste as SelectionPaste, Received as SelectionReceived};
@@ -169,6 +203,12 @@ impl TextSelection {
         None
     }
     pub(crate) fn request(&mut self, _: u64) -> Option<String> {
+        match *self {}
+    }
+    pub(crate) fn request_held_text(&mut self, _: u64) -> Option<Option<String>> {
+        match *self {}
+    }
+    pub(crate) fn poll_with_failures(&mut self) -> Vec<(u64, Option<String>)> {
         match *self {}
     }
     pub(crate) fn cancel(&mut self) {

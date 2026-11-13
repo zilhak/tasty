@@ -9,6 +9,8 @@ impl App {
         }
         self.poll_port_scans();
         self.refresh_approval_presentations();
+        // 보류가 풀린 편집 키는 이 프레임이 입력을 가져가기 전에 평소 경로로 재생한다.
+        self.replay_main_edit_keys(id);
         let Some(engine) = self.engines.of_window(id) else {
             return;
         };

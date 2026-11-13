@@ -72,7 +72,7 @@ impl MainView {
         &mut self,
         engine: &EngineRead<'_>,
         event: &winit::event::KeyEvent,
-        _egui_consumed: bool,
+        edit_judged: Option<crate::adapters::ui::input::edit_key::EditKey>,
     ) {
         // Feed all key events (Press + Release) to the double-tap detector
         self.double_tap
@@ -101,10 +101,14 @@ impl MainView {
         // 같은 `MainViewState::keyboard_overlay_open` 을 쓴다.
         let overlay_open = self.state.keyboard_overlay_open();
 
-        if !overlay_open && self.try_consume_shortcut_key(engine, event) {
+        // 편집 판정을 마친 키(넘긴 키)는 뒤 단계가 편집 바인딩으로 다시 고르지 않는다.
+        if !overlay_open && self.try_consume_shortcut_key(engine, event, edit_judged.is_some()) {
             return;
         }
-        if overlay_open && self.try_consume_address_refresh_key(engine, event) {
+        if overlay_open
+            && edit_judged.is_none()
+            && self.try_consume_address_refresh_key(engine, event)
+        {
             return;
         }
 
@@ -248,9 +252,15 @@ impl MainView {
         &mut self,
         engine: &EngineRead<'_>,
         event: &winit::event::KeyEvent,
+        edit_judged: bool,
     ) -> bool {
         let shortcut_key = self.shortcut_lookup_key(event);
-        if self.handle_shortcut(engine, &shortcut_key, self.base.state.modifiers) {
+        if self.handle_shortcut_after_edit_judgment(
+            engine,
+            &shortcut_key,
+            self.base.state.modifiers,
+            edit_judged,
+        ) {
             self.after_shortcut_consumed(engine);
             return true;
         }

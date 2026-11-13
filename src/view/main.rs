@@ -5,6 +5,7 @@ pub(crate) mod debug_input;
 #[cfg(debug_assertions)]
 pub(crate) mod debug_menu;
 mod divider_drag;
+mod edit_keys;
 mod egui_mesh;
 mod explorer_create;
 mod explorer_history;
@@ -56,6 +57,9 @@ pub struct MainView {
     pub(crate) clipboard: TerminalClipboard,
     /// The terminal paste still being read from a foreign Wayland selection.
     pub(crate) pending_terminal_paste: Option<clipboard::PendingPaste>,
+    /// The edit a replayed key was already judged as (`edit_keys.rs`). Set by App only while it
+    /// replays that key.
+    pub(crate) edit_replay: Option<crate::adapters::ui::input::edit_key::EditKey>,
     pub(crate) ime_preedit: Option<ImePreeditState>,
     pub(crate) ime_request_target: Option<ime::CompositionTarget>,
     #[cfg(target_os = "linux")]
@@ -228,6 +232,7 @@ impl MainView {
             dragging_divider: None,
             clipboard,
             pending_terminal_paste: None,
+            edit_replay: None,
             ime_preedit: None,
             #[cfg(target_os = "linux")]
             explorer_ime_keys: Default::default(),
@@ -430,6 +435,11 @@ impl MainView {
             return ViewAction::None;
         }
 
+        // 편집 바인딩 판정은 egui-winit과 단축키 디스패치보다 먼저 한 번 한다.
+        let Some(edit_judged) = self.edit_key_gate(engine, &event) else {
+            return ViewAction::None;
+        };
+
         #[cfg(target_os = "linux")]
         if self.consume_explorer_ime_key(engine, &event) {
             return ViewAction::None;
@@ -563,7 +573,7 @@ impl MainView {
                 }
             }
             WindowEvent::KeyboardInput { event, .. } => {
-                self.handle_keyboard_input(engine, &event, egui_consumed);
+                self.handle_keyboard_input(engine, &event, edit_judged);
             }
             WindowEvent::Ime(ime_event) => {
                 self.handle_ime(engine, ime_event, egui_consumed);

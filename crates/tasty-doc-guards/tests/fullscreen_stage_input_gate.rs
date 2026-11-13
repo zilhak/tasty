@@ -328,6 +328,7 @@ fn every_overlay_open_composite_is_stage_aware() {
             "src/app/webview_keys.rs".to_string(),
             "src/app/webview_sync.rs".to_string(),
             "src/view/main.rs".to_string(),
+            "src/view/main/edit_keys.rs".to_string(),
             "src/view/main/file_drag.rs".to_string(),
             "src/view/main/ime.rs".to_string(),
             "src/view/main/keyboard.rs".to_string(),

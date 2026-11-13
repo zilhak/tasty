@@ -1,0 +1,665 @@
+//! Edit keys (copy, cut, paste) judged before egui-winit sees them. A key bound to an edit in
+//! `KeybindingSettings` is consumed only when the edit really happened in egui; otherwise the
+//! original key goes to egui-winit (and the window's other handlers) unchanged. When the result is
+//! unknown at key time, the key is held, the edit is tried in the next egui pass, and that pass's
+//! output decides. Contract: `docs/design/policies/key-mapping.md`, "편집 키 판정".
+use std::time::{Duration, Instant};
+
+use winit::event::{ElementState, WindowEvent};
+use winit::keyboard::{Key, ModifiersState, PhysicalKey};
+
+use crate::adapters::ui::input::edit_key::{
+    self, Capability, EditBindings, EditKey, EditKeyHold, Outcome, Release, Verdict,
+};
+
+/// A held edit whose egui event waits for a frame that never comes (a stalled or hidden window) is
+/// taken back out of egui's input and its key replayed after this long. egui answers in the next
+/// pass, so a live window never reaches it.
+const HOST_HOLD_LIMIT: Duration = Duration::from_secs(1);
+
+/// A native Wayland read that has not answered after the selection's own read limit is given up.
+const AWAIT_TEXT_LIMIT: Duration =
+    crate::file::drag::PASTE_LIMIT.saturating_add(Duration::from_millis(500));
+
+/// Who replays a released key. egui-only windows (settings, preset, plugins, quit, boot screens,
+/// home-in-use) hand every key to egui alone, so the window's GPU state replays there itself. The
+/// main window also runs Tasty shortcuts on a passed key, so it takes the release and replays it
+/// through its own event path.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EditKeyOwner {
+    EguiOnly,
+    Window,
+}
+
+/// What became of an event offered to [`EditKeyState::judge`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EguiKey {
+    /// Not a judged edit key: the event goes on as before.
+    Free,
+    /// Tasty took the event (a held edit key, or an event queued behind one).
+    Taken,
+    /// An edit key egui cannot run now. The original key goes on, and later steps must not match it
+    /// as an edit binding again.
+    Pass(EditKey),
+}
+
+/// The clipboard text a paste key would insert, read at key time.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum ClipText {
+    Text(String),
+    /// Nothing to paste: the clipboard is empty or holds no text, or reading it failed.
+    Empty,
+    /// A native Wayland read of another app's selection is under way.
+    Pending,
+}
+
+enum Phase {
+    /// Input from before the key is still unprocessed. It runs in a pass of its own first, so the
+    /// edit is judged on the focus and selection it leaves and its pass holds the edit alone.
+    Settle,
+    /// A frame took that earlier input.
+    Settling,
+    /// The earlier input's pass ended: judge the edit again before the next input.
+    Rejudge,
+    /// Waiting for a native Wayland read asked for the widget tagged `tag`.
+    AwaitText { tag: u64 },
+    /// The edit event sits in egui's next input.
+    Injected,
+    /// A frame took the input with the edit; its output decides.
+    InPass,
+}
+
+/// A window event as the judgment sees it.
+pub(crate) trait HeldEvent: Clone {
+    /// The pressed key, for a key press.
+    fn press(&self) -> Option<(&Key, PhysicalKey)>;
+    /// Keys, IME and the modifiers they are read with keep their order behind a held key.
+    fn queues_behind_hold(&self) -> bool;
+    /// Pointer input. It waits behind a held key while the edit sits in egui's input or the key
+    /// waits to be replayed, so the edit's pass carries no click (a copy button) of its own.
+    fn is_pointer(&self) -> bool;
+}
+
+impl HeldEvent for WindowEvent {
+    fn press(&self) -> Option<(&Key, PhysicalKey)> {
+        match self {
+            WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed => {
+                Some((&event.logical_key, event.physical_key))
+            }
+            _ => None,
+        }
+    }
+
+    fn queues_behind_hold(&self) -> bool {
+        matches!(
+            self,
+            WindowEvent::KeyboardInput { .. }
+                | WindowEvent::Ime(_)
+                | WindowEvent::ModifiersChanged(_)
+        )
+    }
+
+    fn is_pointer(&self) -> bool {
+        matches!(
+            self,
+            WindowEvent::CursorMoved { .. }
+                | WindowEvent::CursorEntered { .. }
+                | WindowEvent::CursorLeft { .. }
+                | WindowEvent::MouseInput { .. }
+                | WindowEvent::Touch(_)
+        )
+    }
+}
+
+struct HostHold<E> {
+    hold: EditKeyHold<E>,
+    phase: Phase,
+    since: Instant,
+    owner: EditKeyOwner,
+}
+
+/// The edit key judgment of one window.
+pub(crate) struct EditKeyState<E = WindowEvent> {
+    bindings: Option<EditBindings>,
+    modifiers: ModifiersState,
+    hold: Option<HostHold<E>>,
+    release: Option<(EditKeyOwner, Release<E>)>,
+}
+
+impl<E> Default for EditKeyState<E> {
+    fn default() -> Self {
+        Self {
+            bindings: None,
+            modifiers: ModifiersState::empty(),
+            hold: None,
+            release: None,
+        }
+    }
+}
+
+/// What a key-time judgment reads from egui and the clipboard.
+pub(crate) struct KeyCx<'a> {
+    pub(crate) ctx: &'a egui::Context,
+    /// egui input gathered for the next frame and not yet processed.
+    pub(crate) events: &'a mut Vec<egui::Event>,
+    /// Reads the clipboard for a paste meant for the widget tagged with the argument.
+    pub(crate) clipboard: &'a mut dyn FnMut(u64) -> ClipText,
+}
+
+impl<E: HeldEvent> EditKeyState<E> {
+    /// The applied bindings this window judges with. `None` judges nothing.
+    pub(crate) fn set_bindings(&mut self, bindings: Option<EditBindings>) {
+        self.bindings = bindings;
+    }
+
+    /// The winit modifiers the next key press is judged with.
+    pub(crate) fn set_modifiers(&mut self, modifiers: ModifiersState) {
+        self.modifiers = modifiers;
+    }
+
+    /// A key is held, or its release still waits for the owner.
+    pub(crate) fn busy(&self) -> bool {
+        self.hold.is_some() || self.release.is_some()
+    }
+
+    pub(crate) fn awaits_text(&self) -> bool {
+        matches!(
+            self.hold,
+            Some(HostHold {
+                phase: Phase::AwaitText { .. },
+                ..
+            })
+        )
+    }
+
+    /// Judges `event` before egui-winit sees it. Events behind a held key are queued in order.
+    pub(crate) fn judge(
+        &mut self,
+        event: &E,
+        owner: EditKeyOwner,
+        now: Instant,
+        cx: KeyCx<'_>,
+    ) -> EguiKey {
+        if self.busy() && (event.queues_behind_hold() || event.is_pointer() && self.edit_in_input())
+        {
+            self.queue(event.clone());
+            return EguiKey::Taken;
+        }
+        let Some((logical, physical)) = event.press() else {
+            return EguiKey::Free;
+        };
+        let Some(bindings) = self.bindings.as_ref() else {
+            return EguiKey::Free;
+        };
+        let mods = self.modifiers;
+        let lookup = tasty_key_match::shortcut_lookup_key(logical, &physical, mods);
+        let Some(edit) = bindings.binding(&lookup, mods) else {
+            return EguiKey::Free;
+        };
+        // Unprocessed input (a click, Tab, Ctrl+A, typed text) may change focus, selection or text
+        // before the edit runs. It gets its own pass, then the edit is judged on what it left.
+        let phase = if has_pending_input(cx.events) {
+            Phase::Settle
+        } else {
+            match start(edit, cx) {
+                Start::Pass => return EguiKey::Pass(edit),
+                Start::Act => return EguiKey::Taken,
+                Start::Hold(phase) => phase,
+            }
+        };
+        self.hold = Some(HostHold {
+            hold: EditKeyHold::new(event.clone(), edit, true),
+            phase,
+            since: now,
+            owner,
+        });
+        EguiKey::Taken
+    }
+
+    /// The edit sits in egui's input or its pass, or a released key still waits to be replayed.
+    fn edit_in_input(&self) -> bool {
+        self.release.is_some()
+            || matches!(
+                self.hold,
+                Some(HostHold {
+                    phase: Phase::Injected | Phase::InPass,
+                    ..
+                })
+            )
+    }
+
+    /// The earlier input's pass ended and the held edit is judged again.
+    pub(crate) fn needs_rejudge(&self) -> bool {
+        matches!(
+            self.hold,
+            Some(HostHold {
+                phase: Phase::Rejudge,
+                ..
+            })
+        )
+    }
+
+    /// Judges a held edit again once the input before it has run: it passes, acts or goes into
+    /// egui's input. Input that arrived since gets a pass of its own first.
+    pub(crate) fn rejudge(&mut self, cx: KeyCx<'_>) {
+        let Some(held) = self.hold.as_mut() else {
+            return;
+        };
+        if !matches!(held.phase, Phase::Rejudge) {
+            return;
+        }
+        if has_pending_input(cx.events) {
+            held.phase = Phase::Settle;
+            return;
+        }
+        match start(held.hold.edit(), cx) {
+            Start::Pass => self.resolve_now(Outcome::NotActed),
+            Start::Act => self.resolve_now(Outcome::Acted),
+            Start::Hold(phase) => held.phase = phase,
+        }
+    }
+
+    fn queue(&mut self, event: E) {
+        if let Some(held) = self.hold.as_mut() {
+            held.hold.queue(event);
+        } else if let Some((_, release)) = self.release.as_mut() {
+            release.queued.push(event);
+        }
+    }
+
+    /// A frame took egui's input: an injected edit is now in that pass.
+    pub(crate) fn input_taken(&mut self) {
+        if let Some(held) = self.hold.as_mut() {
+            match held.phase {
+                Phase::Injected => held.phase = Phase::InPass,
+                Phase::Settle => held.phase = Phase::Settling,
+                _ => {}
+            }
+        }
+    }
+
+    /// The output of the pass that ran the edit decides the held key. A cut that removed nothing
+    /// (a read-only field) also drops the copy egui made, so only the original key's next handler
+    /// can copy.
+    pub(crate) fn after_pass(&mut self, output: egui::PlatformOutput) -> egui::PlatformOutput {
+        if let Some(held) = self.hold.as_mut()
+            && matches!(held.phase, Phase::Settling)
+        {
+            held.phase = Phase::Rejudge;
+            return output;
+        }
+        let Some(held) = self.hold.take_if(|h| matches!(h.phase, Phase::InPass)) else {
+            return output;
+        };
+        let edit = held.hold.edit();
+        let outcome = pass_outcome(edit, &output);
+        let output = if edit == EditKey::Cut && outcome == Outcome::NotActed {
+            super::text_selection::take_copied_text(output).0
+        } else {
+            output
+        };
+        tracing::debug!(?edit, ?outcome, "held edit key resolved by the egui pass");
+        self.release_hold(held, outcome);
+        output
+    }
+
+    /// The native Wayland read for a held paste finished. `text` is `None` when it failed.
+    /// `focused` is the widget focused now: if focus moved, the text and the key are dropped.
+    pub(crate) fn text_arrived(
+        &mut self,
+        text: Option<String>,
+        focused: u64,
+        events: &mut Vec<egui::Event>,
+    ) {
+        let Some(held) = self.hold.as_mut() else {
+            return;
+        };
+        let Phase::AwaitText { tag } = held.phase else {
+            return;
+        };
+        match text.filter(|t| !t.is_empty()) {
+            Some(_) if tag != focused => {
+                tracing::debug!("held paste dropped: its text field lost focus");
+                self.resolve_now(Outcome::TargetGone);
+            }
+            Some(text) => {
+                events.push(egui::Event::Paste(text));
+                held.phase = Phase::Injected;
+            }
+            None => self.resolve_now(Outcome::NotActed),
+        }
+    }
+
+    /// Gives up a hold whose result did not come in time. An edit still waiting in egui's input is
+    /// taken back first, so the replayed key is the only effect. `cancel_read` stops a Wayland read.
+    pub(crate) fn expire(
+        &mut self,
+        now: Instant,
+        events: &mut Vec<egui::Event>,
+        cancel_read: impl FnOnce(),
+    ) {
+        let Some(held) = self.hold.as_ref() else {
+            return;
+        };
+        let age = now.saturating_duration_since(held.since);
+        let outcome = match held.phase {
+            Phase::AwaitText { .. } if age >= AWAIT_TEXT_LIMIT => {
+                cancel_read();
+                Outcome::TimedOut
+            }
+            Phase::Settle | Phase::Settling | Phase::Rejudge if age >= HOST_HOLD_LIMIT => {
+                Outcome::TimedOut
+            }
+            Phase::Injected if age >= HOST_HOLD_LIMIT => {
+                if retract_edit(events, held.hold.edit()) {
+                    Outcome::TimedOut
+                } else {
+                    Outcome::TargetGone
+                }
+            }
+            _ => return,
+        };
+        tracing::warn!(edit = ?held.hold.edit(), "held edit key got no result in time");
+        self.resolve_now(outcome);
+    }
+
+    fn resolve_now(&mut self, outcome: Outcome) {
+        if let Some(held) = self.hold.take() {
+            self.release_hold(held, outcome);
+        }
+    }
+
+    fn release_hold(&mut self, held: HostHold<E>, outcome: Outcome) {
+        let release = held.hold.resolve(outcome);
+        // A release still waiting for its owner keeps its place: the new one's events come after.
+        match self.release.as_mut() {
+            Some((_, earlier)) => {
+                earlier
+                    .queued
+                    .extend(release.replay.map(|(event, _)| event));
+                earlier.queued.extend(release.queued);
+            }
+            None => self.release = Some((held.owner, release)),
+        }
+    }
+
+    /// The finished hold for `owner`, if any.
+    pub(crate) fn take_release(&mut self, owner: EditKeyOwner) -> Option<Release<E>> {
+        self.release
+            .take_if(|(o, _)| *o == owner)
+            .map(|(_, release)| release)
+    }
+}
+
+impl super::GpuState {
+    /// The applied edit bindings this window judges with. App windows pass the applied settings;
+    /// `None` leaves every key to egui-winit.
+    pub fn set_edit_bindings(&mut self, bindings: Option<EditBindings>) {
+        self.edit_keys.set_bindings(bindings);
+    }
+
+    /// Judges a window event before egui-winit. `owner` says who replays a released key.
+    pub fn judge_egui_key(&mut self, event: &WindowEvent, owner: EditKeyOwner) -> EguiKey {
+        self.expire_edit_hold();
+        self.with_key_cx(|state, cx| state.judge(event, owner, Instant::now(), cx))
+    }
+
+    /// Runs `f` with this window's judgment state and the egui input gathered for the next frame.
+    fn with_key_cx<R>(&mut self, f: impl FnOnce(&mut EditKeyState, KeyCx<'_>) -> R) -> R {
+        let ctx = self.egui_ctx.clone();
+        let mut events = std::mem::take(&mut self.egui_state.egui_input_mut().events);
+        let selection = &mut self.text_selection;
+        let egui_state = &mut self.egui_state;
+        let mut clipboard = |tag: u64| match selection.as_mut() {
+            Some(selection) => match selection.request_held_text(tag) {
+                Some(Some(text)) => ClipText::Text(text),
+                Some(None) => ClipText::Empty,
+                None => ClipText::Pending,
+            },
+            None => egui_state
+                .clipboard_text()
+                .filter(|t| !t.is_empty())
+                .map_or(ClipText::Empty, ClipText::Text),
+        };
+        let result = f(
+            &mut self.edit_keys,
+            KeyCx {
+                ctx: &ctx,
+                events: &mut events,
+                clipboard: &mut clipboard,
+            },
+        );
+        let pending = &mut self.egui_state.egui_input_mut().events;
+        events.append(pending);
+        *pending = events;
+        result
+    }
+
+    /// [`Self::handle_egui_event`] for a window whose keys go to egui alone. An edit key egui can run
+    /// is taken; any other key, and a released one, reaches egui-winit unchanged.
+    pub fn handle_egui_event_with_edit_keys(
+        &mut self,
+        window: &winit::window::Window,
+        event: &WindowEvent,
+    ) -> (bool, bool) {
+        match self.judge_egui_key(event, EditKeyOwner::EguiOnly) {
+            EguiKey::Taken => (true, true),
+            EguiKey::Free | EguiKey::Pass(_) => self.handle_egui_event(window, event),
+        }
+    }
+
+    /// A finished hold of the main window: the key to replay once (not judged again) and the events
+    /// queued behind it.
+    pub fn take_edit_release(&mut self) -> Option<Release<WindowEvent>> {
+        self.edit_keys.take_release(EditKeyOwner::Window)
+    }
+
+    /// Before a frame takes egui's input: gives up a stale hold and replays an egui-only release.
+    pub(super) fn edit_keys_before_input(&mut self, window: &winit::window::Window) {
+        self.expire_edit_hold();
+        let Some(release) = self.edit_keys.take_release(EditKeyOwner::EguiOnly) else {
+            return;
+        };
+        if let Some((event, _)) = release.replay {
+            self.handle_egui_event(window, &event);
+        }
+        for event in release.queued {
+            self.handle_egui_event_with_edit_keys(window, &event);
+        }
+    }
+
+    /// After a frame's pass: the held key's result, and a redraw when a key waits to be replayed.
+    pub(super) fn edit_keys_after_pass(
+        &mut self,
+        window: &winit::window::Window,
+        output: egui::PlatformOutput,
+    ) -> egui::PlatformOutput {
+        let output = self.edit_keys.after_pass(output);
+        if self.edit_keys.needs_rejudge() {
+            self.with_key_cx(|state, cx| state.rejudge(cx));
+        }
+        if self.edit_keys.busy() {
+            window.request_redraw();
+        }
+        output
+    }
+
+    /// Hands a finished Wayland read to a paste held for it. False when no paste waits for one.
+    pub(super) fn edit_keys_text_arrived(&mut self, text: Option<String>) -> bool {
+        if !self.edit_keys.awaits_text() {
+            return false;
+        }
+        let focused = focus_tag(&self.egui_ctx);
+        let events = &mut self.egui_state.egui_input_mut().events;
+        self.edit_keys.text_arrived(text, focused, events);
+        true
+    }
+
+    pub fn edit_keys_busy(&self) -> bool {
+        self.edit_keys.busy()
+    }
+
+    fn expire_edit_hold(&mut self) {
+        let selection = &mut self.text_selection;
+        let events = &mut self.egui_state.egui_input_mut().events;
+        self.edit_keys.expire(Instant::now(), events, || {
+            if let Some(selection) = selection.as_mut() {
+                selection.cancel();
+            }
+        });
+    }
+}
+
+/// What a bound edit does on a settled state: the key passes on, a label copy acts at once, or the
+/// key is held with the edit put in egui's input (or a Wayland read started).
+enum Start {
+    Pass,
+    Act,
+    Hold(Phase),
+}
+
+/// Judges `edit` with no unprocessed input before it, and puts the edit into `cx.events` when held.
+fn start(edit: EditKey, cx: KeyCx<'_>) -> Start {
+    let tag = focus_tag(cx.ctx);
+    let mut clip = None;
+    let verdict = edit_key::verdict(Some(edit), |edit| {
+        let target = match edit {
+            EditKey::Copy | EditKey::Cut => has_selection(cx.ctx),
+            EditKey::Paste => text_edit_focused(cx.ctx),
+        };
+        if !target {
+            return Capability::No;
+        }
+        // egui copies a label selection whenever it has one; a text field may refuse (password).
+        if edit == EditKey::Copy && label_copy_only(cx.ctx) {
+            return Capability::Yes;
+        }
+        if edit != EditKey::Paste {
+            return Capability::Unknown;
+        }
+        let text = (cx.clipboard)(tag);
+        let capability = if text == ClipText::Empty {
+            Capability::No
+        } else {
+            Capability::Unknown
+        };
+        clip = Some(text);
+        capability
+    });
+    let edit = match verdict {
+        Verdict::NoBinding | Verdict::Pass(_) => return Start::Pass,
+        Verdict::Act(edit) => {
+            cx.events.push(egui::Event::Copy);
+            tracing::debug!(?edit, "edit key acted on a label selection");
+            return Start::Act;
+        }
+        Verdict::Hold(edit) => edit,
+    };
+    Start::Hold(match (edit, clip) {
+        (EditKey::Paste, Some(ClipText::Pending)) => Phase::AwaitText { tag },
+        (EditKey::Paste, Some(ClipText::Text(text))) => {
+            cx.events.push(egui::Event::Paste(text));
+            Phase::Injected
+        }
+        (EditKey::Copy, _) => {
+            cx.events.push(egui::Event::Copy);
+            Phase::Injected
+        }
+        (EditKey::Cut, _) => {
+            cx.events.push(egui::Event::Cut);
+            Phase::Injected
+        }
+        (EditKey::Paste, _) => return Start::Pass,
+    })
+}
+
+/// Input egui has not processed that could move focus or change a selection.
+fn has_pending_input(events: &[egui::Event]) -> bool {
+    events.iter().any(|e| {
+        !matches!(
+            e,
+            egui::Event::PointerMoved(_)
+                | egui::Event::MouseMoved(_)
+                | egui::Event::PointerGone
+                | egui::Event::MouseWheel { .. }
+                | egui::Event::Zoom(_)
+                | egui::Event::WindowFocused(_)
+        )
+    })
+}
+
+fn focus_tag(ctx: &egui::Context) -> u64 {
+    ctx.memory(|m| m.focused()).map_or(0, |id| id.value())
+}
+
+/// A focused text field has a non-empty selection, or a label selection exists.
+pub(crate) fn has_selection(ctx: &egui::Context) -> bool {
+    let field = ctx
+        .memory(|m| m.focused())
+        .and_then(|id| egui::TextEdit::load_state(ctx, id))
+        .and_then(|state| state.cursor.char_range())
+        .is_some_and(|range| range.primary != range.secondary);
+    field || egui::text_selection::LabelSelectionState::load(ctx).has_selection()
+}
+
+/// A label selection exists and no text field has focus, so a copy is the label's alone.
+fn label_copy_only(ctx: &egui::Context) -> bool {
+    !text_edit_focused(ctx) && egui::text_selection::LabelSelectionState::load(ctx).has_selection()
+}
+
+/// The focused widget is a text field.
+pub(crate) fn text_edit_focused(ctx: &egui::Context) -> bool {
+    ctx.memory(|m| m.focused())
+        .and_then(|id| egui::TextEdit::load_state(ctx, id))
+        .is_some()
+}
+
+/// Whether the edit happened in the pass that produced `output`. A copy shows as copied text; a
+/// cut or paste shows as a text field whose text changed (egui reports the text before and after
+/// every changed `TextEdit`, masked for passwords). A read-only field reports a change with equal
+/// texts, so it counts as not acted.
+pub(crate) fn pass_outcome(edit: EditKey, output: &egui::PlatformOutput) -> Outcome {
+    let acted = match edit {
+        EditKey::Copy => copied_text(output),
+        EditKey::Cut | EditKey::Paste => text_changed(output),
+    };
+    if acted {
+        Outcome::Acted
+    } else {
+        Outcome::NotActed
+    }
+}
+
+fn copied_text(output: &egui::PlatformOutput) -> bool {
+    // reason: egui 0.31 still fills the deprecated field for older callers.
+    #[allow(deprecated)]
+    let legacy = !output.copied_text.is_empty();
+    legacy
+        || output
+            .commands
+            .iter()
+            .any(|c| matches!(c, egui::OutputCommand::CopyText(_)))
+}
+
+fn text_changed(output: &egui::PlatformOutput) -> bool {
+    output.events.iter().any(|event| {
+        let info = event.widget_info();
+        info.typ == egui::WidgetType::TextEdit
+            && info.prev_text_value.is_some()
+            && info.prev_text_value != info.current_text_value
+    })
+}
+
+/// Takes the injected edit back out of egui's pending input. False when it is gone.
+fn retract_edit(events: &mut Vec<egui::Event>, edit: EditKey) -> bool {
+    let found = events.iter().rposition(|e| match edit {
+        EditKey::Copy => matches!(e, egui::Event::Copy),
+        EditKey::Cut => matches!(e, egui::Event::Cut),
+        EditKey::Paste => matches!(e, egui::Event::Paste(_)),
+    });
+    found.map(|i| events.remove(i)).is_some()
+}
+
+#[cfg(test)]
+#[path = "edit_keys_tests.rs"]
+mod tests;

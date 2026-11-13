@@ -1213,7 +1213,7 @@ impl App {
         }
     }
 
-    fn dispatch_window_event_to_view(&mut self, id: WindowId, event: WindowEvent) {
+    pub(super) fn dispatch_window_event_to_view(&mut self, id: WindowId, event: WindowEvent) {
         if matches!(event, WindowEvent::RedrawRequested)
             && self
                 .view

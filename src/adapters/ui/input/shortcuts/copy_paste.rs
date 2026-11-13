@@ -77,6 +77,7 @@ impl MainView {
         engine: &crate::runtime::engine_read::EngineRead<'_>,
         key: &Key,
         mods: ModifiersState,
+        edit_judged: bool,
     ) -> bool {
         if !self
             .state
@@ -92,15 +93,17 @@ impl MainView {
             return false;
         }
         let kb = &engine.settings.keybindings;
+        // 편집 판정을 마친 키는 파일 복사·잘라내기·붙여넣기로 다시 고르지 않는다.
+        let edit = |combos: &[String]| !edit_judged && matches_any_binding(combos, key, mods);
         let action = if matches_any_binding(&kb.select_all, key, mods) {
             ExplorerAction::SelectAll
         } else if matches_any_binding(&kb.copy_path, key, mods) {
             ExplorerAction::CopyPath
-        } else if matches_any_binding(&kb.copy, key, mods) {
+        } else if edit(&kb.copy) {
             ExplorerAction::CopyFiles
-        } else if matches_any_binding(&kb.cut, key, mods) {
+        } else if edit(&kb.cut) {
             ExplorerAction::CutFiles
-        } else if matches_any_binding(&kb.paste, key, mods) {
+        } else if edit(&kb.paste) {
             ExplorerAction::PasteFiles
         } else if matches_any_binding(&kb.explorer_rename, key, mods) {
             ExplorerAction::Rename

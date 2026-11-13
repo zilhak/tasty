@@ -34,15 +34,6 @@ impl GpuState {
         }
     }
 
-    /// Text to paste now. On a native Wayland start a foreign selection is read in the background
-    /// and arrives later as a paste event for the widget focused now, so this returns `None`.
-    pub(super) fn clipboard_text_now(&mut self) -> Option<String> {
-        if self.text_selection.is_some() {
-            return self.request_selection_text();
-        }
-        self.egui_state.clipboard_text()
-    }
-
     fn request_selection_text(&mut self) -> Option<String> {
         let tag = self.focus_tag();
         self.text_selection.as_mut()?.request(tag)
@@ -65,6 +56,7 @@ impl GpuState {
     /// Hands egui's output to egui-winit after taking out the copied text, which waits for
     /// [`Self::take_egui_copy`]. A newer copy replaces one not yet taken.
     pub(super) fn apply_egui_output(&mut self, window: &Window, output: egui::PlatformOutput) {
+        let output = self.edit_keys_after_pass(window, output);
         let output = hold_copied_text(&mut self.egui_copy, output);
         self.egui_state.handle_platform_output(window, output);
     }
@@ -86,16 +78,34 @@ impl GpuState {
         let Some(selection) = self.text_selection.as_mut() else {
             return false;
         };
-        self.held_pastes
-            .add(selection.poll(), std::time::Instant::now());
-        !self.held_pastes.is_empty()
+        let finished = if self.edit_keys.awaits_text() {
+            selection.poll_with_failures()
+        } else {
+            selection
+                .poll()
+                .into_iter()
+                .map(|(tag, text)| (tag, Some(text)))
+                .collect()
+        };
+        let mut pastes = Vec::new();
+        for (tag, text) in finished {
+            if !self.edit_keys_text_arrived(text.clone())
+                && let Some(text) = text
+            {
+                pastes.push((tag, text));
+            }
+        }
+        self.held_pastes.add(pastes, std::time::Instant::now());
+        !self.held_pastes.is_empty() || self.edit_keys_busy()
     }
 
     /// The input of this window's next egui frame. Every frame takes its input here, so each
     /// frame's focus input is counted and a waiting paste is checked against the focus at the
     /// moment egui will apply it.
     pub fn take_egui_input(&mut self, window: &Window) -> egui::RawInput {
+        self.edit_keys_before_input(window);
         let mut raw_input = self.egui_state.take_egui_input(window);
+        self.edit_keys.input_taken();
         let focused = self.focus_tag();
         let pastes = self
             .held_pastes
@@ -112,6 +122,7 @@ impl GpuState {
             .as_ref()
             .is_some_and(crate::file::drag::TextSelection::busy)
             || !self.held_pastes.is_empty()
+            || self.edit_keys.awaits_text()
     }
 }
 

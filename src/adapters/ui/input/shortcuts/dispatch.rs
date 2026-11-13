@@ -594,6 +594,18 @@ impl MainView {
         key: &Key,
         mods: ModifiersState,
     ) -> bool {
+        self.handle_shortcut_after_edit_judgment(engine, key, mods, false)
+    }
+
+    /// `edit_judged`이면 이 키의 편집(복사·잘라내기·붙여넣기) 판정이 이미 끝나 넘긴 키다. 편집 바인딩은
+    /// 다시 고르지 않고 그 밖의 바인딩만 판정한다.
+    pub(crate) fn handle_shortcut_after_edit_judgment(
+        &mut self,
+        engine: &EngineRead<'_>,
+        key: &Key,
+        mods: ModifiersState,
+        edit_judged: bool,
+    ) -> bool {
         let ctrl = mods.control_key();
         let shift = mods.shift_key();
         // alt는 macOS의 Command, 다른 OS의 Alt다. option은 macOS의 Option, 다른 OS의 Win·Super다.
@@ -603,11 +615,11 @@ impl MainView {
         let cell_w = self.base.gpu.cell_width();
         let cell_h = self.base.gpu.cell_height();
 
-        if self.handle_webview_edit_shortcut(engine, key, mods) {
+        if !edit_judged && self.handle_webview_edit_shortcut(engine, key, mods) {
             return true;
         }
 
-        if self.handle_copy_shortcut(engine, key, mods) {
+        if !edit_judged && self.handle_copy_shortcut(engine, key, mods) {
             return true;
         }
 
@@ -617,7 +629,7 @@ impl MainView {
             return true;
         }
 
-        if self.handle_explorer_shortcut(engine, key, mods) {
+        if self.handle_explorer_shortcut(engine, key, mods, edit_judged) {
             self.base.state.dirty = true;
             return true;
         }
@@ -673,7 +685,7 @@ impl MainView {
             return true;
         }
 
-        if self.handle_paste_shortcut(engine, key, mods) {
+        if !edit_judged && self.handle_paste_shortcut(engine, key, mods) {
             return true;
         }
 

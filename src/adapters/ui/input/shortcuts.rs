@@ -174,7 +174,7 @@ fn explorer_history_shortcut(
 }
 
 /// 포커스된 탐색기의 주소창이나 이름 입력이 키를 받고 있다. 그동안 목록 단축키는 글자 편집에 양보한다.
-fn focused_explorer_typing(
+pub(crate) fn focused_explorer_typing(
     state: &crate::state::MainViewState,
     engine: &crate::runtime::engine_read::EngineRead<'_>,
 ) -> bool {
