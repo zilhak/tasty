@@ -631,6 +631,9 @@ fn pointer_input_waits_while_the_edit_is_in_the_input() {
     assert_eq!(
         ui.judge(&mut state, &Ev::Pointer("move"), &mut pending, now),
         EguiKey::Free,
-        "while a Wayland read is waiting nothing is in the input yet"
+        "while a Wayland read waits, a click that moves focus is the user leaving the field"
     );
 }
+
+#[path = "edit_keys_hold_tests.rs"]
+mod hold;

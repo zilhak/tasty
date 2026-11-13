@@ -180,52 +180,62 @@ impl<E: HeldEvent> EditKeyState<E> {
         now: Instant,
         cx: KeyCx<'_>,
     ) -> EguiKey {
-        if self.busy() && (event.queues_behind_hold() || event.is_pointer() && self.edit_in_input())
-        {
+        if self.queues(event) {
             self.queue(event.clone());
             return EguiKey::Taken;
         }
-        let Some((logical, physical)) = event.press() else {
-            return EguiKey::Free;
-        };
-        let Some(bindings) = self.bindings.as_ref() else {
-            return EguiKey::Free;
-        };
-        let mods = self.modifiers;
-        let lookup = tasty_key_match::shortcut_lookup_key(logical, &physical, mods);
-        let Some(edit) = bindings.binding(&lookup, mods) else {
+        let Some(edit) = self.bound_edit(event) else {
             return EguiKey::Free;
         };
         // Unprocessed input (a click, Tab, Ctrl+A, typed text) may change focus, selection or text
         // before the edit runs. It gets its own pass, then the edit is judged on what it left.
-        let phase = if has_pending_input(cx.events) {
-            Phase::Settle
-        } else {
-            match start(edit, cx) {
-                Start::Pass => return EguiKey::Pass(edit),
-                Start::Act => return EguiKey::Taken,
-                Start::Hold(phase) => phase,
+        if has_pending_input(cx.events) {
+            self.hold_key(event, edit, Phase::Settle, now, owner);
+            return EguiKey::Taken;
+        }
+        match start(edit, cx) {
+            Start::Pass => EguiKey::Pass(edit),
+            Start::Act => EguiKey::Taken,
+            Start::Hold(phase) => {
+                self.hold_key(event, edit, phase, now, owner);
+                EguiKey::Taken
             }
-        };
+        }
+    }
+
+    /// Whether `event` waits behind a held key. Keys, IME and modifiers always do. Pointer input
+    /// does too, except while a Wayland read is under way: there a click that moves focus is the
+    /// user leaving the field, and the paste is dropped when the text arrives.
+    fn queues(&self, event: &E) -> bool {
+        if !self.busy() {
+            return false;
+        }
+        event.queues_behind_hold() || event.is_pointer() && !self.awaits_text()
+    }
+
+    /// The edit `event` presses, by the applied bindings.
+    fn bound_edit(&self, event: &E) -> Option<EditKey> {
+        let (logical, physical) = event.press()?;
+        let bindings = self.bindings.as_ref()?;
+        let mods = self.modifiers;
+        let lookup = tasty_key_match::shortcut_lookup_key(logical, &physical, mods);
+        bindings.binding(&lookup, mods)
+    }
+
+    fn hold_key(
+        &mut self,
+        event: &E,
+        edit: EditKey,
+        phase: Phase,
+        now: Instant,
+        owner: EditKeyOwner,
+    ) {
         self.hold = Some(HostHold {
             hold: EditKeyHold::new(event.clone(), edit, true),
             phase,
             since: now,
             owner,
         });
-        EguiKey::Taken
-    }
-
-    /// The edit sits in egui's input or its pass, or a released key still waits to be replayed.
-    fn edit_in_input(&self) -> bool {
-        self.release.is_some()
-            || matches!(
-                self.hold,
-                Some(HostHold {
-                    phase: Phase::Injected | Phase::InPass,
-                    ..
-                })
-            )
     }
 
     /// The earlier input's pass ended and the held edit is judged again.
@@ -371,6 +381,10 @@ impl<E: HeldEvent> EditKeyState<E> {
 
     fn release_hold(&mut self, held: HostHold<E>, outcome: Outcome) {
         let release = held.hold.resolve(outcome);
+        self.add_release(held.owner, release);
+    }
+
+    fn add_release(&mut self, owner: EditKeyOwner, release: Release<E>) {
         // A release still waiting for its owner keeps its place: the new one's events come after.
         match self.release.as_mut() {
             Some((_, earlier)) => {
@@ -379,7 +393,7 @@ impl<E: HeldEvent> EditKeyState<E> {
                     .extend(release.replay.map(|(event, _)| event));
                 earlier.queued.extend(release.queued);
             }
-            None => self.release = Some((held.owner, release)),
+            None => self.release = Some((owner, release)),
         }
     }
 
