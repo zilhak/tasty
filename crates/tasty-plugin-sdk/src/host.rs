@@ -120,8 +120,12 @@ impl HostHandle {
         &self.reply_slot
     }
 
-    pub(crate) fn defer_reply(&self) -> Option<crate::deferred::DeferredReply> {
-        crate::deferred::take(&self.reply_slot, &self.writer)
+    pub(crate) fn open_reply_id(&self) -> Option<u64> {
+        crate::deferred::open_id(&self.reply_slot)
+    }
+
+    pub(crate) fn defer_reply(&self, id: u64) -> Option<crate::deferred::DeferredReply> {
+        crate::deferred::take(&self.reply_slot, &self.writer, id)
     }
 
     /// 호스트가 큐 포화로 버렸다고 이 SDK에 알려 온 요청의 누적 수.

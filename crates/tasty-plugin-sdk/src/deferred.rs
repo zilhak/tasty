@@ -151,12 +151,27 @@ pub(crate) fn close(slot: &ReplySlot) -> bool {
     std::mem::take(&mut *lock_slot(slot)) == SlotState::Deferred
 }
 
-/// 처리기 쪽: 열린 요청이 있으면 미루고 답할 권리를 가져간다.
-pub(crate) fn take(slot: &ReplySlot, writer: &Arc<Mutex<TcpStream>>) -> Option<DeferredReply> {
+/// dispatch 쪽: 지금 열린 요청의 id — 처리기에 넘길 ctx 에 담는다.
+pub(crate) fn open_id(slot: &ReplySlot) -> Option<u64> {
+    match *lock_slot(slot) {
+        SlotState::Open(id) => Some(id),
+        SlotState::Idle | SlotState::Deferred => None,
+    }
+}
+
+/// 처리기 쪽: `id` 요청이 아직 열려 있으면 미루고 답할 권리를 가져간다.
+///
+/// ctx 는 clone 할 수 있어 처리기가 끝난 뒤에도 남는다. 칸은 요청마다 다시 열리므로,
+/// id 를 대조하지 않으면 보관해 둔 복사본이 그때 처리 중인 **다른** 요청의 답을 가져간다.
+pub(crate) fn take(
+    slot: &ReplySlot,
+    writer: &Arc<Mutex<TcpStream>>,
+    id: u64,
+) -> Option<DeferredReply> {
     let mut s = lock_slot(slot);
-    let SlotState::Open(id) = *s else {
+    if *s != SlotState::Open(id) {
         return None;
-    };
+    }
     *s = SlotState::Deferred;
     Some(DeferredReply::new(id, writer.clone()))
 }

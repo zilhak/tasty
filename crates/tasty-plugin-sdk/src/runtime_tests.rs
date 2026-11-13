@@ -884,3 +884,62 @@ fn a_self_invoke_cannot_be_deferred() {
         .unwrap();
     assert_eq!(*seen.lock().unwrap(), Some(false));
 }
+
+/// 앞 호출의 ctx 를 보관해 두는 plugin — `x.keep` 이 보관하고, `x.other` 가 그 복사본으로
+/// `defer()` 를 부른다.
+struct StashPlugin {
+    stash: Option<IpcMethodCtx>,
+    stale_deferred: Arc<Mutex<Option<bool>>>,
+}
+
+impl Plugin for StashPlugin {
+    fn id(&self) -> &str {
+        "test.stash"
+    }
+    fn create_surface(&mut self, _ctx: SurfaceCreateCtx) -> SurfaceResult {
+        SurfaceResult::default()
+    }
+    fn handle_ipc_method(&mut self, ctx: IpcMethodCtx) -> Result<Value, IpcMethodError> {
+        match ctx.method.as_str() {
+            "x.keep" => {
+                self.stash = Some(ctx);
+                Ok(json!("kept"))
+            }
+            _ => {
+                let stale = self.stash.as_ref().and_then(IpcMethodCtx::defer);
+                *self.stale_deferred.lock().unwrap() = Some(stale.is_some());
+                Ok(json!("own answer"))
+            }
+        }
+    }
+}
+
+/// 끝난 호출의 ctx 복사본은 지금 처리 중인 다른 호출의 답을 가져가지 못한다.
+#[test]
+fn a_stale_ctx_copy_cannot_defer_another_call() {
+    let stale_deferred = Arc::new(Mutex::new(None));
+    let plugin = StashPlugin {
+        stash: None,
+        stale_deferred: stale_deferred.clone(),
+    };
+    let (writer, mut server) = writer_pair();
+    let host = HostHandle::new(writer.clone(), Arc::new(Mutex::new(HashMap::new())));
+    let (tx, rx) = mpsc::channel::<WorkerItem>();
+    tx.send(invoke(1, "x.keep")).unwrap();
+    tx.send(invoke(2, "x.other")).unwrap();
+    drop(tx);
+    std::thread::spawn(move || worker_loop(plugin, rx, writer, host))
+        .join()
+        .unwrap();
+
+    assert_eq!(
+        *stale_deferred.lock().unwrap(),
+        Some(false),
+        "앞 호출의 ctx 복사본이 다른 호출의 답을 가져갔다"
+    );
+    let first = read_resp(&mut server);
+    assert_eq!((first.id, first.result), (1, Some(json!("kept"))));
+    let second = read_resp(&mut server);
+    assert_eq!(second.id, 2);
+    assert_eq!(second.result, Some(json!("own answer")), "{second:?}");
+}

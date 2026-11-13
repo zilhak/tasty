@@ -465,6 +465,7 @@ fn worker_loop<P: Plugin>(
                     params,
                     caller_plugin_id,
                     host: host.clone(),
+                    reply_id: None,
                 }) {
                     tracing::warn!("plugin self-invoke '{method}' failed: {}", e.message);
                 }
@@ -637,6 +638,7 @@ pub(crate) fn dispatch<P: Plugin>(
                 params: parsed.params,
                 caller_plugin_id: parsed.caller_plugin_id,
                 host: host.clone(),
+                reply_id: host.open_reply_id(),
             }) {
                 Ok(value) => Ok(value),
                 Err(err) => Err(DispatchError::with_code(err.message, err.code)),

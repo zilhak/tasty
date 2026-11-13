@@ -250,6 +250,9 @@ pub struct IpcMethodCtx {
     /// 호스트 IPC 메서드를 동기로 호출할 수 있는 핸들. `clone()`해 자기 스레드로
     /// 옮길 수도 있다.
     pub host: HostHandle,
+    /// 이 ctx 가 답할 호스트 요청의 id. 자기 호출이면 `None` 이다. [`Self::defer`] 는
+    /// 이 요청이 아직 처리 중일 때만 답을 가져간다.
+    pub(crate) reply_id: Option<u64>,
 }
 
 impl IpcMethodCtx {
@@ -258,10 +261,11 @@ impl IpcMethodCtx {
     /// 버려진다. 답은 [`DeferredReply::send`](crate::DeferredReply::send) 로 보낸다.
     ///
     /// 호스트가 보낸 호출에만 쓸 수 있고 한 번만 가져갈 수 있다 — 자기 호출
-    /// (`HostHandle::self_invoke`)이거나 이미 가져갔으면 `None` 이다. 호스트의
-    /// namespace 호출 상한 안에 답해야 한다(`crate::deferred` 모듈 문서).
+    /// (`HostHandle::self_invoke`)이거나 이미 가져갔으면 `None` 이다. 이 ctx 의 처리기가
+    /// 돌아온 뒤에 부르면(보관해 둔 복사본 등) 그 호출은 이미 답했으므로 역시 `None` 이다.
+    /// 호스트의 namespace 호출 상한 안에 답해야 한다(`crate::deferred` 모듈 문서).
     pub fn defer(&self) -> Option<crate::DeferredReply> {
-        self.host.defer_reply()
+        self.host.defer_reply(self.reply_id?)
     }
 }
 
