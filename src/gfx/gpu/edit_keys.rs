@@ -881,11 +881,14 @@ pub(crate) fn text_edit_focused(ctx: &egui::Context) -> bool {
 /// - Cut: a text field's text changed. egui reports the text before and after every changed
 ///   `TextEdit` (masked for passwords); removing a non-empty selection always shortens it, and a
 ///   read-only field reports a change with equal texts.
-/// - Paste: the field's cursor ended past where the paste started (`paste_at`). egui 0.31 puts the
-///   cursor after the inserted text, and a read-only field leaves it at the start, so this holds
-///   even when the new text equals the old (the same text pasted over itself, or a password of the
-///   same length). With no mark (the field had no cursor yet, so nothing was selected) a paste
-///   lengthens the text, and a text change counts.
+/// - Paste: a text field ran an edit in this pass and the marked field's cursor ended past where
+///   the paste started (`paste_at`). egui 0.31 reports `ValueChanged` only from a `TextEdit` that
+///   is drawn, interactive and focused and whose edit changed something (a read-only field reports
+///   it too), so a field disabled or not drawn in this pass, whose stored cursor stays where it
+///   was, does not count. egui puts the cursor after the inserted text, and a read-only field
+///   leaves it at the start, so this holds even when the new text equals the old (the same text
+///   pasted over itself, or a password of the same length). With no mark (the field had no cursor
+///   yet, so nothing was selected) a paste lengthens the text, and a text change counts.
 fn pass_outcome(
     edit: EditKey,
     output: &egui::PlatformOutput,
@@ -896,7 +899,10 @@ fn pass_outcome(
         EditKey::Copy => copied_text(output),
         EditKey::Cut => text_changed(output),
         EditKey::Paste => match paste_at {
-            Some(mark) => cursor_after(ctx, mark.id).is_some_and(|at| at > mark.start),
+            Some(mark) => {
+                text_edit_ran(output)
+                    && cursor_after(ctx, mark.id).is_some_and(|at| at > mark.start)
+            }
             None => text_changed(output),
         },
     };
@@ -916,6 +922,15 @@ fn copied_text(output: &egui::PlatformOutput) -> bool {
             .commands
             .iter()
             .any(|c| matches!(c, egui::OutputCommand::CopyText(_)))
+}
+
+/// A text field ran an edit in the pass: egui reports `ValueChanged` for it, with or without a
+/// different text.
+fn text_edit_ran(output: &egui::PlatformOutput) -> bool {
+    output.events.iter().any(|event| {
+        matches!(event, egui::output::OutputEvent::ValueChanged(info)
+            if info.typ == egui::WidgetType::TextEdit)
+    })
 }
 
 fn text_changed(output: &egui::PlatformOutput) -> bool {

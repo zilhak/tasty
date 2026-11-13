@@ -71,6 +71,9 @@ struct Ui {
     label: egui::Rect,
     /// Where the second field was drawn, to click into it.
     next_at: egui::Rect,
+    /// The first field is drawn, and takes input when drawn.
+    field_drawn: bool,
+    field_enabled: bool,
 }
 
 impl Ui {
@@ -83,6 +86,8 @@ impl Ui {
             clipboard: ClipText::Text("CLIP".into()),
             label: egui::Rect::NOTHING,
             next_at: egui::Rect::NOTHING,
+            field_drawn: true,
+            field_enabled: true,
         }
     }
 
@@ -98,10 +103,17 @@ impl Ui {
         };
         let (field, next, secret) = (&mut self.field, &mut self.next, &mut self.secret);
         let (label, next_at) = (&mut self.label, &mut self.next_at);
+        let (field_drawn, field_enabled) = (self.field_drawn, self.field_enabled);
         self.ctx
             .run(input, |ctx| {
                 egui::CentralPanel::default().show(ctx, |ui| {
-                    ui.add(egui::TextEdit::singleline(field).id(id("field")));
+                    if field_drawn {
+                        ui.add(
+                            egui::TextEdit::singleline(field)
+                                .id(id("field"))
+                                .interactive(field_enabled),
+                        );
+                    }
                     *next_at = ui.add(egui::TextEdit::singleline(next).id(id("next"))).rect;
                     let mut read_only: &str = "mirror://address";
                     ui.add(egui::TextEdit::singleline(&mut read_only).id(id("ro")));

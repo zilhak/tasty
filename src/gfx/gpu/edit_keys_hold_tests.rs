@@ -330,3 +330,32 @@ fn a_wayland_read_waits_for_a_click_it_let_through() {
     assert!(ui.field.contains("WL"), "pasted in place: {}", ui.field);
     assert!(released(&mut state).replay.is_none());
 }
+
+/// A field disabled or no longer drawn in the pass that should run the paste did not run it, even
+/// though its stored selection still ends past where the paste would start: the key is replayed.
+#[test]
+fn a_paste_into_a_field_gone_from_its_pass_replays_the_key() {
+    for disabled in [true, false] {
+        let mut ui = Ui::new();
+        ui.focus("field");
+        ui.select("field", 0, 5);
+        let mut state = bound();
+        let mut pending = Vec::new();
+        assert_eq!(
+            ui.judge(&mut state, &press("v"), &mut pending, Instant::now()),
+            EguiKey::Taken
+        );
+        if disabled {
+            ui.field_enabled = false;
+        } else {
+            ui.field_drawn = false;
+        }
+        ui.pass(&mut state, pending);
+        assert_eq!(ui.field, "hello");
+        assert_eq!(
+            released(&mut state).replay,
+            Some((press("v"), EditKey::Paste)),
+            "disabled {disabled}: the paste did not run"
+        );
+    }
+}
