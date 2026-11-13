@@ -91,23 +91,58 @@ impl HeldEvent for WindowEvent {
     }
 
     fn queues_behind_hold(&self) -> bool {
-        matches!(
-            self,
-            WindowEvent::KeyboardInput { .. }
-                | WindowEvent::Ime(_)
-                | WindowEvent::ModifiersChanged(_)
-        )
+        held_order(self) == HeldOrder::Queue
     }
 
     fn is_pointer(&self) -> bool {
-        matches!(
-            self,
-            WindowEvent::CursorMoved { .. }
-                | WindowEvent::CursorEntered { .. }
-                | WindowEvent::CursorLeft { .. }
-                | WindowEvent::MouseInput { .. }
-                | WindowEvent::Touch(_)
-        )
+        held_order(self) == HeldOrder::Pointer
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HeldOrder {
+    /// Keys, IME and modifiers.
+    Queue,
+    /// Input that acts where the pointer is: its position, buttons, wheel, touch and gestures, and
+    /// files dragged over or dropped at the pointer.
+    Pointer,
+    /// Window state that no held key's result depends on.
+    Free,
+}
+
+/// How a window event keeps its place behind a held key. The match names every variant, so a new
+/// winit event has to be placed here.
+fn held_order(event: &WindowEvent) -> HeldOrder {
+    match event {
+        WindowEvent::KeyboardInput { .. }
+        | WindowEvent::Ime(_)
+        | WindowEvent::ModifiersChanged(_) => HeldOrder::Queue,
+        WindowEvent::CursorMoved { .. }
+        | WindowEvent::CursorEntered { .. }
+        | WindowEvent::CursorLeft { .. }
+        | WindowEvent::MouseWheel { .. }
+        | WindowEvent::MouseInput { .. }
+        | WindowEvent::PinchGesture { .. }
+        | WindowEvent::PanGesture { .. }
+        | WindowEvent::DoubleTapGesture { .. }
+        | WindowEvent::RotationGesture { .. }
+        | WindowEvent::TouchpadPressure { .. }
+        | WindowEvent::Touch(_)
+        | WindowEvent::HoveredFile(_)
+        | WindowEvent::HoveredFileCancelled
+        | WindowEvent::DroppedFile(_) => HeldOrder::Pointer,
+        // AxisMotion is a raw device axis with no pointer position; egui-winit and Tasty ignore it.
+        WindowEvent::ActivationTokenDone { .. }
+        | WindowEvent::Resized(_)
+        | WindowEvent::Moved(_)
+        | WindowEvent::CloseRequested
+        | WindowEvent::Destroyed
+        | WindowEvent::Focused(_)
+        | WindowEvent::AxisMotion { .. }
+        | WindowEvent::ScaleFactorChanged { .. }
+        | WindowEvent::ThemeChanged(_)
+        | WindowEvent::Occluded(_)
+        | WindowEvent::RedrawRequested => HeldOrder::Free,
     }
 }
 

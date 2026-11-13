@@ -224,3 +224,56 @@ fn a_release_replays_in_order_and_stops_when_the_window_closes() {
         ]
     );
 }
+
+/// Real window events keep their place behind a held key by their winit variant: a wheel or a
+/// pinch after a queued pointer move waits too, so it cannot act where the pointer was before the
+/// move. Window state that no result depends on stays free.
+#[test]
+fn a_wheel_after_a_queued_pointer_move_waits_too() {
+    use winit::event::{DeviceId, MouseScrollDelta, TouchPhase};
+    let ctx = egui::Context::default();
+    let mut state = EditKeyState::<WindowEvent>::default();
+    let now = Instant::now();
+    let owner = EditKeyOwner::EguiOnly;
+    let key = WindowEvent::RedrawRequested;
+    state.hold_key(&key, EditKey::Paste, Phase::Settle, now, owner, false);
+    let device_id = DeviceId::dummy();
+    let moved = WindowEvent::CursorMoved {
+        device_id,
+        position: (40.0, 40.0).into(),
+    };
+    let wheel = WindowEvent::MouseWheel {
+        device_id,
+        delta: MouseScrollDelta::PixelDelta(winit::dpi::PhysicalPosition::new(0.0, -20.0)),
+        phase: TouchPhase::Moved,
+    };
+    let pinch = WindowEvent::PinchGesture {
+        device_id,
+        delta: 0.1,
+        phase: TouchPhase::Moved,
+    };
+    let resized = WindowEvent::Resized(winit::dpi::PhysicalSize::new(800, 600));
+    let mut judged = Vec::new();
+    for event in [&moved, &wheel, &pinch, &resized] {
+        let mut events = Vec::new();
+        let mut clipboard = |_tag: u64| ClipText::Empty;
+        let cx = KeyCx {
+            ctx: &ctx,
+            events: &mut events,
+            clipboard: &mut clipboard,
+        };
+        judged.push(state.judge(event, owner, now, cx));
+    }
+    assert_eq!(
+        judged,
+        [
+            EguiKey::Taken,
+            EguiKey::Taken,
+            EguiKey::Taken,
+            EguiKey::Free
+        ]
+    );
+    state.resolve_now(Outcome::NotActed);
+    let release = state.take_release(owner).expect("released");
+    assert_eq!(release.queued, vec![moved, wheel, pinch]);
+}
