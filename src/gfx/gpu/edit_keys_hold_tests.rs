@@ -1,5 +1,5 @@
-//! The hold's order, timing and result rules: pointer input behind a settling key and the frame
-//! timeout.
+//! The hold's order, timing and result rules: pointer input behind a settling key, the frame
+//! timeout, a paste that leaves the text as it was, a recheck for the owner, and the replay order.
 use super::*;
 
 /// Pointer input after a key that waits for earlier input queues behind it, so the earlier input's
@@ -71,4 +71,40 @@ fn the_frame_timeout_counts_from_the_injection() {
         released(&mut state).replay,
         Some((press("v"), EditKey::Paste))
     );
+}
+
+/// The same text pasted over itself is a paste that ran: the key is consumed, not replayed (which
+/// would paste twice through egui-winit's own Ctrl+V or type `v` for Alt+V).
+#[test]
+fn the_same_text_pasted_over_itself_consumes_the_key() {
+    let mut ui = Ui::new();
+    ui.focus("field");
+    ui.select("field", 0, 5);
+    ui.clipboard = ClipText::Text("hello".into());
+    let mut state = bound();
+    let mut pending = Vec::new();
+    assert_eq!(
+        ui.judge(&mut state, &press("v"), &mut pending, Instant::now()),
+        EguiKey::Taken
+    );
+    ui.pass(&mut state, pending);
+    assert_eq!(ui.field, "hello");
+    assert!(released(&mut state).replay.is_none());
+}
+
+/// A password replaced by text of the same length reads the same masked: the paste still ran.
+#[test]
+fn a_same_length_password_paste_consumes_the_key() {
+    let mut ui = Ui::new();
+    ui.focus("pw");
+    ui.select("pw", 0, 4);
+    let mut state = bound();
+    let mut pending = Vec::new();
+    assert_eq!(
+        ui.judge(&mut state, &press("v"), &mut pending, Instant::now()),
+        EguiKey::Taken
+    );
+    ui.pass(&mut state, pending);
+    assert_eq!(ui.secret, "CLIP");
+    assert!(released(&mut state).replay.is_none());
 }

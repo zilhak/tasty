@@ -117,6 +117,15 @@ struct HostHold<E> {
     /// When the key came, then when the edit went into egui's input.
     since: Instant,
     owner: EditKeyOwner,
+    /// Where an injected paste starts, to tell an applied paste from an ignored one.
+    paste_at: Option<PasteMark>,
+}
+
+/// The focused field and the start of its selection (or cursor) when a paste went in.
+#[derive(Clone, Copy)]
+struct PasteMark {
+    id: egui::Id,
+    start: usize,
 }
 
 /// The edit key judgment of one window.
@@ -194,11 +203,13 @@ impl<E: HeldEvent> EditKeyState<E> {
             self.hold_key(event, edit, Phase::Settle, now, owner);
             return EguiKey::Taken;
         }
+        let ctx = cx.ctx;
         match start(edit, cx) {
             Start::Pass => EguiKey::Pass(edit),
             Start::Act => EguiKey::Taken,
             Start::Hold(phase) => {
                 self.hold_key(event, edit, phase, now, owner);
+                self.mark_paste(ctx);
                 EguiKey::Taken
             }
         }
@@ -236,7 +247,18 @@ impl<E: HeldEvent> EditKeyState<E> {
             phase,
             since: now,
             owner,
+            paste_at: None,
         });
+    }
+
+    /// Notes where an injected paste starts in the focused field.
+    fn mark_paste(&mut self, ctx: &egui::Context) {
+        if let Some(held) = self.hold.as_mut()
+            && matches!(held.phase, Phase::Injected)
+            && held.hold.edit() == EditKey::Paste
+        {
+            held.paste_at = paste_mark(ctx);
+        }
     }
 
     /// The earlier input's pass ended and the held edit is judged again.
@@ -263,12 +285,14 @@ impl<E: HeldEvent> EditKeyState<E> {
             held.phase = Phase::Settle;
             return;
         }
+        let ctx = cx.ctx;
         match start(held.hold.edit(), cx) {
             Start::Pass => self.resolve_now(Outcome::NotActed),
             Start::Act => self.resolve_now(Outcome::Acted),
             Start::Hold(phase) => {
                 held.phase = phase;
                 held.since = now;
+                self.mark_paste(ctx);
             }
         }
     }
@@ -292,10 +316,14 @@ impl<E: HeldEvent> EditKeyState<E> {
         }
     }
 
-    /// The output of the pass that ran the edit decides the held key. A cut that removed nothing
-    /// (a read-only field) also drops the copy egui made, so only the original key's next handler
-    /// can copy.
-    pub(crate) fn after_pass(&mut self, output: egui::PlatformOutput) -> egui::PlatformOutput {
+    /// The output of the pass that ran the edit, and the field state it left, decide the held key.
+    /// A cut that removed nothing (a read-only field) also drops the copy egui made, so only the
+    /// original key's next handler can copy.
+    pub(crate) fn after_pass(
+        &mut self,
+        output: egui::PlatformOutput,
+        ctx: &egui::Context,
+    ) -> egui::PlatformOutput {
         if let Some(held) = self.hold.as_mut()
             && matches!(held.phase, Phase::Settling)
         {
@@ -306,7 +334,7 @@ impl<E: HeldEvent> EditKeyState<E> {
             return output;
         };
         let edit = held.hold.edit();
-        let outcome = pass_outcome(edit, &output);
+        let outcome = pass_outcome(edit, &output, held.paste_at, ctx);
         let output = if edit == EditKey::Cut && outcome == Outcome::NotActed {
             super::text_selection::take_copied_text(output).0
         } else {
@@ -343,6 +371,7 @@ impl<E: HeldEvent> EditKeyState<E> {
                 events.push(egui::Event::Paste(text));
                 held.phase = Phase::Injected;
                 held.since = now;
+                self.mark_paste(ctx);
             }
             None => self.resolve_now(Outcome::NotActed),
         }
@@ -504,7 +533,7 @@ impl super::GpuState {
         window: &winit::window::Window,
         output: egui::PlatformOutput,
     ) -> egui::PlatformOutput {
-        let output = self.edit_keys.after_pass(output);
+        let output = self.edit_keys.after_pass(output, &self.egui_ctx);
         if self.edit_keys.needs_rejudge() {
             self.with_key_cx(|state, cx| state.rejudge(cx, Instant::now()));
         }
@@ -653,14 +682,29 @@ pub(crate) fn text_edit_focused(ctx: &egui::Context) -> bool {
         .is_some()
 }
 
-/// Whether the edit happened in the pass that produced `output`. A copy shows as copied text; a
-/// cut or paste shows as a text field whose text changed (egui reports the text before and after
-/// every changed `TextEdit`, masked for passwords). A read-only field reports a change with equal
-/// texts, so it counts as not acted.
-pub(crate) fn pass_outcome(edit: EditKey, output: &egui::PlatformOutput) -> Outcome {
+/// Whether the edit happened in the pass that produced `output`, which ran it alone.
+/// - Copy: the pass copied text (a password field copies nothing).
+/// - Cut: a text field's text changed. egui reports the text before and after every changed
+///   `TextEdit` (masked for passwords); removing a non-empty selection always shortens it, and a
+///   read-only field reports a change with equal texts.
+/// - Paste: the field's cursor ended past where the paste started (`paste_at`). egui 0.31 puts the
+///   cursor after the inserted text, and a read-only field leaves it at the start, so this holds
+///   even when the new text equals the old (the same text pasted over itself, or a password of the
+///   same length). With no mark (the field had no cursor yet, so nothing was selected) a paste
+///   lengthens the text, and a text change counts.
+fn pass_outcome(
+    edit: EditKey,
+    output: &egui::PlatformOutput,
+    paste_at: Option<PasteMark>,
+    ctx: &egui::Context,
+) -> Outcome {
     let acted = match edit {
         EditKey::Copy => copied_text(output),
-        EditKey::Cut | EditKey::Paste => text_changed(output),
+        EditKey::Cut => text_changed(output),
+        EditKey::Paste => match paste_at {
+            Some(mark) => cursor_after(ctx, mark.id).is_some_and(|at| at > mark.start),
+            None => text_changed(output),
+        },
     };
     if acted {
         Outcome::Acted
@@ -687,6 +731,22 @@ fn text_changed(output: &egui::PlatformOutput) -> bool {
             && info.prev_text_value.is_some()
             && info.prev_text_value != info.current_text_value
     })
+}
+
+/// The focused text field and where its selection (or cursor) starts.
+fn paste_mark(ctx: &egui::Context) -> Option<PasteMark> {
+    let id = ctx.memory(|m| m.focused())?;
+    let range = egui::TextEdit::load_state(ctx, id)?.cursor.char_range()?;
+    Some(PasteMark {
+        id,
+        start: range.primary.index.min(range.secondary.index),
+    })
+}
+
+/// The cursor position of the text field `id` (its selection's moving end).
+fn cursor_after(ctx: &egui::Context, id: egui::Id) -> Option<usize> {
+    let range = egui::TextEdit::load_state(ctx, id)?.cursor.char_range()?;
+    Some(range.primary.index)
 }
 
 /// Takes the injected edit back out of egui's pending input. False when it is gone.

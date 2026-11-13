@@ -157,7 +157,7 @@ impl Ui {
     fn pass(&mut self, state: &mut EditKeyState<Ev>, pending: Vec<egui::Event>) -> Option<String> {
         state.input_taken();
         let output = self.frame(pending);
-        let output = state.after_pass(output);
+        let output = state.after_pass(output, &self.ctx);
         let copied = super::super::text_selection::take_copied_text(output).1;
         if !state.needs_rejudge() {
             return copied;
