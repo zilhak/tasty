@@ -27,9 +27,7 @@ pub(super) fn address_key_action(
     let matches = |field: &str| {
         crate::shortcuts::matches_any_binding(kb.get_bindings(field).unwrap_or(&[]), key, mods)
     };
-    WebViewEditAction::ALL
-        .into_iter()
-        .find(|a| matches(a.field_id()))
+    crate::adapters::ui::input::shortcuts::edit_binding_for_key(kb, key, mods)
         .map(AddressKeyAction::Edit)
         .or_else(|| matches("explorer_focus_address").then_some(AddressKeyAction::FocusAddress))
         .or_else(|| {

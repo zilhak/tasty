@@ -4,7 +4,7 @@
 
 use crate::plugin_bridge::key_dispatch::WebViewCommandBindings;
 use crate::settings::KeybindingSettings;
-use crate::webview::{HostShortcutPolicy, ShortcutSources, WebViewEditAction};
+use crate::webview::{HostShortcutPolicy, ShortcutSources};
 
 /// 페이지가 처리할 액션 ID. 키 조합을 바꿔도 해당 액션은 host로 보내지 않는다.
 /// 편집 액션은 `ShortcutSources::edit`로 키를 받은 WebView의 엔진 편집 명령이 된다.
@@ -62,8 +62,7 @@ pub(crate) fn webview_shortcut_policy(
             .unwrap_or(&[])
             .to_vec(),
         refresh: kb.refresh.clone(),
-        edit: WebViewEditAction::ALL
-            .into_iter()
+        edit: super::webview_edit::webview_edit_order()
             .map(|a| (a, kb.get_bindings(a.field_id()).unwrap_or(&[]).to_vec()))
             .collect(),
     })
@@ -144,6 +143,7 @@ fn host_combos(kb: &KeybindingSettings, categories_enabled: bool) -> Vec<String>
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::webview::WebViewEditAction;
     use winit::keyboard::{Key, ModifiersState};
 
     fn kb() -> KeybindingSettings {

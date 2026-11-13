@@ -53,15 +53,35 @@ impl MainView {
     }
 }
 
+/// 클립보드 편집 뒤에 고르는 WebView 편집 액션.
+const AFTER_CLIPBOARD_EDITS: [WebViewEditAction; 3] = [
+    WebViewEditAction::SelectAll,
+    WebViewEditAction::Undo,
+    WebViewEditAction::Redo,
+];
+
+/// 한 키가 여러 편집 바인딩에 걸릴 때 고르는 순서. 앞의 셋은 공통 판정의 순서
+/// ([`crate::adapters::ui::input::edit_key::EditKey::ORDER`])다.
+pub(crate) fn webview_edit_order() -> impl Iterator<Item = WebViewEditAction> {
+    crate::adapters::ui::input::edit_key::EditKey::ORDER
+        .into_iter()
+        .map(WebViewEditAction::from)
+        .chain(AFTER_CLIPBOARD_EDITS)
+}
+
 /// 키가 가리키는 편집 액션. host 창 경로에서 plugin 명령보다 먼저 검사한다.
 pub(crate) fn edit_binding_for_key(
     kb: &crate::settings::KeybindingSettings,
     key: &Key,
     mods: ModifiersState,
 ) -> Option<WebViewEditAction> {
-    WebViewEditAction::ALL.into_iter().find(|a| {
-        super::matches_any_binding(kb.get_bindings(a.field_id()).unwrap_or(&[]), key, mods)
-    })
+    crate::adapters::ui::input::edit_key::edit_binding(kb, key, mods)
+        .map(WebViewEditAction::from)
+        .or_else(|| {
+            AFTER_CLIPBOARD_EDITS.into_iter().find(|a| {
+                super::matches_any_binding(kb.get_bindings(a.field_id()).unwrap_or(&[]), key, mods)
+            })
+        })
 }
 
 #[cfg(test)]
@@ -103,5 +123,19 @@ mod tests {
         assert_eq!(edit_binding_for_key(&kb, &ch("q"), alt()), None);
         kb.copy = vec!["ctrl+shift+c".into()];
         assert_eq!(edit_binding_for_key(&kb, &ch("c"), alt()), None);
+    }
+
+    /// 고르는 순서는 모든 편집 액션을 한 번씩 담는다.
+    #[test]
+    fn the_order_covers_every_edit_action_once() {
+        let order: Vec<_> = webview_edit_order().collect();
+        assert_eq!(order.len(), WebViewEditAction::ALL.len());
+        for action in WebViewEditAction::ALL {
+            assert_eq!(
+                order.iter().filter(|a| **a == action).count(),
+                1,
+                "{action:?}"
+            );
+        }
     }
 }
