@@ -46,8 +46,18 @@ impl GpuState {
         }
     }
 
-    /// The input target a paste is meant for: the widget focused when it was asked.
+    /// The plugin popup that receives this window's keys, set by the window before keys reach egui
+    /// and before each egui frame. A paste asked while it is set is meant for that popup.
+    pub fn set_plugin_paste_target(&mut self, instance: Option<u64>) {
+        self.plugin_paste_target = instance;
+    }
+
+    /// The input target a paste is meant for: the plugin popup receiving keys, else the widget
+    /// focused when it was asked.
     fn focus_tag(&self) -> u64 {
+        if let Some(instance) = self.plugin_paste_target {
+            return plugin_popup_tag(instance);
+        }
         self.egui_ctx
             .memory(|m| m.focused())
             .map_or(0, |id| id.value())
@@ -107,6 +117,13 @@ impl GpuState {
         let mut raw_input = self.egui_state.take_egui_input(window);
         self.edit_keys.input_taken(&raw_input.events);
         let focused = self.focus_tag();
+        if self.plugin_paste_target.is_some()
+            && self
+                .held_pastes
+                .hidden_focus_input(&raw_input.events, focused)
+        {
+            self.cancel_pending_paste();
+        }
         let pastes = self
             .held_pastes
             .frame(&raw_input.events, focused, std::time::Instant::now());
@@ -159,6 +176,23 @@ impl HeldPastes {
         self.items.is_empty()
     }
 
+    /// The host cannot see which text field inside a plugin popup has focus, so input that can
+    /// move focus ends every paste meant for that popup (`tag`). True when `events` had such input;
+    /// the caller then also cancels the reads still in flight.
+    pub(crate) fn hidden_focus_input(&mut self, events: &[egui::Event], tag: u64) -> bool {
+        if !events.iter().any(moves_focus) {
+            return false;
+        }
+        self.items.retain(|(asked, _, _)| {
+            let kept = *asked != tag;
+            if !kept {
+                tracing::debug!("clipboard paste dropped: focus input reached its plugin popup");
+            }
+            kept
+        });
+        true
+    }
+
     /// One egui frame with `events`, `focused` being the widget focused before it. Returns the
     /// pastes this frame may apply: none until two frames have gone by without focus input, then
     /// those still meant for `focused`. A paste that waits past `PASTE_LIMIT` is dropped.
@@ -189,6 +223,12 @@ impl HeldPastes {
             .collect();
         pastes_for(finished, focused)
     }
+}
+
+/// The paste target tag of a plugin popup instance. Its text fields are not host egui widgets, so
+/// the popup gets a tag of its own: a paste asked for one popup never reaches another.
+pub(crate) fn plugin_popup_tag(instance: u64) -> u64 {
+    egui::Id::new(("plugin_popup_paste", instance)).value()
 }
 
 /// Input egui turns into a focus change during the frame: a pressed pointer button, and the keys

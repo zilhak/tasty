@@ -139,6 +139,7 @@ impl GpuState {
         plugin_manager: Option<crate::app::plugin_display::PluginDisplay<'_>>,
         host_popup_on_top: bool,
     ) -> egui::FullOutput {
+        self.set_plugin_paste_target(state.plugin_popup_key_target());
         let mut raw_input = self.take_egui_input(window);
         // 최소화 중 크기를 잘못 보고하는 것은 Windows 의 장식 없는 창이다. 다른 OS 는 그대로 둔다.
         keep_screen_while_minimized(

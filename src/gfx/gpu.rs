@@ -86,6 +86,8 @@ pub struct GpuState {
     pub(super) text_selection: Option<crate::file::drag::TextSelection>,
     /// Pastes read from the selection that wait for the next egui frame, with their target tag.
     pub(super) held_pastes: text_selection::HeldPastes,
+    /// The plugin popup receiving this window's keys. Paste targets use it (`focus_tag`).
+    pub(super) plugin_paste_target: Option<u64>,
     /// Text an egui widget copied, waiting for the window's owner (`take_egui_copy`).
     pub(super) egui_copy: Option<String>,
     /// Edit keys judged before egui-winit (`edit_keys.rs`).
@@ -284,6 +286,7 @@ impl GpuState {
             egui_state,
             text_selection: None,
             held_pastes: text_selection::HeldPastes::default(),
+            plugin_paste_target: None,
             egui_copy: None,
             edit_keys: edit_keys::EditKeyState::default(),
             egui_renderer,

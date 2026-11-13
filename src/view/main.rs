@@ -477,6 +477,9 @@ impl MainView {
             (false, false)
         } else if is_keyboard_event {
             if overlay_open || egui_surface {
+                self.base
+                    .gpu
+                    .set_plugin_paste_target(self.state.plugin_popup_key_target());
                 let from = self.base.gpu.egui_input_events_mut().len();
                 let result = self.base.gpu.handle_egui_event(&self.base.winit, &event);
                 self.remap_html_address_keys(engine, &event, from, edit_judged.is_some());

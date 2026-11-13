@@ -7,25 +7,11 @@ use crate::adapters::ui::popup::occlusion::{KeyCandidate, PopupKeyOwner, key_own
 
 impl super::MainViewState {
     /// 지금 키를 받는 팝업. 보이는 팝업이 없으면 `None`이다.
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "the window key path uses it from the next commits"
-        )
-    )]
     pub(crate) fn popup_key_owner(&self) -> Option<PopupKeyOwner> {
         self.key_owner_with(std::iter::empty())
     }
 
     /// 키를 받는 팝업이 plugin 팝업이면 그 instance id.
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "the window key path uses it from the next commits"
-        )
-    )]
     pub(crate) fn plugin_popup_key_target(&self) -> Option<u64> {
         plugin_target(self.popup_key_owner())
     }

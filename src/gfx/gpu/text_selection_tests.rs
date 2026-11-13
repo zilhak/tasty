@@ -1,5 +1,8 @@
 //! The egui side of the native Wayland clipboard: which keys paste and which output copies.
-use super::{HeldPastes, hold_copied_text, moves_focus, paste_key, pastes_for, take_copied_text};
+use super::{
+    HeldPastes, hold_copied_text, moves_focus, paste_key, pastes_for, plugin_popup_tag,
+    take_copied_text,
+};
 use std::time::{Duration, Instant};
 use winit::keyboard::{Key, KeyCode, NamedKey, NativeKey, NativeKeyCode, PhysicalKey, SmolStr};
 
@@ -258,3 +261,33 @@ fn every_egui_frame_takes_its_input_through_the_paste_check() {
 
 #[path = "text_selection_frame_tests.rs"]
 mod frames;
+
+/// A paste asked for one plugin popup never reaches another popup or a host widget that has
+/// focus by the time it arrives.
+#[test]
+fn a_plugin_popup_paste_reaches_only_that_popup() {
+    let asked = plugin_popup_tag(1);
+    assert_ne!(asked, plugin_popup_tag(2));
+    let finished = || vec![(asked, "text".to_string())];
+    assert!(pastes_for(finished(), plugin_popup_tag(2)).is_empty());
+    assert!(pastes_for(finished(), 0).is_empty());
+    assert_eq!(pastes_for(finished(), asked), ["text"]);
+}
+
+/// Focus input reaching a plugin popup ends its waiting pastes, since the field that asked may
+/// have lost focus inside the popup. Other input and other targets' pastes are left alone.
+#[test]
+fn focus_input_to_a_plugin_popup_ends_its_waiting_pastes() {
+    let now = Instant::now();
+    let popup = plugin_popup_tag(1);
+    let mut h = HeldPastes::default();
+    h.add(
+        vec![(popup, "popup".to_string()), (7, "host".to_string())],
+        now,
+    );
+    assert!(!h.hidden_focus_input(&[egui::Event::Text("a".into())], popup));
+    assert!(h.hidden_focus_input(&[click()], popup));
+    assert!(h.hidden_focus_input(&[key(egui::Key::Tab, true)], popup));
+    assert_eq!(h.frame(&[], 7, now), ["host"]);
+    assert!(h.is_empty());
+}
