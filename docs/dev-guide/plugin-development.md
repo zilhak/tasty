@@ -368,6 +368,22 @@ canonical 아이콘을 쓴다. plugin `build.rs` 가 `[build-dependencies] tasty
 DPI 독립·theme tint 벡터 stroke 로 그린다. 새 아이콘 = `tasty-icons` 에 const 추가 +
 plugin `build.rs` 의 `ICONS` 목록에 한 줄. 근거·대안은 [테마 시스템 (운영 상세)](../design/systems/theme.md).
 
+### 편집 결과 회신
+
+호스트는 복사·잘라내기·붙여넣기 바인딩 키를 편집이 실제로 일어났을 때만 소비하고, 일어나지 않았으면 원래 키를 다음
+처리자에 넘긴다([편집 키 판정](../design/policies/key-mapping.md#편집-키-판정)). plugin 입력칸의 편집은 다른 프로세스에서
+일어나므로 plugin 이 결과를 회신한다. wire 타입은 `crates/tasty-plugin-protocol/src/edit.rs`에 있다.
+
+- 기능 협상: plugin 이 `Hello.capabilities`에 `edit_outcome`을 넣었을 때만 호스트가 편집 요청을 보낸다. 넣지 않은
+  plugin 에는 요청을 보내지 않고, 그 대상의 편집 키는 넘긴다(`Pass`).
+- 요청: 입력 이벤트 `EditRequest { edit_id, edit }`. `edit`은 `copy`·`cut`·`paste_text { text }`·`paste`(내용 없는
+  형식 붙여넣기)다. id 는 이벤트마다 붙는다. 입력을 이어 붙이는 경로가 이벤트 목록만 합치기 때문이다.
+- 회신: 요청마다 `EditOutcome { target, edit_id, result, copied }`를 정확히 한 번 보낸다. `result`는 `acted`(편집이
+  일어남, 호스트가 키를 소비), `not_acted`(일어나지 않음, 호스트가 원래 키를 넘김), `unknown`(알 수 없음, 실행됐을 수
+  있으므로 호스트가 키를 소비하고 재생하지 않음)이다. 모르는 동작의 요청은 실행하지 않고 `not_acted`로 회신한다.
+- Copy·Cut 이 복사한 글자는 같은 회신의 `copied`에 싣고 `CopyText`로 따로 보내지 않는다. 둘을 따로 보내면 하나만
+  잃었을 때 "선택은 지워졌는데 클립보드는 그대로"가 생긴다. 요청과 무관한 복사(버튼의 복사 등)는 지금처럼 `CopyText`다.
+
 ## 5. 호스트 IPC 호출
 
 `HostHandle::call("surface.list", json!({}))` — 매니페스트에 해당 권한 선언 + grant 필요. `?` 한 번으로 `PluginError → IpcMethodError` 변환. 주요 에러 variant: `HostCall{message}`(permission_denied 등) · `HostCallTimeout` · `HandshakeRejected/Timeout` · `HostClosed`. 권한↔메서드 매핑은 [plugin-permissions](plugin-permissions.md).

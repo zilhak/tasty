@@ -3,6 +3,8 @@
 use super::*;
 use serde_json::Value;
 
+use crate::edit::{CAPABILITY_EDIT_OUTCOME, EditRequestWire, EditResultWire};
+
 #[test]
 fn auth_round_trip() {
     let msg = AuthMessage {
@@ -20,14 +22,20 @@ fn event_hello_round_trip() {
     let ev = PluginEvent::Hello {
         plugin_id: "com.example.x".into(),
         version: "0.1.0".into(),
+        capabilities: Vec::new(),
     };
     let s = serde_json::to_string(&ev).unwrap();
     assert!(s.contains("\"kind\":\"hello\""));
     let parsed: PluginEvent = serde_json::from_str(&s).unwrap();
     match parsed {
-        PluginEvent::Hello { plugin_id, version } => {
+        PluginEvent::Hello {
+            plugin_id,
+            version,
+            capabilities,
+        } => {
             assert_eq!(plugin_id, "com.example.x");
             assert_eq!(version, "0.1.0");
+            assert!(capabilities.is_empty());
         }
         _ => panic!("expected Hello"),
     }
@@ -765,6 +773,149 @@ fn copy_text_with_a_future_target_reads_the_target_as_unknown() {
             ev,
             PluginEvent::CopyText {
                 target: CopyTargetWire::Unknown,
+                ..
+            }
+        ),
+        "{ev:?}"
+    );
+}
+
+/// 기능 목록이 없는 이전 hello 는 빈 목록으로 읽히고, 빈 목록은 이전 모양 그대로 나간다. 기능을 보낸
+/// hello 는 이전 정의에서도 모르는 필드를 무시하고 읽힌다.
+#[test]
+fn hello_capabilities_are_optional_both_ways() {
+    let old = serde_json::json!({ "kind": "hello", "plugin_id": "p", "version": "1" });
+    let ev: PluginEvent = serde_json::from_value(old.clone()).unwrap();
+    assert!(
+        matches!(ev, PluginEvent::Hello { ref capabilities, .. } if capabilities.is_empty()),
+        "{ev:?}"
+    );
+    assert_eq!(serde_json::to_value(&ev).unwrap(), old);
+
+    let ev = PluginEvent::Hello {
+        plugin_id: "p".into(),
+        version: "1".into(),
+        capabilities: vec![CAPABILITY_EDIT_OUTCOME.into(), "some_future".into()],
+    };
+    let v = serde_json::to_value(&ev).unwrap();
+    assert_eq!(
+        v["capabilities"],
+        serde_json::json!(["edit_outcome", "some_future"])
+    );
+
+    #[derive(Debug, serde::Deserialize)]
+    #[serde(tag = "kind", rename_all = "snake_case")]
+    enum PreviousHello {
+        Hello { plugin_id: String, version: String },
+    }
+    let PreviousHello::Hello { plugin_id, version } =
+        serde_json::from_value(v).expect("이전 정의도 읽어야 한다");
+    assert_eq!((plugin_id.as_str(), version.as_str()), ("p", "1"));
+}
+
+/// 편집 요청은 정한 모양으로 나가고 되읽히며, 이전 정의에서는 Unknown 으로 읽힌다.
+#[test]
+fn edit_request_round_trips_and_reads_as_unknown_in_the_previous_definition() {
+    let cases = [
+        (EditRequestWire::Copy, serde_json::json!({ "a": "copy" })),
+        (EditRequestWire::Cut, serde_json::json!({ "a": "cut" })),
+        (EditRequestWire::Paste, serde_json::json!({ "a": "paste" })),
+        (
+            EditRequestWire::PasteText { text: "x".into() },
+            serde_json::json!({ "a": "paste_text", "text": "x" }),
+        ),
+    ];
+    for (edit, edit_json) in cases {
+        let ev = RawInputEventWire::EditRequest { edit_id: 7, edit };
+        let v = serde_json::to_value(&ev).unwrap();
+        assert_eq!(
+            v,
+            serde_json::json!({ "t": "edit_request", "edit_id": 7, "edit": edit_json })
+        );
+        let back: RawInputEventWire = serde_json::from_value(v.clone()).unwrap();
+        assert_eq!(back, ev);
+        let old: PreviousRawInputEventWire =
+            serde_json::from_value(v).expect("이전 정의도 읽어야 한다");
+        assert_eq!(old, PreviousRawInputEventWire::Unknown);
+    }
+}
+
+/// 모르는 편집 동작과 모르는 필드는 요청 전체를 깨뜨리지 않는다. id 는 남아 회신할 수 있다.
+#[test]
+fn edit_request_with_a_future_action_keeps_its_id() {
+    let v = serde_json::json!({
+        "t": "edit_request",
+        "edit_id": 3,
+        "edit": { "a": "select_all", "scope": 1 },
+        "extra": true
+    });
+    let ev: RawInputEventWire = serde_json::from_value(v).expect("모르는 동작도 읽어야 한다");
+    assert_eq!(
+        ev,
+        RawInputEventWire::EditRequest {
+            edit_id: 3,
+            edit: EditRequestWire::Unknown,
+        }
+    );
+}
+
+/// 편집 결과는 정한 모양으로 나가고 되읽히며, 복사 글자가 없으면 필드를 생략한다. 이전 호스트는
+/// Unknown 으로 읽는다.
+#[test]
+fn edit_outcome_round_trips_and_reads_as_unknown_in_the_previous_host() {
+    let ev = PluginEvent::EditOutcome {
+        target: CopyTargetWire::Popup { instance_id: 9 },
+        edit_id: 5,
+        result: EditResultWire::Acted,
+        copied: Some("hi".into()),
+    };
+    let v = serde_json::to_value(&ev).unwrap();
+    assert_eq!(
+        v,
+        serde_json::json!({
+            "kind": "edit_outcome",
+            "target": { "t": "popup", "instance_id": 9 },
+            "edit_id": 5,
+            "result": "acted",
+            "copied": "hi"
+        })
+    );
+    let back: PluginEvent = serde_json::from_value(v.clone()).unwrap();
+    assert!(
+        matches!(back, PluginEvent::EditOutcome { edit_id: 5, result: EditResultWire::Acted, copied: Some(ref c), .. } if c == "hi"),
+        "{back:?}"
+    );
+    let old: PreviousPluginEvent = serde_json::from_value(v).expect("이전 호스트도 읽어야 한다");
+    assert_eq!(old, PreviousPluginEvent::Unknown);
+
+    let ev = PluginEvent::EditOutcome {
+        target: CopyTargetWire::Surface { surface_id: 1 },
+        edit_id: 6,
+        result: EditResultWire::NotActed,
+        copied: None,
+    };
+    let v = serde_json::to_value(&ev).unwrap();
+    assert_eq!(v.get("copied"), None);
+    assert_eq!(v["result"], "not_acted");
+}
+
+/// 모르는 결과 값은 Unknown(모름)으로 읽고, 모르는 필드는 무시한다.
+#[test]
+fn edit_outcome_with_a_future_result_reads_as_unknown() {
+    let v = serde_json::json!({
+        "kind": "edit_outcome",
+        "target": { "t": "surface", "surface_id": 2 },
+        "edit_id": 1,
+        "result": "partly",
+        "later": 1
+    });
+    let ev: PluginEvent = serde_json::from_value(v).expect("모르는 결과도 읽어야 한다");
+    assert!(
+        matches!(
+            ev,
+            PluginEvent::EditOutcome {
+                result: EditResultWire::Unknown,
+                copied: None,
                 ..
             }
         ),

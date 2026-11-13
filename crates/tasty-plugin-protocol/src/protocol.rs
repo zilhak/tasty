@@ -214,6 +214,14 @@ pub enum RawInputEventWire {
     /// 호스트 단축키 설정에서 해석한 잘라내기 요청. SDK 는 `egui::Event::Cut` 으로
     /// 변환하고, egui 가 선택을 지우며 `CopyText` 출력을 만든다.
     Cut,
+    /// 결과 회신을 기다리는 편집 요청. 호스트는 `Hello.capabilities`에
+    /// [`CAPABILITY_EDIT_OUTCOME`](crate::edit::CAPABILITY_EDIT_OUTCOME)을 보낸 플러그인에만 보낸다.
+    /// 플러그인은 `edit_id`마다 [`PluginEvent::EditOutcome`]을 정확히 한 번 보낸다. 입력을 이어 붙이는
+    /// 경로가 이벤트 목록만 합치므로 id는 이벤트에 싣는다.
+    EditRequest {
+        edit_id: u64,
+        edit: crate::edit::EditRequestWire,
+    },
     /// 미래 variant 의 forward-compat fallback — 이 변형을 아는 SDK 로 빌드한 plugin 은
     /// 모르는 입력 이벤트를 받아도 `surface.set_context` 전체를 실패하지 않고 그 이벤트만
     /// 버린다([`PluginEvent::Unknown`] 과 같은 정책: 새 variant 는 fallback 가능한 형태로만).
@@ -441,7 +449,14 @@ pub struct PluginResponse {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum PluginEvent {
     /// 매니페스트 검증 후 호스트가 받는 첫 메시지.
-    Hello { plugin_id: String, version: String },
+    Hello {
+        plugin_id: String,
+        version: String,
+        /// 플러그인이 지원하는 선택 기능. 모르는 값은 무시한다. 예:
+        /// [`CAPABILITY_EDIT_OUTCOME`](crate::edit::CAPABILITY_EDIT_OUTCOME).
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        capabilities: Vec<String>,
+    },
     /// 호스트에 surface의 다시 그리기를 요청한다.
     SurfaceInvalidated { surface_id: u32 },
     /// 호스트에 popup의 입력 없는 렌더링 갱신을 요청한다.
@@ -555,6 +570,16 @@ pub enum PluginEvent {
         target: CopyTargetWire,
         text: String,
     },
+    /// [`RawInputEventWire::EditRequest`] 하나의 결과. Copy·Cut 이 복사한 글자는 `copied`에 함께
+    /// 실어 결과와 복사가 따로 유실되지 않게 한다. 이 요청의 복사는 [`PluginEvent::CopyText`]로 따로
+    /// 보내지 않는다. fire-and-forget.
+    EditOutcome {
+        target: CopyTargetWire,
+        edit_id: u64,
+        result: crate::edit::EditResultWire,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        copied: Option<String>,
+    },
     /// 미래 variant 의 forward-compat fallback — 구버전 host 가 모르는 kind 를
     /// 받아도 메시지 단위 파싱 실패 없이 무시할 수 있게 한다 (CHANGELOG 정책:
     /// 새 variant 는 fallback 가능한 형태로만). host 는 debug 로그 후 버린다.
@@ -562,7 +587,7 @@ pub enum PluginEvent {
     Unknown,
 }
 
-/// [`PluginEvent::CopyText`] 의 대상. surface 와 popup 중 정확히 하나를 가리킨다.
+/// [`PluginEvent::CopyText`]·[`PluginEvent::EditOutcome`] 의 대상. surface 와 popup 중 정확히 하나를 가리킨다.
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(tag = "t", rename_all = "snake_case")]
 pub enum CopyTargetWire {

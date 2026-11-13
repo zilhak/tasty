@@ -98,6 +98,7 @@ fn run_with_env<P: Plugin>(plugin: P, env: &PluginEnv) -> Result<()> {
     let hello = PluginEvent::Hello {
         plugin_id: plugin.id().to_string(),
         version: plugin.version().to_string(),
+        capabilities: Vec::new(),
     };
     send_event(&writer, &hello)?;
 

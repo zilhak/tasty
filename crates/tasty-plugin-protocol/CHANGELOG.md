@@ -15,6 +15,8 @@
 
 ### Added
 
+- 편집 결과 회신을 추가했다. `PluginEvent::Hello`에 `capabilities: Vec<String>`(기본값 빈 목록, 비면 직렬화 생략)을 더했고, 회신을 약속하는 플러그인은 `edit::CAPABILITY_EDIT_OUTCOME`(`"edit_outcome"`)을 넣는다. 호스트는 그 플러그인에만 입력 이벤트 `RawInputEventWire::EditRequest { edit_id, edit }`(`edit`은 `EditRequestWire`: `copy` | `cut` | `paste` | `paste_text { text }`, 모르는 동작은 `Unknown`)를 보내고, 플러그인은 요청마다 `PluginEvent::EditOutcome { target, edit_id, result, copied }`를 한 번 보낸다. `result`는 `EditResultWire`(`acted` | `not_acted` | `unknown`, 모르는 값은 `unknown`)다. Copy·Cut이 복사한 글자는 `copied`에 실리고 그 요청에 대해서는 `CopyText`를 따로 보내지 않는다. 기존 `Copy`·`Cut`·`Paste`·`PasteText` 이벤트는 그대로다. 구버전 SDK는 `EditRequest`를 `RawInputEventWire::Unknown`으로, 구버전 호스트는 `EditOutcome`을 `PluginEvent::Unknown`으로 읽고, `capabilities` 필드는 모르는 필드로 무시한다. 선택 필드와 변형 추가이므로 `api_version`은 유지한다. [플러그인 개발 — 편집 결과 회신](../../docs/dev-guide/plugin-development.md#편집-결과-회신).
+
 - `task_turn::ATTEMPT_MARKER_PREFIX`(`"[tasty-task-attempt:"`)를 추가했다. 호스트가 agent task 지시 끝에 붙이는 회차 표지의 앞부분이고, provider 플러그인이 프롬프트에서 이 앞부분으로 회차 토큰을 찾는다. 플러그인이 각자 두던 사본을 계약 크레이트로 옮겼고 값은 그대로다. wire 형식 변경이 아니므로 `api_version`은 유지한다. [agent runner](../../docs/dev-guide/agent-runner.md).
 
 - `bed_focus::BED_FOCUSED_PROPERTY`(`"--tasty-bed-focused"`)를 추가했다. 호스트가 바탕 포커스 상태인 동안 문서 `:root`에 정의하는 CSS 속성 이름이다. 호스트와 바탕 kind 페이지가 각자 사본을 두던 값을 계약 크레이트로 옮겼고 값은 그대로다. wire 형식 변경이 아니므로 `api_version`은 유지한다. [WebView §바탕 포커스 상태](../../docs/design/systems/webview.md#바탕-포커스-상태).

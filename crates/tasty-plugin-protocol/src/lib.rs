@@ -5,6 +5,7 @@
 //! mesh_wire 코덱과 egui 의존성을 함께 사용한다.
 
 pub mod bed_focus;
+pub mod edit;
 pub mod events;
 pub mod host_port;
 pub mod ipc_method;
@@ -14,6 +15,7 @@ pub mod mesh_wire;
 pub mod protocol;
 pub mod task_turn;
 
+pub use edit::{CAPABILITY_EDIT_OUTCOME, EditRequestWire, EditResultWire};
 pub use events::{EventEnvelope, EventMeta, EventOrigin, EventScope, LifecycleReason, MAX_HOP};
 pub use ipc_method::{IpcInvokeParams, METHOD_IPC_INVOKE};
 pub use line::write_line;

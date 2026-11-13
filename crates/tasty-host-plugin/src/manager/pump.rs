@@ -414,7 +414,9 @@ impl PluginManager {
     // 프로토콜 이벤트별 얕은 분기이며, 별도 함수로 나눠도 이벤트 구분은 필요하다.
     fn classify_event(&self, id: &str, ev: PluginEvent, out: &mut CollectedPluginEvents) {
         match ev {
-            PluginEvent::Hello { plugin_id, version } => {
+            PluginEvent::Hello {
+                plugin_id, version, ..
+            } => {
                 out.hello_log
                     .push((id.to_string(), plugin_id.clone(), version));
                 if !self.registered_plugins.contains(&plugin_id) {
@@ -555,6 +557,10 @@ impl PluginManager {
                     }),
                     None => tracing::debug!("[plugin {}] copy_text with unknown target", id),
                 }
+            }
+            PluginEvent::EditOutcome { edit_id, .. } => {
+                // 호스트가 아직 편집 요청을 보내지 않으므로 받을 결과가 없다.
+                tracing::debug!("[plugin {}] edit outcome {} without a request", id, edit_id);
             }
             PluginEvent::Unknown => {
                 // forward-compat fallback — 신버전 plugin 의 미지 이벤트는 무시.
@@ -1056,6 +1062,7 @@ mod tests {
         PluginEvent::Hello {
             plugin_id: plugin_id.to_string(),
             version: "1.0.0".to_string(),
+            capabilities: Vec::new(),
         }
     }
 
