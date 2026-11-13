@@ -1,0 +1,92 @@
+//! 편집 키(복사·잘라내기·붙여넣기) 판정이 egui-winit보다 먼저 한 번 실행되는지 소스에서 확인한다.
+//! 판정 결과는 `gfx::gpu::edit_keys` 시험이 상태 기계로 확인하지만, 그 시험은 창의 이벤트 경로를 거치지
+//! 않아 판정을 egui-winit 뒤로 옮겨도 통과한다. 이 검사는 호출 위치의 순서를 본다. 조건 분기의 실제 실행
+//! 여부와 이 목록 밖의 창은 판단하지 않는다. 계약: `docs/design/policies/key-mapping.md`의 "편집 키 판정".
+
+use super::{fn_body, repo_root, strip_comments};
+
+/// egui-winit에 이벤트를 넘기는 호출. 판정은 이보다 앞에 있어야 한다.
+const EGUI_WINIT: &str = "handle_egui_event(";
+
+fn body(rel: &str, signature: &str) -> String {
+    let path = repo_root().join(rel);
+    let src = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("{rel} 을 읽지 못했다: {e}"))
+        .replace("\r\n", "\n");
+    let body = fn_body(&src, signature).unwrap_or_else(|| {
+        panic!("{rel}에서 `{signature}` 본문을 읽지 못했다. 이름·이동을 확인한다.")
+    });
+    strip_comments(&body)
+}
+
+/// `body`에서 `first`의 첫 위치가 `then`의 첫 위치보다 앞인지. 둘 다 있어야 한다.
+fn assert_before(body: &str, first: &str, then: &str, what: &str) {
+    let at = |needle: &str| {
+        body.find(needle).unwrap_or_else(|| {
+            panic!("{what}: `{needle}` 호출이 없다. 구조가 바뀌었으면 이 검사도 갱신한다.")
+        })
+    };
+    assert!(
+        at(first) < at(then),
+        "{what}: `{first}`가 `{then}`보다 뒤에 있다. 편집 키 판정은 egui-winit보다 먼저 해야 한다."
+    );
+}
+
+/// egui 전용 창의 두 입구는 판정을 먼저 하고 가져가지 않은 이벤트만 egui-winit에 넘긴다.
+#[test]
+fn egui_only_windows_judge_before_egui_winit() {
+    const GPU: &str = "src/gfx/gpu/edit_keys.rs";
+    for signature in [
+        "fn handle_egui_event_with_edit_keys(",
+        "fn handle_egui_event_for_window(",
+    ] {
+        let body = body(GPU, signature);
+        assert_before(&body, "judge_egui_key(", EGUI_WINIT, signature);
+    }
+}
+
+/// 메인 창은 이벤트 경로의 맨 앞에서 판정하고, 가져간 이벤트는 그 자리에서 돌려보낸다.
+#[test]
+fn the_main_window_judges_before_egui_winit() {
+    let body = body("src/view/main.rs", "fn handle_engine_event(");
+    let gate = "let Some(edit_judged) = self.edit_key_gate(engine, &event) else {\n            return ViewAction::None;";
+    assert!(
+        body.contains(gate),
+        "메인 창이 판정이 가져간 이벤트를 바로 돌려보내지 않는다."
+    );
+    for then in [
+        EGUI_WINIT,
+        "consume_explorer_ime_key(",
+        "route_tutorial_input(",
+    ] {
+        assert_before(&body, "self.edit_key_gate(", then, "메인 창 이벤트 경로");
+    }
+}
+
+/// 자체 키 처리를 가진 보조 창은 판정을 거친 입구로만 egui에 넘기고, 판정이 가져간 이벤트는 창 자체
+/// 처리(`match event`)에도 주지 않는다.
+#[test]
+fn auxiliary_windows_skip_their_own_handling_for_a_taken_key() {
+    for rel in [
+        "src/view/settings.rs",
+        "src/view/quit.rs",
+        "src/view/preset.rs",
+        "src/view/plugins.rs",
+    ] {
+        let body = body(rel, "fn handle_judged_event(");
+        assert!(
+            !body.contains(&format!(".{EGUI_WINIT}")),
+            "{rel}: 판정을 거치지 않고 egui-winit에 넘긴다."
+        );
+        assert_before(&body, "handle_egui_event_for_window(", "match event", rel);
+        let taken = body
+            .split("handle_egui_event_for_window(")
+            .nth(1)
+            .and_then(|rest| rest.split("match event").next())
+            .unwrap_or_default();
+        assert!(
+            taken.contains("else {") && taken.contains("return ViewAction::None;"),
+            "{rel}: 판정이 가져간 이벤트를 창 자체 처리 전에 돌려보내지 않는다."
+        );
+    }
+}

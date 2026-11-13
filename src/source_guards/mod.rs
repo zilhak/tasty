@@ -708,6 +708,10 @@ mod clipboard_write_has_one_door;
 #[cfg(test)]
 mod stream_wakes_go_through_the_gate;
 
+/// 편집 키 판정은 창의 이벤트 경로에서 egui-winit보다 먼저 한 번 한다.
+#[cfg(test)]
+mod edit_key_judgment_order;
+
 #[cfg(test)]
 mod icon_texture_loader_installed;
 /// 제품 코드에서 memory.db 저장소를 memory writer만 소유하는지 확인한다.
