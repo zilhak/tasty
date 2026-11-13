@@ -237,6 +237,34 @@ Tasty가 소비한다. 설정되지 않았거나 동작하지 못했으면 원�
   아직 처리하지 않았으면 그 입력의 패스를 먼저 돌려 포커스가 정해진 뒤 이 판단을 한다. 도착 시점의 포커스는 그 클릭이
   옮기기 전의 것이기 때문이다.
 
+### 플러그인 입력칸
+
+플러그인 egui-mesh 팝업·surface의 입력칸은 다른 프로세스에 있으므로 편집이 일어났는지는 플러그인이 회신한다
+([플러그인 개발 — 편집 결과 회신](../../dev-guide/plugin-development.md#편집-결과-회신)).
+
+- 회신을 약속하지 않은 플러그인(hello 에 `edit_outcome` 없음)에는 편집 요청을 보내지 않고 `Pass`다. 번들 플러그인은 지금
+  약속하지 않는다.
+- 약속한 플러그인에는 요청 id 가 붙은 편집을 보내고 원래 키를 그 창에 붙잡는다(`src/app/plugin_edit_holds.rs`). 창마다
+  보류는 하나다. 보류 중 그 창에 온 키·IME·modifier·포인터 입력은 플러그인 단축키 처리보다 먼저 줄을 선다. 보류가 풀리면
+  원래 키를 재생하고, 그 뒤에 줄 선 입력을 받은 순서대로 플러그인 단축키 처리부터 다시 거치게 한다. 보류가 없을 때와 같은
+  단계다. 원래 키는 플러그인 단축키 처리를 이미 지나 창 view 에서 붙잡혔으므로 view 로 넘긴다
+  (`src/app/edit_key_replay.rs`의 `replay_steps`). 재생 중에 새 보류가 생기면 남은 입력은 그 뒤에 줄을 선다.
+- App 은 pump 직후 회신을 꺼내 보낸 창의 보류를 푼다(`settle_plugin_edit_holds`).
+  - `acted`: 소비한다. 복사 글자가 있으면 그 창의 복사 문이 쓰고 토스트를 띄운다.
+  - `not_acted`: 원래 키를 한 번 재생한다.
+  - `unknown`: 실행됐을 수 있으므로 소비하고 재생하지 않는다. 복사 글자가 있으면 쓴다.
+  - 플러그인 실행이 끝남(종료·비활성화·재시작·연결 끊김): `TargetGone`이다. 재생하지 않는다.
+- 회신이 1초 안에 오지 않으면 소비하고 경고를 남긴다(`replays_on_timeout = false`). 그 요청은 더 기다리지 않고 늦은
+  회신은 버린다. 이 시한에 맞춰 이벤트 루프가 깨어난다.
+- 회신은 요청을 받은 플러그인 실행·대상·id 가 모두 맞을 때만 그 요청의 결과다. 다른 플러그인·대상·이전 실행의 회신,
+  중복·늦은 회신, 연결이 끊긴 배치의 회신은 버린다(`crates/tasty-host-plugin/src/manager/edit_outcome.rs`). 결과를
+  기다리는 요청이 64개를 넘으면 가장 오래된 요청이 `unknown`으로 끝난다.
+- 보류가 풀리기 전에 창이 닫혔으면 복사 글자와 재생할 입력은 받을 곳이 없어 버려진다.
+- 플러그인은 실행 중인데 대상 팝업·surface 만 닫혔으면 보류는 바로 풀리지 않고 위 1초 시한으로 끝난다.
+- headless 실행은 키를 붙잡는 창이 없으므로 회신을 pump 직후 꺼내 버린다(`src/boot/headless_plugins.rs`).
+- 편집 요청을 보내고 보류를 만드는 플러그인 팝업·surface 입력 경로는 아직 연결되지 않았다. 지금 플러그인 입력칸의 편집
+  키는 위 판정 없이 기존 경로(egui-winit 기본 키 변환과 surface 의 `Copy`·`Paste` 전달)로 간다.
+
 ## OS 고유 키 이름 혼용 금지
 
 바인딩 토큰 `ctrl`/`alt`/`shift` 는 **물리적 위치를 추상화한 이름**이며 OS 가 인식하는 키 이름과 다를 수 있다. tasty 는 각 키를 OS 고유 이름으로 인식하고 바인딩 문자열과의 변환만 OS별로 다르게 한다:
@@ -389,7 +417,8 @@ macOS·Wayland 에서는 항상 `false` 로 들어와 동작이 바뀌지 않으
   `src/app/event_handler.rs`(`App::window_event` 진입부 게이트),
   `src/adapters/ui/input/double_tap.rs`(`DoubleTapDetector::reset`).
 - 편집 키 판정: `src/adapters/ui/input/edit_key.rs`(판정 함수·보류), `src/gfx/gpu/edit_keys.rs`(host egui 판정·결과·
-  Wayland), `src/view/main/edit_keys.rs`(메인 창 입구), `src/app/edit_key_replay.rs`(메인 창 재생·보조 창 바인딩).
+  Wayland), `src/view/main/edit_keys.rs`(메인 창 입구), `src/app/edit_key_replay.rs`(메인 창 재생·보조 창 바인딩),
+  `src/app/plugin_edit_holds.rs`(플러그인 입력칸 보류·회신 분배).
 - 텍스트 입력과 겹치는 경우의 처리: `src/adapters/ui/surface/explorer/type_ahead.rs`
   (`unmodified_binding_chars`).
 - Plugin 커맨드: `crates/tasty-host-plugin/src/command_registry.rs`(`PluginCommandRegistry`,

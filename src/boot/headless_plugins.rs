@@ -94,6 +94,7 @@ pub(crate) fn pump_plugins(app: &mut App, state: &mut RequestContext, engine: &m
         drop(mgr.take_fresh_frame_surfaces());
         // 복사 결과를 쓸 GUI 클립보드가 없다. 버려서 쌓이지 않게 한다.
         drop(mgr.take_copied_texts());
+        distribute_headless_edit_outcomes(mgr.take_edit_outcomes());
         crate::app::plugin_failure_notice::report_plugin_failures(mgr, engine);
         hello_pairs
     };
@@ -102,6 +103,19 @@ pub(crate) fn pump_plugins(app: &mut App, state: &mut RequestContext, engine: &m
     }
     dispatch_plugin_ipc_calls_headless(app, state, engine);
     forward_mesh_frames(app, engine);
+}
+
+/// pump 직후 꺼낸 플러그인 편집 회신을 나눈다. headless 에는 키를 붙잡은 GUI 창이 없어 지금은 모두 버린다.
+/// attach mirror 입력에서 온 요청의 회신을 원 client 로 보내는 중계는 이 자리에서 나눈다.
+fn distribute_headless_edit_outcomes(outcomes: Vec<crate::plugin::manager::PluginEditOutcome>) {
+    for outcome in outcomes {
+        tracing::debug!(
+            plugin = %outcome.request.plugin_id,
+            edit_id = outcome.request.edit_id,
+            result = ?outcome.result,
+            "headless plugin edit outcome dropped: no window holds its key"
+        );
+    }
 }
 
 /// 플러그인 허브 기한에 깼으면 pump해 지난 기한이 다음 대기를 계속 0으로 만들지 않게 한다.

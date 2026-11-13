@@ -48,12 +48,8 @@ fn synthetic_gate_precedes_every_mode_branch() {
             "활성 모달 분기",
         ),
         (
-            "let plugin_consumed = if let WindowEvent::KeyboardInput { event: ke, .. } = &event {",
-            "plugin 단축키 가로채기",
-        ),
-        (
-            "self.dispatch_window_event_to_view(id, event);",
-            "View 이벤트 전달",
+            "self.route_window_input(id, event);",
+            "plugin 편집 보류·plugin 단축키·View 전달",
         ),
     ] {
         let at = only_at(&src, needle, what);
@@ -62,6 +58,50 @@ fn synthetic_gate_precedes_every_mode_branch() {
             "합성 키 차단이 {what}보다 뒤에 있다. 해당 경로가 먼저 키를 처리할 수 있다."
         );
     }
+
+    // window_event 에서 plugin 단축키 가로채기와 View 전달은 게이트 뒤 route_window_input 한 곳에서만 일어난다.
+    // 이 파일에 둘을 직접 부르는 곳이 있으면 게이트 앞에 놓여도 위 비교가 잡지 못하므로 0 개를 요구한다.
+    // dispatch_window_event_to_view 는 이 파일에 정의돼 있어 정의 줄만 뺀다.
+    for (call, definition, what) in [
+        (
+            "dispatch_window_event_to_view(",
+            Some("fn dispatch_window_event_to_view("),
+            "View 직접 전달",
+        ),
+        ("try_plugin_shortcut(", None, "plugin 단축키 직접 처리"),
+    ] {
+        let calls = src.matches(call).count() - definition.map_or(0, |d| src.matches(d).count());
+        assert_eq!(
+            calls, 0,
+            "event_handler.rs 에 {what} `{call}` 호출이 {calls} 개 있다. window_event 는 게이트 뒤 \
+             route_window_input 으로만 보낸다."
+        );
+    }
+
+    // window_event 의 마지막 단계는 route_window_input 이 맡는다. plugin 단축키 가로채기와 View 전달이 그
+    // 안에 이 순서로 있어야 위 비교가 두 단계를 덮는다.
+    let route_src = read("src/app/edit_key_replay.rs");
+    let route = only_at(
+        &route_src,
+        "pub(super) fn route_window_input(",
+        "창 입력 마지막 단계",
+    );
+    let body = &route_src[route..];
+    let body = &body[..body.find("\n    }\n").expect("route_window_input body end")];
+    let shortcut = only_at(
+        body,
+        "self.try_plugin_shortcut(id, ke)",
+        "plugin 단축키 가로채기",
+    );
+    let view = only_at(
+        body,
+        "self.dispatch_window_event_to_view(id, event);",
+        "View 이벤트 전달",
+    );
+    assert!(
+        shortcut < view,
+        "route_window_input 에서 plugin 단축키 가로채기가 View 전달보다 뒤에 있다."
+    );
 }
 
 #[test]

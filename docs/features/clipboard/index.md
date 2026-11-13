@@ -177,6 +177,14 @@ plugin 쪽(`tasty-plugin-sdk`)은 이 wire 이벤트를 `egui::Event::Copy` 로 
 
 매니페스트에서 `egui_paste = true` 를 선언한 kind 에 포커스가 있으면, paste 단축키(위 `KeybindingSettings` 바인딩)와 팔레트의 붙여넣기는 터미널로 가지 않고 그 surface 에 `Paste` wire 이벤트로 전달된다(`src/adapters/ui/input/shortcuts/copy_paste.rs` `run_paste` → `src/view/main/egui_mesh.rs`). 이벤트에는 클립보드 내용이 없다. plugin 이 이 이벤트를 보고 필요한 형식을 **자기 프로세스에서 직접** 읽는다(위 복사와 같은 docs/dev-guide/plugin-permissions.md 근거). 현재 이를 선언하는 번들 plugin 은 image 다.
 
+### egui-mesh plugin 의 편집 결과 회신
+
+plugin 이 hello 에 `edit_outcome`을 알리면 호스트는 복사·잘라내기·붙여넣기 요청에 id 를 붙여 보내고, plugin 은 요청마다
+실행 여부(`acted`·`not_acted`·`unknown`)와 복사 글자를 한 메시지로 회신한다. 호스트는 그 회신으로 원래 키의 소비·재생을
+정하고, 소비한 편집의 복사 글자는 그 창의 복사 문으로 쓴다([편집 키 판정 — 플러그인 입력칸](../../design/policies/key-mapping.md#플러그인-입력칸)).
+SDK 는 입력칸 어댑터 `EditField`로 잘라내기·붙여넣기 결과를 정한다([플러그인 개발 — 편집 결과 회신](../../dev-guide/plugin-development.md#편집-결과-회신)).
+번들 plugin 은 아직 알리지 않으며, 요청을 보내는 팝업·surface 입력 경로도 아직 연결되지 않았다.
+
 ### 현재 클립보드 뷰어
 
 지금 시스템 클립보드에 담긴 내용은 [clipboard-viewer plugin](../../plugins/clipboard-viewer/index.md) 이 popup 으로 보여준다. host 백엔드 없이 **plugin 프로세스가 `arboard` 로 직접 read** 한다([플러그인 권한 모델](../../dev-guide/plugin-permissions.md) — plugin 은 비-샌드박스 OS 프로세스라 host 가 OS 클립보드 접근을 막을 수 없으므로, 단발 read 는 host 를 경유하지 않는다). 히스토리 누적·재복사는 없다.

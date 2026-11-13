@@ -120,6 +120,38 @@ prefix = "{prefix}"
         }
     }
 
+    /// 편집 결과 회신을 약속한 연결된 stub 플러그인을 붙인다. 놓은 요청 수신단은 버린다.
+    pub fn attach_edit_outcome_stub_for_test(&mut self, plugin_id: &str) {
+        let (process, _tap) = PluginProcess::stub_with_request_rx(plugin_id);
+        self.processes.insert(plugin_id.to_string(), process);
+        self.apply_edit_events(vec![plugin_id.to_string()], Vec::new(), &[]);
+    }
+
+    /// stub 플러그인의 연결이 끊긴 것처럼 프로세스를 떼고 편집 상태를 정리한다.
+    pub fn disconnect_edit_outcome_stub_for_test(&mut self, plugin_id: &str) {
+        self.processes.remove(plugin_id);
+        self.forget_edit_requests(plugin_id);
+    }
+
+    /// stub 플러그인 `plugin_id` 채널에서 편집 회신 하나가 온 것처럼 넣는다.
+    pub fn receive_edit_outcome_for_test(
+        &mut self,
+        plugin_id: &str,
+        target: tasty_plugin_protocol::CopyTargetWire,
+        edit_id: u64,
+        result: tasty_plugin_protocol::EditResultWire,
+        copied: Option<&str>,
+    ) {
+        let item = super::edit_outcome::ReceivedEditOutcome {
+            channel: plugin_id.to_string(),
+            target,
+            edit_id,
+            result,
+            copied: copied.map(str::to_string),
+        };
+        self.apply_edit_events(Vec::new(), vec![item], &[]);
+    }
+
     /// 붙인 호출자 stub이 host call 을 보낸 것처럼 호출 하나를 대기열에 넣는다.
     /// 수집한 호출과 같이 현재 process 결속과 등록된 권한을 싣는다.
     pub fn queue_plugin_call_for_test(

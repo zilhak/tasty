@@ -3,10 +3,44 @@
 //! 넘기고, 보류 중에 온 이벤트는 받은 순서대로 다시 처리한다.
 //! 계약: `docs/design/policies/key-mapping.md`의 "편집 키 판정" 절.
 
+use winit::event::WindowEvent;
 use winit::window::WindowId;
 
-use crate::adapters::ui::input::edit_key::EditBindings;
+use crate::adapters::ui::input::edit_key::{EditBindings, EditKey, Release};
 use crate::app::App;
+
+/// 보류가 입력을 붙잡은 단계. 재생할 입력이 그 앞 단계를 이미 거쳤는지 정한다.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum HoldSite {
+    /// 창 view 안(호스트 입력칸 보류). 원래 키와 줄 선 입력 모두 플러그인 단축키 단계를 거친 뒤 붙잡혔다.
+    View,
+    /// 플러그인 단축키 단계 앞(플러그인 입력칸 보류의 줄). 원래 키는 view 에서 붙잡혔고, 줄 선 입력은 단축키
+    /// 단계를 아직 거치지 않았다.
+    BeforePluginShortcuts,
+}
+
+/// 재생 한 단계.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum ReplayStep<E> {
+    /// 판정한 편집으로 창 view 에 한 번 넘긴다.
+    Original(E, EditKey),
+    /// 창 view 로 넘긴다. 새 플러그인 보류가 있으면 그 뒤에 줄을 선다.
+    View(E),
+    /// 플러그인 보류 줄부터 창 입력의 마지막 단계를 다시 거친다([`App::route_window_input`]).
+    Input(E),
+}
+
+/// 풀린 보류의 재생 순서. 원래 키가 먼저이고, 줄 선 입력은 받은 순서대로 붙잡힌 단계부터 다시 거친다.
+pub(crate) fn replay_steps<E>(release: Release<E>, site: HoldSite) -> Vec<ReplayStep<E>> {
+    let original = release
+        .replay
+        .map(|(event, edit)| ReplayStep::Original(event, edit));
+    let queued = release.queued.into_iter().map(|event| match site {
+        HoldSite::View => ReplayStep::View(event),
+        HoldSite::BeforePluginShortcuts => ReplayStep::Input(event),
+    });
+    original.into_iter().chain(queued).collect()
+}
 
 impl App {
     /// 최신 적용 설정의 편집 바인딩. 설정 창의 편집 초안이 아니라 적용한 값이다.
@@ -37,24 +71,52 @@ impl App {
         else {
             return;
         };
-        if let Some((event, edit)) = release.replay {
-            self.set_edit_replay(id, Some(edit));
-            self.dispatch_window_event_to_view(id, event);
-            // 창이 키를 받지 않고 돌아갔으면 남은 표시가 다음 키에 붙지 않게 지운다.
-            self.set_edit_replay(id, None);
-        }
-        for event in release.queued {
-            self.dispatch_window_event_to_view(id, event);
+        self.replay_edit_steps(id, replay_steps(release, HoldSite::View));
+    }
+
+    /// 풀린 보류를 그 창의 평소 이벤트 경로로 재생한다. 원래 키는 판정한 편집으로 한 번만 넘긴다. 재생 중에
+    /// 플러그인 편집 보류가 새로 생기면 남은 입력은 그 보류 뒤에 줄을 선다.
+    pub(crate) fn replay_edit_steps(&mut self, id: WindowId, steps: Vec<ReplayStep<WindowEvent>>) {
+        for step in steps {
+            match step {
+                ReplayStep::Original(event, edit) => {
+                    self.set_edit_replay(id, Some(edit));
+                    self.dispatch_window_event_to_view(id, event);
+                    // 창이 키를 받지 않고 돌아갔으면 남은 표시가 다음 키에 붙지 않게 지운다.
+                    self.set_edit_replay(id, None);
+                }
+                ReplayStep::View(event) => {
+                    if !self.queue_behind_plugin_edit(id, &event) {
+                        self.dispatch_window_event_to_view(id, event);
+                    }
+                }
+                ReplayStep::Input(event) => self.route_window_input(id, event),
+            }
         }
     }
 
-    fn set_edit_replay(
-        &mut self,
-        id: WindowId,
-        edit: Option<crate::adapters::ui::input::edit_key::EditKey>,
-    ) {
+    /// 창 입력의 마지막 단계: 플러그인 편집 보류 줄, 포커스된 plugin 의 단축키, 창 view 순서다. 보류가 없을 때의
+    /// 창 이벤트와 플러그인 보류 뒤에 줄 섰던 입력이 같은 단계를 거친다.
+    pub(super) fn route_window_input(&mut self, id: WindowId, event: WindowEvent) {
+        if self.queue_behind_plugin_edit(id, &event) {
+            return;
+        }
+        // 포커스된 plugin surface의 단축키를 호스트 action보다 먼저 처리한다.
+        if let WindowEvent::KeyboardInput { event: ke, .. } = &event
+            && self.try_plugin_shortcut(id, ke)
+        {
+            return;
+        }
+        self.dispatch_window_event_to_view(id, event);
+    }
+
+    fn set_edit_replay(&mut self, id: WindowId, edit: Option<EditKey>) {
         if let Some(main) = self.view.views.get_mut(&id).and_then(|v| v.as_main_mut()) {
             main.edit_replay = edit;
         }
     }
 }
+
+#[cfg(test)]
+#[path = "edit_key_replay_tests.rs"]
+mod tests;

@@ -69,6 +69,8 @@ pub(crate) mod modal;
 mod offview_window_events;
 #[cfg(feature = "gui")]
 pub(crate) mod persistence;
+#[cfg(feature = "gui")]
+mod plugin_edit_holds;
 pub(crate) mod plugin_events;
 pub(crate) mod plugin_failure_notice;
 pub(crate) mod plugin_file_lifecycle;
@@ -166,6 +168,9 @@ pub(crate) struct App {
     pub(crate) settings_edit_owner: Option<settings_edit::SettingsEditOwner>,
     #[cfg(feature = "gui")]
     pub(crate) port_scans: port_scans::PortScans,
+    /// 플러그인 입력칸에 보낸 편집 키의 창별 보류.
+    #[cfg(feature = "gui")]
+    pub(crate) plugin_edit_holds: plugin_edit_holds::PluginEditHolds,
     #[cfg(feature = "gui")]
     pub(crate) explorer_files: explorer_files::ExplorerFiles,
     #[cfg(feature = "gui")]
@@ -377,6 +382,7 @@ impl App {
             next_restore_notice_id: 0,
             settings_edit_owner: None,
             port_scans: Default::default(),
+            plugin_edit_holds: Default::default(),
             #[cfg(feature = "gui")]
             explorer_files: Default::default(),
             tutorial_progress: Default::default(),

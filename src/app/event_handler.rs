@@ -376,17 +376,7 @@ impl ApplicationHandler<AppEvent> for App {
             }
         }
 
-        // 포커스된 plugin surface의 단축키를 호스트 action보다 먼저 처리한다.
-        let plugin_consumed = if let WindowEvent::KeyboardInput { event: ke, .. } = &event {
-            self.try_plugin_shortcut(id, ke)
-        } else {
-            false
-        };
-        if plugin_consumed {
-            return;
-        }
-
-        self.dispatch_window_event_to_view(id, event);
+        self.route_window_input(id, event);
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
@@ -562,6 +552,7 @@ impl ApplicationHandler<AppEvent> for App {
             Vec::new()
         };
         self.finalize_plugin_hello(hello_pairs);
+        self.settle_plugin_edit_holds(now);
         self.report_plugin_failures();
         self.record_plugin_rss_samples_if_present();
         self.forward_mesh_frames_for_parked();
@@ -2145,6 +2136,7 @@ impl App {
         let deadline = min_deadline(deadline, self.engine_release_poll_deadline());
         let deadline = min_deadline(deadline, self.runner_stop_poll_deadline());
         let deadline = min_deadline(deadline, self.plugin_file_poll_deadline());
+        let deadline = min_deadline(deadline, self.plugin_edit_holds.deadline());
         let deadline = if self.journal.pauses_observation() {
             deadline
         } else {
