@@ -77,6 +77,10 @@ pub struct HostHandle {
     host_gone: Arc<AtomicBool>,
     /// worker 가 지금 답할 `ipc.invoke` — 처리기가 미루면 그 답을 가져간다(`deferred`).
     reply_slot: crate::deferred::ReplySlot,
+    /// 이 핸들이 답할 수 있는 호스트 요청의 id. dispatch 가 `ipc.invoke` 처리기에 넘기는
+    /// 복사본에만 있고, 그 복사본의 clone 도 같은 id 를 들고 다닌다. 그 밖의 핸들(자기 호출,
+    /// `on_start` 로 받은 핸들)은 `None` 이라 답을 미룰 수 없다.
+    reply_id: Option<u64>,
 }
 
 impl HostHandle {
@@ -93,6 +97,7 @@ impl HostHandle {
             dropped_unreported: Arc::new(AtomicU64::new(0)),
             host_gone: Arc::new(AtomicBool::new(false)),
             reply_slot: Arc::default(),
+            reply_id: None,
         }
     }
 
@@ -124,8 +129,17 @@ impl HostHandle {
         crate::deferred::open_id(&self.reply_slot)
     }
 
-    pub(crate) fn defer_reply(&self, id: u64) -> Option<crate::deferred::DeferredReply> {
-        crate::deferred::take(&self.reply_slot, &self.writer, id)
+    /// `id` 요청에 답할 수 있는 복사본. dispatch 가 처리기에 넘길 ctx 에 담는다.
+    pub(crate) fn for_reply(&self, id: Option<u64>) -> Self {
+        Self {
+            reply_id: id,
+            ..self.clone()
+        }
+    }
+
+    /// 이 핸들이 답할 요청이 아직 처리 중이면 미루고 답할 권리를 가져간다.
+    pub(crate) fn defer_reply(&self) -> Option<crate::deferred::DeferredReply> {
+        crate::deferred::take(&self.reply_slot, &self.writer, self.reply_id?)
     }
 
     /// 호스트가 큐 포화로 버렸다고 이 SDK에 알려 온 요청의 누적 수.
