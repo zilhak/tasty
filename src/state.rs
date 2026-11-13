@@ -36,6 +36,8 @@ pub(crate) mod navigation;
 pub(crate) mod pane;
 #[cfg(all(test, feature = "gui"))]
 mod popup_close_tests;
+#[cfg(feature = "gui")]
+mod popup_key_owner;
 #[cfg(all(test, feature = "gui"))]
 mod popup_ownership_tests;
 #[cfg(feature = "gui")]
@@ -240,6 +242,8 @@ impl RequestContext {
             plugin_popup_hittest: Vec::new(),
             #[cfg(feature = "gui")]
             plugin_popup_placed_scopes: std::collections::HashMap::new(),
+            #[cfg(feature = "gui")]
+            plugin_popup_key_candidates: Vec::new(),
             #[cfg(feature = "gui")]
             banner_layer: None,
             #[cfg(feature = "gui")]

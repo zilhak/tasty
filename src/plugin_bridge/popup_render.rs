@@ -41,6 +41,7 @@ pub fn draw_plugin_popups(
     state.plugin_popup_open = false;
     state.plugin_popup_hittest.clear();
     state.plugin_popup_placed_scopes.clear();
+    state.plugin_popup_key_candidates.clear();
     state.plugin_popup_ime_cursor_area = None;
 
     let Some(mgr) = plugin_manager else {
@@ -73,6 +74,11 @@ pub fn draw_plugin_popups(
         placed
             .iter()
             .map(|(snap, _)| (snap.instance_id, snap.scope.clone())),
+    );
+    state.plugin_popup_key_candidates.extend(
+        placed
+            .iter()
+            .map(|(snap, _)| (snap.instance_id, snap.z_seq)),
     );
 
     if placed.is_empty() {
@@ -111,8 +117,8 @@ pub fn draw_plugin_popups(
 
     state.plugin_popup_open = true;
 
-    // host/plugin 전체에서 최상단 팝업만 Escape를 받는다.
-    let top_z = occluders.iter().map(|o| o.z_seq).max();
+    // host/plugin 전체에서 최상단 팝업만 키·Escape를 받는다. 창의 키 처리도 같은 판정을 쓴다.
+    let key_target = state.plugin_popup_key_target_in_render();
 
     let mut any_hovered = false;
 
@@ -198,7 +204,7 @@ pub fn draw_plugin_popups(
         );
 
         // 아래 팝업에 키가 전달되면 Escape 하나로 여러 팝업이 닫힐 수 있다.
-        let has_key_focus = Some(snap.z_seq) == top_z;
+        let has_key_focus = key_target == Some(snap.instance_id);
         let raw_input = collect_mesh_popup_input(
             ctx,
             content_rect,

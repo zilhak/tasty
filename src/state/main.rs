@@ -162,6 +162,10 @@ pub struct MainViewState {
     /// 한 프레임 전 값을 사용한다. 콘텐츠의 물리 rect인 plugin_mesh_popup_regions와 다르다.
     #[cfg(feature = "gui")]
     pub(crate) plugin_popup_hittest: Vec<crate::adapters::ui::popup::occlusion::Occluder>,
+    /// 이전 프레임에 배치한 플러그인 팝업의 instance id와 순번. 숨은 범위의 팝업은 들어 있지 않다.
+    /// 키를 받을 팝업 판정(`popup_key_owner`)의 plugin 후보다.
+    #[cfg(feature = "gui")]
+    pub(crate) plugin_popup_key_candidates: Vec<(u64, u64)>,
     /// 이전 프레임에 플러그인 팝업을 실제로 배치한 범위. 좁은 surface 라 창 범위로 연
     /// 팝업의 자식 파일 피커가 선언이 아니라 이 범위를 따른다. 숨은 팝업은 들어 있지 않다.
     #[cfg(feature = "gui")]

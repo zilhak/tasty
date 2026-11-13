@@ -712,6 +712,15 @@ impl PopupManager {
             .map(|p| p.popup_rect())
     }
 
+    /// 열려 있고 직전 그리기에서 범위가 보인 팝업의 순번. 새로 연 팝업은 그리기 전에도 보이는 것으로
+    /// 친다. 키를 받을 팝업을 고르는 판정(`occlusion::key_owner`)의 host 후보다.
+    pub(crate) fn visible_open_z_seqs(&self) -> impl Iterator<Item = u64> + '_ {
+        self.popups
+            .iter()
+            .filter(|p| p.open && p.scope_visible)
+            .map(|p| p.z_seq)
+    }
+
     /// 열린 팝업의 범위. 닫혀 있으면 `None`이다. 범위가 지금 보이는지는 따지지 않는다.
     pub fn open_scope(&self, id: PopupId) -> Option<&PopupScope> {
         self.popups
@@ -890,6 +899,21 @@ mod tests {
         p.open = open;
         p.focused = focused;
         p
+    }
+
+    /// 숨은 범위의 열린 팝업과 닫힌 팝업은 키 후보가 아니다. 순번이 더 커도 아래의 보이는 팝업이
+    /// 키를 받는다.
+    #[test]
+    fn hidden_or_closed_popups_are_not_key_candidates() {
+        let mut shown = entry("shown", true, false, false);
+        shown.z_seq = 1;
+        let mut hidden = entry("hidden", true, false, false);
+        hidden.z_seq = 5;
+        hidden.scope_visible = false;
+        let mut closed = entry("closed", false, false, false);
+        closed.z_seq = 9;
+        let m = managed(vec![shown, hidden, closed]);
+        assert_eq!(m.visible_open_z_seqs().collect::<Vec<_>>(), vec![1]);
     }
 
     #[test]
