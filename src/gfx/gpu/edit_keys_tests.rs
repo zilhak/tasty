@@ -484,6 +484,50 @@ fn shift_tab_then_paste_follows_the_focus_of_the_next_pass() {
     );
 }
 
+/// A Tab from `from` whose pass already ran, then a bound paste before the next frame: egui moves
+/// focus only when that next pass begins, so the paste waits for it and lands in `field`.
+fn paste_after_a_finished_tab_pass(from: &str, shift: bool) {
+    let mut ui = Ui::new();
+    ui.focus(from);
+    let mut state = bound();
+    let tab = egui::Event::Key {
+        key: egui::Key::Tab,
+        physical_key: None,
+        pressed: true,
+        repeat: false,
+        modifiers: if shift {
+            egui::Modifiers::SHIFT
+        } else {
+            egui::Modifiers::NONE
+        },
+    };
+    ui.pass(&mut state, vec![tab]);
+    assert!(!state.busy(), "the Tab ran with no key held");
+    let mut pending = Vec::new();
+    assert_eq!(
+        ui.judge(&mut state, &press("v"), &mut pending, Instant::now()),
+        EguiKey::Taken,
+        "the key waits for the pass that moves focus"
+    );
+    ui.pass(&mut state, pending);
+    assert_eq!(ui.field, "helloCLIP", "pasted where focus went");
+    assert_eq!(ui.next, "");
+    assert!(released(&mut state).replay.is_none(), "consumed");
+}
+
+/// Shift+Tab back to the previous field, then a paste after a frame boundary.
+#[test]
+fn a_paste_after_a_finished_shift_tab_pass_follows_the_deferred_focus() {
+    paste_after_a_finished_tab_pass("next", true);
+}
+
+/// Tab from the last field wraps to the first one in the next pass, then a paste after a frame
+/// boundary.
+#[test]
+fn a_paste_after_a_finished_wrapping_tab_pass_follows_the_deferred_focus() {
+    paste_after_a_finished_tab_pass("pw", false);
+}
+
 /// Events after a held key wait behind it in order; a second bound key queues instead of being
 /// judged on its own.
 #[test]

@@ -182,6 +182,9 @@ pub(crate) struct EditKeyState<E = WindowEvent> {
     modifiers: ModifiersState,
     hold: Option<HostHold<E>>,
     release: Option<(EditKeyOwner, Release<E>)>,
+    /// The last frame's input moves focus only when the next pass begins (see [`defers_focus`]).
+    /// Until that pass runs, the focus read between frames is not where an edit would go.
+    focus_deferred: bool,
 }
 
 impl<E> Default for EditKeyState<E> {
@@ -191,6 +194,7 @@ impl<E> Default for EditKeyState<E> {
             modifiers: ModifiersState::empty(),
             hold: None,
             release: None,
+            focus_deferred: false,
         }
     }
 }
@@ -247,7 +251,7 @@ impl<E: HeldEvent> EditKeyState<E> {
         };
         // Unprocessed input (a click, Tab, Ctrl+A, typed text) may change focus, selection or text
         // before the edit runs. It gets its own pass, then the edit is judged on what it left.
-        if has_pending_input(cx.events) {
+        if self.unsettled(cx.events) {
             self.hold_key(event, edit, Phase::Settle, now, owner, false);
             return EguiKey::Taken;
         }
@@ -279,7 +283,7 @@ impl<E: HeldEvent> EditKeyState<E> {
             return EguiKey::Taken;
         }
         match self.bound_edit(event) {
-            Some(edit) if has_pending_input(cx.events) => {
+            Some(edit) if self.unsettled(cx.events) => {
                 self.hold_key(event, edit, Phase::Settle, now, owner, true);
                 EguiKey::Taken
             }
@@ -397,8 +401,16 @@ impl<E: HeldEvent> EditKeyState<E> {
         }
     }
 
-    /// A frame took egui's input `events`: an injected edit is now in that pass.
+    /// Focus or selection may still change before an edit runs: egui has input it has not
+    /// processed, or the last frame's input moves focus when the next pass begins.
+    pub(crate) fn unsettled(&self, events: &[egui::Event]) -> bool {
+        has_pending_input(events) || self.focus_deferred
+    }
+
+    /// A frame took egui's input `events`: an injected edit is now in that pass. A focus move the
+    /// input defers to the next pass is remembered whether or not a key is held.
     pub(crate) fn input_taken(&mut self, events: &[egui::Event]) {
+        self.focus_deferred = events.iter().any(defers_focus);
         if let Some(held) = self.hold.as_mut() {
             match held.phase {
                 Phase::Injected => held.phase = Phase::InPass,
@@ -595,7 +607,8 @@ impl super::GpuState {
 
     /// egui input gathered for the next frame that could still move focus or change a selection.
     pub fn egui_input_pending(&self) -> bool {
-        has_pending_input(&self.egui_state.egui_input().events)
+        self.edit_keys
+            .unsettled(&self.egui_state.egui_input().events)
     }
 
     /// Runs `f` with this window's judgment state and the egui input gathered for the next frame.
