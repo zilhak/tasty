@@ -52,7 +52,7 @@ fn focused_explorer_panel<'a>(
     engine.find_surface_by_id(focused)?.explorer()
 }
 
-pub(super) fn focused_explorer_surface_id(
+pub(crate) fn focused_explorer_surface_id(
     state: &crate::state::MainViewState,
     engine: &crate::runtime::engine_read::EngineRead<'_>,
 ) -> Option<u32> {

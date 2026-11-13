@@ -108,3 +108,59 @@ fn a_same_length_password_paste_consumes_the_key() {
     assert_eq!(ui.secret, "CLIP");
     assert!(released(&mut state).replay.is_none());
 }
+
+/// A key the owner cannot place yet waits for the earlier input's pass and then goes back to the
+/// owner unjudged, first in line. With no earlier input, or no binding, it is free at once.
+#[test]
+fn an_unsettled_key_goes_back_to_its_owner_after_the_earlier_input() {
+    let mut ui = Ui::new();
+    ui.frame(Vec::new());
+    let mut state = bound();
+    let now = Instant::now();
+    let judge = |ui: &mut Ui, state: &mut EditKeyState<Ev>, event: &Ev, pending: &mut Vec<_>| {
+        let clip = ui.clipboard.clone();
+        let mut read = |_tag: u64| clip.clone();
+        state.judge_unsettled(
+            event,
+            EditKeyOwner::Window,
+            now,
+            KeyCx {
+                ctx: &ui.ctx,
+                events: pending,
+                clipboard: &mut read,
+            },
+        )
+    };
+    let mut pending = Vec::new();
+    assert_eq!(
+        judge(&mut ui, &mut state, &press("v"), &mut pending),
+        EguiKey::Free
+    );
+    let at = egui::pos2(20.0, 15.0);
+    let click = |pressed| egui::Event::PointerButton {
+        pos: at,
+        button: egui::PointerButton::Primary,
+        pressed,
+        modifiers: egui::Modifiers::NONE,
+    };
+    let mut pending = vec![egui::Event::PointerMoved(at), click(true), click(false)];
+    assert_eq!(
+        judge(&mut ui, &mut state, &press("q"), &mut pending),
+        EguiKey::Free
+    );
+    assert_eq!(
+        judge(&mut ui, &mut state, &press("v"), &mut pending),
+        EguiKey::Taken
+    );
+    assert_eq!(
+        judge(&mut ui, &mut state, &press("q"), &mut pending),
+        EguiKey::Taken
+    );
+    ui.pass(&mut state, pending);
+    assert_eq!(ui.field, "hello", "the owner judges the key, not the hold");
+    let release = state
+        .take_release(EditKeyOwner::Window)
+        .expect("the key goes back");
+    assert!(release.replay.is_none());
+    assert_eq!(release.queued, vec![press("v"), press("q")]);
+}

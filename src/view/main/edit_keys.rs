@@ -33,17 +33,31 @@ impl MainView {
         if let Some(edit) = self.edit_replay.take() {
             return EguiKey::Pass(edit);
         }
-        let target =
-            matches!(event, WindowEvent::KeyboardInput { .. }) && self.edit_key_target(engine);
+        let keyboard = matches!(event, WindowEvent::KeyboardInput { .. });
+        let target = keyboard && self.edit_key_target(engine);
+        let explorer = keyboard
+            && !target
+            && crate::shortcuts::focused_explorer_surface_id(&self.state, engine).is_some();
+        let entry = edit_key_entry(
+            target,
+            explorer,
+            self.base.gpu.egui_input_pending(),
+            self.base.gpu.edit_keys_busy(),
+        );
+        let bindings = || Some(EditBindings::from_settings(&engine.settings.keybindings));
         let window = &self.base.winit;
         let gpu = &mut self.base.gpu;
-        if !target && !gpu.edit_keys_busy() {
-            return EguiKey::Free;
+        match entry {
+            EditKeyEntry::Free => EguiKey::Free,
+            EditKeyEntry::Judge => {
+                gpu.set_edit_bindings(if target { bindings() } else { None });
+                gpu.judge_egui_key(window, event, EditKeyOwner::Window)
+            }
+            EditKeyEntry::Unsettled => {
+                gpu.set_edit_bindings(bindings());
+                gpu.judge_unsettled_egui_key(window, event)
+            }
         }
-        gpu.set_edit_bindings(
-            target.then(|| EditBindings::from_settings(&engine.settings.keybindings)),
-        );
-        gpu.judge_egui_key(window, event, EditKeyOwner::Window)
     }
 
     /// 키를 host egui 입력칸이 받는지. 오버레이(팝업·모달·주소 띠·무대)가 열렸거나, egui로 그리는
@@ -56,5 +70,67 @@ impl MainView {
             .focused_surface_type(engine)
             .kind_capability(engine, |d| d.consumes_egui_input)
             && crate::shortcuts::focused_explorer_typing(&self.state, engine)
+    }
+}
+
+/// 편집 키 판정 입구가 키 하나를 보내는 곳.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum EditKeyEntry {
+    /// 판정하지 않는다. 기존 경로(탐색기 파일 액션 등)가 받는다.
+    Free,
+    /// 공통 판정. 대상이 아니면 바인딩 없이 판정해 보류 중인 키 뒤에 줄만 세운다.
+    Judge,
+    /// 탐색기 입력칸 여부를 아직 모른다. 직전 렌더의 포커스 값은 그 뒤 egui 입력(입력칸 클릭 등)이
+    /// 바꿀 수 있으므로, 그 입력이 처리된 뒤 이 키를 새로 판정하게 GPU 판정에 맡긴다.
+    Unsettled,
+}
+
+/// `target`: 키를 host egui 입력칸이 받는다(직전 렌더 기준). `explorer`: 대상이 아닌 탐색기 surface가
+/// 포커스를 가졌다. `pending`: egui가 아직 처리하지 않은 입력이 있다. `busy`: 보류한 키가 있다.
+pub(super) fn edit_key_entry(
+    target: bool,
+    explorer: bool,
+    pending: bool,
+    busy: bool,
+) -> EditKeyEntry {
+    if target {
+        EditKeyEntry::Judge
+    } else if explorer && pending {
+        EditKeyEntry::Unsettled
+    } else if busy {
+        EditKeyEntry::Judge
+    } else {
+        EditKeyEntry::Free
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 탐색기 목록에 포커스가 있던 직후 미처리 입력(입력칸 클릭)이 있으면 GPU 판정에 가고, 없으면 기존
+    /// 경로로 간다. 입력칸이 포커스를 가졌으면 늘 공통 판정이다.
+    #[test]
+    fn an_explorer_key_after_unprocessed_input_reaches_the_judgment() {
+        assert_eq!(
+            edit_key_entry(false, true, true, false),
+            EditKeyEntry::Unsettled
+        );
+        assert_eq!(
+            edit_key_entry(false, true, false, false),
+            EditKeyEntry::Free
+        );
+        assert_eq!(
+            edit_key_entry(true, false, false, false),
+            EditKeyEntry::Judge
+        );
+        assert_eq!(
+            edit_key_entry(false, false, true, false),
+            EditKeyEntry::Free
+        );
+        assert_eq!(
+            edit_key_entry(false, false, false, true),
+            EditKeyEntry::Judge
+        );
     }
 }

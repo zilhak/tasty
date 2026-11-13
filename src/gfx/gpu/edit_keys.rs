@@ -117,6 +117,9 @@ struct HostHold<E> {
     /// When the key came, then when the edit went into egui's input.
     since: Instant,
     owner: EditKeyOwner,
+    /// The owner could not tell whether a text field gets the key before earlier input runs. After
+    /// that input's pass the key goes back to the owner unjudged, to be judged on the new state.
+    recheck: bool,
     /// Where an injected paste starts, to tell an applied paste from an ignored one.
     paste_at: Option<PasteMark>,
 }
@@ -200,7 +203,7 @@ impl<E: HeldEvent> EditKeyState<E> {
         // Unprocessed input (a click, Tab, Ctrl+A, typed text) may change focus, selection or text
         // before the edit runs. It gets its own pass, then the edit is judged on what it left.
         if has_pending_input(cx.events) {
-            self.hold_key(event, edit, Phase::Settle, now, owner);
+            self.hold_key(event, edit, Phase::Settle, now, owner, false);
             return EguiKey::Taken;
         }
         let ctx = cx.ctx;
@@ -208,10 +211,34 @@ impl<E: HeldEvent> EditKeyState<E> {
             Start::Pass => EguiKey::Pass(edit),
             Start::Act => EguiKey::Taken,
             Start::Hold(phase) => {
-                self.hold_key(event, edit, phase, now, owner);
+                self.hold_key(event, edit, phase, now, owner, false);
                 self.mark_paste(ctx);
                 EguiKey::Taken
             }
+        }
+    }
+
+    /// [`Self::judge`] for a key whose owner cannot tell yet whether a text field gets it: the
+    /// focus it reads is from the last frame and input since may have moved it (a click into a
+    /// field). With such input pending, a bound edit key waits for that input's pass and then goes
+    /// back to the owner unjudged. With none, the owner's reading stands and the key is free.
+    pub(crate) fn judge_unsettled(
+        &mut self,
+        event: &E,
+        owner: EditKeyOwner,
+        now: Instant,
+        cx: KeyCx<'_>,
+    ) -> EguiKey {
+        if self.queues(event) {
+            self.queue(event.clone());
+            return EguiKey::Taken;
+        }
+        match self.bound_edit(event) {
+            Some(edit) if has_pending_input(cx.events) => {
+                self.hold_key(event, edit, Phase::Settle, now, owner, true);
+                EguiKey::Taken
+            }
+            _ => EguiKey::Free,
         }
     }
 
@@ -241,12 +268,14 @@ impl<E: HeldEvent> EditKeyState<E> {
         phase: Phase,
         now: Instant,
         owner: EditKeyOwner,
+        recheck: bool,
     ) {
         self.hold = Some(HostHold {
             hold: EditKeyHold::new(event.clone(), edit, true),
             phase,
             since: now,
             owner,
+            recheck,
             paste_at: None,
         });
     }
@@ -273,12 +302,23 @@ impl<E: HeldEvent> EditKeyState<E> {
     }
 
     /// Judges a held edit again once the input before it has run: it passes, acts or goes into
-    /// egui's input. Input that arrived since gets a pass of its own first.
+    /// egui's input. Input that arrived since gets a pass of its own first. A key held for a
+    /// recheck goes back to its owner unjudged instead.
     pub(crate) fn rejudge(&mut self, cx: KeyCx<'_>, now: Instant) {
         let Some(held) = self.hold.as_mut() else {
             return;
         };
         if !matches!(held.phase, Phase::Rejudge) {
+            return;
+        }
+        if held.recheck {
+            if let Some(held) = self.hold.take() {
+                let mut release = held.hold.resolve(Outcome::NotActed);
+                if let Some((event, _)) = release.replay.take() {
+                    release.queued.insert(0, event);
+                }
+                self.add_release(held.owner, release);
+            }
             return;
         }
         if has_pending_input(cx.events) {
@@ -460,6 +500,25 @@ impl super::GpuState {
     ) -> EguiKey {
         self.expire_edit_hold(frames_stopped(window));
         self.with_key_cx(|state, cx| state.judge(event, owner, Instant::now(), cx))
+    }
+
+    /// [`Self::judge_egui_key`] for a key the main window cannot yet place: its focus reading is
+    /// from the last frame and egui input since may have moved it. See
+    /// [`EditKeyState::judge_unsettled`].
+    pub fn judge_unsettled_egui_key(
+        &mut self,
+        window: &winit::window::Window,
+        event: &WindowEvent,
+    ) -> EguiKey {
+        self.expire_edit_hold(frames_stopped(window));
+        self.with_key_cx(|state, cx| {
+            state.judge_unsettled(event, EditKeyOwner::Window, Instant::now(), cx)
+        })
+    }
+
+    /// egui input gathered for the next frame that could still move focus or change a selection.
+    pub fn egui_input_pending(&self) -> bool {
+        has_pending_input(&self.egui_state.egui_input().events)
     }
 
     /// Runs `f` with this window's judgment state and the egui input gathered for the next frame.
