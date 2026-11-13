@@ -173,6 +173,11 @@ impl<E> EditKeyHold<E> {
         self.queued.push(event);
     }
 
+    /// 붙잡은 이벤트가 있다. 뒤에 온 이벤트가 이들을 앞지르지 않게 줄을 세울 때 본다.
+    pub(crate) fn has_queued(&self) -> bool {
+        !self.queued.is_empty()
+    }
+
     pub(crate) fn resolve(self, outcome: Outcome) -> Release<E> {
         let replay = match outcome {
             Outcome::Acted | Outcome::TargetGone => false,

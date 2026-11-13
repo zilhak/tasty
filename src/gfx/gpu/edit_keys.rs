@@ -75,8 +75,8 @@ pub(crate) trait HeldEvent: Clone {
     fn press(&self) -> Option<(&Key, PhysicalKey)>;
     /// Keys, IME and the modifiers they are read with keep their order behind a held key.
     fn queues_behind_hold(&self) -> bool;
-    /// Pointer input. It waits behind a held key while the edit sits in egui's input or the key
-    /// waits to be replayed, so the edit's pass carries no click (a copy button) of its own.
+    /// Pointer input. It waits behind a held key too (see [`EditKeyState::judge`]), so a pass the
+    /// hold runs carries no click that came after the key.
     fn is_pointer(&self) -> bool;
 }
 
@@ -243,13 +243,15 @@ impl<E: HeldEvent> EditKeyState<E> {
     }
 
     /// Whether `event` waits behind a held key. Keys, IME and modifiers always do. Pointer input
-    /// does too, except while a Wayland read is under way: there a click that moves focus is the
-    /// user leaving the field, and the paste is dropped when the text arrives.
+    /// does too, except while a Wayland read is under way with nothing queued yet: there a click
+    /// that moves focus is the user leaving the field, and the paste is dropped when the text
+    /// arrives. Once anything is queued, pointer input queues as well so it cannot overtake it.
     fn queues(&self, event: &E) -> bool {
         if !self.busy() {
             return false;
         }
-        event.queues_behind_hold() || event.is_pointer() && !self.awaits_text()
+        let behind_queued = self.hold.as_ref().is_some_and(|h| h.hold.has_queued());
+        event.queues_behind_hold() || event.is_pointer() && (!self.awaits_text() || behind_queued)
     }
 
     /// The edit `event` presses, by the applied bindings.

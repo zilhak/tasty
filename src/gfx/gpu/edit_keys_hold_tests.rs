@@ -28,6 +28,39 @@ fn pointer_input_after_a_settling_key_waits() {
     assert_eq!(release.queued, vec![Ev::Pointer("click next")]);
 }
 
+/// A settling key that then waits for a Wayland read keeps the pointer input queued behind it, and
+/// later pointer input queues too instead of overtaking it.
+#[test]
+fn pointer_input_keeps_its_order_when_a_settled_key_waits_for_a_read() {
+    let mut ui = Ui::new();
+    ui.focus("field");
+    ui.clipboard = ClipText::Pending;
+    let mut state = bound();
+    let now = Instant::now();
+    let mut pending = vec![egui::Event::Text("z".into())];
+    ui.judge(&mut state, &press("v"), &mut pending, now);
+    assert_eq!(
+        ui.judge(&mut state, &Ev::Pointer("first"), &mut pending, now),
+        EguiKey::Taken
+    );
+    ui.pass(&mut state, pending);
+    assert!(state.awaits_text(), "the settled paste waits for the read");
+    let mut pending = Vec::new();
+    assert_eq!(
+        ui.judge(&mut state, &Ev::Pointer("second"), &mut pending, now),
+        EguiKey::Taken,
+        "a later click does not overtake the queued one"
+    );
+    state.text_arrived(Some("WL".into()), &ui.ctx, &mut pending, now);
+    ui.pass(&mut state, pending);
+    let release = released(&mut state);
+    assert!(release.replay.is_none());
+    assert_eq!(
+        release.queued,
+        vec![Ev::Pointer("first"), Ev::Pointer("second")]
+    );
+}
+
 /// A window that still draws is never timed out: a frame that comes late runs the edit and its
 /// result decides.
 #[test]
