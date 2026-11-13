@@ -4,8 +4,8 @@
 //!
 //! [`Plugin::handle_ipc_method`](crate::Plugin::handle_ipc_method) 는 값을 돌려줘야
 //! 끝나고, 그동안 worker 는 다음 요청을 못 받는다. 호스트의 생존 확인(`ping`)도 같은
-//! 줄에 서므로 처리기가 60 초를 넘기면 plugin 이 응답 없음으로 재시작된다(실측
-//! 2026-10-13: 80 초 걸리는 `supervisor.tell` 이 60 초째에 재시작을 불렀다).
+//! 줄에 서므로, 처리기 하나가 호스트의 ping 무응답 기준(60 초)을 넘기면 plugin 이 응답
+//! 없음으로 재시작된다.
 //!
 //! 처리기가 [`IpcMethodCtx::defer`](crate::plugin::IpcMethodCtx::defer) 로 답할 권리를
 //! 받아 다른 스레드로 넘기면, worker 는 그 요청에 답하지 않고 다음으로 간다. 답은 그
