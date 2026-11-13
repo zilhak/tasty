@@ -98,7 +98,7 @@ impl HomeInUseScreen {
             ui_zoom: settings.appearance.ui_scale_factor(),
             ..settings.theme_runtime()
         };
-        pollster::block_on(async {
+        let mut gpu = pollster::block_on(async {
             let adapter = Arc::new(crate::app::select_gpu_adapter(&self.instance, window).await?);
             GpuState::new_shared(
                 &self.instance,
@@ -110,7 +110,14 @@ impl HomeInUseScreen {
                 self.proxy.clone(),
             )
             .await
-        })
+        })?;
+        // 입력칸의 편집 바인딩은 읽은 설정을 따른다. 읽지 못하면 기본 바인딩이다.
+        gpu.set_edit_bindings(Some(
+            crate::adapters::ui::input::edit_key::EditBindings::from_settings(
+                &settings.keybindings,
+            ),
+        ));
+        Ok(gpu)
     }
 
     fn render(&mut self, event_loop: &ActiveEventLoop) {
@@ -194,7 +201,7 @@ impl ApplicationHandler<AppEvent> for HomeInUseScreen {
             _ => {}
         }
         if let (Some(gpu), Some(window)) = (&mut self.gpu, &self.window) {
-            gpu.handle_egui_event(window, &event);
+            gpu.handle_egui_event_with_edit_keys(window, &event);
             // RedrawRequested에서 다시 요청하면 유휴 상태에도 렌더가 계속 반복된다.
             if !matches!(event, WindowEvent::RedrawRequested) {
                 window.request_redraw();

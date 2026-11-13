@@ -225,7 +225,10 @@ impl View for PresetView {
         let repaint = if matches!(&event, WindowEvent::RedrawRequested) {
             false
         } else {
-            self.base.gpu.handle_egui_event(&self.base.winit, &event).1
+            self.base
+                .gpu
+                .handle_egui_event_with_edit_keys(&self.base.winit, &event)
+                .1
         };
         if repaint {
             self.mark_dirty();

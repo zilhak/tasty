@@ -6,6 +6,7 @@ use winit::event::WindowEvent;
 use winit::event_loop::ActiveEventLoop;
 use winit::window::WindowId;
 
+use crate::adapters::ui::input::edit_key::EditBindings;
 use crate::adapters::ui::input::synthetic::is_synthetic_key_event;
 use crate::app::timers::{Tick, min_deadline};
 use crate::app::window_access::engines_mut;
@@ -672,11 +673,12 @@ impl App {
         &mut self,
         settings: &crate::settings::Settings,
         window: std::sync::Arc<winit::window::Window>,
-        gpu: crate::gpu::GpuState,
+        mut gpu: crate::gpu::GpuState,
     ) -> Option<(std::sync::Arc<winit::window::Window>, crate::gpu::GpuState)> {
         if boot_shell_usable(settings) {
             return Some((window, gpu));
         }
+        gpu.set_edit_bindings(Some(EditBindings::from_settings(&settings.keybindings)));
         // 설정한 경로를 입력란에 그대로 넣어 판정 줄이 원인(경로 없음·폴더·실행 권한 없음)을 바로 보인다.
         self.enter_shell_setup_mode(
             window,
@@ -1060,7 +1062,7 @@ impl App {
             return;
         }
         if let (Some(gpu), Some(window)) = (&mut self.shell_setup_gpu, &self.shell_setup_window) {
-            let (_, egui_repaint) = gpu.handle_egui_event(window, &event);
+            let (_, egui_repaint) = gpu.handle_egui_event_with_edit_keys(window, &event);
             let effect = offview_event_effect(&event, egui_repaint);
             if effect.reconfigure_surface {
                 gpu.sync_scale_factor(window);
@@ -1088,6 +1090,7 @@ impl App {
             .latest_settings()
             .map(|s| s.overlay.toast_duration_ms);
         self.reset_boot_screen_feedback(toast_ms);
+        gpu.set_edit_bindings(self.applied_edit_bindings());
         // 렌더 실패 시에도 창은 표시한다.
         if let Some(info) = &self.state.boot_error_info
             && let Err(e) = gpu.render_boot_error(&window, info, &mut self.boot_screen_toasts)
@@ -1146,7 +1149,7 @@ impl App {
             return;
         }
         if let (Some(gpu), Some(window)) = (&mut self.boot_error_gpu, &self.boot_error_window) {
-            let (_, egui_repaint) = gpu.handle_egui_event(window, &event);
+            let (_, egui_repaint) = gpu.handle_egui_event_with_edit_keys(window, &event);
             let effect = offview_event_effect(&event, egui_repaint);
             if effect.reconfigure_surface {
                 gpu.sync_scale_factor(window);
@@ -1164,6 +1167,7 @@ impl App {
     /// 모달에 이벤트를 전달하고 반환한 닫기 요청을 처리한다. 호출자는 이후 일반 창 처리를 하지 않는다.
     fn handle_active_modal_window_event(&mut self, id: WindowId, event: WindowEvent) {
         self.sync_auxiliary_toast_lifetime(id);
+        self.sync_auxiliary_edit_bindings(id);
         let action = if let Some(modal) = self.view.views.get_mut(&id) {
             let mut ctx = ViewCtx {
                 modal_active: false,
@@ -1227,6 +1231,7 @@ impl App {
         self.refresh_approval_presentations();
         self.refresh_preset_editor(id);
         self.sync_auxiliary_toast_lifetime(id);
+        self.sync_auxiliary_edit_bindings(id);
         let modal_active = self.view.is_modal_active();
         let action = {
             if let Some(w) = self.view.views.get_mut(&id) {

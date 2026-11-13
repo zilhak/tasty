@@ -188,7 +188,10 @@ impl View for SettingsView {
         // RedrawRequested는 아래에서 렌더링한다. egui 입력에도 넣으면 재그리기가 반복된다.
         let is_redraw = matches!(&event, WindowEvent::RedrawRequested);
         if !skip_egui && !is_redraw {
-            let (_, egui_repaint) = self.base.gpu.handle_egui_event(&self.base.winit, &event);
+            let (_, egui_repaint) = self
+                .base
+                .gpu
+                .handle_egui_event_with_edit_keys(&self.base.winit, &event);
             if egui_repaint {
                 self.mark_dirty();
             }
