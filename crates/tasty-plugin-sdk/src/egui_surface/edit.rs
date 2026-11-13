@@ -6,7 +6,7 @@
 //!
 //! 결과는 이렇게 정한다.
 //! - 플러그인이 [`report_edit`]이나 `report_edit_outcome`으로 알린 값.
-//! - 포커스를 가진 [`EditField`]가 정한 값. 잘라내기·붙여넣기는 그 입력칸 버퍼와 커서로 정한다.
+//! - 포커스를 가진 [`EditField`]·[`EditProbe`]가 정한 값. 잘라내기·붙여넣기는 그 입력칸 버퍼와 커서로 정한다.
 //! - 복사는 요청 패스에 복사 출력이 났는지로 정한다.
 //! - 그 밖(어댑터를 쓰지 않은 입력칸의 잘라내기·붙여넣기)은 모름이다.
 
@@ -269,18 +269,7 @@ impl<'t> EditField<'t> {
             None => ui.next_auto_id(),
         };
         let ctx = ui.ctx().clone();
-        let claim = ctx
-            .data(|d| d.get_temp::<ActiveEdit>(active_key()))
-            .filter(|a| a.result.is_none() && ctx.memory(|m| m.has_focus(id)))
-            .map(|a| a.edit);
-        let before = claim
-            .as_ref()
-            .map(|_| (self.text.clone(), cursor_range(&ctx, id)));
-        // 읽기 전용 칸의 잘라내기는 위젯이 선택을 접지 않도록 이 패스 입력에서 걷어낸다. 요청 패스에는 그 요청만
-        // 들어 있으므로 다른 입력은 걷지 않는다.
-        if self.read_only && matches!(claim, Some(EditRequestWire::Cut)) {
-            ctx.input_mut(|i| i.events.retain(|e| !matches!(e, Event::Cut)));
-        }
+        let probe = EditProbe::begin(&ctx, id, self.text, self.read_only);
         let output = if self.read_only {
             let mut view: &str = self.text.as_str();
             build(&mut view, self.multiline, id, self.password, customize).show(ui)
@@ -294,10 +283,73 @@ impl<'t> EditField<'t> {
             )
             .show(ui)
         };
-        let (Some(edit), Some((text_before, range))) = (claim, before) else {
-            return output;
+        probe.finish(&ctx, self.text);
+        output
+    }
+}
+
+/// [`EditField`]의 판정을 다른 입력칸 위젯에 붙인다. 위젯을 그리기 전에 [`Self::begin`], 그린 뒤에
+/// [`Self::finish`]를 같은 id·버퍼로 부른다. `egui::TextEdit`을 감싸 그 id 로 상태를 저장하는 위젯
+/// (`tasty_ui_widgets::Input` 등)에 쓴다. 읽기 전용 칸의 잘라내기는 `begin`이 이 패스 입력에서 걷어내므로
+/// 위젯 앞에 반드시 `begin`을 부른다.
+#[must_use = "finish 를 불러야 결과가 정해진다"]
+pub struct EditProbe {
+    id: Id,
+    read_only: bool,
+    /// 포커스를 가진 이 입력칸이 맡은 요청.
+    claim: Option<Claim>,
+}
+
+/// [`EditProbe`]가 맡은 요청과 요청 전의 버퍼·커서 범위.
+struct Claim {
+    edit: EditRequestWire,
+    before: String,
+    range: Option<(usize, usize)>,
+}
+
+impl EditProbe {
+    /// 입력칸 `id`를 그리기 전에 부른다. 이 패스의 요청이 아직 정해지지 않았고 이 입력칸이 포커스를 가졌으면
+    /// 그 요청을 맡는다. 맡은 요청이 읽기 전용 칸의 잘라내기면 위젯이 선택을 접지 않도록 이 패스 입력에서
+    /// 잘라내기를 걷어낸다. 요청 패스에는 그 요청만 들어 있으므로 다른 입력은 걷지 않는다.
+    pub fn begin(ctx: &Context, id: Id, text: &str, read_only: bool) -> Self {
+        let claim = ctx
+            .data(|d| d.get_temp::<ActiveEdit>(active_key()))
+            .filter(|a| a.result.is_none() && ctx.memory(|m| m.has_focus(id)))
+            .map(|a| Claim {
+                edit: a.edit,
+                before: text.to_string(),
+                range: cursor_range(ctx, id),
+            });
+        if read_only
+            && matches!(
+                claim,
+                Some(Claim {
+                    edit: EditRequestWire::Cut,
+                    ..
+                })
+            )
+        {
+            ctx.input_mut(|i| i.events.retain(|e| !matches!(e, Event::Cut)));
+        }
+        Self {
+            id,
+            read_only,
+            claim,
+        }
+    }
+
+    /// 입력칸을 그린 뒤 부른다. 맡은 요청의 결과를 버퍼와 커서로 정한다. 복사는 복사 출력으로 정하므로 여기서
+    /// 정하지 않는다.
+    pub fn finish(self, ctx: &Context, text: &str) {
+        let Some(Claim {
+            edit,
+            before,
+            range,
+        }) = self.claim
+        else {
+            return;
         };
-        let changed = *self.text != text_before;
+        let changed = text != before;
         let acted = match edit {
             EditRequestWire::Cut => !self.read_only && changed,
             // 형식 붙여넣기는 입력칸에 넣을 내용이 없다.
@@ -305,13 +357,11 @@ impl<'t> EditField<'t> {
             // 글자를 넣은 egui 는 선택을 붙여넣은 글자 뒤의 커서로 접고, 빈 글자는 무시해 커서도 그대로 둔다.
             // 요청 패스에는 이 요청만 들어 있으므로 커서 범위가 달라졌다면 붙여넣기가 처리된 것이다.
             EditRequestWire::PasteText { .. } => {
-                changed || !self.read_only && cursor_range(&ctx, id) != range
+                changed || !self.read_only && cursor_range(ctx, self.id) != range
             }
-            // 복사는 복사 출력으로 정한다.
-            EditRequestWire::Copy | EditRequestWire::Unknown => return output,
+            EditRequestWire::Copy | EditRequestWire::Unknown => return,
         };
-        set_result(&ctx, acted_result(acted));
-        output
+        set_result(ctx, acted_result(acted));
     }
 }
 

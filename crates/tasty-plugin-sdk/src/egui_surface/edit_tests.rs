@@ -12,6 +12,8 @@ struct Field {
     password: bool,
     /// 어댑터 대신 egui `TextEdit` 을 직접 그린다.
     plain: bool,
+    /// `plain` 입력칸을 [`EditProbe`] 로 감싼다.
+    probe: bool,
 }
 
 fn params(events: Vec<RawInputEventWire>) -> SurfaceSetContextParams {
@@ -38,9 +40,20 @@ fn field_ui(
     move |ctx: &Context| {
         egui::CentralPanel::default().show(ctx, |ui| {
             let mut output = if field.plain {
-                TextEdit::singleline(&mut *buf)
-                    .id(ui.make_persistent_id(SALT))
-                    .show(ui)
+                let id = ui.make_persistent_id(SALT);
+                let probe = field
+                    .probe
+                    .then(|| EditProbe::begin(ui.ctx(), id, buf, field.read_only));
+                let output = if field.read_only {
+                    let mut view: &str = buf.as_str();
+                    TextEdit::singleline(&mut view).id(id).show(ui)
+                } else {
+                    TextEdit::singleline(&mut *buf).id(id).show(ui)
+                };
+                if let Some(probe) = probe {
+                    probe.finish(ui.ctx(), buf);
+                }
+                output
             } else {
                 EditField::singleline(&mut *buf)
                     .id_salt(SALT)
@@ -300,27 +313,73 @@ fn a_report_for_another_frame_is_not_reused() {
     );
 }
 
+/// 다른 입력칸 위젯을 [`EditProbe`] 로 감싸면 어댑터와 같이 잘라내기·붙여넣기 결과를 정한다.
+#[test]
+fn a_probe_judges_a_field_drawn_by_another_widget() {
+    let field = Field {
+        plain: true,
+        probe: true,
+        ..Field::default()
+    };
+    let mut buf = "hello world".to_string();
+    let (_, outcomes) = run(
+        &mut buf,
+        field,
+        Some((0, 5)),
+        vec![request(21, EditRequestWire::Cut)],
+    );
+    assert_eq!(outcomes, vec![acted(21, Some("hello"))]);
+
+    let mut buf = "hello world".to_string();
+    let paste = EditRequestWire::PasteText {
+        text: "hello".into(),
+    };
+    let (_, outcomes) = run(&mut buf, field, Some((0, 5)), vec![request(22, paste)]);
+    assert_eq!(
+        outcomes,
+        vec![acted(22, None)],
+        "같은 글자로 덮어써도 커서가 움직인다"
+    );
+
+    let mut buf = "hello world".to_string();
+    let (_, outcomes) = run(
+        &mut buf,
+        field,
+        None,
+        vec![request(23, EditRequestWire::Paste)],
+    );
+    assert_eq!(outcomes, vec![not_acted(23)]);
+}
+
 /// 내용 없는 붙여넣기(형식 붙여넣기, 빈 글자)는 egui 가 무시하므로 선택 방향과 관계없이 실행 안 함이다.
 /// 정방향 선택은 커서(primary)가 선택 시작보다 뒤에 있어도 그것이 붙여넣기의 결과는 아니다.
 #[test]
 fn an_empty_paste_does_not_act_whatever_the_selection_direction() {
+    let probe = Field {
+        plain: true,
+        probe: true,
+        ..Field::default()
+    };
     let empty = EditRequestWire::PasteText {
         text: String::new(),
     };
     let mut edit_id = 30;
-    for select in [(0, 5), (5, 0)] {
-        for edit in [EditRequestWire::Paste, empty.clone()] {
-            edit_id += 1;
-            let mut buf = "hello world".to_string();
-            let (surface, outcomes) = run(
-                &mut buf,
-                Field::default(),
-                Some(select),
-                vec![request(edit_id, edit)],
-            );
-            assert_eq!(outcomes, vec![not_acted(edit_id)], "select={select:?}");
-            assert_eq!(buf, "hello world");
-            assert_eq!(selection(&surface), Some(select), "선택도 그대로다");
+    for field in [Field::default(), probe] {
+        for select in [(0, 5), (5, 0)] {
+            for edit in [EditRequestWire::Paste, empty.clone()] {
+                edit_id += 1;
+                let mut buf = "hello world".to_string();
+                let (surface, outcomes) =
+                    run(&mut buf, field, Some(select), vec![request(edit_id, edit)]);
+                assert_eq!(
+                    outcomes,
+                    vec![not_acted(edit_id)],
+                    "probe={} select={select:?}",
+                    field.probe
+                );
+                assert_eq!(buf, "hello world");
+                assert_eq!(selection(&surface), Some(select), "선택도 그대로다");
+            }
         }
     }
 }
@@ -329,36 +388,45 @@ fn an_empty_paste_does_not_act_whatever_the_selection_direction() {
 /// 복사할 수 있다. 요청이 없거나 복사 요청이면 선택이 그대로인 것과 같다.
 #[test]
 fn a_cut_in_a_read_only_field_keeps_the_selection() {
-    let field = Field {
+    let adapter = Field {
         read_only: true,
         ..Field::default()
     };
-    let mut buf = "hello world".to_string();
-    let (surface, outcomes) = run(&mut buf, field, Some((0, 5)), Vec::new());
-    assert!(outcomes.is_empty());
-    assert_eq!(selection(&surface), Some((0, 5)), "대조군: 요청 없음");
+    let probe = Field {
+        read_only: true,
+        plain: true,
+        probe: true,
+        ..Field::default()
+    };
+    for field in [adapter, probe] {
+        let mut buf = "hello world".to_string();
+        let (surface, outcomes) = run(&mut buf, field, Some((0, 5)), Vec::new());
+        assert!(outcomes.is_empty());
+        assert_eq!(selection(&surface), Some((0, 5)), "대조군: 요청 없음");
 
-    let (surface, outcomes) = run(
-        &mut buf,
-        field,
-        Some((0, 5)),
-        vec![request(40, EditRequestWire::Copy)],
-    );
-    assert_eq!(outcomes, vec![acted(40, Some("hello"))]);
-    assert_eq!(selection(&surface), Some((0, 5)), "대조군: 복사");
+        let (surface, outcomes) = run(
+            &mut buf,
+            field,
+            Some((0, 5)),
+            vec![request(40, EditRequestWire::Copy)],
+        );
+        assert_eq!(outcomes, vec![acted(40, Some("hello"))]);
+        assert_eq!(selection(&surface), Some((0, 5)), "대조군: 복사");
 
-    let (mut surface, outcomes) = run(
-        &mut buf,
-        field,
-        Some((0, 5)),
-        vec![request(41, EditRequestWire::Cut)],
-    );
-    assert_eq!(outcomes, vec![not_acted(41)]);
-    assert_eq!(surface.take_copied_text(), None);
-    assert_eq!(buf, "hello world");
-    assert_eq!(
-        selection(&surface),
-        Some((0, 5)),
-        "잘라내기 뒤에도 선택이 남는다"
-    );
+        let (mut surface, outcomes) = run(
+            &mut buf,
+            field,
+            Some((0, 5)),
+            vec![request(41, EditRequestWire::Cut)],
+        );
+        assert_eq!(outcomes, vec![not_acted(41)], "probe={}", field.probe);
+        assert_eq!(surface.take_copied_text(), None);
+        assert_eq!(buf, "hello world");
+        assert_eq!(
+            selection(&surface),
+            Some((0, 5)),
+            "probe={}: 잘라내기 뒤에도 선택이 남는다",
+            field.probe
+        );
+    }
 }

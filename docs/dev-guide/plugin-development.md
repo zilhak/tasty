@@ -401,6 +401,9 @@ SDK(`tasty_plugin_sdk::egui_surface::edit`)가 회신을 만든다.
     글자로 덮어써 버퍼가 같아도 선택이 붙여넣은 글자 뒤의 커서로 접힌다. 내용 없는 붙여넣기(`paste`, 빈 `paste_text`)는
     egui 가 무시해 버퍼도 커서도 그대로이므로 `not_acted`다. 선택 방향(커서가 선택의 어느 끝에 있는지)은 판정에 쓰지 않는다.
     읽기 전용 칸은 `not_acted`다.
+- 다른 입력칸 위젯: `egui::TextEdit`을 감싸 그 id 로 상태를 저장하는 위젯(`tasty_ui_widgets::Input` 등)은
+  `EditProbe::begin(ctx, id, &text, read_only)`를 그리기 전에, `probe.finish(ctx, &text)`를 그린 뒤에 같은 id 로 불러
+  어댑터와 같은 판정을 붙인다. 읽기 전용 칸의 잘라내기를 걷어내는 일은 `begin`이 하므로 `begin`은 위젯보다 먼저 부른다.
 - 복사는 어댑터와 관계없이 요청 패스에 복사 출력이 났으면 `acted`, 아니면 `not_acted`다. 비밀번호 칸은 egui 가 복사하지
   않으므로 `not_acted`다.
 - 보고 API: 패스 안에서 편집을 직접 처리하는 코드는 `edit_request(ctx)`로 요청을 읽고 `report_edit(ctx, acted)`로

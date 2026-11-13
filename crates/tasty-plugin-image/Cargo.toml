@@ -1,6 +1,6 @@
 [package]
 name = "tasty-plugin-image"
-version = "0.1.446"
+version = "0.1.447"
 edition = "2024"
 license = "MIT"
 description = "Image surface viewer / paint canvas plugin (egui-mesh + bitmap texture)"
