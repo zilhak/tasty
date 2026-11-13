@@ -3,6 +3,7 @@
 
 pub(crate) mod base;
 pub(crate) mod file_chooser;
+pub(crate) mod judged_event;
 pub(crate) mod main;
 pub(crate) mod modal;
 pub(crate) mod plugins;
@@ -14,6 +15,7 @@ pub(crate) mod state;
 pub(crate) mod ui;
 
 pub(crate) use base::ViewBase;
+pub(crate) use judged_event::judged_window_event;
 pub(crate) use main::MainView;
 pub(crate) use modal::ModalView;
 pub(crate) use plugins::PluginsView;

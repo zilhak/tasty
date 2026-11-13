@@ -288,20 +288,19 @@ impl SettingsView {
 
         // RedrawRequested는 아래에서 렌더링한다. egui 입력에도 넣으면 재그리기가 반복된다.
         let is_redraw = matches!(&event, WindowEvent::RedrawRequested);
-        if !skip_egui && !is_redraw {
-            let Some((_, egui_repaint)) =
-                self.base
-                    .gpu
-                    .handle_egui_event_for_window(&self.base.winit, &event, judged)
-            else {
-                self.mark_dirty();
-                return ViewAction::None;
-            };
-            if egui_repaint {
-                self.mark_dirty();
-            }
-        }
+        crate::view::judged_window_event(
+            self,
+            event,
+            judged,
+            !skip_egui && !is_redraw,
+            Self::own_event,
+        )
+    }
 
+    /// 편집 키 판정과 egui를 지난 이벤트의 창 자체 처리.
+    fn own_event(&mut self, event: WindowEvent) -> ViewAction {
+        // egui에 넘기는 일은 입력을 쌓기만 하므로 녹화 상태는 판정 앞에서 읽은 값과 같다.
+        let is_recording = self.settings_ui_state.is_recording();
         match event {
             WindowEvent::CloseRequested => {
                 self.should_close = true;

@@ -63,32 +63,43 @@ fn the_main_window_judges_before_egui_winit() {
     }
 }
 
-/// 자체 키 처리를 가진 보조 창은 판정을 거친 입구로만 egui에 넘기고, 판정이 가져간 이벤트는 창 자체
-/// 처리(`match event`)에도 주지 않는다.
+/// 자체 키 처리를 가진 보조 창은 공통 흐름(`crate::view::judged_window_event`)으로만 egui에 넘긴다. 판정이
+/// 가져간 이벤트가 창 자체 처리에 가지 않는 분기는 그 흐름의 시험(`view::judged_event::tests`)이 동작으로
+/// 확인한다. 여기서는 창이 그 흐름을 우회하지 않는지와, 흐름이 판정 결과를 바꾸지 않고 그대로 쓰는지를 본다.
 #[test]
-fn auxiliary_windows_skip_their_own_handling_for_a_taken_key() {
+fn auxiliary_windows_go_through_the_judged_event_flow() {
     for rel in [
         "src/view/settings.rs",
         "src/view/quit.rs",
         "src/view/preset.rs",
         "src/view/plugins.rs",
     ] {
+        let src = std::fs::read_to_string(repo_root().join(rel))
+            .unwrap_or_else(|e| panic!("{rel} 을 읽지 못했다: {e}"));
+        assert!(
+            !strip_comments(&src).contains("handle_egui_event"),
+            "{rel}: 공통 흐름을 거치지 않고 egui에 넘긴다."
+        );
         let body = body(rel, "fn handle_judged_event(");
         assert!(
-            !body.contains(&format!(".{EGUI_WINIT}")),
-            "{rel}: 판정을 거치지 않고 egui-winit에 넘긴다."
-        );
-        assert_before(&body, "handle_egui_event_for_window(", "match event", rel);
-        let taken = body
-            .split("handle_egui_event_for_window(")
-            .nth(1)
-            .and_then(|rest| rest.split("match event").next())
-            .unwrap_or_default();
-        assert!(
-            taken.contains("else {") && taken.contains("return ViewAction::None;"),
-            "{rel}: 판정이 가져간 이벤트를 창 자체 처리 전에 돌려보내지 않는다."
+            body.contains("crate::view::judged_window_event("),
+            "{rel}: 창 이벤트가 공통 흐름을 거치지 않는다."
         );
     }
+    // 줄바꿈·들여쓰기는 rustfmt가 정하므로 공백을 빼고 대조한다.
+    let flow: String = body("src/view/judged_event.rs", "fn judged_window_event<")
+        .split_whitespace()
+        .collect();
+    let call = "base.gpu.handle_egui_event_for_window(&base.winit,event,judged)";
+    let after = flow
+        .split(call)
+        .nth(1)
+        .unwrap_or_else(|| panic!("공통 흐름에 `{call}` 가 없다."));
+    assert!(
+        after.starts_with('}'),
+        "공통 흐름이 판정 결과를 바꿔 넘긴다: `{call}` 뒤에 `{}`",
+        after.chars().take(40).collect::<String>()
+    );
 }
 
 /// 공통 판정이 넘긴 키라는 표시가 HTML 주소 띠의 바인딩 판정 두 곳에 간다. 빠지면 넘긴 복사 키가 같은 키의
