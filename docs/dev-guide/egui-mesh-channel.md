@@ -417,7 +417,9 @@ egui-mesh surface 에 요청을 보내는 경로는 아직 없다.
 `paint`·`repaint_last` 는 egui 패스 직후, 출력이 같아 프레임 송신을 생략하는 판정보다 먼저 이 알림을
 보낸다. `EditOutcome` 회신도 같은 자리에서 `CopyText` 바로 뒤에 보낸다. 선택만 복사하면 화면이 바뀌지 않아
 프레임이 생략되기 때문이다. 알린 값은 소비하므로 `take_copied_text` 로 다시 나오지 않고, 요청 패스가 아닌 패스들의
-복사가 여럿이면 마지막 값을 쓴다. banner 는 키 입력을
+복사가 여럿이면 마지막 값을 쓴다. 한 패스의 복사 값은 SDK(`pick_copied_text`)와 호스트 창의 egui 출력 처리
+(`src/gfx/gpu/text_selection.rs` 의 `take_copied_text`)가 같은 규칙으로 고른다. 마지막 `OutputCommand::CopyText` 의
+값을 쓰고 빈 문자열도 그대로 쓴다. deprecated `PlatformOutput::copied_text` 가 비어 있지 않으면 그 값이 앞선다. banner 는 키 입력을
 받지 않으므로 대상이 아니다. host 는 이 알림을 채널의 plugin id 와 함께 일회성 큐에 담는다
 (`PluginManager::take_copied_texts`, 상한을 넘으면 오래된 결과부터 버린다). 이 함수는 surface·popup
 결과를 함께 꺼낸다. wire 와 결과에는 창 id 가 없으므로 GUI 에서는 pump 직후 한 번 꺼내 대상을 가진
