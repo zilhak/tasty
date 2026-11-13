@@ -19,6 +19,7 @@
 
 ### Added
 
+- **plugin SDK의 `IpcMethodCtx::defer()`로 `handle_ipc_method`가 답을 미룰 수 있다.** 돌려받은 `DeferredReply`를 다른 스레드로 넘기면 처리 스레드는 다음 요청을 받고, 답은 그 스레드가 `DeferredReply::send`로 같은 요청에 보낸다. 호스트가 보낸 호출에서 처리기 안에서만 한 번 가져갈 수 있고(자기 호출이나 끝난 호출의 ctx 복사본이면 `None`), 보내지 않고 버리면 `-32000` 오류로 답한다. 답은 namespace 요청 기한(150초) 안에 보내야 한다.
 - **원격 연결 팝업에서 붙인 workspace가 저장된 원격 행으로 남는다.** 이름·설명·카테고리·위치와 연결 대상(attach 프로필, 원격 workspace id)을 저장하고 재시작 뒤 같은 자리에 돌아와 선택되면 연결한다. 연결이 끊기면 형상을 남긴 채 설정 `[remote_attach] reconnect_timeout_secs`(설정 창 `Keep reconnecting for`, 기본 300초, 0~3600) 동안 다시 연결하고, 그 뒤에는 연결 끊김 행으로 남아 다시 열 때 연결한다. 에이전트가 IPC로 붙인 mirror는 저장하지 않는다.
 - **연결되지 않은 저장된 원격 행은 workspace 가운데의 연결 팝업과 사이드바·rail·상태바 표지로 상태와 이유를 보인다.** 형상이 있던 행은 마지막 화면 위에 scrim 을 깔고, 팝업과 행 메뉴에서 Connect·Reconnect 를 고를 수 있다. 원격 workspace 가 다른 곳에서 닫힌 행은 Reconnect 가 꺼진다. 재연결 시작·성공·포기 toast 는 더 띄우지 않는다.
 - **`workspace.list` 응답에 `remote_row`(`profile`·`remote_workspace`, 저장된 원격 행이 아니면 `null`)가 실린다.**
