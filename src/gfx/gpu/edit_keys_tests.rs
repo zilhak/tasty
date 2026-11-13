@@ -153,12 +153,22 @@ impl Ui {
 
     /// Runs the frame that takes `pending` and lets its output decide the held key. A hold that
     /// waited for earlier input is judged again after that pass, as `GpuState` does, and the edit
-    /// it puts in the input runs in the next frame.
+    /// it puts in the input runs in the next frame. A hold that asks for one more pass (a focus
+    /// move egui applies when the next pass begins) gets an empty frame first.
     fn pass(&mut self, state: &mut EditKeyState<Ev>, pending: Vec<egui::Event>) -> Option<String> {
-        state.input_taken();
+        state.input_taken(&pending);
         let output = self.frame(pending);
         let output = state.after_pass(output, &self.ctx);
         let copied = super::super::text_selection::take_copied_text(output).1;
+        if matches!(
+            state.hold,
+            Some(HostHold {
+                phase: Phase::Settle,
+                ..
+            })
+        ) {
+            return self.pass(state, Vec::new()).or(copied);
+        }
         if !state.needs_rejudge() {
             return copied;
         }
@@ -430,6 +440,33 @@ fn tab_then_paste_follows_the_new_focus() {
     assert_eq!(ui.next, "CLIP");
     assert_eq!(ui.field, "hello");
     assert!(released(&mut state).replay.is_none());
+}
+
+/// Shift+Tab then a bound paste before the same frame: egui moves focus back only when the next
+/// pass begins, and the paste is judged on that focus, not on the field Shift+Tab left.
+#[test]
+fn shift_tab_then_paste_follows_the_focus_of_the_next_pass() {
+    let mut ui = Ui::new();
+    ui.focus("next");
+    let mut state = bound();
+    let mut pending = vec![egui::Event::Key {
+        key: egui::Key::Tab,
+        physical_key: None,
+        pressed: true,
+        repeat: false,
+        modifiers: egui::Modifiers::SHIFT,
+    }];
+    assert_eq!(
+        ui.judge(&mut state, &press("v"), &mut pending, Instant::now()),
+        EguiKey::Taken
+    );
+    ui.pass(&mut state, pending);
+    assert_eq!(ui.field, "helloCLIP");
+    assert_eq!(ui.next, "");
+    assert!(
+        released(&mut state).replay.is_none(),
+        "the paste ran in the field Shift+Tab moved to"
+    );
 }
 
 /// Events after a held key wait behind it in order; a second bound key queues instead of being

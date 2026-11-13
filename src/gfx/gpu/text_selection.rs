@@ -105,7 +105,7 @@ impl GpuState {
     pub fn take_egui_input(&mut self, window: &Window) -> egui::RawInput {
         self.edit_keys_before_input(window);
         let mut raw_input = self.egui_state.take_egui_input(window);
-        self.edit_keys.input_taken();
+        self.edit_keys.input_taken(&raw_input.events);
         let focused = self.focus_tag();
         let pastes = self
             .held_pastes

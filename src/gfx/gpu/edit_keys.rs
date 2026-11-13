@@ -57,8 +57,9 @@ enum Phase {
     /// Input from before the key is still unprocessed. It runs in a pass of its own first, so the
     /// edit is judged on the focus and selection it leaves and its pass holds the edit alone.
     Settle,
-    /// A frame took that earlier input.
-    Settling,
+    /// A frame took that earlier input. `again`: it may move focus at the start of the next pass
+    /// (see [`defers_focus`]), so one more pass runs before the edit is judged.
+    Settling { again: bool },
     /// The earlier input's pass ended: judge the edit again before the next input.
     Rejudge,
     /// Waiting for a native Wayland read asked for the widget tagged `tag`.
@@ -382,12 +383,15 @@ impl<E: HeldEvent> EditKeyState<E> {
         }
     }
 
-    /// A frame took egui's input: an injected edit is now in that pass.
-    pub(crate) fn input_taken(&mut self) {
+    /// A frame took egui's input `events`: an injected edit is now in that pass.
+    pub(crate) fn input_taken(&mut self, events: &[egui::Event]) {
         if let Some(held) = self.hold.as_mut() {
             match held.phase {
                 Phase::Injected => held.phase = Phase::InPass,
-                Phase::Settle => held.phase = Phase::Settling,
+                Phase::Settle => {
+                    let again = events.iter().any(defers_focus);
+                    held.phase = Phase::Settling { again };
+                }
                 _ => {}
             }
         }
@@ -402,9 +406,9 @@ impl<E: HeldEvent> EditKeyState<E> {
         ctx: &egui::Context,
     ) -> egui::PlatformOutput {
         if let Some(held) = self.hold.as_mut()
-            && matches!(held.phase, Phase::Settling)
+            && let Phase::Settling { again } = held.phase
         {
-            held.phase = Phase::Rejudge;
+            held.phase = if again { Phase::Settle } else { Phase::Rejudge };
             return output;
         }
         let Some(held) = self.hold.take_if(|h| matches!(h.phase, Phase::InPass)) else {
@@ -475,7 +479,7 @@ impl<E: HeldEvent> EditKeyState<E> {
                 cancel_read();
                 Outcome::TimedOut
             }
-            Phase::Settle | Phase::Settling | Phase::Rejudge if stale => Outcome::TimedOut,
+            Phase::Settle | Phase::Settling { .. } | Phase::Rejudge if stale => Outcome::TimedOut,
             Phase::Injected if stale => {
                 if retract_edit(events, held.hold.edit()) {
                     Outcome::TimedOut
@@ -778,6 +782,21 @@ fn start(edit: EditKey, cx: KeyCx<'_>) -> Start {
         }
         (EditKey::Paste, _) => return Start::Pass,
     })
+}
+
+/// Input whose focus move egui may apply only at the start of the next pass. egui 0.31 keeps the
+/// focus during the pass that reads Shift+Tab and moves it when the next pass begins
+/// (`Focus::id_next_frame`), and Tab from the last focusable widget hands focus to the first one in
+/// the next pass. The focus read right after that pass is not yet the one an edit would go to.
+fn defers_focus(event: &egui::Event) -> bool {
+    matches!(
+        event,
+        egui::Event::Key {
+            key: egui::Key::Tab,
+            pressed: true,
+            ..
+        }
+    )
 }
 
 /// Input egui has not processed that could move focus or change a selection.
