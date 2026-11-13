@@ -479,7 +479,7 @@ impl MainView {
             if overlay_open || egui_surface {
                 let from = self.base.gpu.egui_input_events_mut().len();
                 let result = self.base.gpu.handle_egui_event(&self.base.winit, &event);
-                self.remap_html_address_keys(engine, &event, from);
+                self.remap_html_address_keys(engine, &event, from, edit_judged.is_some());
                 result
             } else {
                 (false, false)

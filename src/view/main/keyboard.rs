@@ -106,8 +106,7 @@ impl MainView {
             return;
         }
         if overlay_open
-            && edit_judged.is_none()
-            && self.try_consume_address_refresh_key(engine, event)
+            && self.try_consume_address_refresh_key(engine, event, edit_judged.is_some())
         {
             return;
         }
@@ -273,6 +272,7 @@ impl MainView {
         &mut self,
         engine: &EngineRead<'_>,
         event: &winit::event::KeyEvent,
+        clipboard_judged: bool,
     ) -> bool {
         let Some(sid) = self.state.html_address.focused_surface() else {
             return false;
@@ -282,12 +282,14 @@ impl MainView {
         {
             return false;
         }
-        // 같은 키가 편집이나 주소창 포커스에도 묶였으면 그쪽이 이기고 새로고침하지 않는다.
+        // 같은 키가 편집이나 주소창 포커스에도 묶였으면 그쪽이 이기고 새로고침하지 않는다. 공통 판정이
+        // 넘긴 클립보드 편집 키는 그 밖의 바인딩으로 판정한다.
         let key = self.shortcut_lookup_key(event);
         if super::html_address_keys::address_key_action(
             &engine.settings.keybindings,
             &key,
             self.base.state.modifiers,
+            clipboard_judged,
         ) != Some(super::html_address_keys::AddressKeyAction::Refresh)
         {
             return false;

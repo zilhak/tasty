@@ -77,11 +77,19 @@ pub(crate) fn edit_binding_for_key(
 ) -> Option<WebViewEditAction> {
     crate::adapters::ui::input::edit_key::edit_binding(kb, key, mods)
         .map(WebViewEditAction::from)
-        .or_else(|| {
-            AFTER_CLIPBOARD_EDITS.into_iter().find(|a| {
-                super::matches_any_binding(kb.get_bindings(a.field_id()).unwrap_or(&[]), key, mods)
-            })
-        })
+        .or_else(|| edit_binding_after_clipboard(kb, key, mods))
+}
+
+/// 클립보드 편집(복사·잘라내기·붙여넣기)을 뺀 편집 액션. 공통 판정이 클립보드 편집을 이미 판정해
+/// 넘긴 키는 이 범위만 고른다.
+pub(crate) fn edit_binding_after_clipboard(
+    kb: &crate::settings::KeybindingSettings,
+    key: &Key,
+    mods: ModifiersState,
+) -> Option<WebViewEditAction> {
+    AFTER_CLIPBOARD_EDITS.into_iter().find(|a| {
+        super::matches_any_binding(kb.get_bindings(a.field_id()).unwrap_or(&[]), key, mods)
+    })
 }
 
 #[cfg(test)]

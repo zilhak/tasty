@@ -16,7 +16,7 @@ mod window_control;
 mod zoom;
 
 pub(crate) use webview_claims::webview_shortcut_policy;
-pub(crate) use webview_edit::edit_binding_for_key;
+pub(crate) use webview_edit::{edit_binding_after_clipboard, edit_binding_for_key};
 
 pub(crate) use tasty_key_match::{
     any_binding_pressed_egui, consume_binding_egui, matches_any_binding, physical_key_to_logical,

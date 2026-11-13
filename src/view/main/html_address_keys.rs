@@ -20,16 +20,23 @@ pub(super) enum AddressKeyAction {
 
 /// 주소 입력이 포커스를 가진 동안 한 키가 실행할 동작 하나. 여러 바인딩이 겹치면 편집, 주소창 포커스,
 /// 공통 새로고침 순으로 하나만 고른다. 이벤트 바꾸기와 새로고침 키 처리가 같은 판정을 쓴다.
+/// `clipboard_judged`면 공통 판정이 이 키의 클립보드 편집을 이미 판정해 넘겼으므로(동작할 것이 없었다)
+/// 클립보드 편집은 고르지 않고 그 밖의 바인딩을 그대로 판정한다.
 pub(super) fn address_key_action(
     kb: &crate::settings::KeybindingSettings,
     key: &winit::keyboard::Key,
     mods: winit::keyboard::ModifiersState,
+    clipboard_judged: bool,
 ) -> Option<AddressKeyAction> {
     let matches = |field: &str| {
         crate::shortcuts::matches_any_binding(kb.get_bindings(field).unwrap_or(&[]), key, mods)
     };
-    crate::adapters::ui::input::shortcuts::edit_binding_for_key(kb, key, mods)
-        .map(AddressKeyAction::Edit)
+    let edit = if clipboard_judged {
+        crate::adapters::ui::input::shortcuts::edit_binding_after_clipboard(kb, key, mods)
+    } else {
+        crate::adapters::ui::input::shortcuts::edit_binding_for_key(kb, key, mods)
+    };
+    edit.map(AddressKeyAction::Edit)
         .or_else(|| matches("explorer_focus_address").then_some(AddressKeyAction::FocusAddress))
         .or_else(|| {
             crate::shortcuts::matches_any_binding(&kb.refresh, key, mods)
@@ -38,12 +45,14 @@ pub(super) fn address_key_action(
 }
 
 impl MainView {
-    /// egui에 키를 넘긴 뒤 부른다. `from`은 넘기기 전 egui 이벤트 수다.
+    /// egui에 키를 넘긴 뒤 부른다. `from`은 넘기기 전 egui 이벤트 수다. `clipboard_judged`는
+    /// [`address_key_action`]의 같은 인자다.
     pub(super) fn remap_html_address_keys(
         &mut self,
         engine: &EngineRead<'_>,
         event: &WindowEvent,
         from: usize,
+        clipboard_judged: bool,
     ) {
         let Some(sid) = self.state.html_address.focused_surface() else {
             return;
@@ -59,7 +68,8 @@ impl MainView {
             crate::shortcuts::shortcut_lookup_key(&key.logical_key, &key.physical_key, mods);
         // 새로고침은 키 처리 단계(`try_consume_address_refresh_key`)가 실행하고 egui 효과는 그대로 둔다.
         // 클립보드 편집은 공통 판정을 이미 거쳤다. 넘긴 키는 원래 효과를 그대로 둔다.
-        let action = match address_key_action(&engine.settings.keybindings, &lookup, mods) {
+        let keybindings = &engine.settings.keybindings;
+        let action = match address_key_action(keybindings, &lookup, mods, clipboard_judged) {
             None | Some(AddressKeyAction::Refresh) => return,
             Some(AddressKeyAction::Edit(edit)) if is_clipboard_edit(edit) => return,
             Some(action) => action,
@@ -145,23 +155,46 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(
-            address_key_action(&kb, &f5, none),
+            address_key_action(&kb, &f5, none, false),
             Some(AddressKeyAction::Refresh)
         );
         kb.copy = vec!["f5".into()];
         assert_eq!(
-            address_key_action(&kb, &f5, none),
+            address_key_action(&kb, &f5, none, false),
             Some(AddressKeyAction::Edit(WebViewEditAction::Copy))
         );
         kb.copy.clear();
         kb.explorer_focus_address = vec!["f5".into()];
         assert_eq!(
-            address_key_action(&kb, &f5, none),
+            address_key_action(&kb, &f5, none, false),
             Some(AddressKeyAction::FocusAddress)
         );
         assert_eq!(
-            address_key_action(&kb, &Key::Character("q".into()), none),
+            address_key_action(&kb, &Key::Character("q".into()), none, false),
             None
+        );
+    }
+
+    /// 공통 판정이 넘긴 복사 키(복사할 선택이 없음)가 새로고침에도 묶였으면 새로고침한다. 판정 전
+    /// 키는 여전히 편집이 이긴다.
+    #[test]
+    fn a_passed_copy_key_bound_to_refresh_refreshes() {
+        use winit::keyboard::{Key, ModifiersState, NamedKey};
+        let f5 = Key::Named(NamedKey::F5);
+        let none = ModifiersState::empty();
+        let kb = crate::settings::KeybindingSettings {
+            refresh: vec!["f5".into()],
+            copy: vec!["f5".into()],
+            explorer_refresh: Vec::new(),
+            ..Default::default()
+        };
+        assert_eq!(
+            address_key_action(&kb, &f5, none, true),
+            Some(AddressKeyAction::Refresh)
+        );
+        assert_eq!(
+            address_key_action(&kb, &f5, none, false),
+            Some(AddressKeyAction::Edit(WebViewEditAction::Copy))
         );
     }
 
