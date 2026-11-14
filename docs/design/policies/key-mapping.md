@@ -264,7 +264,8 @@ Tasty가 소비한다. 설정되지 않았거나 동작하지 못했으면 원�
   그 보류를 바로 끝낸다(`end_lost_targets`, 판정은 `popup_target_live`). 실행 여부를 모르므로 원래 키는 재생하지 않고 경고도
   남기지 않으며, 그 요청은 더 기다리지 않는다. 줄 선 입력은 그때 바로 재생한다. 이 판정은 같은 pump 의 회신보다 먼저
   한다(`PluginEditHolds::settle`). 그래서 같은 pump 에 닫힘과 회신이 겹쳐도 그 회신은 원래 키를 재생하거나 복사 글자를
-  쓰지 않고 버려진다. surface 대상 보류는 아직 만드는 경로가 없어 surface 닫힘은 판정하지 않는다.
+  쓰지 않고 버려진다. surface 대상 보류는 그 창의 키를 지금도 그 surface 가 받을 때만 살아 있다
+  (`hold_target_live`, `MainView::plugin_surface_key_target`). 닫힌 surface 는 포커스를 가질 수 없으므로 같은 판정으로 끝난다.
 - headless 실행은 키를 붙잡는 창이 없으므로 회신을 pump 직후 꺼내 버린다(`src/boot/headless_plugins.rs`).
 - 플러그인 팝업이 키를 받으면 메인 창이 egui-winit 보다 먼저 판정한다(`src/view/main/plugin_popup_keys.rs`). 키를 받는
   팝업은 렌더와 같은 판정(`MainViewState::popup_key_owner`)으로 정한다. 호스트는 팝업 안 입력칸의 선택을 모르므로
@@ -278,8 +279,22 @@ Tasty가 소비한다. 설정되지 않았거나 동작하지 못했으면 원�
   - 회신과 재생은 키를 보낸 때의 팝업 instance 로 짝짓는다. 요청과 보류는 그 instance 를 대상으로 갖는다. 회신을 적용하기
     전에 그 팝업이 열려 있고 그 창의 키를 지금도 받는지 확인한다. 키 소유자가 바뀌었으면(다른 plugin 팝업이나 호스트 팝업이
     위로 왔다) 그 보류는 원래 키 재생과 복사 없이 끝나고 회신은 버려진다.
-- 편집 요청을 보내는 surface 입력 경로는 아직 없다. 플러그인 surface 의 편집 키는 위 판정 없이 기존 경로(surface 의
-  `Copy`·`Paste` 전달)로 간다.
+- 플러그인 egui-mesh surface 가 키를 받으면 팝업 판정 다음, 호스트 입력칸 판정 앞에서 판정한다
+  (`src/view/main/plugin_surface_keys.rs`). 호스트 egui(팝업·모달·무대)가 키를 받는 동안은 판정하지 않는다.
+  - 회신을 약속한 플러그인의 로컬 surface 만 판정한다. 약속 여부와 그 surface 의 플러그인은 직전 렌더가 기록한 값을 키
+    시점에 읽는다. 판정은 팝업과 같다(바인딩 없음은 `NoBinding`, 빈 클립보드의 붙여넣기는 `Pass`, 그 밖은 원래 키를 App 에
+    맡겨 요청과 보류로 바꾼다). 넘긴 키는 플러그인에 `Key`로 간다.
+  - 회신을 약속하지 않은 플러그인(번들 image 포함)의 surface 는 판정하지 않고 기존 단축키 경로로 간다(`egui_copy` kind 의
+    `Copy`, `egui_paste` kind 의 `Paste` 전달, 그 밖은 터미널 붙여넣기).
+  - 원격 mirror surface 는 원격 결과를 받을 길이 없어 편집 바인딩도 `Pass`다. 편집 이벤트를 보내지 않고 원래 키가 원격
+    플러그인에 `Key`로 간다.
+  - surface 의 편집이 복사한 글자는 그 창의 복사 문이 쓰고 `toast.copied`를 그 surface 범위에 띄운다. 팝업의 편집은 창
+    범위다(`copy_scope`).
+- 명령 팔레트의 복사·잘라내기·붙여넣기는 포커스 surface 가 회신을 약속한 플러그인의 로컬 surface 이면 기존 팔레트 경로보다
+  먼저 그 플러그인에 요청을 보낸다(`MainView::ask_plugin_surface_palette_edit`). 붙여넣기인데 클립보드에 글자가 없으면 보내지
+  않고 끝난다(터미널로 넘기지 않는다). 키가 없으므로 붙잡을 키도 재생할 키도 없다. App 은 팔레트가 실행되는 렌더 뒤에
+  요청을 꺼내 키 없는 요청으로 기록하고(`PluginEditHolds::track`), 창 입력은 줄 세우지 않는다. 회신의 복사 글자만 쓰며,
+  대상을 잃거나 1초가 지나면 결과 없이 끝난다.
 
 ## OS 고유 키 이름 혼용 금지
 

@@ -296,8 +296,9 @@ host 가 받은 **실제 사용자 입력**만 surface-local 좌표로 변환해
 | 키 누름(press-only) | `Key { key: egui Key::name(), … }` | `egui_mesh_push_key` ← `keyboard.rs` `forward_key_to_egui_mesh` |
 | 텍스트 입력 | `Text { text }` | `egui_mesh_push_text` (게이트 `should_forward_text`) |
 | IME 조합(라이브 preedit + commit) | `Ime { event: ImeWire::… }` | `egui_mesh_push_ime` ← `ime.rs` `forward_ime_to_egui_mesh` |
-| 복사 단축키(`egui_copy` capability 를 가진 kind 한정) | `Copy` | `egui_mesh_push_copy` ← `copy_paste.rs` `handle_copy_shortcut` |
-| 붙여넣기 단축키·팔레트 붙여넣기(`egui_paste` capability 를 가진 kind 한정) | `Paste`(클립보드 내용 없음) | `egui_mesh_push_paste` ← `copy_paste.rs` `run_paste` |
+| 복사 단축키(회신을 약속하지 않은 plugin 의 `egui_copy` capability 를 가진 kind 한정) | `Copy` | `egui_mesh_push_copy` ← `copy_paste.rs` `handle_copy_shortcut` |
+| 붙여넣기 단축키·팔레트 붙여넣기(회신을 약속하지 않은 plugin 의 `egui_paste` capability 를 가진 kind 한정) | `Paste`(클립보드 내용 없음) | `egui_mesh_push_paste` ← `copy_paste.rs` `run_paste` |
+| 복사·잘라내기·붙여넣기 바인딩과 팔레트 명령(회신을 약속한 plugin 의 로컬 surface) | `EditRequest { edit_id, edit }` | `queue_plugin_edit_request` ← `src/app/plugin_popup_edit.rs` `begin_plugin_field_edit` |
 
 **스크롤은 한 pass 에 전량 전달된다.** SDK 의 와이어→egui 매핑(`egui_surface.rs` 의
 `push_scroll_events`)이 `Scroll` 한 건을 egui 의 "이미 부드러운 입력" 판정선(8pt) 아래
@@ -393,13 +394,13 @@ non-modal 공지) `BannerPaintFrame` 에는 그 칸이 없다.
 (`tasty-ipc` `mesh_stream`)로 나르고 거기에는 `ime_cursor` 칸이 없다. 원격 mesh surface 를
 편집할 때 후보창은 여전히 마지막 위치나 창 원점 근처에 뜬다.
 
-Copy·Paste 는 위 표대로 각각 `egui_copy`·`egui_paste` capability 를 가진 kind 한정으로 wire 에 있다.
+Copy·Paste 는 위 표대로 회신을 약속하지 않은 plugin 에서 각각 `egui_copy`·`egui_paste` capability 를 가진 kind 한정으로 wire 에 있다.
 `Paste` 는 형식 붙여넣기 신호다. 클립보드 내용을 싣지 않고 SDK 가 내용 없는 `egui::Event::Paste` 로
 바꾸므로, egui `TextEdit` 에 텍스트가 들어가지 않는다 — plugin 이 이벤트를 보고 필요한 형식을 클립보드에서
 직접 읽는다. 텍스트 붙여넣기는 `PasteText { text }` 가 나르고 SDK 가 `egui::Event::Paste(text)` 로 바꿔
 포커스된 `TextEdit` 에 넣는다. `Cut` 은 SDK 가 `egui::Event::Cut` 으로 바꾼다. plugin popup 에는 호스트가 편집 키 판정 뒤
-`PasteText`·`Copy`·`Cut` 을 보낸다(아래 "egui-mesh popup 채널"의 입력 게이트). egui-mesh surface 에는
-`PasteText`·`Cut` 을 아직 보내지 않는다. attach mesh mirror 와 popup 미러 경로에는 Copy·Paste 전달이 없다.
+`PasteText`·`Copy`·`Cut` 을 보낸다(아래 "egui-mesh popup 채널"의 입력 게이트). egui-mesh surface 에는 회신을
+약속한 plugin 에만 아래 `EditRequest` 로 보낸다. attach mesh mirror 와 popup 미러 경로에는 Copy·Paste 전달이 없다.
 
 편집 키 결과를 회신하는 plugin(hello `capabilities` 의 `edit_outcome`)에는 호스트가 위 편집 이벤트 대신
 `EditRequest { edit_id, edit }` 를 보낸다. `edit` 은 `copy`·`cut`·`paste_text { text }`·`paste` 이고 SDK 가 위와
@@ -407,8 +408,9 @@ Copy·Paste 는 위 표대로 각각 `egui_copy`·`egui_paste` capability 를 �
 위치·다음 렌더 요청은 마지막 패스의 것을, 텍스처 변경은 모든 패스의 것을 순서대로 합쳐 프레임 하나로 보낸다. 요청이
 없는 입력은 예전처럼 패스 하나다. plugin 은 요청마다 `PluginEvent::EditOutcome { target, edit_id, result, copied }`
 를 한 번 보낸다. 판정·약속·보고 API 는 [plugin 개발 가이드의 편집 결과 회신](plugin-development.md#편집-결과-회신)에
-있다. 호스트는 지금 플러그인 팝업에만 요청을 보낸다([키 매핑의 플러그인 입력칸](../design/policies/key-mapping.md#플러그인-입력칸)).
-egui-mesh surface 에 요청을 보내는 경로는 아직 없다.
+있다. 호스트는 플러그인 팝업과 로컬 egui-mesh surface 에 요청을 보낸다([키 매핑의 플러그인 입력칸](../design/policies/key-mapping.md#플러그인-입력칸)).
+surface 요청은 `MainView::queue_plugin_edit_request` 가 그 surface 의 다음 컨텍스트 전송 입력 끝에 붙인다. 원격 mirror
+에는 보내지 않는다.
 
 요청과 무관한 복사·잘라내기(id 없는 `Copy`·`Cut` 이벤트, 버튼의 복사 등)의 결과는 프레임과 별개인
 `PluginEvent::CopyText { target, text }` 로 나간다. `EditRequest` 패스의 복사는 `CopyText` 로 보내지 않고 그
@@ -429,7 +431,9 @@ GUI 클립보드가 없어 큐를 버린다. GUI 는 `App::deliver_plugin_copied
 pump 직후 꺼낸다. popup 결과는 그 popup 에 복사·잘라내기를 가장 최근에 보낸 창을 고르고, 결과를 보낸
 plugin 이 지금 열린 그 instance 의 주인일 때만 그 창의 호스트 공통 복사 함수로 쓴다. 호스트 공통 복사
 함수가 클립보드에 쓰고 토스트를 띄운다(창 범위 `toast.copied`). 보낸 창이 없거나 instance 가 닫혔거나
-주인이 다르면 debug 로그만 남긴다. surface 결과는 아직 쓰지 않고 debug 로그만 남긴다.
+주인이 다르면 debug 로그만 남긴다. surface 결과는 결과를 보낸 plugin 이 그 surface 를 직전 렌더에 그린 창을 고르고
+(`MainView::egui_mesh_surface_plugin`), 그 창의 호스트 공통 복사 함수로 쓴다(surface 범위 `toast.copied`). 그 surface 를
+그린 창이 없거나 그린 plugin 이 다르면 debug 로그만 남긴다.
 
 `RawInputEventWire` 는 `#[serde(other)] Unknown` fallback 을 가진다. 이 fallback 이 있는 SDK 로
 빌드한 plugin 은 모르는 입력 이벤트를 `Unknown` 으로 읽고 버리며, 같은 `set_context` 의 나머지

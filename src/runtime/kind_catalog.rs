@@ -27,6 +27,7 @@ pub(crate) struct KindMetadata {
     pub(crate) consumes_egui_input: bool,
     #[cfg(feature = "gui")]
     pub(crate) zoomable: bool,
+    /// 폐기 예정. 회신(`edit_outcome`)을 약속한 plugin 의 surface 에는 효과가 없다(편집 키 판정이 먼저 받는다). 약속하지 않은 plugin 의 surface 에만 복사 단축키를 egui `Copy` 로 보낸다.
     #[cfg(feature = "gui")]
     pub(crate) egui_copy: bool,
     #[cfg(feature = "gui")]

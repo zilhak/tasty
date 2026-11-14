@@ -213,6 +213,7 @@ pub struct SurfaceKindDef {
             reason = "매니페스트 값은 두 빌드에서 저장하고 GUI에서만 읽는다"
         )
     )]
+    /// 폐기 예정. 회신(`edit_outcome`)을 약속한 plugin 의 surface 에는 효과가 없다(편집 키 판정이 먼저 받는다). 약속하지 않은 plugin 의 surface 에만 복사 단축키를 egui `Copy` 로 보낸다.
     pub egui_copy: bool,
     #[cfg_attr(
         all(not(feature = "gui"), not(test)),

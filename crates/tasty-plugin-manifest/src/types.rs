@@ -375,7 +375,7 @@ pub struct SurfaceKindDecl {
     /// 확대 단축키로 이 화면의 글꼴 크기 설정을 바꿀 수 있는지 여부. 기본 false.
     #[serde(default)]
     pub zoomable: bool,
-    /// 복사 단축키를 egui Event::Copy로 전달할지 여부. 기본 false.
+    /// 기본 false. 폐기 예정. 회신(`edit_outcome`)을 약속한 plugin 의 surface 에는 효과가 없다(편집 키 판정이 먼저 받는다). 약속하지 않은 plugin 의 surface 에만 복사 단축키를 egui Event::Copy로 보낸다.
     #[serde(default)]
     pub egui_copy: bool,
     /// 전체 선택·선택 항목 경로 복사를 이 화면이 처리할지 여부. 기본 false.
