@@ -4377,6 +4377,18 @@ help = "Characters to type. Control characters are refused, since the real input
 [cli.help._root.debug.inject.egui-text.arg.window_id]
 help = "Target window, main or auxiliary (Settings, Preset, Plugins). Omit to type into the focused main window"
 
+[cli.help._root.debug.inject.egui-clipboard]
+about = "Put one egui clipboard edit (paste with text, copy or cut) into a window's egui input, skipping the key bindings that a real key goes through"
+
+[cli.help._root.debug.inject.egui-clipboard.arg.op]
+help = "Edit to put: paste, copy or cut"
+
+[cli.help._root.debug.inject.egui-clipboard.arg.text]
+help = "Text to paste. Required for paste and not empty; not used by copy or cut"
+
+[cli.help._root.debug.inject.egui-clipboard.arg.window_id]
+help = "Target main window. Omit to send to the focused main window"
+
 [cli.help._root.debug.plugin-banner]
 about = "Plugin-contributed banner force-open/close, bypassing the owning plugin. Debug builds only — `debug banner` is the host built-in banner instead"
 

@@ -567,6 +567,20 @@ pub(super) fn inject_debug_command_to_method_params(
             }
             ("debug.inject_egui_text", params)
         }
+        InjectDebugCommands::EguiClipboard {
+            op,
+            text,
+            window_id,
+        } => {
+            let mut params = serde_json::json!({ "op": op });
+            if let Some(text) = text {
+                params["text"] = serde_json::json!(text);
+            }
+            if let Some(wid) = window_id {
+                params["window_id"] = serde_json::json!(wid);
+            }
+            ("debug.inject_egui_clipboard", params)
+        }
     }
 }
 
@@ -745,6 +759,38 @@ mod tests {
         for sub in ["egui-mouse", "window-mouse"] {
             assert!(parse(sub, "pixel").is_err(), "{sub}");
         }
+    }
+
+    fn egui_clipboard(args: &[&str]) -> Result<(String, serde_json::Value), clap::Error> {
+        let mut argv = vec!["tasty", "debug", "inject", "egui-clipboard"];
+        argv.extend_from_slice(args);
+        let cli = crate::Cli::try_parse_from(argv)?;
+        let r = crate::request::command_to_request(&cli.command.expect("명령"));
+        Ok((r.method, r.params))
+    }
+
+    /// 붙여넣기는 글자를 싣고, 복사·잘라내기는 글자 없이 가며, 창은 줄 때만 싣는다. 글자 없는
+    /// 붙여넣기와 모르는 편집은 파싱에서 거절한다.
+    #[test]
+    fn egui_clipboard_carries_the_edit_and_its_text() {
+        let method = "debug.inject_egui_clipboard".to_string();
+        assert_eq!(
+            egui_clipboard(&["--op", "paste", "--text", "/tmp/a.md"]).expect("paste"),
+            (
+                method.clone(),
+                json!({ "op": "paste", "text": "/tmp/a.md" })
+            )
+        );
+        assert_eq!(
+            egui_clipboard(&["--op", "cut", "--window-id", "9"]).expect("cut"),
+            (method.clone(), json!({ "op": "cut", "window_id": 9u64 }))
+        );
+        assert_eq!(
+            egui_clipboard(&["--op", "copy"]).expect("copy"),
+            (method, json!({ "op": "copy" }))
+        );
+        assert!(egui_clipboard(&["--op", "paste"]).is_err());
+        assert!(egui_clipboard(&["--op", "select-all"]).is_err());
     }
 
     /// 창을 지정하지 않은 호출은 예전과 같은 요청이고, 지정하면 `window_id`가 실린다.

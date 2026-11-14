@@ -813,6 +813,10 @@ pub const DEBUG_METHODS: &[(&str, MethodMeta)] = &[
         "debug.inject_egui_text",
         local_only(MethodEffect::Mutate).kept_on_every_host_path(),
     ),
+    (
+        "debug.inject_egui_clipboard",
+        local_only(MethodEffect::Mutate).kept_on_every_host_path(),
+    ),
     // 임의 Lua 주입(docs/features/lua-hooks/index.md#실행-격리--안전-장치) — release 에는 이 경로가 없다(사용자 조작 재현). local 전용.
     (
         "debug.lua.eval",

@@ -114,7 +114,7 @@ impl App {
     }
 
     /// 창은 ID로만 고른다. 포커스된 창으로 대신하지 않는다.
-    fn debug_egui_target(
+    pub(super) fn debug_egui_target(
         &mut self,
         params: &serde_json::Value,
     ) -> Result<(u64, &mut dyn View), (i32, String)> {

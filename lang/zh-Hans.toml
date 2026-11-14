@@ -4464,6 +4464,18 @@ help = "要输入的字符。不接受控制字符，因为实际输入路径从
 [cli.help._root.debug.inject.egui-text.arg.window_id]
 help = "目标窗口，主窗口或辅助窗口（设置、预设、插件）。省略则输入到获得焦点的主窗口"
 
+[cli.help._root.debug.inject.egui-clipboard]
+about = "不经过真实按键所走的快捷键判定，向窗口的 egui 输入放入一个剪贴板编辑（粘贴文本、复制或剪切）。"
+
+[cli.help._root.debug.inject.egui-clipboard.arg.op]
+help = "要放入的编辑：paste、copy 或 cut。"
+
+[cli.help._root.debug.inject.egui-clipboard.arg.text]
+help = "要粘贴的文本。paste 需要非空值，copy 和 cut 不使用。"
+
+[cli.help._root.debug.inject.egui-clipboard.arg.window_id]
+help = "目标主窗口。省略时发送到获得焦点的主窗口"
+
 [cli.help._root.debug.plugin-banner]
 about = "绕过所属插件，强制打开或关闭插件提供的横幅。仅限调试构建——`debug banner` 则用于宿主内置横幅"
 

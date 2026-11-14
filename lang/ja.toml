@@ -4302,6 +4302,18 @@ help = "入力する文字です。通常のテキスト入力では送られず
 [cli.help._root.debug.inject.egui-text.arg.window_id]
 help = "対象ウィンドウ。メインまたは補助ウィンドウ（Settings、Preset、Plugins）。省略するとフォーカス中のメインウィンドウに入力します"
 
+[cli.help._root.debug.inject.egui-clipboard]
+about = "実際のキーが通るショートカット判定を経ずに、ウィンドウの egui 入力にクリップボード編集を 1 つ(テキストの貼り付け、コピー、切り取り)入れます。"
+
+[cli.help._root.debug.inject.egui-clipboard.arg.op]
+help = "入れる編集: paste、copy、cut。"
+
+[cli.help._root.debug.inject.egui-clipboard.arg.text]
+help = "貼り付けるテキストです。paste では空でない値が必要で、copy・cut では使いません。"
+
+[cli.help._root.debug.inject.egui-clipboard.arg.window_id]
+help = "対象のメインウィンドウ。省略するとフォーカスされたメインウィンドウに送ります"
+
 [cli.help._root.debug.plugin-banner]
 about = "プラグインを経由せず、そのプラグインのバナーを直接開閉します (debug ビルド専用)。ホストの組み込みバナーには `debug banner` を使います。"
 

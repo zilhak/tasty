@@ -30,6 +30,11 @@ impl App {
                 return self.ipc_handle_debug_egui_to_window(cmd, kind);
             }
         }
+        // 붙여넣기·복사·잘라내기 주입은 창을 지정하지 않아도 App이 메인 창을 고른다.
+        #[cfg(feature = "gui")]
+        if cmd.request.method == "debug.inject_egui_clipboard" {
+            return self.ipc_handle_debug_egui_clipboard(cmd);
+        }
         // 보조 창까지 나열하려면 App 의 창 목록이 필요하다.
         #[cfg(feature = "gui")]
         if cmd.request.method == "debug.window.list" {

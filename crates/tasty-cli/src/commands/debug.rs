@@ -745,6 +745,19 @@ pub enum InjectDebugCommands {
         #[arg(long)]
         window_id: Option<u64>,
     },
+    /// Put one egui clipboard edit (paste with text, copy or cut) into a window's egui input,
+    /// skipping the key bindings that a real key goes through.
+    EguiClipboard {
+        /// Edit to put: paste, copy or cut.
+        #[arg(long, value_parser = ["paste", "copy", "cut"])]
+        op: String,
+        /// Text to paste. Required for paste and not empty; not used by copy or cut.
+        #[arg(long, required_if_eq("op", "paste"))]
+        text: Option<String>,
+        /// Target main window. Omit to send to the focused main window
+        #[arg(long)]
+        window_id: Option<u64>,
+    },
 }
 
 #[cfg(debug_assertions)]
