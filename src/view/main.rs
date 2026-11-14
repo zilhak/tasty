@@ -21,6 +21,7 @@ mod link_menu;
 mod menu_target;
 mod mouse;
 mod move_menu;
+pub(crate) mod plugin_popup_keys;
 mod preset_actions;
 pub(crate) mod redraw;
 mod saved_row_menu;
@@ -60,6 +61,9 @@ pub struct MainView {
     /// The edit a replayed key was already judged as (`edit_keys.rs`). Set by App only while it
     /// replays that key.
     pub(crate) edit_replay: Option<crate::adapters::ui::input::edit_key::EditKey>,
+    /// An edit key a plugin popup's field should try (`plugin_popup_keys.rs`). App takes it right
+    /// after the event and holds the original key until the plugin replies.
+    pub(crate) plugin_edit_ask: Option<plugin_popup_keys::PluginEditAsk>,
     pub(crate) ime_preedit: Option<ImePreeditState>,
     pub(crate) ime_request_target: Option<ime::CompositionTarget>,
     #[cfg(target_os = "linux")]
@@ -233,6 +237,7 @@ impl MainView {
             clipboard,
             pending_terminal_paste: None,
             edit_replay: None,
+            plugin_edit_ask: None,
             ime_preedit: None,
             #[cfg(target_os = "linux")]
             explorer_ime_keys: Default::default(),

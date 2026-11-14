@@ -62,6 +62,10 @@ pub fn draw_plugin_popups(
     state
         .plugin_popup_user_activated
         .retain(|k, _| live_mesh.contains(k));
+    // 닫힌 팝업에 줄 선 편집 요청은 받을 곳이 없다. 그 보류는 App이 대상 닫힘으로 끝낸다.
+    state
+        .plugin_popup_edit_requests
+        .retain(|(k, _)| live_mesh.contains(k));
 
     let screen_rect = ctx.screen_rect();
     let pointer_pos = ctx.input(|i| i.pointer.hover_pos());
@@ -205,13 +209,18 @@ pub fn draw_plugin_popups(
 
         // 아래 팝업에 키가 전달되면 Escape 하나로 여러 팝업이 닫힐 수 있다.
         let has_key_focus = key_target == Some(snap.instance_id);
-        let raw_input = collect_mesh_popup_input(
+        let mut raw_input = collect_mesh_popup_input(
             ctx,
             content_rect,
             pointer_pos,
             ownership == Some(PointOwnership::OccludedByHigher),
             has_key_focus,
         );
+        // 보류한 편집 키의 요청은 이 프레임 입력 뒤에 붙인다. 그 뒤의 입력은 보류 뒤에 줄을 서 있다.
+        raw_input.events.extend(take_edit_requests(
+            &mut state.plugin_popup_edit_requests,
+            snap.instance_id,
+        ));
 
         // 첫 프레임을 받기 전 context를 반복 요청하면 폰트 atlas가 포함된
         // 프레임이 후속 프레임에 대체될 수 있어 초기 요청은 한 번만 보낸다.
@@ -381,6 +390,23 @@ fn place_visible(
             Some((snap, rect))
         })
         .collect()
+}
+
+/// App 이 `instance`에 보내려고 줄 세운 편집 요청을 넣은 순서대로 꺼낸다. 다른 팝업의 요청은 남긴다.
+fn take_edit_requests(
+    queued: &mut Vec<(u64, RawInputEventWire)>,
+    instance: u64,
+) -> Vec<RawInputEventWire> {
+    let mut taken = Vec::new();
+    queued.retain(|(id, event)| {
+        if *id == instance {
+            taken.push(event.clone());
+            false
+        } else {
+            true
+        }
+    });
+    taken
 }
 
 /// 버튼·키 누름이 전달될 때 사용자 활성화로 기록한다.
@@ -1035,6 +1061,23 @@ mod tests {
             got.is_empty(),
             "포커스 없는 팝업에 IME 입력이 전달됐다: {got:?}"
         );
+    }
+
+    /// 보류한 편집 키의 요청은 그 팝업 입력에만 넣은 순서대로 가고, 다른 팝업의 요청은 남는다.
+    #[test]
+    fn edit_requests_reach_only_their_popup_in_order() {
+        use tasty_plugin_protocol::EditRequestWire;
+        let req = |edit_id, edit| RawInputEventWire::EditRequest { edit_id, edit };
+        let mut queued = vec![
+            (1, req(1, EditRequestWire::Copy)),
+            (2, req(2, EditRequestWire::Cut)),
+            (1, req(3, EditRequestWire::Cut)),
+        ];
+        assert_eq!(
+            take_edit_requests(&mut queued, 1),
+            vec![req(1, EditRequestWire::Copy), req(3, EditRequestWire::Cut)]
+        );
+        assert_eq!(queued, vec![(2, req(2, EditRequestWire::Cut))]);
     }
 
     /// 붙여넣기·복사·잘라내기는 키를 받는 팝업에만 그 순서대로 가고, 빈 붙여넣기는 버린다.

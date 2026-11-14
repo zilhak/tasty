@@ -1,0 +1,174 @@
+//! 플러그인 팝업이 키를 받는 동안의 편집 키(복사·잘라내기·붙여넣기) 판정. 공통 판정과 같이 egui-winit보다
+//! 먼저 한 번 한다. 호스트는 팝업 안 입력칸의 선택을 모르므로 미리 소비하지 않는다. 할 수 없음을 아는 경우만
+//! 바로 넘기고, 그 밖은 원래 키를 App에 맡겨 플러그인 회신으로 소비·재생을 정한다.
+//! 계약: `docs/design/policies/key-mapping.md`의 "플러그인 입력칸" 절.
+
+use winit::event::{ElementState, WindowEvent};
+
+use super::MainView;
+use crate::adapters::ui::input::edit_key::{Capability, EditBindings, EditKey, Verdict, verdict};
+use crate::gfx::gpu::edit_keys::EguiKey;
+use crate::runtime::engine_read::EngineRead;
+
+/// 플러그인 팝업에 보낼 편집. App이 요청을 만들고 원래 키를 보류한다. 플러그인이 회신을 약속하지 않았으면
+/// App이 원래 키를 넘긴 편집으로 재생한다.
+#[derive(Debug, Clone)]
+pub(crate) struct PluginEditAsk {
+    /// 키를 보낸 때 키를 받던 팝업 instance. 회신과 재생은 이 팝업으로 짝짓는다.
+    pub(crate) instance: u64,
+    pub(crate) edit: EditKey,
+    /// 붙여넣을 글자. 붙여넣기에만 있다.
+    pub(crate) text: Option<String>,
+    pub(crate) original: WindowEvent,
+}
+
+impl PluginEditAsk {
+    /// 플러그인에 보낼 요청 내용.
+    pub(crate) fn wire(&self) -> tasty_plugin_protocol::EditRequestWire {
+        use tasty_plugin_protocol::EditRequestWire as W;
+        match (self.edit, &self.text) {
+            (EditKey::Copy, _) => W::Copy,
+            (EditKey::Cut, _) => W::Cut,
+            (EditKey::Paste, text) => W::PasteText {
+                text: text.clone().unwrap_or_default(),
+            },
+        }
+    }
+}
+
+/// 플러그인 팝업 대상의 능력. 붙여넣기는 클립보드에 글자가 없으면 할 수 없다. 그 밖은 회신을 봐야 안다.
+fn popup_capability(edit: EditKey, clipboard_text: bool) -> Capability {
+    match edit {
+        EditKey::Paste if !clipboard_text => Capability::No,
+        _ => Capability::Unknown,
+    }
+}
+
+impl MainView {
+    /// 키를 받는 팝업이 플러그인 팝업일 때의 편집 키 판정. 다른 대상이면 `None`이고 공통 판정이 받는다.
+    /// 호스트 입력칸의 보류가 있으면 그 판정이 이 키를 줄 세우도록 `None`이다.
+    pub(super) fn judge_plugin_popup_edit_key(
+        &mut self,
+        engine: &EngineRead<'_>,
+        event: &WindowEvent,
+    ) -> Option<EguiKey> {
+        let WindowEvent::KeyboardInput { event: key, .. } = event else {
+            return None;
+        };
+        let instance = self.state.plugin_popup_key_target()?;
+        if self.base.gpu.edit_keys_busy() {
+            return None;
+        }
+        if key.state != ElementState::Pressed {
+            return Some(EguiKey::Free);
+        }
+        let mods = self.base.state.modifiers;
+        let lookup =
+            crate::shortcuts::shortcut_lookup_key(&key.logical_key, &key.physical_key, mods);
+        let binding =
+            EditBindings::from_settings(&engine.settings.keybindings).binding(&lookup, mods);
+        // 붙여넣을 글자는 키 시점에 그 팝업을 위해 읽는다(네이티브 Wayland 읽기의 대상 표시).
+        self.base.gpu.set_plugin_paste_target(Some(instance));
+        let mut text = None;
+        let judged = verdict(binding, |edit| {
+            if edit == EditKey::Paste {
+                text = self.base.gpu.plugin_paste_text();
+            }
+            popup_capability(edit, text.is_some())
+        });
+        Some(match judged {
+            Verdict::NoBinding => EguiKey::Free,
+            Verdict::Pass(edit) => EguiKey::Pass(edit),
+            Verdict::Act(edit) | Verdict::Hold(edit) => {
+                self.plugin_edit_ask = Some(PluginEditAsk {
+                    instance,
+                    edit,
+                    text,
+                    original: event.clone(),
+                });
+                EguiKey::Taken
+            }
+        })
+    }
+
+    /// App이 창 view 처리 뒤 꺼내는 플러그인 편집.
+    pub(crate) fn take_plugin_edit_ask(&mut self) -> Option<PluginEditAsk> {
+        self.plugin_edit_ask.take()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 빈 클립보드의 붙여넣기는 할 수 없음을 알아 넘긴다. 복사·잘라내기와 글자가 있는 붙여넣기는 플러그인
+    /// 회신을 기다린다. 바인딩이 아니면 판정하지 않는다.
+    #[test]
+    fn a_plugin_popup_waits_for_the_reply_unless_the_paste_is_empty() {
+        let judge = |binding, clip| verdict(binding, |edit| popup_capability(edit, clip));
+        assert_eq!(
+            judge(Some(EditKey::Paste), false),
+            Verdict::Pass(EditKey::Paste)
+        );
+        assert_eq!(
+            judge(Some(EditKey::Paste), true),
+            Verdict::Hold(EditKey::Paste)
+        );
+        assert_eq!(
+            judge(Some(EditKey::Copy), false),
+            Verdict::Hold(EditKey::Copy)
+        );
+        assert_eq!(
+            judge(Some(EditKey::Cut), false),
+            Verdict::Hold(EditKey::Cut)
+        );
+        assert_eq!(judge(None, true), Verdict::NoBinding);
+    }
+
+    fn ask(edit: EditKey, text: Option<&str>) -> PluginEditAsk {
+        PluginEditAsk {
+            instance: 7,
+            edit,
+            text: text.map(str::to_string),
+            original: WindowEvent::Focused(true),
+        }
+    }
+
+    /// 편집 키 판정은 egui-winit 앞에서 끝난다. 그래서 키 경로는 egui-winit 이 만든 기본 `Cut`·`Copy`·`Paste`를 지우지
+    /// 않는다. egui-winit 결과를 고치는 것은 HTML 주소 띠 재해석 하나뿐이다. 바인딩이 아닌 기본 편집 키를 지우는 코드가
+    /// 이 자리에 다시 생기면 실패한다.
+    #[test]
+    fn the_key_path_keeps_egui_winit_edit_events() {
+        let src = include_str!("../main.rs");
+        let (_, after) = src
+            .split_once("let result = self.base.gpu.handle_egui_event(&self.base.winit, &event);")
+            .expect("키 경로의 egui-winit 호출을 찾지 못했다");
+        let (block, _) = after
+            .split_once("\n                result\n")
+            .expect("키 경로 블록의 끝을 찾지 못했다");
+        let statements: Vec<&str> = block
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty() && !line.starts_with("//"))
+            .collect();
+        assert_eq!(
+            statements,
+            ["self.remap_html_address_keys(engine, &event, from, edit_judged.is_some());"],
+            "egui-winit 뒤 이벤트를 고치는 코드가 늘었다"
+        );
+    }
+
+    /// 요청 내용은 편집과 붙여넣을 글자 그대로다.
+    #[test]
+    fn the_request_carries_the_edit_and_the_pasted_text() {
+        use tasty_plugin_protocol::EditRequestWire as W;
+        assert_eq!(ask(EditKey::Copy, None).wire(), W::Copy);
+        assert_eq!(ask(EditKey::Cut, None).wire(), W::Cut);
+        assert_eq!(
+            ask(EditKey::Paste, Some("/tmp/a.md")).wire(),
+            W::PasteText {
+                text: "/tmp/a.md".into()
+            }
+        );
+    }
+}

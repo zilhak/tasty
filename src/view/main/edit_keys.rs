@@ -33,6 +33,9 @@ impl MainView {
         if let Some(edit) = self.edit_replay.take() {
             return EguiKey::Pass(edit);
         }
+        if let Some(judged) = self.judge_plugin_popup_edit_key(engine, event) {
+            return judged;
+        }
         let keyboard = matches!(event, WindowEvent::KeyboardInput { .. });
         let target = keyboard && self.edit_key_target(engine);
         let explorer = keyboard

@@ -41,13 +41,6 @@ pub(crate) struct ResolvedPluginEdit {
 impl PluginEditHolds {
     /// 플러그인에 편집 요청을 보낸 원래 키를 붙잡는다. 회신이 없으면 재생하지 않는다(실행됐을 수 있다).
     /// 이미 보류가 있는 창에서는 부르지 않는다. 그 창의 키는 [`Self::queue`]로 줄을 선다.
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "the plugin popup and surface edit paths create these holds"
-        )
-    )]
     pub(crate) fn hold(
         &mut self,
         window: WindowId,

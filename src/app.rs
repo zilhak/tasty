@@ -77,6 +77,8 @@ pub(crate) mod plugin_file_lifecycle;
 #[cfg(feature = "gui")]
 pub(crate) mod plugin_glue;
 pub(crate) mod plugin_lifecycle;
+#[cfg(feature = "gui")]
+mod plugin_popup_edit;
 pub(crate) mod preset_commands;
 pub(crate) mod process_exit;
 pub(crate) mod publication_input;

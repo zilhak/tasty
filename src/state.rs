@@ -245,6 +245,8 @@ impl RequestContext {
             #[cfg(feature = "gui")]
             plugin_popup_key_candidates: Vec::new(),
             #[cfg(feature = "gui")]
+            plugin_popup_edit_requests: Vec::new(),
+            #[cfg(feature = "gui")]
             banner_layer: None,
             #[cfg(feature = "gui")]
             modifier_hint_layer: None,

@@ -166,6 +166,9 @@ pub struct MainViewState {
     /// 키를 받을 팝업 판정(`popup_key_owner`)의 plugin 후보다.
     #[cfg(feature = "gui")]
     pub(crate) plugin_popup_key_candidates: Vec<(u64, u64)>,
+    /// 다음 렌더에 플러그인 팝업 입력으로 보낼 편집 요청(instance id, 요청). App이 원래 키를 보류하며 넣는다.
+    #[cfg(feature = "gui")]
+    pub(crate) plugin_popup_edit_requests: Vec<(u64, tasty_plugin_protocol::RawInputEventWire)>,
     /// 이전 프레임에 플러그인 팝업을 실제로 배치한 범위. 좁은 surface 라 창 범위로 연
     /// 팝업의 자식 파일 피커가 선언이 아니라 이 범위를 따른다. 숨은 팝업은 들어 있지 않다.
     #[cfg(feature = "gui")]

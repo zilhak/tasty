@@ -46,6 +46,20 @@ impl GpuState {
         }
     }
 
+    /// The clipboard text a paste key sent to the plugin popup receiving keys would insert, read at
+    /// key time; `None` when there is nothing to paste. A native Wayland read of another app's
+    /// selection is not waited for: it is cancelled and the key passes on unconsumed.
+    pub(crate) fn plugin_paste_text(&mut self) -> Option<String> {
+        let tag = self.focus_tag();
+        match self.text_selection.as_mut() {
+            Some(selection) => selection.request_held_text(tag).unwrap_or_else(|| {
+                selection.cancel();
+                None
+            }),
+            None => self.egui_state.clipboard_text().filter(|t| !t.is_empty()),
+        }
+    }
+
     /// The plugin popup that receives this window's keys, set by the window before keys reach egui
     /// and before each egui frame. A paste asked while it is set is meant for that popup.
     pub fn set_plugin_paste_target(&mut self, instance: Option<u64>) {

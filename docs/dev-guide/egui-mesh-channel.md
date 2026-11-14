@@ -407,7 +407,8 @@ Copy·Paste 는 위 표대로 각각 `egui_copy`·`egui_paste` capability 를 �
 위치·다음 렌더 요청은 마지막 패스의 것을, 텍스처 변경은 모든 패스의 것을 순서대로 합쳐 프레임 하나로 보낸다. 요청이
 없는 입력은 예전처럼 패스 하나다. plugin 은 요청마다 `PluginEvent::EditOutcome { target, edit_id, result, copied }`
 를 한 번 보낸다. 판정·약속·보고 API 는 [plugin 개발 가이드의 편집 결과 회신](plugin-development.md#편집-결과-회신)에
-있다. 지금 호스트에는 요청을 보내는 경로가 아직 없다.
+있다. 호스트는 지금 플러그인 팝업에만 요청을 보낸다([키 매핑의 플러그인 입력칸](../design/policies/key-mapping.md#플러그인-입력칸)).
+egui-mesh surface 에 요청을 보내는 경로는 아직 없다.
 
 요청과 무관한 복사·잘라내기(id 없는 `Copy`·`Cut` 이벤트, 버튼의 복사 등)의 결과는 프레임과 별개인
 `PluginEvent::CopyText { target, text }` 로 나간다. `EditRequest` 패스의 복사는 `CopyText` 로 보내지 않고 그

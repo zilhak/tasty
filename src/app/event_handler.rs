@@ -1252,6 +1252,7 @@ impl App {
             }
         }
         self.process_preset_edits(id);
+        self.begin_plugin_popup_edit(id);
         if self.view.views.contains_key(&id) {
             match action {
                 ViewAction::None => {}
