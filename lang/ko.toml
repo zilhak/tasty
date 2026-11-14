@@ -3919,7 +3919,7 @@ help = "범위: window, workspace, pane, surface"
 help = "window가 아닌 범위의 워크스페이스·pane·surface ID"
 
 [cli.help._root.debug.toast.arg.window_id]
-help = "대상 윈도우. 메인 또는 보조 윈도우(Settings, Preset, Plugins). 메인 윈도우가 정확히 하나일 때만 생략 가능"
+help = "대상 윈도우. 메인 또는 보조 윈도우(설정, 프리셋, 플러그인). 메인 윈도우가 정확히 하나일 때만 생략 가능"
 
 [cli.help._root.debug.toast.arg.kind]
 help = "종류: info, success, warning, error"
@@ -4123,7 +4123,7 @@ help = "대체 화면에 진입하지 않고 기본 화면에 유지"
 about = "포커스된 서피스 ID 덤프(debug 빌드 전용). 포커스된 뷰를 읽기만 하며 변경하지 않음"
 
 [cli.help._root.debug.windows]
-about = "보조 윈도우(설정·Preset·Plugins·종료 확인 등)까지 모든 윈도우를 나열(debug 빌드 전용). egui 주입 명령과 `debug toast` 의 `--window-id` 에 넘길 윈도우 ID 를 준다. release `window list` 는 메인 윈도우만 다룸"
+about = "보조 윈도우(설정·프리셋·플러그인·종료 확인 등)까지 모든 윈도우를 나열(debug 빌드 전용). egui 주입 명령과 `debug toast` 의 `--window-id` 에 넘길 윈도우 ID 를 준다. release `window list` 는 메인 윈도우만 다룸"
 
 [cli.help._root.debug.surface-rect]
 about = "활성 탭에 있는 서피스의 화면 사각형을 물리 픽셀로 덤프(debug 빌드 전용). 터미널이 아닌 서피스도 되며, 화면에 없으면 null"
@@ -4279,10 +4279,10 @@ help = "세로 스크롤 변화량(`--event-type scroll`과 함께 사용)"
 help = "이 이벤트부터 egui가 누른 것으로 보는 수식 키(쉼표로 구분한 `shift`·`ctrl`·`alt`·`command`, 모두 떼려면 `none`, 생략하면 그대로 유지)"
 
 [cli.help._root.debug.inject.egui-mouse.arg.window_id]
-help = "대상 윈도우. 메인 또는 보조 윈도우(Settings, Preset, Plugins). 주면 fx/fy 는 그 윈도우 전체 기준이고 --surface 는 함께 쓸 수 없습니다"
+help = "대상 윈도우. 메인 또는 보조 윈도우(설정, 프리셋, 플러그인). 주면 fx/fy 는 그 윈도우 전체 기준이고 --surface 는 함께 쓸 수 없습니다"
 
 [cli.help._root.debug.inject.egui-key]
-about = "실제 키가 egui-winit을 거쳐 닿는 모양으로 egui 계층에 키 이벤트 주입. command를 누른 채 C, X, V를 누르면 복사, 잘라내기, 붙여넣기가 되고 붙여넣기는 egui-winit 클립보드를 읽습니다"
+about = "egui-winit이 실제 키를 전달하는 방식으로 egui 계층에 키 이벤트 주입. command를 누른 채 C, X, V를 누르면 각각 복사, 잘라내기, 붙여넣기가 되며, 붙여넣기는 egui-winit 클립보드를 읽습니다"
 
 [cli.help._root.debug.inject.egui-key.arg.key]
 help = "egui 키 이름(예: `Enter`, `Escape`, `ArrowDown`)"
@@ -4294,7 +4294,7 @@ help = "누르기(기본값) 또는 `--pressed false`로 떼기. 값 없이 `--p
 help = "이 키부터 egui가 누른 것으로 보는 수식 키(쉼표로 구분한 `shift`·`ctrl`·`alt`·`command`, 모두 떼려면 `none`, 생략하면 누른 상태 유지)"
 
 [cli.help._root.debug.inject.egui-key.arg.window_id]
-help = "대상 윈도우. 메인 또는 보조 윈도우(Settings, Preset, Plugins). 생략하면 포커스된 메인 윈도우로 보냅니다"
+help = "대상 윈도우. 메인 또는 보조 윈도우(설정, 프리셋, 플러그인). 생략하면 포커스된 메인 윈도우로 보냅니다"
 
 [cli.help._root.debug.inject.egui-text]
 about = "GUI 빌드의 포커스된 egui 텍스트 필드에 물리 키 입력 없이 문자를 넣습니다. Enter·Tab·Backspace는 egui-key를 사용합니다"
@@ -4303,19 +4303,19 @@ about = "GUI 빌드의 포커스된 egui 텍스트 필드에 물리 키 입력 �
 help = "입력할 문자입니다. 일반 텍스트 입력에서 전달하지 않고 텍스트 필드도 무시하는 제어문자는 사용할 수 없습니다."
 
 [cli.help._root.debug.inject.egui-text.arg.window_id]
-help = "대상 윈도우. 메인 또는 보조 윈도우(Settings, Preset, Plugins). 생략하면 포커스된 메인 윈도우에 입력합니다"
+help = "대상 윈도우. 메인 또는 보조 윈도우(설정, 프리셋, 플러그인). 생략하면 포커스된 메인 윈도우에 입력합니다"
 
 [cli.help._root.debug.inject.egui-clipboard]
-about = "실제 키가 거치는 단축키 판정 없이 윈도우의 egui 입력에 클립보드 편집 하나(텍스트를 붙여넣기, 복사, 잘라내기)를 넣습니다."
+about = "실제 키가 거치는 단축키 판정 없이 윈도우의 egui 입력에 클립보드 편집 하나(텍스트 붙여넣기, 복사, 잘라내기) 주입"
 
 [cli.help._root.debug.inject.egui-clipboard.arg.op]
-help = "넣을 편집: paste, copy, cut."
+help = "주입할 편집: paste, copy, cut"
 
 [cli.help._root.debug.inject.egui-clipboard.arg.text]
-help = "붙여넣을 텍스트입니다. paste에는 비어 있지 않은 값이 필요하고 copy·cut에는 쓰지 않습니다."
+help = "붙여넣을 텍스트. paste에는 비어 있지 않은 값이 필요하고 copy·cut에는 쓰지 않습니다"
 
 [cli.help._root.debug.inject.egui-clipboard.arg.window_id]
-help = "대상 윈도우. 메인 또는 보조 윈도우(Settings, Preset, Plugins). 생략하면 포커스된 메인 윈도우로 보냅니다"
+help = "대상 윈도우. 메인 또는 보조 윈도우(설정, 프리셋, 플러그인). 생략하면 포커스된 메인 윈도우로 보냅니다"
 
 [cli.help._root.debug.plugin-banner]
 about = "플러그인을 거치지 않고 해당 플러그인의 배너를 직접 열거나 닫습니다(debug 빌드 전용). 호스트 내장 배너는 `debug banner`로 다룹니다."

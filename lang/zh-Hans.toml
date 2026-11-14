@@ -4444,7 +4444,7 @@ help = "egui 从此事件起视为按住的修饰键（以逗号分隔的 `shift
 help = "目标窗口，主窗口或辅助窗口（设置、预设、插件）。指定后 fx/fy 相对于整个窗口，且不接受 --surface"
 
 [cli.help._root.debug.inject.egui-key]
-about = "按真实按键经 egui-winit 到达的形式向 egui 层注入按键事件。按住 command 时按下 C、X、V 分别成为复制、剪切、粘贴，粘贴读取 egui-winit 剪贴板"
+about = "按 egui-winit 传递真实按键的方式向 egui 层注入按键事件。按住 command 时按下 C、X、V 分别成为复制、剪切、粘贴，粘贴读取 egui-winit 剪贴板"
 
 [cli.help._root.debug.inject.egui-key.arg.key]
 help = "egui 按键名称（如 `Enter`、`Escape`、`ArrowDown`）"
@@ -4453,7 +4453,7 @@ help = "egui 按键名称（如 `Enter`、`Escape`、`ArrowDown`）"
 help = "按下（默认）或用 `--pressed false` 释放。单独的 `--pressed` 表示 true"
 
 [cli.help._root.debug.inject.egui-key.arg.modifiers]
-help = "egui 从此按键起视为按住的修饰键（以逗号分隔的 `shift`、`ctrl`、`alt`、`command`，或用 `none` 释放；省略则保持按住状态）"
+help = "egui 从此按键起视为按住的修饰键（以逗号分隔的 `shift`、`ctrl`、`alt`、`command`，或用 `none` 全部释放；省略则保持按住状态）"
 
 [cli.help._root.debug.inject.egui-key.arg.window_id]
 help = "目标窗口，主窗口或辅助窗口（设置、预设、插件）。省略则发送到获得焦点的主窗口"
@@ -4468,13 +4468,13 @@ help = "要输入的字符。不接受控制字符，因为实际输入路径从
 help = "目标窗口，主窗口或辅助窗口（设置、预设、插件）。省略则输入到获得焦点的主窗口"
 
 [cli.help._root.debug.inject.egui-clipboard]
-about = "不经过真实按键所走的快捷键判定，向窗口的 egui 输入放入一个剪贴板编辑（粘贴文本、复制或剪切）。"
+about = "不经过真实按键所走的快捷键判定，向窗口的 egui 输入放入一个剪贴板编辑（粘贴文本、复制或剪切）"
 
 [cli.help._root.debug.inject.egui-clipboard.arg.op]
-help = "要放入的编辑：paste、copy 或 cut。"
+help = "要放入的编辑：paste、copy 或 cut"
 
 [cli.help._root.debug.inject.egui-clipboard.arg.text]
-help = "要粘贴的文本。paste 需要非空值，copy 和 cut 不使用。"
+help = "要粘贴的文本。paste 需要非空值，copy 和 cut 不使用"
 
 [cli.help._root.debug.inject.egui-clipboard.arg.window_id]
 help = "目标窗口，主窗口或辅助窗口（设置、预设、插件）。省略则发送到获得焦点的主窗口"
