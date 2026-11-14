@@ -1,6 +1,6 @@
 //! 플러그인 egui 입력칸의 복사 결과를 창으로 보낸다. pump 뒤 같은 tick에서 popup·surface 결과를
-//! 한 번에 꺼내고, 각 결과를 소유를 확인한 창의 공통 복사 함수(쓰기와 토스트)로 넘긴다.
-//! egui-mesh surface의 결과는 아직 소비하지 않고 debug 로그만 남긴다.
+//! 한 번에 꺼내고, 각 결과를 소유를 확인한 창의 공통 복사 함수(쓰기와 토스트)로 넘긴다. 편집 요청의
+//! 회신에 실린 복사는 이 경로가 아니라 보류를 푸는 곳(`plugin_edit_holds`)이 쓴다.
 
 use std::collections::HashMap;
 
@@ -38,6 +38,36 @@ fn popup_copy_window<W>(
         .ok_or(PopupCopyDrop::NoEditingWindow)
 }
 
+/// surface 복사 결과를 어느 창에도 보내지 않은 이유.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SurfaceCopyDrop {
+    /// 그 surface 를 그리는 창이 없다(닫혔거나 아직 그리지 않았다).
+    NotShown,
+    /// 그 surface 를 그리는 창의 기록으로는 결과를 보낸 플러그인이 그 surface 의 주인이 아니다.
+    NotOwner,
+}
+
+/// surface 복사 결과를 받을 창. `shown`은 창마다 그 surface 를 직전 렌더에 그린 플러그인이다. 결과를 보낸
+/// 플러그인이 그린 첫 창 하나만 고르므로 결과가 한 번만 쓰인다.
+fn surface_copy_window<'a, W>(
+    plugin_id: &str,
+    shown: impl IntoIterator<Item = (W, Option<&'a str>)>,
+) -> Result<W, SurfaceCopyDrop> {
+    let mut seen = false;
+    for (window, owner) in shown {
+        match owner {
+            Some(owner) if owner == plugin_id => return Ok(window),
+            Some(_) => seen = true,
+            None => {}
+        }
+    }
+    Err(if seen {
+        SurfaceCopyDrop::NotOwner
+    } else {
+        SurfaceCopyDrop::NotShown
+    })
+}
+
 impl App {
     /// pump가 받은 플러그인 복사 결과를 모두 꺼내 처리한다.
     pub(super) fn deliver_plugin_copied_texts(&mut self) {
@@ -63,11 +93,34 @@ impl App {
                     self.deliver_popup_copy(&plugin_id, instance, &text, &owners);
                 }
                 PluginCopyTarget::Surface(surface) => {
-                    tracing::debug!(
-                        "plugin '{plugin_id}' copy for surface {surface} dropped: surface copies are not consumed"
+                    self.deliver_surface_copy(&plugin_id, surface, &text);
+                }
+            }
+        }
+    }
+
+    fn deliver_surface_copy(&mut self, plugin_id: &str, surface: u32, text: &str) {
+        let shown = self.view.views.iter().map(|(id, view)| {
+            let owner = view
+                .as_main()
+                .and_then(|main| main.egui_mesh_surface_plugin(surface));
+            (*id, owner)
+        });
+        match surface_copy_window(plugin_id, shown) {
+            Ok(id) => {
+                if let Some(main) = self.view.views.get_mut(&id).and_then(|v| v.as_main_mut()) {
+                    main.copy_text(
+                        text,
+                        false,
+                        "toast.copied",
+                        Vec::new(),
+                        crate::adapters::ui::ToastScope::Surface(surface),
                     );
                 }
             }
+            Err(reason) => tracing::debug!(
+                "plugin '{plugin_id}' copy for surface {surface} dropped: {reason:?}"
+            ),
         }
     }
 
@@ -110,6 +163,24 @@ mod tests {
         assert_eq!(popup_copy_window("p", Some("p"), sent), Ok("b"));
     }
 
+    /// surface 결과는 그 surface 를 그린 플러그인이 보낸 것만 그 창이 받는다. 그리는 창이 없거나 다른 플러그인이
+    /// 그린 surface 의 결과는 쓰지 않는다.
+    #[test]
+    fn a_surface_copy_goes_only_to_a_window_where_its_plugin_draws_it() {
+        assert_eq!(
+            surface_copy_window("p", [("a", None), ("b", Some("p"))]),
+            Ok("b")
+        );
+        assert_eq!(
+            surface_copy_window("p", [("a", None)]),
+            Err(SurfaceCopyDrop::NotShown)
+        );
+        assert_eq!(
+            surface_copy_window("p", [("a", Some("q"))]),
+            Err(SurfaceCopyDrop::NotOwner)
+        );
+    }
+
     /// 닫힌 팝업, 다른 플러그인의 결과, 편집을 보낸 창이 없는 결과는 어느 창도 받지 않는다.
     #[test]
     fn closed_foreign_or_unrequested_copies_are_dropped() {
@@ -126,5 +197,25 @@ mod tests {
             popup_copy_window("p", Some("p"), [("a", None)]),
             Err(PopupCopyDrop::NoEditingWindow)
         );
+    }
+
+    /// 창 고르기 앞뒤의 연결은 `MainView` 없이 시험할 수 없어 소스로 고정한다. surface 결과는 그 창이 그린
+    /// 플러그인 기록으로 고르고, 그 surface 범위 토스트로 쓴다.
+    #[test]
+    fn surface_copies_reach_the_copy_door_of_the_drawing_window() {
+        let squash = |s: &str| s.split_whitespace().collect::<String>();
+        let file = include_str!("plugin_copied_texts.rs");
+        let (code, _) = file
+            .split_once("#[cfg(test)]")
+            .expect("시험 모듈 앞의 코드");
+        let src = squash(code);
+        for needle in [
+            "PluginCopyTarget::Surface(surface) => { self.deliver_surface_copy(&plugin_id, surface, &text); }",
+            ".and_then(|main| main.egui_mesh_surface_plugin(surface));",
+            "match surface_copy_window(plugin_id, shown) {",
+            "crate::adapters::ui::ToastScope::Surface(surface),",
+        ] {
+            assert!(src.contains(&squash(needle)), "연결이 바뀌었다: {needle}");
+        }
     }
 }

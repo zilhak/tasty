@@ -216,6 +216,11 @@ impl MainView {
         st.events.push(RawInputEventWire::Paste);
     }
 
+    /// 이 창이 직전 렌더에 그린 surface 의 플러그인. 그리지 않은 surface 는 없다.
+    pub(crate) fn egui_mesh_surface_plugin(&self, surface_id: u32) -> Option<&str> {
+        self.egui_mesh.get(&surface_id)?.plugin_id.as_deref()
+    }
+
     /// 포커스된 EguiMeshSurface의 ID. 다른 종류에는 입력을 전달하지 않는다.
     pub(crate) fn focused_egui_mesh_surface_id(
         &self,
