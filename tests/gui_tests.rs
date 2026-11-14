@@ -1564,9 +1564,87 @@ fn debug_window_id(inst: &gui_common::GuiTestInstance, kind: &str) -> u64 {
     }
 }
 
+/// 창 하나에 붙여넣은 글자가 클립보드 값 그대로인지 Tasty 의 기존 경로만으로 읽는다.
+/// 팔레트 쿼리 칸에 command+V 로 붙인 뒤 클립보드를 다른 값으로 덮고, 쿼리를 command+A·C 로
+/// 복사해 클립보드로 되돌린다. 그 클립보드를 팔레트의 Paste 명령으로 터미널 입력줄에 붙여
+/// 화면 글자에서 찾는다. `window_id` 가 없으면 포커스 입구, 있으면 창 지정 입구로 키를 넣는다.
+fn assert_paste_carries_the_clipboard_text(
+    inst: &gui_common::GuiTestInstance,
+    window_id: Option<u64>,
+    mark: &str,
+) {
+    let sid = inst
+        .debug_focused_surface()
+        .expect("a focused surface to read the pasted text");
+    let key = |key: &str, pressed: bool, modifiers: Option<&[&str]>| -> String {
+        let mut params = json!({ "key": key, "pressed": pressed });
+        if let Some(m) = modifiers {
+            params["modifiers"] = json!(m);
+        }
+        if let Some(wid) = window_id {
+            params["window_id"] = json!(wid);
+        }
+        let r = inst.call("debug.inject_egui_key", params.clone());
+        assert_eq!(r["injected"], json!(true), "{params} -> {r}");
+        r["pushed"].as_str().unwrap_or_default().to_string()
+    };
+    let settle = || std::thread::sleep(Duration::from_millis(300));
+
+    inst.call("clipboard.set_text", json!({ "text": mark }));
+    inst.call(
+        "debug.host_popup.open",
+        json!({ "popup_id": "command_palette" }),
+    );
+    settle();
+    assert_eq!(key("V", true, Some(&["command"])), "paste");
+    key("V", false, None);
+    settle();
+    inst.call(
+        "clipboard.set_text",
+        json!({ "text": "EGUI_KEY_CLIPBOARD_OVERWRITTEN" }),
+    );
+    key("A", true, None);
+    key("A", false, None);
+    assert_eq!(key("C", true, None), "copy");
+    key("C", false, Some(&[]));
+    settle();
+    key("Escape", true, None);
+    key("Escape", false, None);
+    settle();
+
+    inst.call(
+        "debug.host_popup.open",
+        json!({ "popup_id": "command_palette" }),
+    );
+    settle();
+    inst.call("debug.inject_egui_text", json!({ "text": "paste" }));
+    settle();
+    inst.call("debug.inject_egui_key", json!({ "key": "Enter" }));
+    let deadline = Instant::now() + Duration::from_secs(3);
+    let screen = loop {
+        let text = inst.call("surface.screen_text", json!({ "surface_id": sid }))["text"]
+            .as_str()
+            .unwrap_or_default()
+            .to_string();
+        if text.contains(mark) || Instant::now() >= deadline {
+            break text;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    };
+    inst.call(
+        "surface.send",
+        json!({ "surface_id": sid, "text": "\u{15}" }),
+    );
+    assert!(
+        screen.contains(mark),
+        "pasted query (window {window_id:?}) did not carry {mark:?}: {screen:?}"
+    );
+}
+
 /// debug.inject_egui_key 의 두 입구(포커스된 메인 창, window_id)가 실제 창의 egui 상태를 쓴다.
 /// 유지 수식 키는 그 창의 GpuState 에 남고 다른 창으로 새지 않으며, 붙여넣기 글자는 그 창의
-/// egui-winit 클립보드에서 읽는다. 응답의 pushed 로 판정하므로 화면 입력칸이 필요 없다.
+/// egui-winit 클립보드에서 읽는다. 수식 키는 응답의 pushed 로, 붙여넣은 글자는 두 입구 각각에서
+/// 팔레트 쿼리를 되돌려 읽어 판정한다.
 /// 보조 창을 받는 debug.inject_egui_clipboard 도 같은 설정 창으로 확인한다.
 #[test]
 #[ignore]
@@ -1577,8 +1655,10 @@ fn test_egui_key_injection_uses_each_windows_own_egui_state() {
         assert_eq!(r["injected"], json!(true), "{params} -> {r}");
         r["pushed"].as_str().unwrap_or_default().to_string()
     };
-    let mark = "EGUI_KEY_PASTE_MARK";
-    inst.call("clipboard.set_text", json!({ "text": mark }));
+    inst.call(
+        "clipboard.set_text",
+        json!({ "text": "EGUI_KEY_PASTE_MARK" }),
+    );
 
     // 포커스 입구: command 를 걸면 C 는 복사, 생략한 V 는 유지된 command 로 붙여넣기다.
     assert_eq!(
@@ -1590,6 +1670,8 @@ fn test_egui_key_injection_uses_each_windows_own_egui_state() {
     assert_eq!(pushed(json!({ "key": "V", "pressed": false })), "key");
     assert_eq!(pushed(json!({ "key": "C", "modifiers": [] })), "key");
     assert_eq!(pushed(json!({ "key": "C", "pressed": false })), "key");
+    // 포커스 입구의 붙여넣기 글자가 클립보드 값 그대로다.
+    assert_paste_carries_the_clipboard_text(&inst, None, "EGUI_FOCUSED_PASTE_MARK");
 
     inst.call("debug.settings.open", json!({ "tab": "general" }));
     let main = debug_window_id(&inst, "main");
@@ -1621,6 +1703,8 @@ fn test_egui_key_injection_uses_each_windows_own_egui_state() {
     inst.wait_for_ui("settings modal is gone", Duration::from_secs(3), |s| {
         !s.settings_modal_is_up()
     });
+    // 창 지정 입구의 붙여넣기 글자도 클립보드 값 그대로다.
+    assert_paste_carries_the_clipboard_text(&inst, Some(main), "EGUI_WINDOW_PASTE_MARK");
     // 메인 창 붙여넣기가 터미널 입력줄에 닿았을 수 있어 다음 시험을 위해 줄을 비운다.
     if let Some(sid) = inst.debug_focused_surface() {
         inst.call(
