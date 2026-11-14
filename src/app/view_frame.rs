@@ -104,6 +104,8 @@ impl App {
             self.gpu_adapter.as_deref(),
         );
         self.process_remote_tool_requests(id);
+        // 팔레트 명령은 렌더 뒤에 실행되므로 그 편집 요청을 이 프레임에서 꺼낸다.
+        self.begin_plugin_field_edit(id);
         self.poll_port_scans();
         self.redraw_windows_for_shared_lists();
     }

@@ -1,7 +1,8 @@
 //! 플러그인 팝업·egui-mesh surface 입력칸에 보낼 편집 키를 플러그인 요청과 보류로 바꾼다. 창 view가 판정해
 //! 남긴 편집을 view 처리 직후(플러그인 단축키 단계 뒤) 꺼낸다. 회신을 약속한 플러그인이면 요청 id를 붙여 그
 //! 대상의 입력으로 보내고 원래 키를 그 창에 붙잡는다. 약속하지 않았거나 대상이 사라졌으면 원래 키를 넘긴
-//! 편집으로 한 번 재생한다(팝업은 egui-winit 기본 처리, surface 는 플러그인에 가는 `Key`).
+//! 편집으로 한 번 재생한다(팝업은 egui-winit 기본 처리, surface 는 플러그인에 가는 `Key`). 팔레트처럼 키 없이
+//! 보낸 편집은 붙잡을 키가 없어 요청만 기록하고, 회신의 복사 글자만 쓴다.
 //! 계약: `docs/design/policies/key-mapping.md`의 "플러그인 입력칸" 절.
 
 use std::time::Instant;
@@ -32,7 +33,8 @@ struct PopupEditHold {
     target: PluginCopyTarget,
     wire: RawInputEventWire,
     request: PluginEditRequest,
-    original: WindowEvent,
+    /// 붙잡을 원래 키. 팔레트 편집은 없고 회신의 복사 글자만 쓴다.
+    original: Option<WindowEvent>,
     edit: EditKey,
 }
 
@@ -61,8 +63,13 @@ impl App {
                 if let Some(main) = self.view.views.get_mut(&id).and_then(|v| v.as_main_mut()) {
                     main.queue_plugin_edit_request(target, wire);
                 }
-                self.plugin_edit_holds
-                    .hold(id, request, original, edit, Instant::now());
+                let now = Instant::now();
+                match original {
+                    Some(original) => self
+                        .plugin_edit_holds
+                        .hold(id, request, original, edit, now),
+                    None => self.plugin_edit_holds.track(id, request, edit, now),
+                }
             }
         }
     }
@@ -72,7 +79,13 @@ impl App {
 /// (번들 플러그인 포함)이나 그 사이 닫힌 팝업이면 원래 키를 넘긴 편집으로 한 번 재생한다.
 fn popup_edit_plan(mgr: Option<&mut PluginManager>, ask: PluginEditAsk) -> PopupEditPlan {
     let Some(request) = mgr.and_then(|mgr| edit_request(mgr, &ask)) else {
-        return PopupEditPlan::Replay(vec![ReplayStep::Original(ask.original, ask.edit)]);
+        let edit = ask.edit;
+        return PopupEditPlan::Replay(
+            ask.original
+                .map(|original| ReplayStep::Original(original, edit))
+                .into_iter()
+                .collect(),
+        );
     };
     PopupEditPlan::Hold(Box::new(PopupEditHold {
         target: ask.target,

@@ -22,7 +22,8 @@ pub(crate) struct PluginEditAsk {
     pub(crate) edit: EditKey,
     /// 붙여넣을 글자. 붙여넣기에만 있다.
     pub(crate) text: Option<String>,
-    pub(crate) original: WindowEvent,
+    /// 붙잡을 원래 키. 팔레트처럼 키 없이 보낸 편집은 없고, 회신이 와도 재생할 것이 없다.
+    pub(crate) original: Option<WindowEvent>,
 }
 
 impl PluginEditAsk {
@@ -96,7 +97,7 @@ impl MainView {
                 plugin_id: None,
                 edit,
                 text,
-                original: event.clone(),
+                original: Some(event.clone()),
             });
         }
         Some(key)
@@ -157,7 +158,7 @@ mod tests {
             plugin_id: None,
             edit,
             text: text.map(str::to_string),
-            original: WindowEvent::Focused(true),
+            original: Some(WindowEvent::Focused(true)),
         }
     }
 

@@ -19,6 +19,19 @@ enum DeferredPaletteAction {
     Explorer(ExplorerAction),
 }
 
+impl DeferredPaletteAction {
+    /// 플러그인 입력칸에 보낼 수 있는 편집 명령이면 그 편집.
+    fn edit(self) -> Option<crate::adapters::ui::input::edit_key::EditKey> {
+        use crate::adapters::ui::input::edit_key::EditKey;
+        match self {
+            Self::Copy => Some(EditKey::Copy),
+            Self::Cut => Some(EditKey::Cut),
+            Self::Paste => Some(EditKey::Paste),
+            Self::Explorer(_) => None,
+        }
+    }
+}
+
 use super::keybinding::CellGeometry;
 use super::matches_any_binding;
 use super::{focused_explorer_surface_id, focused_workspace_category, send_app_event};
@@ -469,6 +482,12 @@ impl MainView {
                 return false;
             }
         }
+        // 회신을 약속한 플러그인 surface 의 편집은 그 플러그인에 요청으로 보내고 아래 경로를 타지 않는다.
+        let deferred = deferred.filter(|action| {
+            !action
+                .edit()
+                .is_some_and(|edit| self.ask_plugin_surface_palette_edit(engine, edit))
+        });
         // 키 경로와 같은 순서: 복사는 선택 텍스트→탐색기 파일, 붙여넣기는 탐색기→터미널이다.
         match deferred {
             Some(DeferredPaletteAction::Copy) => {

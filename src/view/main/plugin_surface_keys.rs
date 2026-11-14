@@ -46,7 +46,64 @@ fn mirror_key(binding: Option<EditKey>) -> EguiKey {
     popup_key(verdict(binding, |_| Capability::No)).0
 }
 
+/// 팔레트 편집 명령이 포커스 surface 에 하는 일.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) enum PaletteSurfaceEdit {
+    /// 이 판정의 대상이 아니다. 기존 팔레트 경로(`run_copy`·탐색기·`run_paste`)가 받는다.
+    NotMine,
+    /// 대상이지만 보낼 것이 없다(빈 클립보드의 붙여넣기). 터미널 붙여넣기로 넘기지 않는다.
+    Nothing,
+    /// 이 surface 의 플러그인에 편집 요청을 보낸다.
+    Ask { surface: u32, plugin_id: String },
+}
+
+/// 팔레트 편집 명령의 대상. 회신을 약속한 플러그인의 로컬 surface 만 맡는다. mirror 와 약속하지 않은 플러그인은
+/// 기존 경로로 간다. 키가 없으므로 할 수 없음을 알면 보내지 않고 끝낸다.
+pub(super) fn palette_surface_edit(
+    target: Option<SurfaceEditTarget>,
+    edit: EditKey,
+    clipboard_text: bool,
+) -> PaletteSurfaceEdit {
+    let Some(SurfaceEditTarget::Local { surface, plugin_id }) = target else {
+        return PaletteSurfaceEdit::NotMine;
+    };
+    match popup_capability(edit, clipboard_text) {
+        Capability::No => PaletteSurfaceEdit::Nothing,
+        _ => PaletteSurfaceEdit::Ask { surface, plugin_id },
+    }
+}
+
 impl MainView {
+    /// 팔레트의 복사·잘라내기·붙여넣기를 회신을 약속한 플러그인 surface 에 요청으로 보낸다. 맡았으면 true 이고
+    /// 기존 팔레트 경로를 타지 않는다. 키가 없으므로 원래 키 없이 남기고, App 이 회신의 복사 글자만 쓴다.
+    pub(crate) fn ask_plugin_surface_palette_edit(
+        &mut self,
+        engine: &EngineRead<'_>,
+        edit: EditKey,
+    ) -> bool {
+        let target = self.surface_edit_target_now(engine);
+        let text = match (&target, edit) {
+            (Some(SurfaceEditTarget::Local { .. }), EditKey::Paste) => {
+                self.base.gpu.plugin_paste_text()
+            }
+            _ => None,
+        };
+        match palette_surface_edit(target, edit, text.is_some()) {
+            PaletteSurfaceEdit::NotMine => false,
+            PaletteSurfaceEdit::Nothing => true,
+            PaletteSurfaceEdit::Ask { surface, plugin_id } => {
+                self.plugin_edit_ask = Some(PluginEditAsk {
+                    target: PluginCopyTarget::Surface(surface),
+                    plugin_id: Some(plugin_id),
+                    edit,
+                    text,
+                    original: None,
+                });
+                true
+            }
+        }
+    }
+
     /// 창의 키를 지금 받는 로컬 egui-mesh surface. 호스트 egui 가 키를 받는 동안(팝업·모달·무대)은 없다.
     /// 보류의 대상이 아직 키를 받는지 App 이 이것으로 확인한다.
     pub(crate) fn plugin_surface_key_target(&self, engine: &EngineRead<'_>) -> Option<u32> {
@@ -118,7 +175,7 @@ impl MainView {
                 plugin_id: Some(plugin_id),
                 edit,
                 text,
-                original: event.clone(),
+                original: Some(event.clone()),
             });
         }
         Some(key)
@@ -167,6 +224,37 @@ mod tests {
         assert_eq!(mirror_key(None), EguiKey::Free);
     }
 
+    /// 팔레트 편집은 회신을 약속한 로컬 surface 만 요청으로 보낸다. 빈 클립보드의 붙여넣기는 보내지 않고 끝내며
+    /// (터미널로 넘기지 않는다) mirror·약속 없는 플러그인·대상 없음은 기존 경로로 간다.
+    #[test]
+    fn a_palette_edit_asks_only_a_surface_that_replies() {
+        let local = || {
+            Some(SurfaceEditTarget::Local {
+                surface: 4,
+                plugin_id: "demo".into(),
+            })
+        };
+        let ask = PaletteSurfaceEdit::Ask {
+            surface: 4,
+            plugin_id: "demo".into(),
+        };
+        assert_eq!(palette_surface_edit(local(), EditKey::Copy, false), ask);
+        assert_eq!(palette_surface_edit(local(), EditKey::Cut, false), ask);
+        assert_eq!(palette_surface_edit(local(), EditKey::Paste, true), ask);
+        assert_eq!(
+            palette_surface_edit(local(), EditKey::Paste, false),
+            PaletteSurfaceEdit::Nothing
+        );
+        assert_eq!(
+            palette_surface_edit(Some(SurfaceEditTarget::Mirror), EditKey::Paste, true),
+            PaletteSurfaceEdit::NotMine
+        );
+        assert_eq!(
+            palette_surface_edit(None, EditKey::Copy, false),
+            PaletteSurfaceEdit::NotMine
+        );
+    }
+
     /// 연결은 `MainView` 없이 시험할 수 없어 소스로 고정한다. 판정 입구는 재생 표시와 팝업 판정 다음, host 입력칸
     /// 판정 앞에서 이 판정을 부르고, 렌더는 surface 마다 그 플러그인의 회신 약속을 기록한다.
     #[test]
@@ -192,5 +280,39 @@ mod tests {
             )),
             "렌더가 회신 약속을 기록하지 않는다"
         );
+    }
+
+    /// 팔레트 연결도 소스로 고정한다. 팔레트 편집 명령은 기존 경로보다 먼저 이 판정을 묻고, App 은 팔레트가
+    /// 실행되는 렌더 뒤에 편집 요청을 꺼낸다.
+    #[test]
+    fn the_palette_asks_this_judgment_first_and_the_frame_takes_it() {
+        let squash = |s: &str| s.split_whitespace().collect::<String>();
+        let dispatch = squash(include_str!(
+            "../../adapters/ui/input/shortcuts/dispatch.rs"
+        ));
+        let ask = dispatch
+            .find(&squash(
+                "let deferred = deferred.filter(|action| { !action .edit() .is_some_and(|edit| self.ask_plugin_surface_palette_edit(engine, edit)) });",
+            ))
+            .expect("팔레트가 surface 판정을 묻지 않는다");
+        let routes = dispatch
+            .find(&squash("match deferred {"))
+            .expect("팔레트 기존 경로");
+        assert!(ask < routes, "기존 경로가 먼저다");
+        let frame: String = include_str!("../../app/view_frame.rs")
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.starts_with("//"))
+            .collect();
+        let frame = squash(&frame);
+        let draw = frame
+            .find(&squash("view.finish_redraw("))
+            .expect("렌더 마무리");
+        let take = frame
+            .find(&squash(
+                "self.process_remote_tool_requests(id); self.begin_plugin_field_edit(id); self.poll_port_scans();",
+            ))
+            .expect("프레임이 편집 요청을 꺼내지 않는다");
+        assert!(draw < take, "팔레트 실행 전에 꺼낸다");
     }
 }

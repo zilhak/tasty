@@ -26,10 +26,20 @@ struct PluginEditHold {
     since: Instant,
 }
 
+/// 키 없이 보낸 편집 요청(팔레트). 붙잡은 입력이 없어 창 입력을 줄 세우지 않고, 회신의 복사 글자만 쓴다.
+struct KeylessEdit {
+    window: WindowId,
+    request: PluginEditRequest,
+    edit: EditKey,
+    since: Instant,
+}
+
 /// 창마다 하나인 플러그인 편집 보류. 보류 중의 다음 편집 키는 줄을 서므로 창마다 하나다.
 #[derive(Default)]
 pub(crate) struct PluginEditHolds {
     holds: HashMap<WindowId, PluginEditHold>,
+    /// 요청 id 별 키 없는 편집 요청.
+    keyless: HashMap<u64, KeylessEdit>,
 }
 
 /// 풀린 보류. `steps`는 재생할 입력, `copied`는 소비한 편집이 복사한 글자다. `target`은 요청을 보낸 때의 대상이다.
@@ -66,6 +76,25 @@ impl PluginEditHolds {
         }
     }
 
+    /// 키 없이 보낸 편집 요청을 회신까지 기록한다. 회신이 오면 재생할 것 없이 복사 글자만 돌려준다.
+    pub(crate) fn track(
+        &mut self,
+        window: WindowId,
+        request: PluginEditRequest,
+        edit: EditKey,
+        now: Instant,
+    ) {
+        self.keyless.insert(
+            request.edit_id,
+            KeylessEdit {
+                window,
+                request,
+                edit,
+                since: now,
+            },
+        );
+    }
+
     /// 보류 중인 창의 키·IME·modifier·포인터 입력을 줄 세운다. 줄을 섰으면 true 이고 호출자는 처리하지 않는다.
     pub(crate) fn queue(&mut self, window: WindowId, event: &WindowEvent) -> bool {
         let Some(held) = self.holds.get_mut(&window) else {
@@ -88,6 +117,17 @@ impl PluginEditHolds {
                 .find(|(_, h)| h.request.edit_id == outcome.request.edit_id)
                 .map(|(w, _)| *w);
             let Some((window, held)) = window.and_then(|w| self.holds.remove_entry(&w)) else {
+                if let Some(keyless) = self.keyless.remove(&outcome.request.edit_id) {
+                    resolved.push(ResolvedPluginEdit {
+                        window: keyless.window,
+                        target: keyless.request.target,
+                        steps: Vec::new(),
+                        edit: keyless.edit,
+                        result: Some(outcome.result),
+                        copied: outcome.copied,
+                    });
+                    continue;
+                }
                 tracing::debug!(
                     edit_id = outcome.request.edit_id,
                     "plugin edit outcome without a hold (dropped)"
@@ -121,7 +161,8 @@ impl PluginEditHolds {
             .map(|(w, _)| *w)
             .collect();
         let mut resolved = Vec::new();
-        let mut cancelled = Vec::new();
+        let mut cancelled =
+            self.drop_keyless(|k| now.saturating_duration_since(k.since) >= PLUGIN_HOLD_LIMIT);
         for window in late {
             let Some(held) = self.holds.remove(&window) else {
                 continue;
@@ -171,7 +212,7 @@ impl PluginEditHolds {
             .map(|(w, _)| *w)
             .collect();
         let mut resolved = Vec::new();
-        let mut cancelled = Vec::new();
+        let mut cancelled = self.drop_keyless(|k| !live(k.window, &k.request.target));
         for window in closed {
             let Some(held) = self.holds.remove(&window) else {
                 continue;
@@ -194,11 +235,26 @@ impl PluginEditHolds {
         (resolved, cancelled)
     }
 
+    /// `gone`이 참인 키 없는 요청을 지우고 그 요청 id 를 돌려준다. 재생할 것이 없어 결과도 없다.
+    fn drop_keyless(&mut self, gone: impl Fn(&KeylessEdit) -> bool) -> Vec<u64> {
+        let ids: Vec<u64> = self
+            .keyless
+            .iter()
+            .filter(|(_, k)| gone(k))
+            .map(|(id, _)| *id)
+            .collect();
+        for id in &ids {
+            self.keyless.remove(id);
+        }
+        ids
+    }
+
     /// 가장 이른 시간 초과 시각. 이벤트가 없어도 이때 깨어 보류를 푼다.
     pub(crate) fn deadline(&self) -> Option<Instant> {
-        self.holds
-            .values()
-            .map(|h| h.since + PLUGIN_HOLD_LIMIT)
+        let held = self.holds.values().map(|h| h.since);
+        let keyless = self.keyless.values().map(|k| k.since);
+        held.chain(keyless)
+            .map(|since| since + PLUGIN_HOLD_LIMIT)
             .min()
     }
 }

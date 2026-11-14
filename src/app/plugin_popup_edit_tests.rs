@@ -56,7 +56,7 @@ fn ask(instance: u64) -> PluginEditAsk {
         plugin_id: None,
         edit: EditKey::Paste,
         text: Some("/tmp/a.md".into()),
-        original: WindowEvent::Focused(true),
+        original: Some(WindowEvent::Focused(true)),
     }
 }
 
@@ -101,10 +101,32 @@ fn a_popup_without_a_reply_promise_replays_the_original_key_once() {
             );
             assert_eq!(
                 (original, edit),
-                (WindowEvent::Focused(true), EditKey::Paste)
+                (Some(WindowEvent::Focused(true)), EditKey::Paste)
             );
         }
         other => panic!("약속한 팝업이 재생됐다: {other:?}"),
+    }
+}
+
+/// 팔레트처럼 키 없이 보낸 편집은 재생할 키가 없다. 약속한 플러그인이면 요청을 붙이되 붙잡을 키가 없고,
+/// 요청을 만들 수 없으면 아무것도 재생하지 않는다.
+#[test]
+fn a_keyless_edit_holds_no_key_and_replays_nothing() {
+    let mut mgr = mgr();
+    let keyless = |plugin: Option<&str>| PluginEditAsk {
+        original: None,
+        ..surface_ask(plugin)
+    };
+    match popup_edit_plan(Some(&mut mgr), keyless(Some(OPTED))) {
+        PopupEditPlan::Hold(hold) => {
+            assert_eq!(hold.target, PluginCopyTarget::Surface(5));
+            assert_eq!(hold.original, None);
+        }
+        other => panic!("약속한 플러그인에 요청이 없다: {other:?}"),
+    }
+    match popup_edit_plan(Some(&mut mgr), keyless(None)) {
+        PopupEditPlan::Replay(steps) => assert!(steps.is_empty(), "{steps:?}"),
+        other => panic!("플러그인을 모르는데 보류됐다: {other:?}"),
     }
 }
 
@@ -114,7 +136,7 @@ fn surface_ask(plugin_id: Option<&str>) -> PluginEditAsk {
         plugin_id: plugin_id.map(str::to_string),
         edit: EditKey::Cut,
         text: None,
-        original: WindowEvent::Focused(true),
+        original: Some(WindowEvent::Focused(true)),
     }
 }
 
@@ -253,4 +275,20 @@ fn settle_reads_the_window_key_target_into_the_hold_judgment() {
         squash(&code).contains(&squash(&wiring)),
         "settle_plugin_edit_holds 가 창의 키 대상과 열린 팝업 판정을 settle 에 넘기지 않는다"
     );
+}
+
+/// 보류 계획을 실행하는 연결도 `App` 없이 시험할 수 없어 소스로 고정한다. 요청을 대상 입력에 붙인 뒤, 원래 키가
+/// 있으면 붙잡고 없으면(팔레트) 키 없는 요청으로 기록한다.
+#[test]
+fn begin_queues_the_request_then_holds_the_key_or_tracks_a_keyless_edit() {
+    let squash = |s: &str| s.split_whitespace().collect::<String>();
+    let src = include_str!("plugin_popup_edit.rs");
+    let (code, _) = src.split_once("#[cfg(test)]").expect("시험 모듈 앞의 코드");
+    let code = squash(code);
+    let wiring = squash(
+        "main.queue_plugin_edit_request(target, wire); } let now = Instant::now(); match original {
+            Some(original) => self .plugin_edit_holds .hold(id, request, original, edit, now),
+            None => self.plugin_edit_holds.track(id, request, edit, now), }",
+    );
+    assert!(code.contains(&wiring), "보류 계획 실행 연결이 바뀌었다");
 }

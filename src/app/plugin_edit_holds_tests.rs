@@ -268,3 +268,45 @@ fn a_surface_copy_toast_stays_in_that_surface() {
     );
     assert_eq!(copy_scope(PluginCopyTarget::Popup(1)), ToastScope::Window);
 }
+
+/// 키 없이 보낸 편집(팔레트)은 창 입력을 줄 세우지 않는다. 회신이 오면 재생할 것 없이 복사 글자만 돌려주고,
+/// 대상을 잃거나 시간이 지나면 결과 없이 요청을 끝낸다. 시간 초과 시각에도 든다.
+#[test]
+fn a_keyless_edit_queues_nothing_and_returns_only_the_copy() {
+    let mut mgr = mgr();
+    let mut holds = PluginEditHolds::default();
+    let now = Instant::now();
+    let request = mgr
+        .begin_edit_request(MD, PluginCopyTarget::Popup(1))
+        .expect("stub 은 회신을 약속했다");
+    let id = request.edit_id;
+    holds.track(window(1), request, EditKey::Copy, now);
+    assert!(
+        !holds.queue(window(1), &key(1)),
+        "키 없는 요청이 입력을 줄 세웠다"
+    );
+    assert_eq!(holds.deadline(), Some(now + PLUGIN_HOLD_LIMIT));
+    reply(&mut mgr, id, EditResultWire::Acted, Some("abc"));
+    let (resolved, cancelled) = holds.settle(mgr.take_edit_outcomes(), now, |_, _| true);
+    assert!(cancelled.is_empty());
+    let [item] = resolved.as_slice() else {
+        panic!("풀린 요청이 하나가 아니다: {}", resolved.len());
+    };
+    assert_eq!(item.window, window(1));
+    assert!(item.steps.is_empty());
+    assert_eq!(item.copied.as_deref(), Some("abc"));
+    assert_eq!(holds.deadline(), None);
+
+    for lost in [true, false] {
+        let request = mgr
+            .begin_edit_request(MD, PluginCopyTarget::Popup(1))
+            .expect("stub 은 회신을 약속했다");
+        let id = request.edit_id;
+        holds.track(window(2), request, EditKey::Cut, now);
+        let at = if lost { now } else { now + PLUGIN_HOLD_LIMIT };
+        let (resolved, cancelled) = holds.settle(Vec::new(), at, |_, _| !lost);
+        assert!(resolved.is_empty());
+        assert_eq!(cancelled, vec![id], "lost={lost}");
+        assert_eq!(holds.deadline(), None);
+    }
+}
