@@ -44,6 +44,16 @@ fn popup_capability(edit: EditKey, clipboard_text: bool) -> Capability {
     }
 }
 
+/// 판정이 키에 하는 일. 바인딩이 아니거나 할 수 없음을 아는 키는 egui-winit 에 그대로 간다(기본 편집 키의
+/// `Cut`·`Copy`·`Paste` 변환도 그대로다). 그 밖은 Tasty 가 가져가고 플러그인에 보낼 편집을 남긴다.
+fn popup_key(judged: Verdict) -> (EguiKey, Option<EditKey>) {
+    match judged {
+        Verdict::NoBinding => (EguiKey::Free, None),
+        Verdict::Pass(edit) => (EguiKey::Pass(edit), None),
+        Verdict::Act(edit) | Verdict::Hold(edit) => (EguiKey::Taken, Some(edit)),
+    }
+}
+
 impl MainView {
     /// 키를 받는 팝업이 플러그인 팝업일 때의 편집 키 판정. 다른 대상이면 `None`이고 공통 판정이 받는다.
     /// 호스트 입력칸의 보류가 있으면 그 판정이 이 키를 줄 세우도록 `None`이다.
@@ -76,19 +86,16 @@ impl MainView {
             }
             popup_capability(edit, text.is_some())
         });
-        Some(match judged {
-            Verdict::NoBinding => EguiKey::Free,
-            Verdict::Pass(edit) => EguiKey::Pass(edit),
-            Verdict::Act(edit) | Verdict::Hold(edit) => {
-                self.plugin_edit_ask = Some(PluginEditAsk {
-                    instance,
-                    edit,
-                    text,
-                    original: event.clone(),
-                });
-                EguiKey::Taken
-            }
-        })
+        let (key, asked) = popup_key(judged);
+        if let Some(edit) = asked {
+            self.plugin_edit_ask = Some(PluginEditAsk {
+                instance,
+                edit,
+                text,
+                original: event.clone(),
+            });
+        }
+        Some(key)
     }
 
     /// App이 창 view 처리 뒤 꺼내는 플러그인 편집.
@@ -123,6 +130,21 @@ mod tests {
             Verdict::Hold(EditKey::Cut)
         );
         assert_eq!(judge(None, true), Verdict::NoBinding);
+    }
+
+    /// 바인딩이 아닌 키와 넘기는 키는 egui-winit 에 그대로 가고 플러그인 편집을 남기지 않는다. 기다리는 키만
+    /// Tasty 가 가져간다.
+    #[test]
+    fn only_a_held_key_is_taken_from_egui_winit() {
+        assert_eq!(popup_key(Verdict::NoBinding), (EguiKey::Free, None));
+        assert_eq!(
+            popup_key(Verdict::Pass(EditKey::Paste)),
+            (EguiKey::Pass(EditKey::Paste), None)
+        );
+        assert_eq!(
+            popup_key(Verdict::Hold(EditKey::Cut)),
+            (EguiKey::Taken, Some(EditKey::Cut))
+        );
     }
 
     fn ask(edit: EditKey, text: Option<&str>) -> PluginEditAsk {
