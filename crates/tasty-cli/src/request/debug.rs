@@ -540,21 +540,20 @@ pub(super) fn inject_debug_command_to_method_params(
                 params["window_id"] = serde_json::json!(wid);
             }
             if let Some(names) = modifiers {
-                let held: Vec<&str> = names
-                    .iter()
-                    .map(String::as_str)
-                    .filter(|n| *n != "none")
-                    .collect();
-                params["modifiers"] = serde_json::json!(held);
+                params["modifiers"] = held_modifiers(names);
             }
             ("debug.inject_egui_mouse", params)
         }
         InjectDebugCommands::EguiKey {
             key,
             pressed,
+            modifiers,
             window_id,
         } => {
             let mut params = serde_json::json!({ "key": key, "pressed": pressed });
+            if let Some(names) = modifiers {
+                params["modifiers"] = held_modifiers(names);
+            }
             if let Some(wid) = window_id {
                 params["window_id"] = serde_json::json!(wid);
             }
@@ -582,6 +581,17 @@ pub(super) fn inject_debug_command_to_method_params(
             ("debug.inject_egui_clipboard", params)
         }
     }
+}
+
+/// `--modifiers` 값을 요청의 `modifiers` 배열로 만든다. `none`은 빼서 빈 배열이면 모두 뗀다.
+#[cfg(debug_assertions)]
+fn held_modifiers(names: &[String]) -> serde_json::Value {
+    let held: Vec<&str> = names
+        .iter()
+        .map(String::as_str)
+        .filter(|n| *n != "none")
+        .collect();
+    serde_json::json!(held)
 }
 
 /// 두 포인터 주입 경로가 같은 파라미터를 보내도록 공용으로 조립한다.
@@ -703,6 +713,17 @@ mod tests {
                 json!({ "key": "Enter", "pressed": true, "window_id": 7u64 })
             )
         );
+    }
+
+    /// `--modifiers` 는 준 이름만 싣고 `none` 은 빈 배열로 모두 뗀다. 생략하면 키 자체가 없다.
+    #[test]
+    fn egui_key_carries_modifiers_only_when_given() {
+        assert_eq!(
+            egui_key(&["--modifiers", "command,shift"]).1["modifiers"],
+            json!(["command", "shift"])
+        );
+        assert_eq!(egui_key(&["--modifiers", "none"]).1["modifiers"], json!([]));
+        assert!(egui_key(&[]).1.get("modifiers").is_none());
     }
 
     /// `--pressed` 는 값을 받는다. 생략하면 누름, 값 없이 주어도 누름, `false` 면 뗌이다.

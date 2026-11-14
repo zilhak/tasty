@@ -151,11 +151,6 @@ impl MainView {
         true
     }
 
-    /// 키 이벤트를 egui 입력 큐로 주입한다(popup Esc 등 검증용). 매핑 불가 키면 `false`.
-    pub(crate) fn debug_inject_egui_key(&mut self, key_name: &str, pressed: bool) -> bool {
-        push_egui_key(&mut self.base.gpu, key_name, pressed)
-    }
-
     /// 문자열 전체를 한 egui Text 이벤트로 넣는다. 빈 값·제어문자 등 실입력에서
     /// 전달되지 않는 문자열은 거절한다. Enter·Tab 같은 키 동작은 키 주입을 사용한다.
     pub(crate) fn debug_inject_egui_text(&mut self, text: &str) -> bool {
@@ -217,19 +212,136 @@ fn push_egui_pointer_at(
     gpu.debug_push_egui_events(events);
 }
 
-/// 창 종류와 관계없이 그 창의 egui 입력 큐에 키 이벤트를 넣는다. 매핑 불가 키면 `false`.
-pub(crate) fn push_egui_key(gpu: &mut crate::gpu::GpuState, key_name: &str, pressed: bool) -> bool {
-    let Some(key) = egui::Key::from_name(key_name) else {
-        return false;
-    };
-    gpu.debug_push_egui_events(vec![egui::Event::Key {
+/// 키 주입이 쓰는 창 하나의 egui 입력 상태. 실제로는 그 창의 `GpuState`이고 시험은 가짜를 쓴다.
+pub(crate) trait EguiKeySink {
+    /// egui가 지금 누른 것으로 보는 수식 키.
+    fn held_modifiers(&self) -> egui::Modifiers;
+    /// 누른 것으로 보는 수식 키를 바꾼다. 다음에 바꿀 때까지 유지된다.
+    fn hold_modifiers(&mut self, modifiers: egui::Modifiers);
+    /// 실제 붙여넣기 키가 읽는 egui-winit 클립보드의 글자.
+    fn clipboard_text(&mut self) -> Option<String>;
+    /// 다음 프레임의 egui 입력 큐에 이벤트를 넣는다.
+    fn push_events(&mut self, events: Vec<egui::Event>);
+}
+
+impl EguiKeySink for crate::gpu::GpuState {
+    fn held_modifiers(&self) -> egui::Modifiers {
+        self.debug_egui_modifiers()
+    }
+
+    fn hold_modifiers(&mut self, modifiers: egui::Modifiers) {
+        self.debug_set_egui_modifiers(modifiers);
+    }
+
+    fn clipboard_text(&mut self) -> Option<String> {
+        self.debug_clipboard_text()
+    }
+
+    fn push_events(&mut self, events: Vec<egui::Event>) {
+        self.debug_push_egui_events(events);
+    }
+}
+
+/// 키 하나를 주입해 egui 입력 큐에 실제로 들어간 것.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum PushedKey {
+    Key,
+    Copy,
+    Cut,
+    Paste,
+    /// 붙여넣기 키였지만 클립보드가 비어 아무것도 넣지 않았다.
+    Nothing,
+}
+
+impl PushedKey {
+    /// IPC 응답 `pushed`에 싣는 이름.
+    pub(crate) fn name(self) -> &'static str {
+        match self {
+            Self::Key => "key",
+            Self::Copy => "copy",
+            Self::Cut => "cut",
+            Self::Paste => "paste",
+            Self::Nothing => "none",
+        }
+    }
+}
+
+/// 창 종류와 관계없이 그 창의 egui 입력 큐에 키 하나를 실제 키가 egui에 닿는 모양으로 넣는다.
+/// `modifiers`를 주면 그 창의 유지 수식 키를 먼저 바꾸고, 이벤트에는 유지 수식 키를 싣는다.
+/// 매핑 불가 키면 아무것도 바꾸지 않고 `None`.
+pub(crate) fn push_egui_key(
+    sink: &mut dyn EguiKeySink,
+    key_name: &str,
+    pressed: bool,
+    modifiers: Option<egui::Modifiers>,
+) -> Option<PushedKey> {
+    let key = egui::Key::from_name(key_name)?;
+    if let Some(m) = modifiers {
+        sink.hold_modifiers(m);
+    }
+    let held = sink.held_modifiers();
+    let (events, pushed) = key_events(key, pressed, held, || sink.clipboard_text());
+    if !events.is_empty() {
+        sink.push_events(events);
+    }
+    Some(pushed)
+}
+
+/// egui-winit 0.31.1 `State::on_keyboard_input`의 변환을 옮겨 적은 것. 눌린 편집 명령은
+/// 복사·잘라내기·붙여넣기 이벤트 하나로 바꾸고 같은 눌림의 `Key`는 넣지 않는다. 붙여넣기는
+/// 클립보드 글자의 `\r\n`을 `\n`으로 바꾸고, 비어 있으면 아무것도 넣지 않는다.
+fn key_events(
+    key: egui::Key,
+    pressed: bool,
+    modifiers: egui::Modifiers,
+    read_clipboard: impl FnOnce() -> Option<String>,
+) -> (Vec<egui::Event>, PushedKey) {
+    if pressed {
+        if is_cut_command(modifiers, key) {
+            return (vec![egui::Event::Cut], PushedKey::Cut);
+        }
+        if is_copy_command(modifiers, key) {
+            return (vec![egui::Event::Copy], PushedKey::Copy);
+        }
+        if is_paste_command(modifiers, key) {
+            let text = read_clipboard()
+                .map(|t| t.replace("\r\n", "\n"))
+                .filter(|t| !t.is_empty());
+            return match text {
+                Some(t) => (vec![egui::Event::Paste(t)], PushedKey::Paste),
+                None => (Vec::new(), PushedKey::Nothing),
+            };
+        }
+    }
+    let event = egui::Event::Key {
         key,
         physical_key: None,
         pressed,
         repeat: false,
-        modifiers: egui::Modifiers::default(),
-    }]);
-    true
+        modifiers,
+    };
+    (vec![event], PushedKey::Key)
+}
+
+/// egui-winit 0.31.1의 동명 판정을 옮겨 적은 것(상류 함수가 비공개다).
+fn is_cut_command(modifiers: egui::Modifiers, key: egui::Key) -> bool {
+    key == egui::Key::Cut
+        || (modifiers.command && key == egui::Key::X)
+        || (cfg!(target_os = "windows") && modifiers.shift && key == egui::Key::Delete)
+}
+
+/// egui-winit 0.31.1의 동명 판정을 옮겨 적은 것.
+fn is_copy_command(modifiers: egui::Modifiers, key: egui::Key) -> bool {
+    key == egui::Key::Copy
+        || (modifiers.command && key == egui::Key::C)
+        || (cfg!(target_os = "windows") && modifiers.ctrl && key == egui::Key::Insert)
+}
+
+/// egui-winit 0.31.1의 동명 판정을 옮겨 적은 것.
+fn is_paste_command(modifiers: egui::Modifiers, key: egui::Key) -> bool {
+    key == egui::Key::Paste
+        || (modifiers.command && key == egui::Key::V)
+        || (cfg!(target_os = "windows") && modifiers.shift && key == egui::Key::Insert)
 }
 
 /// 창 종류와 관계없이 그 창의 egui 입력 큐에 문자열을 한 Text 이벤트로 넣는다.
@@ -317,6 +429,75 @@ mod tests {
         assert!(!text_reaches_egui_as_typed("git\tstatus"));
         assert!(!text_reaches_egui_as_typed("\u{1b}"));
         assert!(!text_reaches_egui_as_typed("\u{e000}"));
+    }
+
+    fn command() -> egui::Modifiers {
+        egui::Modifiers::COMMAND
+    }
+
+    fn unread() -> Option<String> {
+        panic!("only a paste command reads the clipboard")
+    }
+
+    #[test]
+    fn a_pressed_copy_or_cut_command_becomes_the_edit_alone() {
+        assert_eq!(
+            key_events(egui::Key::C, true, command(), unread),
+            (vec![egui::Event::Copy], PushedKey::Copy)
+        );
+        assert_eq!(
+            key_events(egui::Key::X, true, command(), unread),
+            (vec![egui::Event::Cut], PushedKey::Cut)
+        );
+    }
+
+    #[test]
+    fn releasing_the_edit_key_is_a_key_event_with_the_modifiers() {
+        let (events, pushed) = key_events(egui::Key::C, false, command(), unread);
+        assert_eq!(pushed, PushedKey::Key);
+        assert!(matches!(
+            events[..],
+            [egui::Event::Key { key: egui::Key::C, pressed: false, modifiers, .. }] if modifiers.command
+        ));
+    }
+
+    #[test]
+    fn a_paste_command_reads_the_clipboard_and_normalizes_line_ends() {
+        assert_eq!(
+            key_events(egui::Key::V, true, command(), || Some("a\r\nb".into())),
+            (vec![egui::Event::Paste("a\nb".into())], PushedKey::Paste)
+        );
+    }
+
+    #[test]
+    fn an_empty_or_unreadable_clipboard_pushes_nothing() {
+        assert_eq!(
+            key_events(egui::Key::V, true, command(), || Some(String::new())),
+            (Vec::new(), PushedKey::Nothing)
+        );
+        assert_eq!(
+            key_events(egui::Key::V, true, command(), || None),
+            (Vec::new(), PushedKey::Nothing)
+        );
+    }
+
+    #[test]
+    fn other_keys_carry_the_modifiers_without_reading_the_clipboard() {
+        let (events, _) = key_events(egui::Key::A, true, command(), unread);
+        assert!(matches!(
+            events[..],
+            [egui::Event::Key { key: egui::Key::A, pressed: true, modifiers, .. }] if modifiers.command
+        ));
+        let (events, pushed) = key_events(egui::Key::C, true, egui::Modifiers::NONE, unread);
+        assert_eq!(pushed, PushedKey::Key);
+        assert!(matches!(
+            events[..],
+            [egui::Event::Key {
+                key: egui::Key::C,
+                modifiers: egui::Modifiers::NONE,
+                ..
+            }]
+        ));
     }
 
     #[test]

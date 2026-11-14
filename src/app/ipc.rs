@@ -5,6 +5,8 @@ mod app_methods;
 mod caller_gate;
 #[cfg(all(debug_assertions, feature = "gui"))]
 mod debug_egui_clipboard;
+#[cfg(debug_assertions)]
+mod debug_egui_key;
 #[cfg(all(debug_assertions, feature = "gui"))]
 mod debug_egui_window;
 #[cfg(debug_assertions)]

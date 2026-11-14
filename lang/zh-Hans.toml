@@ -4444,13 +4444,16 @@ help = "egui 从此事件起视为按住的修饰键（以逗号分隔的 `shift
 help = "目标窗口，主窗口或辅助窗口（设置、预设、插件）。指定后 fx/fy 相对于整个窗口，且不接受 --surface"
 
 [cli.help._root.debug.inject.egui-key]
-about = "向 egui 层注入按键事件"
+about = "按真实按键经 egui-winit 到达的形式向 egui 层注入按键事件。按住 command 时按下 C、X、V 分别成为复制、剪切、粘贴，粘贴读取 egui-winit 剪贴板"
 
 [cli.help._root.debug.inject.egui-key.arg.key]
 help = "egui 按键名称（如 `Enter`、`Escape`、`ArrowDown`）"
 
 [cli.help._root.debug.inject.egui-key.arg.pressed]
 help = "按下（默认）或用 `--pressed false` 释放。单独的 `--pressed` 表示 true"
+
+[cli.help._root.debug.inject.egui-key.arg.modifiers]
+help = "egui 从此按键起视为按住的修饰键（以逗号分隔的 `shift`、`ctrl`、`alt`、`command`，或用 `none` 释放；省略则保持按住状态）"
 
 [cli.help._root.debug.inject.egui-key.arg.window_id]
 help = "目标窗口，主窗口或辅助窗口（设置、预设、插件）。省略则发送到获得焦点的主窗口"

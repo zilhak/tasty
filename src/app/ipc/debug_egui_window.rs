@@ -7,9 +7,7 @@ use crate::app::App;
 use crate::app::ipc::IpcStep;
 use crate::ipc::protocol::JsonRpcResponse;
 use crate::ipc::server::{IpcCommand, send_response};
-use crate::view::main::debug_input::{
-    ScrollUnit, push_egui_key, push_egui_pointer, push_egui_text,
-};
+use crate::view::main::debug_input::{ScrollUnit, push_egui_pointer, push_egui_text};
 use crate::view::ui::View;
 
 /// 창을 지정해 넣을 egui 입력 종류. 메서드 이름 분기는 라우터(`debug_methods.rs`)가 맡는다.
@@ -55,25 +53,20 @@ impl App {
         Ok(serde_json::json!({ "injected": injected, "window_id": wid }))
     }
 
-    /// 기본값은 focused window 경로와 같다(`Escape`, 누름).
+    /// 처리는 focused window 경로와 같고(`debug_egui_key.rs`), 응답에 `window_id`를 더한다.
+    /// 유지 수식 키는 창마다 따로다.
     fn debug_egui_key_to_window(
         &mut self,
         params: &serde_json::Value,
     ) -> Result<serde_json::Value, (i32, String)> {
-        let key = params
-            .get("key")
-            .and_then(|v| v.as_str())
-            .unwrap_or("Escape");
-        let pressed = params
-            .get("pressed")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(true);
         let (wid, view) = self.debug_egui_target(params)?;
-        let injected = push_egui_key(&mut view.base_mut().gpu, key, pressed);
-        if injected {
+        let mut body = super::debug_egui_key::egui_key_body(&mut view.base_mut().gpu, params)
+            .map_err(|m| (-32602, m))?;
+        if body["injected"] == true {
             view.mark_dirty();
         }
-        Ok(serde_json::json!({ "injected": injected, "window_id": wid }))
+        body["window_id"] = serde_json::json!(wid);
+        Ok(body)
     }
 
     /// 좌표는 그 창 전체에 대한 정규화 좌표(fx, fy)만 받는다. 보조 창에는 surface가 없으므로

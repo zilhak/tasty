@@ -50,8 +50,8 @@ debug 메서드는 모두 `local_only()` — plugin caller 는 호출 불가, CL
 | `debug.inject_mouse` | `surface_id, row, col, button?, event_type?` | SGR mouse(1006) 시퀀스로 마우스 이벤트 주입 † |
 | `debug.inject_key` | `surface_id, bytes(hex)` 또는 `text` | 키 이벤트 주입 † |
 | `debug.inject_window_mouse` | `surface_id?`, `fx?`/`fy?`(기본 0.5, 창 정규화 좌표), `event_type?`, `button?`, `scroll_dx?`/`scroll_dy?`, `unit?`(기본 `line`) | winit 레벨 마우스 이벤트 주입 — 포커스된 창에 작용한다. 스크롤 단위는 아래 [휠 주입의 단위](#휠-주입의-단위-unit) |
-| `debug.inject_egui_mouse` | 위와 같음, `unit?` 기본 `point`, `modifiers?`(`shift`·`ctrl`·`alt`·`command` 배열) | egui 레벨 마우스 이벤트 주입 — winit 환산 경로를 건너뛰고 egui 입력에 직접 넣는다. `modifiers` 를 주면 egui 가 누른 것으로 보는 수식 키를 그 값으로 바꾸고 다음 `modifiers` 주입까지 유지한다(빈 배열은 모두 뗀다, 생략하면 그대로 둔다). CLI 는 `--modifiers shift,ctrl` · `--modifiers none`. `window_id?` 를 주면 그 창(메인 또는 설정·Preset·Plugins)의 egui 입력에 넣고, 좌표는 **그 창 전체에 대한 정규화 좌표**(`fx`/`fy`)만 받는다. 보조 창에는 surface 가 없으므로 `surface_id` 와 함께 주면 `-32602` 로 거절한다(CLI 는 `--window-id` 와 `--surface` 를 함께 받지 않고, `TASTY_SURFACE_ID` 로 채우지도 않는다). 응답에 `window_id` 를 싣고, 없는 창은 `-32602` |
-| `debug.inject_egui_key` | `key?`(기본 `Escape`), `pressed?`(기본 `true`, CLI `--pressed false` 로 뗌), `window_id?` | egui 레벨 키 이벤트 주입. 매핑할 수 없는 키 이름이면 `injected:false`. `window_id` 는 `debug.inject_egui_text` 와 같은 규칙이다(그 창의 egui 입력, 응답에 `window_id`, 없는 창 `-32602`, 생략하면 포커스된 메인 창) |
+| `debug.inject_egui_mouse` | 위와 같음, `unit?` 기본 `point`, `modifiers?`(`shift`·`ctrl`·`alt`·`command` 배열) | egui 레벨 마우스 이벤트 주입 — winit 환산 경로를 건너뛰고 egui 입력에 직접 넣는다. `modifiers` 를 주면 egui 가 누른 것으로 보는 수식 키를 그 값으로 바꾸고 다음 `modifiers` 주입까지 유지한다(빈 배열은 모두 뗀다, 생략하면 그대로 둔다). 이름은 egui-winit 과 같이 해석한다 — `command` 는 macOS 에서 Cmd, 그 밖에서는 Ctrl 이고, macOS 가 아니면 `ctrl` 도 `command` 를 켠다. 유지 상태는 창마다 따로다. 이벤트 자체의 수식 키는 `modifiers` 를 생략하면 비어 있다. CLI 는 `--modifiers shift,ctrl` · `--modifiers none`. `window_id?` 를 주면 그 창(메인 또는 설정·Preset·Plugins)의 egui 입력에 넣고, 좌표는 **그 창 전체에 대한 정규화 좌표**(`fx`/`fy`)만 받는다. 보조 창에는 surface 가 없으므로 `surface_id` 와 함께 주면 `-32602` 로 거절한다(CLI 는 `--window-id` 와 `--surface` 를 함께 받지 않고, `TASTY_SURFACE_ID` 로 채우지도 않는다). 응답에 `window_id` 를 싣고, 없는 창은 `-32602` |
+| `debug.inject_egui_key` | `key?`(기본 `Escape`), `pressed?`(기본 `true`, CLI `--pressed false` 로 뗌), `modifiers?`(`debug.inject_egui_mouse` 와 같은 배열, CLI `--modifiers command` · `--modifiers none`), `window_id?` | egui 레벨 키 이벤트 주입. 실제 키가 egui-winit 을 거쳐 닿는 모양으로 넣는다 — 이벤트에는 그 창의 유지 수식 키를 싣고, `modifiers` 를 주면 유지 상태를 먼저 그 값으로 바꾼다(`debug.inject_egui_mouse` 와 같은 의미). 눌린 편집 명령은 아래 [편집 키 조합 재현](#편집-키-조합-재현)대로 바꾼다. 응답 `{injected:true, pushed}` 의 `pushed` 는 실제로 넣은 것(`key`·`copy`·`cut`·`paste`·`none`)이다. 매핑할 수 없는 키 이름이면 `injected:false` 이고 유지 상태도 바꾸지 않는다. `window_id` 는 `debug.inject_egui_text` 와 같은 규칙이다(그 창의 egui 입력, 응답에 `window_id`, 없는 창 `-32602`, 생략하면 포커스된 메인 창) |
 | `debug.inject_egui_text` | `text`(필수, 문자열), `window_id?` | egui 레벨 **문자** 이벤트 주입 — 포커스된 `TextEdit`(command palette 쿼리 등)에 글자를 넣는다. `window_id` 를 주면 그 창(메인 또는 설정·Preset·Plugins 같은 보조 창)의 egui 입력에 넣고 응답에 `window_id` 를 싣는다. 없는 창이면 `-32602`. 생략하면 포커스된 메인 창이다. 아래 [문자 주입은 키 주입과 다른 채널이다](#문자-주입은-키-주입과-다른-채널이다) |
 | `debug.inject_egui_clipboard` | `op`(필수, `paste`·`copy`·`cut`), `text?`(`paste` 에 필수, 빈 값 거절), `window_id?` | 메인 창 egui 입력에 `Paste(text)`·`Copy`·`Cut` 하나를 넣는다. 실제 키가 거치는 편집 키 판정(바인딩 판정, 플러그인 회신 보류)과 egui-winit 기본 키 변환을 건너뛰고 그 뒤의 이벤트를 재현한다. 요청 id 를 붙이지 않으므로 회신을 약속하지 않은 플러그인처럼 키를 받는 플러그인 팝업 전달과 복사 결과 처리(`CopyText`)를 확인하는 데 쓴다. 응답 `{injected:true, window_id}`. `window_id` 가 없는 창이면 `-32602`, 메인 창이 아니어도 `-32602`, 생략하면 포커스된 메인 창이다 |
 | `debug.selection` | `{}` | focused window 의 로컬 텍스트 선택 상태 read-only 덤프(`present`·`surface_id`·`mode`·`dragging`·`empty`·`anchor/cursor/start/end{col,row}`). 마우스 라우팅 회귀 net 의 관찰면 — 순수 관찰(사용자 상태 불변) |
@@ -262,6 +262,30 @@ tasty screenshot --window $S --path /tmp/settings-filtered.png
 ```
 
 토글·버튼(Save 등)도 같은 `egui-mouse` 세 번으로 누른다. `Enter` 는 한 줄 입력칸의 포커스를 놓게 하므로 그 뒤의 `egui-text` 는 칸에 붙지 않는다.
+
+### 편집 키 조합 재현
+
+`debug.inject_egui_key` 는 egui-winit 0.31.1 `State::on_keyboard_input` 의 변환을 따른다. 실제 키가 만들지 않는 모양은 넣지 않는다.
+
+- 눌림이고 유지 수식 키에 `command` 가 있을 때 `C`·`X`·`V` 는 각각 `Copy`·`Cut`·`Paste` 하나가 되고, 같은 눌림의 `Key` 이벤트는 넣지 않는다. egui `TextEdit` 은 복사·잘라내기·붙여넣기를 이 세 이벤트로만 하므로 `Key{C, command}` 를 넣어도 복사되지 않는다. Windows 에서는 egui-winit 과 같이 `Shift+Delete`·`Ctrl+Insert`·`Shift+Insert` 도 바꾼다.
+- `Paste` 의 글자는 그 창의 egui-winit 클립보드(`State::clipboard_text`)에서 읽는다. 실제 붙여넣기 키가 읽는 것과 같은 인스턴스다(macOS·Windows·X11 은 arboard). `\r\n` 은 `\n` 으로 바꾸고, 비어 있거나 읽지 못하면 아무것도 넣지 않고 `pushed:"none"` 이다. 클립보드 글자는 응답에 싣지 않는다 — 값은 화면 캡처와 OS 클립보드 도구로 확인한다.
+- 떼기와 그 밖의 키는 유지 수식 키를 실은 `Key` 이벤트다. 전체 선택(`command` + `A`)은 이 경로로 재현된다.
+- 유지 수식 키는 키를 떼도 풀리지 않는다. 조합을 끝내면 `--modifiers none` 으로 뗀다. 무수식 키(`Enter`·`Backspace`·`Tab`)를 넣기 전에도 유지 상태가 비어 있는지 확인한다.
+
+이 경로는 winit 레벨의 편집 키 판정과 Tasty 단축키 판정을 거치지 않는다. 그래서 판정이 바인딩을 잡았을 때만 생기는 동작(플러그인 회신 보류, 동작하지 않았을 때 원래 키 넘김)과 egui 문맥의 super 상태 기록은 재현하지 않는다. winit `KeyEvent` 는 비공개 필드가 있어 크레이트 밖에서 만들 수 없기 때문이다. 이 빌드의 egui-winit 은 arboard 만 쓰므로 native Wayland 의 실제 붙여넣기(Wayland 선택에서 읽는다)도 재현하지 않는다.
+
+설정 창 필터 칸에서 복사·잘라내기와 다른 칸으로의 붙여넣기를 재는 순서는 이렇다(위 절차로 `$S` 를 얻고 필터 칸을 클릭한 뒤):
+
+```bash
+tasty debug inject egui-text --text sample --window-id $S
+tasty debug inject egui-key --key A --modifiers command --window-id $S   # 전체 선택
+tasty debug inject egui-key --key A --pressed false --window-id $S
+tasty debug inject egui-key --key C --window-id $S                       # {"injected":true,"pushed":"copy",...}
+tasty debug inject egui-key --key C --pressed false --modifiers none --window-id $S
+# 다른 입력칸을 egui-mouse 로 클릭하고 command+A 로 선택한 뒤
+tasty debug inject egui-key --key V --modifiers command --window-id $S   # "pushed":"paste"
+tasty debug inject egui-key --key V --pressed false --modifiers none --window-id $S
+```
 
 ### 휠 주입의 단위 (`unit`)
 

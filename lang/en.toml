@@ -4357,13 +4357,16 @@ help = "Modifier keys egui treats as held from this event on (comma-separated `s
 help = "Target window, main or auxiliary (Settings, Preset, Plugins). Then fx/fy are relative to that whole window and --surface is refused"
 
 [cli.help._root.debug.inject.egui-key]
-about = "Inject a key event into the egui layer"
+about = "Inject a key event into the egui layer as egui-winit delivers a real key. With command held, a pressed C, X or V becomes copy, cut or paste, and paste reads the egui-winit clipboard"
 
 [cli.help._root.debug.inject.egui-key.arg.key]
 help = "egui key name (e.g. `Enter`, `Escape`, `ArrowDown`)"
 
 [cli.help._root.debug.inject.egui-key.arg.pressed]
 help = "Press (default) or release with `--pressed false`. A bare `--pressed` means true"
+
+[cli.help._root.debug.inject.egui-key.arg.modifiers]
+help = "Modifier keys egui treats as held from this key on (comma-separated `shift`, `ctrl`, `alt`, `command`, or `none` to release; omit to keep the held ones)"
 
 [cli.help._root.debug.inject.egui-key.arg.window_id]
 help = "Target window, main or auxiliary (Settings, Preset, Plugins). Omit to send to the focused main window"

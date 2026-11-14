@@ -855,6 +855,18 @@ impl GpuState {
         self.egui_state.egui_input_mut().modifiers = modifiers;
     }
 
+    /// debug 전용: egui 가 지금 누른 것으로 보는 수식 키. 실제 키 이벤트는 이 값을 싣는다.
+    #[cfg(debug_assertions)]
+    pub fn debug_egui_modifiers(&self) -> egui::Modifiers {
+        self.egui_state.egui_input().modifiers
+    }
+
+    /// debug 전용: 실제 붙여넣기 키가 읽는 egui-winit 클립보드의 글자.
+    #[cfg(debug_assertions)]
+    pub fn debug_clipboard_text(&mut self) -> Option<String> {
+        self.egui_state.clipboard_text()
+    }
+
     /// Get egui's zoom factor.
     // 이유: 호출부가 debug_info.rs/debug_input.rs(개발자 로컬 디버그 전용) 뿐이라
     // release 빌드에서 미사용으로 잡힌다.

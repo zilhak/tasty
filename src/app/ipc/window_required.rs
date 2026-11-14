@@ -96,8 +96,13 @@ pub(super) fn read_egui_modifiers(
                 m.ctrl = true;
                 m.command |= !cfg!(target_os = "macos");
             }
+            // egui-winit 은 macOS 에서 Cmd 를, 그 밖에서는 Ctrl 을 command 로 본다.
             Some("command") => {
-                m.mac_cmd = cfg!(target_os = "macos");
+                if cfg!(target_os = "macos") {
+                    m.mac_cmd = true;
+                } else {
+                    m.ctrl = true;
+                }
                 m.command = true;
             }
             _ => {
@@ -268,19 +273,14 @@ impl App {
         }
         #[cfg(debug_assertions)]
         if cmd.request.method == "debug.inject_egui_key" {
-            let params = &cmd.request.params;
-            let key = params
-                .get("key")
-                .and_then(|v| v.as_str())
-                .unwrap_or("Escape");
-            let pressed = params
-                .get("pressed")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(true);
-            let ok = w.debug_inject_egui_key(key, pressed);
+            let body =
+                match super::debug_egui_key::egui_key_body(&mut w.base.gpu, &cmd.request.params) {
+                    Ok(body) => body,
+                    Err(msg) => return reject_bad_params(cmd, &msg),
+                };
             let response = host_ipc::protocol::JsonRpcResponse::success(
                 cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
-                serde_json::json!({ "injected": ok }),
+                body,
             );
             send_response(&cmd.response_tx, response);
             return IpcStep::Handled;

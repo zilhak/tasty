@@ -4282,13 +4282,16 @@ help = "このイベント以降に egui が押下中とみなす修飾キー（
 help = "対象ウィンドウ。メインまたは補助ウィンドウ（Settings、Preset、Plugins）。指定すると fx/fy はそのウィンドウ全体が基準になり、--surface とは併用できません"
 
 [cli.help._root.debug.inject.egui-key]
-about = "egui層にキーイベントを注入"
+about = "実際のキーが egui-winit を経て届く形で egui層にキーイベントを注入。command を押したまま C・X・V を押すとコピー・切り取り・貼り付けになり、貼り付けは egui-winit のクリップボードを読みます"
 
 [cli.help._root.debug.inject.egui-key.arg.key]
 help = "eguiキー名（例：`Enter`、`Escape`、`ArrowDown`）"
 
 [cli.help._root.debug.inject.egui-key.arg.pressed]
 help = "押下（既定値）、または `--pressed false` で解放。値なしの `--pressed` は true"
+
+[cli.help._root.debug.inject.egui-key.arg.modifiers]
+help = "このキー以降に egui が押下中とみなす修飾キー（カンマ区切りの `shift`・`ctrl`・`alt`・`command`、すべて離すには `none`、省略すると押下状態を維持）"
 
 [cli.help._root.debug.inject.egui-key.arg.window_id]
 help = "対象ウィンドウ。メインまたは補助ウィンドウ（Settings、Preset、Plugins）。省略するとフォーカス中のメインウィンドウに送ります"

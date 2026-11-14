@@ -716,7 +716,8 @@ pub enum InjectDebugCommands {
         #[arg(long, conflicts_with = "surface")]
         window_id: Option<u64>,
     },
-    /// Inject a key event into the egui layer.
+    /// Inject a key event into the egui layer as egui-winit delivers a real key. With command held,
+    /// a pressed C, X or V becomes copy, cut or paste, and paste reads the egui-winit clipboard.
     EguiKey {
         /// egui key name (e.g. `Enter`, `Escape`, `ArrowDown`).
         #[arg(long)]
@@ -730,6 +731,10 @@ pub enum InjectDebugCommands {
             action = clap::ArgAction::Set
         )]
         pressed: bool,
+        /// Modifier keys egui treats as held from this key on (comma-separated
+        /// `shift`, `ctrl`, `alt`, `command`, or `none` to release; omit to keep the held ones).
+        #[arg(long, value_delimiter = ',')]
+        modifiers: Option<Vec<String>>,
         /// Target window, main or auxiliary (Settings, Preset, Plugins). Omit to send to the focused main window
         #[arg(long)]
         window_id: Option<u64>,

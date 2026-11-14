@@ -318,7 +318,8 @@ WebView surface(html·markdown)와 Tasty 가 그리는 surface(터미널·image 
 직접 주입한다(`tasty debug inject egui-text`). 설정 같은 별도 창은 `--window-id <id>` 로
 그 창을 지목한다(창 ID는 위 "모달 창의 ID 를 얻는 법"). 그 창의 입력칸 포커스·토글·버튼 클릭은
 `xdotool` 대신 `tasty debug inject egui-mouse --window-id <id> --fx .. --fy ..`(창 기준 정규화
-좌표)로, Enter·Backspace 는 `egui-key --window-id <id>` 로 넣는다. 창 ID 를 얻는 것부터 입력까지
+좌표)로, Enter·Backspace 는 `egui-key --window-id <id>` 로 넣는다. 복사·잘라내기·붙여넣기와 전체 선택은
+`egui-key --modifiers command --key C`처럼 수식 키를 함께 준다(debug-ipc.md "편집 키 조합 재현"). 창 ID 를 얻는 것부터 입력까지
 debug IPC 만으로 끝나므로 X11 이 아닌 환경에서도 같은 절차다. 절차·거절 조건은
 [debug-ipc.md](../dev-guide/debug-ipc.md) "문자 주입은 키 주입과 다른 채널이다" 가 정본이다.
 
