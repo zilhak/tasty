@@ -432,8 +432,10 @@ pump 직후 꺼낸다. popup 결과는 그 popup 에 복사·잘라내기를 가
 plugin 이 지금 열린 그 instance 의 주인일 때만 그 창의 호스트 공통 복사 함수로 쓴다. 호스트 공통 복사
 함수가 클립보드에 쓰고 토스트를 띄운다(창 범위 `toast.copied`). 보낸 창이 없거나 instance 가 닫혔거나
 주인이 다르면 debug 로그만 남긴다. surface 결과는 결과를 보낸 plugin 이 그 surface 를 직전 렌더에 그린 창을 고르고
-(`MainView::egui_mesh_surface_plugin`), 그 창의 호스트 공통 복사 함수로 쓴다(surface 범위 `toast.copied`). 그 surface 를
-그린 창이 없거나 그린 plugin 이 다르면 debug 로그만 남긴다.
+(`MainView::egui_mesh_surface_plugin`). 그 창의 엔진에 그 surface 가 지금도 있고 그 mesh 의 주인이 같은 plugin 일 때만
+그 창의 호스트 공통 복사 함수로 쓴다(surface 범위 `toast.copied`). 그린 기록은 다음 렌더에서야 정리되므로 그 사이에 닫힌
+surface 의 늦은 결과는 이 확인으로 버린다. 그 surface 를 그린 창이 없거나, 그린 plugin 이 다르거나, surface 가
+사라졌으면 쓰지 않고 warn 로그만 남긴다.
 
 `RawInputEventWire` 는 `#[serde(other)] Unknown` fallback 을 가진다. 이 fallback 이 있는 SDK 로
 빌드한 plugin 은 모르는 입력 이벤트를 `Unknown` 으로 읽고 버리며, 같은 `set_context` 의 나머지

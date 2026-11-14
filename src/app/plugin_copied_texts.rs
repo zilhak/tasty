@@ -45,27 +45,39 @@ enum SurfaceCopyDrop {
     NotShown,
     /// 그 surface 를 그리는 창의 기록으로는 결과를 보낸 플러그인이 그 surface 의 주인이 아니다.
     NotOwner,
+    /// 그린 기록은 그 플러그인이지만 지금 엔진에 그 surface 가 없거나 그 mesh 의 주인이 다르다. 전송
+    /// 기록은 다음 렌더에서야 정리되므로 그 사이에 닫힌 surface 의 늦은 결과다.
+    Gone,
 }
 
-/// surface 복사 결과를 받을 창. `shown`은 창마다 그 surface 를 직전 렌더에 그린 플러그인이다. 결과를 보낸
-/// 플러그인이 그린 첫 창 하나만 고르므로 결과가 한 번만 쓰인다.
+/// 창 하나가 본 surface 의 주인. `drawn`은 그 창이 직전 렌더에 그린 플러그인(전송 기록)이고, `live`는 그 창의
+/// 엔진에 지금 있는 그 surface 의 mesh 주인이다.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct SurfaceOwners<'a> {
+    drawn: Option<&'a str>,
+    live: Option<&'a str>,
+}
+
+/// surface 복사 결과를 받을 창. 결과를 보낸 플러그인이 그렸고 지금도 그 surface 의 mesh 를 소유하는 첫 창
+/// 하나만 고르므로 결과가 한 번만 쓰인다.
 fn surface_copy_window<'a, W>(
     plugin_id: &str,
-    shown: impl IntoIterator<Item = (W, Option<&'a str>)>,
+    shown: impl IntoIterator<Item = (W, SurfaceOwners<'a>)>,
 ) -> Result<W, SurfaceCopyDrop> {
-    let mut seen = false;
-    for (window, owner) in shown {
-        match owner {
-            Some(owner) if owner == plugin_id => return Ok(window),
-            Some(_) => seen = true,
-            None => {}
+    let mut drop = SurfaceCopyDrop::NotShown;
+    for (window, owners) in shown {
+        match owners.drawn {
+            Some(drawn) if drawn == plugin_id => {
+                if owners.live == Some(plugin_id) {
+                    return Ok(window);
+                }
+                drop = SurfaceCopyDrop::Gone;
+            }
+            Some(_) if drop == SurfaceCopyDrop::NotShown => drop = SurfaceCopyDrop::NotOwner,
+            _ => {}
         }
     }
-    Err(if seen {
-        SurfaceCopyDrop::NotOwner
-    } else {
-        SurfaceCopyDrop::NotShown
-    })
+    Err(drop)
 }
 
 impl App {
@@ -100,11 +112,23 @@ impl App {
     }
 
     fn deliver_surface_copy(&mut self, plugin_id: &str, surface: u32, text: &str) {
-        let shown = self.view.views.iter().map(|(id, view)| {
-            let owner = view
+        let engines = &self.engines;
+        let reads: Vec<_> = self
+            .view
+            .views
+            .iter()
+            .map(|(id, view)| (*id, view, engines.window_read(*id)))
+            .collect();
+        let shown = reads.iter().map(|(id, view, engine)| {
+            let drawn = view
                 .as_main()
                 .and_then(|main| main.egui_mesh_surface_plugin(surface));
-            (*id, owner)
+            let live = engine
+                .as_ref()
+                .and_then(|engine| engine.find_surface_by_id(surface))
+                .and_then(|found| found.mesh())
+                .map(|mesh| mesh.plugin_id.as_str());
+            (*id, SurfaceOwners { drawn, live })
         });
         match surface_copy_window(plugin_id, shown) {
             Ok(id) => {
@@ -118,7 +142,7 @@ impl App {
                     );
                 }
             }
-            Err(reason) => tracing::debug!(
+            Err(reason) => tracing::warn!(
                 "plugin '{plugin_id}' copy for surface {surface} dropped: {reason:?}"
             ),
         }
@@ -163,21 +187,45 @@ mod tests {
         assert_eq!(popup_copy_window("p", Some("p"), sent), Ok("b"));
     }
 
+    fn owners<'a>(drawn: Option<&'a str>, live: Option<&'a str>) -> SurfaceOwners<'a> {
+        SurfaceOwners { drawn, live }
+    }
+
     /// surface 결과는 그 surface 를 그린 플러그인이 보낸 것만 그 창이 받는다. 그리는 창이 없거나 다른 플러그인이
     /// 그린 surface 의 결과는 쓰지 않는다.
     #[test]
     fn a_surface_copy_goes_only_to_a_window_where_its_plugin_draws_it() {
         assert_eq!(
-            surface_copy_window("p", [("a", None), ("b", Some("p"))]),
+            surface_copy_window(
+                "p",
+                [
+                    ("a", owners(None, None)),
+                    ("b", owners(Some("p"), Some("p")))
+                ]
+            ),
             Ok("b")
         );
         assert_eq!(
-            surface_copy_window("p", [("a", None)]),
+            surface_copy_window("p", [("a", owners(None, None))]),
             Err(SurfaceCopyDrop::NotShown)
         );
         assert_eq!(
-            surface_copy_window("p", [("a", Some("q"))]),
+            surface_copy_window("p", [("a", owners(Some("q"), Some("q")))]),
             Err(SurfaceCopyDrop::NotOwner)
+        );
+    }
+
+    /// 닫힌 surface 는 다음 렌더까지 전송 기록에 그 플러그인이 남는다. 그 사이에 온 늦은 결과는 지금 엔진에 그
+    /// surface 가 없거나 mesh 주인이 다르면 쓰지 않는다.
+    #[test]
+    fn a_late_copy_for_a_closed_surface_is_dropped() {
+        assert_eq!(
+            surface_copy_window("p", [("a", owners(Some("p"), None))]),
+            Err(SurfaceCopyDrop::Gone)
+        );
+        assert_eq!(
+            surface_copy_window("p", [("a", owners(Some("p"), Some("q")))]),
+            Err(SurfaceCopyDrop::Gone)
         );
     }
 
@@ -212,6 +260,7 @@ mod tests {
         for needle in [
             "PluginCopyTarget::Surface(surface) => { self.deliver_surface_copy(&plugin_id, surface, &text); }",
             ".and_then(|main| main.egui_mesh_surface_plugin(surface));",
+            ".and_then(|engine| engine.find_surface_by_id(surface)) .and_then(|found| found.mesh()) .map(|mesh| mesh.plugin_id.as_str());",
             "match surface_copy_window(plugin_id, shown) {",
             "crate::adapters::ui::ToastScope::Surface(surface),",
         ] {
