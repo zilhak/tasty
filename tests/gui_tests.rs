@@ -1546,3 +1546,86 @@ fn test_palette_paste_records_user_typing() {
         json!({ "surface_id": sid, "text": "\u{15}" }),
     );
 }
+
+/// 창 종류별 window_id 를 debug.window.list 에서 찾는다. 설정 창은 열기 요청 뒤 예약되므로 기다린다.
+fn debug_window_id(inst: &gui_common::GuiTestInstance, kind: &str) -> u64 {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let list = inst.call("debug.window.list", json!({}));
+        let found = list["windows"]
+            .as_array()
+            .and_then(|ws| ws.iter().find(|w| w["kind"] == kind))
+            .and_then(|w| w["window_id"].as_u64());
+        if let Some(id) = found {
+            return id;
+        }
+        assert!(Instant::now() < deadline, "no {kind} window: {list}");
+        std::thread::sleep(Duration::from_millis(100));
+    }
+}
+
+/// debug.inject_egui_key 의 두 입구(포커스된 메인 창, window_id)가 실제 창의 egui 상태를 쓴다.
+/// 유지 수식 키는 그 창의 GpuState 에 남고 다른 창으로 새지 않으며, 붙여넣기 글자는 그 창의
+/// egui-winit 클립보드에서 읽는다. 응답의 pushed 로 판정하므로 화면 입력칸이 필요 없다.
+/// 보조 창을 받는 debug.inject_egui_clipboard 도 같은 설정 창으로 확인한다.
+#[test]
+#[ignore]
+fn test_egui_key_injection_uses_each_windows_own_egui_state() {
+    let inst = shared();
+    let pushed = |params: serde_json::Value| -> String {
+        let r = inst.call("debug.inject_egui_key", params.clone());
+        assert_eq!(r["injected"], json!(true), "{params} -> {r}");
+        r["pushed"].as_str().unwrap_or_default().to_string()
+    };
+    let mark = "EGUI_KEY_PASTE_MARK";
+    inst.call("clipboard.set_text", json!({ "text": mark }));
+
+    // 포커스 입구: command 를 걸면 C 는 복사, 생략한 V 는 유지된 command 로 붙여넣기다.
+    assert_eq!(
+        pushed(json!({ "key": "C", "modifiers": ["command"] })),
+        "copy"
+    );
+    assert_eq!(pushed(json!({ "key": "C", "pressed": false })), "key");
+    assert_eq!(pushed(json!({ "key": "V" })), "paste");
+    assert_eq!(pushed(json!({ "key": "V", "pressed": false })), "key");
+    assert_eq!(pushed(json!({ "key": "C", "modifiers": [] })), "key");
+    assert_eq!(pushed(json!({ "key": "C", "pressed": false })), "key");
+
+    inst.call("debug.settings.open", json!({ "tab": "general" }));
+    let main = debug_window_id(&inst, "main");
+    let settings = debug_window_id(&inst, "settings");
+
+    // 창 지정 입구: 메인 창에 건 command 는 설정 창으로 새지 않는다.
+    assert_eq!(
+        pushed(json!({ "window_id": main, "key": "C", "modifiers": ["command"] })),
+        "copy"
+    );
+    assert_eq!(pushed(json!({ "window_id": settings, "key": "C" })), "key");
+    assert_eq!(
+        pushed(json!({ "window_id": settings, "key": "V", "modifiers": ["command"] })),
+        "paste"
+    );
+    assert_eq!(pushed(json!({ "window_id": settings, "key": "C" })), "copy");
+    assert_eq!(pushed(json!({ "window_id": main, "key": "X" })), "cut");
+
+    let clip = inst.call(
+        "debug.inject_egui_clipboard",
+        json!({ "op": "copy", "window_id": settings }),
+    );
+    assert_eq!(clip, json!({ "injected": true, "window_id": settings }));
+
+    for wid in [main, settings] {
+        pushed(json!({ "window_id": wid, "key": "C", "pressed": false, "modifiers": [] }));
+    }
+    inst.call("debug.settings.close", json!({}));
+    inst.wait_for_ui("settings modal is gone", Duration::from_secs(3), |s| {
+        !s.settings_modal_is_up()
+    });
+    // 메인 창 붙여넣기가 터미널 입력줄에 닿았을 수 있어 다음 시험을 위해 줄을 비운다.
+    if let Some(sid) = inst.debug_focused_surface() {
+        inst.call(
+            "surface.send",
+            json!({ "surface_id": sid, "text": "\u{15}" }),
+        );
+    }
+}
