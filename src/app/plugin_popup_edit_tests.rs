@@ -43,16 +43,17 @@ fn mgr() -> PluginManager {
 #[test]
 fn only_an_open_popup_of_an_opted_in_plugin_gets_an_edit_request() {
     let mut mgr = mgr();
-    let request = popup_edit_request(&mut mgr, 1).expect("약속한 플러그인의 열린 팝업");
+    let request = edit_request(&mut mgr, &ask(1)).expect("약속한 플러그인의 열린 팝업");
     assert_eq!(request.plugin_id, OPTED);
     assert_eq!(request.target, PluginCopyTarget::Popup(1));
-    assert!(popup_edit_request(&mut mgr, 2).is_none());
-    assert!(popup_edit_request(&mut mgr, 3).is_none());
+    assert!(edit_request(&mut mgr, &ask(2)).is_none());
+    assert!(edit_request(&mut mgr, &ask(3)).is_none());
 }
 
 fn ask(instance: u64) -> PluginEditAsk {
     PluginEditAsk {
-        instance,
+        target: PluginCopyTarget::Popup(instance),
+        plugin_id: None,
         edit: EditKey::Paste,
         text: Some("/tmp/a.md".into()),
         original: WindowEvent::Focused(true),
@@ -81,13 +82,13 @@ fn a_popup_without_a_reply_promise_replays_the_original_key_once() {
     match popup_edit_plan(Some(&mut mgr), ask(1)) {
         PopupEditPlan::Hold(hold) => {
             let PopupEditHold {
-                instance,
+                target,
                 wire,
                 request,
                 original,
                 edit,
             } = *hold;
-            assert_eq!(instance, 1);
+            assert_eq!(target, PluginCopyTarget::Popup(1));
             assert_eq!(request.target, PluginCopyTarget::Popup(1));
             assert_eq!(
                 wire,
@@ -107,20 +108,80 @@ fn a_popup_without_a_reply_promise_replays_the_original_key_once() {
     }
 }
 
-/// 보류 대상 판정: 열려 있고 그 창의 키를 받는 팝업만 살아 있다. 닫힌 팝업, 다른 팝업이 키를 받는 창, 플러그인
-/// 관리자가 없는 경우는 끝난다. surface 대상은 아직 판정하지 않는다.
+fn surface_ask(plugin_id: Option<&str>) -> PluginEditAsk {
+    PluginEditAsk {
+        target: PluginCopyTarget::Surface(5),
+        plugin_id: plugin_id.map(str::to_string),
+        edit: EditKey::Cut,
+        text: None,
+        original: WindowEvent::Focused(true),
+    }
+}
+
+/// surface 대상은 view 가 키 시점에 읽은 플러그인에 요청을 만든다. 그 플러그인이 회신을 약속했으면 요청이 그
+/// surface 입력에 붙고 원래 키를 보류한다. 약속하지 않았거나 플러그인을 모르면 원래 키를 한 번 재생한다.
 #[test]
-fn a_hold_target_lives_only_while_its_popup_is_open_and_owns_the_window_keys() {
-    use crate::app::plugin_edit_holds::hold_target_live;
+fn a_surface_edit_goes_to_the_plugin_that_view_read_at_key_time() {
+    let mut mgr = mgr();
+    match popup_edit_plan(Some(&mut mgr), surface_ask(Some(OPTED))) {
+        PopupEditPlan::Hold(hold) => {
+            assert_eq!(hold.target, PluginCopyTarget::Surface(5));
+            assert_eq!(hold.request.target, PluginCopyTarget::Surface(5));
+            assert_eq!(hold.request.plugin_id, OPTED);
+            assert_eq!(
+                hold.wire,
+                RawInputEventWire::EditRequest {
+                    edit_id: hold.request.edit_id,
+                    edit: tasty_plugin_protocol::EditRequestWire::Cut,
+                }
+            );
+        }
+        other => panic!("약속한 플러그인의 surface 가 재생됐다: {other:?}"),
+    }
+    let replay = vec![ReplayStep::Original(
+        WindowEvent::Focused(true),
+        EditKey::Cut,
+    )];
+    for plugin_id in [Some(PLAIN), None] {
+        match popup_edit_plan(Some(&mut mgr), surface_ask(plugin_id)) {
+            PopupEditPlan::Replay(steps) => assert_eq!(steps, replay, "{plugin_id:?}"),
+            other => panic!("{plugin_id:?} 이 보류됐다: {other:?}"),
+        }
+    }
+}
+
+/// 보류 대상 판정: 팝업은 열려 있고 그 창의 키를 받을 때만, surface 는 그 창의 키를 지금도 받을 때만 살아
+/// 있다. 닫힌 팝업, 다른 팝업이나 surface 가 키를 받는 창, 플러그인 관리자가 없는 경우는 끝난다.
+#[test]
+fn a_hold_target_lives_only_while_it_still_owns_the_window_keys() {
+    use crate::app::plugin_edit_holds::{WindowKeyTargets, hold_target_live};
     let mgr = mgr();
-    let (w1, w2, w3) = (WindowId::from(1), WindowId::from(2), WindowId::from(3));
-    let key_target_of = |window: WindowId| match u64::from(window) {
-        1 => Some(1),
-        2 => Some(2),
-        3 => Some(3),
-        _ => None,
+    let (w1, w2, w3, w4) = (
+        WindowId::from(1),
+        WindowId::from(2),
+        WindowId::from(3),
+        WindowId::from(4),
+    );
+    let key_targets_of = |window: WindowId| match u64::from(window) {
+        1 => WindowKeyTargets {
+            popup: Some(1),
+            surface: None,
+        },
+        2 => WindowKeyTargets {
+            popup: Some(2),
+            surface: None,
+        },
+        3 => WindowKeyTargets {
+            popup: Some(3),
+            surface: None,
+        },
+        4 => WindowKeyTargets {
+            popup: None,
+            surface: Some(5),
+        },
+        _ => WindowKeyTargets::default(),
     };
-    let live = hold_target_live(Some(&mgr), key_target_of);
+    let live = hold_target_live(Some(&mgr), key_targets_of);
     assert!(live(w1, &PluginCopyTarget::Popup(1)), "열림·소유");
     assert!(
         !live(w2, &PluginCopyTarget::Popup(1)),
@@ -128,14 +189,33 @@ fn a_hold_target_lives_only_while_its_popup_is_open_and_owns_the_window_keys() {
     );
     assert!(!live(w3, &PluginCopyTarget::Popup(3)), "닫힌 팝업");
     assert!(
-        !live(WindowId::from(9), &PluginCopyTarget::Popup(1)),
-        "창의 키를 받는 plugin 팝업이 없다"
+        !live(w4, &PluginCopyTarget::Popup(1)),
+        "surface 가 키를 받는다"
     );
-    assert!(live(w1, &PluginCopyTarget::Surface(5)));
-    let without = hold_target_live(None, key_target_of);
+    assert!(
+        live(w4, &PluginCopyTarget::Surface(5)),
+        "surface 가 키를 받는다"
+    );
+    assert!(
+        !live(w4, &PluginCopyTarget::Surface(6)),
+        "다른 surface 가 키를 받는다"
+    );
+    assert!(
+        !live(w1, &PluginCopyTarget::Surface(5)),
+        "팝업이 키를 받는다"
+    );
+    assert!(
+        !live(WindowId::from(9), &PluginCopyTarget::Surface(5)),
+        "키를 받는 대상이 없다"
+    );
+    let without = hold_target_live(None, key_targets_of);
     assert!(
         !without(w1, &PluginCopyTarget::Popup(1)),
         "플러그인 관리자 없음"
+    );
+    assert!(
+        without(w4, &PluginCopyTarget::Surface(5)),
+        "surface 는 관리자와 무관"
     );
 }
 
@@ -155,11 +235,15 @@ fn settle_reads_the_window_key_target_into_the_hold_judgment() {
         .filter(|line| !line.starts_with("//"))
         .collect();
     let wiring = "let views = &self.view.views;\
+        let engines = &self.engines;\
         let live = hold_target_live(self.plugin_manager.as_ref(), |window| {\
-        views\
-        .get(&window)\
-        .and_then(|v| v.as_main())\
-        .and_then(|main| main.state.plugin_popup_key_target())\
+        let main = views.get(&window).and_then(|v| v.as_main());\
+        WindowKeyTargets {\
+        popup: main.and_then(|main| main.state.plugin_popup_key_target()),\
+        surface: main\
+        .zip(engines.window_read(window))\
+        .and_then(|(main, engine)| main.plugin_surface_key_target(&engine)),\
+        }\
         });\
         let (resolved, cancelled) = self.plugin_edit_holds.settle(outcomes, now, live);";
     let wiring: String = wiring.split_whitespace().collect::<Vec<_>>().join(" ");

@@ -20,6 +20,7 @@ use crate::model::{PhysicalPx, PhysicalRect};
 use crate::plugin_bridge::MeshForwardCommon;
 
 use super::MainView;
+use crate::view::ui::View as _;
 
 /// 두 egui 프레임 사이의 실제 경과 시간을 계산하도록 공통 Instant 기준의 초를 보낸다.
 fn mesh_time_now() -> f64 {
@@ -42,6 +43,8 @@ pub(crate) struct MeshForwardState {
     last_focused: Option<bool>,
     /// SurfaceInvalidated를 받으면 입력 변화 없이도 다음 컨텍스트를 한 번 보낸다.
     invalidated: bool,
+    /// 직전 렌더 때 이 surface 의 플러그인이 편집 결과 회신을 약속했는지. 키 시점의 편집 판정이 읽는다.
+    pub(super) reports_edit_outcomes: bool,
 }
 
 impl MeshForwardState {
@@ -191,6 +194,22 @@ impl MainView {
         st.events.push(RawInputEventWire::Copy);
     }
 
+    /// 플러그인 편집 요청(`EditRequest`)을 대상의 다음 입력에 붙인다. 팝업은 그 팝업의 다음 렌더 입력,
+    /// surface 는 그 surface 의 다음 컨텍스트 전송이다.
+    pub(crate) fn queue_plugin_edit_request(
+        &mut self,
+        target: crate::plugin::manager::PluginCopyTarget,
+        wire: RawInputEventWire,
+    ) {
+        queue_edit_request(
+            &mut self.state.plugin_popup_edit_requests,
+            &mut self.egui_mesh,
+            target,
+            wire,
+        );
+        self.mark_dirty();
+    }
+
     /// 플러그인이 클립보드를 직접 읽어 붙여넣도록 Paste 이벤트를 누적한다.
     pub(crate) fn egui_mesh_push_paste(&mut self, surface_id: u32) {
         let st = self.egui_mesh.entry(surface_id).or_default();
@@ -322,6 +341,7 @@ impl MainView {
 
             let st = self.egui_mesh.entry(sid).or_default();
             st.plugin_id = Some(plugin_id.clone());
+            st.reports_edit_outcomes = mgr.supports_edit_outcome(&plugin_id);
             st.common.watch_blank(
                 has_frame,
                 format_args!("surface {sid} (kind '{kind}', plugin '{plugin_id}')"),
@@ -451,6 +471,22 @@ impl MainView {
 
 /// winit 마우스 버튼 → wire 포인터 버튼. 매핑 불가한 버튼(Back/Forward/Other)은 무시.
 /// `pub(super)` — `attach_mesh_input.rs` 재사용.
+/// [`MainView::queue_plugin_edit_request`]의 대상 고르기.
+fn queue_edit_request(
+    popups: &mut Vec<(u64, RawInputEventWire)>,
+    surfaces: &mut std::collections::HashMap<u32, MeshForwardState>,
+    target: crate::plugin::manager::PluginCopyTarget,
+    wire: RawInputEventWire,
+) {
+    use crate::plugin::manager::PluginCopyTarget;
+    match target {
+        PluginCopyTarget::Popup(instance) => popups.push((instance, wire)),
+        PluginCopyTarget::Surface(surface) => {
+            surfaces.entry(surface).or_default().events.push(wire)
+        }
+    }
+}
+
 pub(super) fn map_button(button: MouseButton) -> Option<PointerButtonWire> {
     match button {
         MouseButton::Left => Some(PointerButtonWire::Primary),
@@ -700,6 +736,33 @@ impl MainView {
 mod tests {
     use super::*;
     use winit::keyboard::SmolStr;
+
+    /// 편집 요청은 대상 팝업의 입력 줄이나 대상 surface 의 입력에만 붙는다.
+    #[test]
+    fn an_edit_request_joins_only_its_target_input() {
+        use crate::plugin::manager::PluginCopyTarget;
+        let wire = |edit_id| RawInputEventWire::EditRequest {
+            edit_id,
+            edit: tasty_plugin_protocol::EditRequestWire::Copy,
+        };
+        let mut popups = Vec::new();
+        let mut surfaces = std::collections::HashMap::new();
+        queue_edit_request(
+            &mut popups,
+            &mut surfaces,
+            PluginCopyTarget::Surface(5),
+            wire(1),
+        );
+        queue_edit_request(
+            &mut popups,
+            &mut surfaces,
+            PluginCopyTarget::Popup(7),
+            wire(2),
+        );
+        assert_eq!(popups, vec![(7, wire(2))]);
+        assert_eq!(surfaces.len(), 1);
+        assert_eq!(surfaces[&5].events, vec![wire(1)]);
+    }
 
     fn phys(code: KeyCode) -> PhysicalKey {
         PhysicalKey::Code(code)

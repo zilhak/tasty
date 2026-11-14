@@ -8,14 +8,17 @@ use winit::event::{ElementState, WindowEvent};
 use super::MainView;
 use crate::adapters::ui::input::edit_key::{Capability, EditBindings, EditKey, Verdict, verdict};
 use crate::gfx::gpu::edit_keys::EguiKey;
+use crate::plugin::manager::PluginCopyTarget;
 use crate::runtime::engine_read::EngineRead;
 
-/// 플러그인 팝업에 보낼 편집. App이 요청을 만들고 원래 키를 보류한다. 플러그인이 회신을 약속하지 않았으면
-/// App이 원래 키를 넘긴 편집으로 재생한다.
+/// 플러그인 팝업·surface 에 보낼 편집. App이 요청을 만들고 원래 키를 보류한다. 플러그인이 회신을 약속하지
+/// 않았으면 App이 원래 키를 넘긴 편집으로 재생한다.
 #[derive(Debug, Clone)]
 pub(crate) struct PluginEditAsk {
-    /// 키를 보낸 때 키를 받던 팝업 instance. 회신과 재생은 이 팝업으로 짝짓는다.
-    pub(crate) instance: u64,
+    /// 키를 보낸 때 키를 받던 팝업 instance 나 surface. 회신과 재생은 이 대상으로 짝짓는다.
+    pub(crate) target: PluginCopyTarget,
+    /// surface 대상의 플러그인. 팝업 대상은 App이 열린 팝업에서 찾는다.
+    pub(crate) plugin_id: Option<String>,
     pub(crate) edit: EditKey,
     /// 붙여넣을 글자. 붙여넣기에만 있다.
     pub(crate) text: Option<String>,
@@ -37,7 +40,7 @@ impl PluginEditAsk {
 }
 
 /// 플러그인 팝업 대상의 능력. 붙여넣기는 클립보드에 글자가 없으면 할 수 없다. 그 밖은 회신을 봐야 안다.
-fn popup_capability(edit: EditKey, clipboard_text: bool) -> Capability {
+pub(super) fn popup_capability(edit: EditKey, clipboard_text: bool) -> Capability {
     match edit {
         EditKey::Paste if !clipboard_text => Capability::No,
         _ => Capability::Unknown,
@@ -46,7 +49,7 @@ fn popup_capability(edit: EditKey, clipboard_text: bool) -> Capability {
 
 /// 판정이 키에 하는 일. 바인딩이 아니거나 할 수 없음을 아는 키는 egui-winit 에 그대로 간다(기본 편집 키의
 /// `Cut`·`Copy`·`Paste` 변환도 그대로다). 그 밖은 Tasty 가 가져가고 플러그인에 보낼 편집을 남긴다.
-fn popup_key(judged: Verdict) -> (EguiKey, Option<EditKey>) {
+pub(super) fn popup_key(judged: Verdict) -> (EguiKey, Option<EditKey>) {
     match judged {
         Verdict::NoBinding => (EguiKey::Free, None),
         Verdict::Pass(edit) => (EguiKey::Pass(edit), None),
@@ -89,7 +92,8 @@ impl MainView {
         let (key, asked) = popup_key(judged);
         if let Some(edit) = asked {
             self.plugin_edit_ask = Some(PluginEditAsk {
-                instance,
+                target: PluginCopyTarget::Popup(instance),
+                plugin_id: None,
                 edit,
                 text,
                 original: event.clone(),
@@ -149,7 +153,8 @@ mod tests {
 
     fn ask(edit: EditKey, text: Option<&str>) -> PluginEditAsk {
         PluginEditAsk {
-            instance: 7,
+            target: PluginCopyTarget::Popup(7),
+            plugin_id: None,
             edit,
             text: text.map(str::to_string),
             original: WindowEvent::Focused(true),

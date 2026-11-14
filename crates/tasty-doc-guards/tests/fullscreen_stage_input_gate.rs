@@ -332,6 +332,7 @@ fn every_overlay_open_composite_is_stage_aware() {
             "src/view/main/file_drag.rs".to_string(),
             "src/view/main/ime.rs".to_string(),
             "src/view/main/keyboard.rs".to_string(),
+            "src/view/main/plugin_surface_keys.rs".to_string(),
         ],
         "`keyboard_overlay_open()` 호출부 집합이 바뀌었다. 새 지점이 생겼다면 \
          docs/architecture/input-layer.md 의 열거도 함께 갱신하라."

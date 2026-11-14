@@ -36,6 +36,9 @@ impl MainView {
         if let Some(judged) = self.judge_plugin_popup_edit_key(engine, event) {
             return judged;
         }
+        if let Some(judged) = self.judge_plugin_surface_edit_key(engine, event) {
+            return judged;
+        }
         let keyboard = matches!(event, WindowEvent::KeyboardInput { .. });
         let target = keyboard && self.edit_key_target(engine);
         let explorer = keyboard

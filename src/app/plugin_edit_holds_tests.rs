@@ -257,3 +257,14 @@ fn a_popup_target_lives_only_while_open_and_owning_the_keys() {
         "플러그인 관리자가 없다"
     );
 }
+
+/// 편집 결과 복사의 토스트는 surface 의 편집이면 그 surface 에, 팝업의 편집이면 창에 뜬다.
+#[test]
+fn a_surface_copy_toast_stays_in_that_surface() {
+    use crate::adapters::ui::ToastScope;
+    assert_eq!(
+        copy_scope(PluginCopyTarget::Surface(5)),
+        ToastScope::Surface(5)
+    );
+    assert_eq!(copy_scope(PluginCopyTarget::Popup(1)), ToastScope::Window);
+}

@@ -22,6 +22,7 @@ mod menu_target;
 mod mouse;
 mod move_menu;
 pub(crate) mod plugin_popup_keys;
+mod plugin_surface_keys;
 mod preset_actions;
 pub(crate) mod redraw;
 mod saved_row_menu;

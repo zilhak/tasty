@@ -213,18 +213,37 @@ pub(crate) fn popup_target_live(
     key_target == Some(instance) && open.is_some_and(|open| open.contains(&instance))
 }
 
-/// 보류 대상이 살아 있는지의 판정. 열린 팝업은 지금 `mgr`에서 한 번 모으고, 창의 키를 받는 plugin 팝업은
-/// `key_target_of`로 묻는다. 플러그인 관리자가 없으면 열린 팝업이 없다.
+/// 창의 키를 지금 받는 플러그인 대상. 많아야 하나가 있다(팝업이 키를 받으면 surface 는 받지 않는다).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct WindowKeyTargets {
+    /// 키를 받는 plugin 팝업 instance(`MainViewState::plugin_popup_key_target`).
+    pub(crate) popup: Option<u64>,
+    /// 키를 받는 로컬 egui-mesh surface(`MainView::plugin_surface_key_target`).
+    pub(crate) surface: Option<u32>,
+}
+
+/// 보류 대상이 살아 있는지의 판정. 열린 팝업은 지금 `mgr`에서 한 번 모으고, 창의 키를 받는 대상은
+/// `key_targets_of`로 묻는다. 플러그인 관리자가 없으면 열린 팝업이 없다. surface 대상은 그 창의 키를 지금도 그
+/// surface 가 받을 때만 살아 있다. 닫힌 surface 는 포커스를 가질 수 없으므로 같은 판정으로 끝난다.
 pub(crate) fn hold_target_live(
     mgr: Option<&PluginManager>,
-    key_target_of: impl Fn(WindowId) -> Option<u64>,
+    key_targets_of: impl Fn(WindowId) -> WindowKeyTargets,
 ) -> impl Fn(WindowId, &PluginCopyTarget) -> bool {
     let open: Option<HashSet<u64>> =
         mgr.map(|mgr| mgr.popup_instances().map(|(id, _)| id).collect());
     move |window, target| match target {
-        PluginCopyTarget::Popup(id) => popup_target_live(open.as_ref(), key_target_of(window), *id),
-        // surface 대상 보류는 아직 만드는 경로가 없다. 그 경로가 surface 의 닫힘·키 소유 판정을 함께 넣는다.
-        PluginCopyTarget::Surface(_) => true,
+        PluginCopyTarget::Popup(id) => {
+            popup_target_live(open.as_ref(), key_targets_of(window).popup, *id)
+        }
+        PluginCopyTarget::Surface(id) => key_targets_of(window).surface == Some(*id),
+    }
+}
+
+/// 편집 결과 복사의 토스트 범위. surface 의 편집은 그 surface 에, 팝업의 편집은 창에 띄운다.
+pub(crate) fn copy_scope(target: PluginCopyTarget) -> crate::adapters::ui::ToastScope {
+    match target {
+        PluginCopyTarget::Popup(_) => crate::adapters::ui::ToastScope::Window,
+        PluginCopyTarget::Surface(surface) => crate::adapters::ui::ToastScope::Surface(surface),
     }
 }
 
@@ -251,11 +270,15 @@ impl App {
             .map(|mgr| mgr.take_edit_outcomes())
             .unwrap_or_default();
         let views = &self.view.views;
+        let engines = &self.engines;
         let live = hold_target_live(self.plugin_manager.as_ref(), |window| {
-            views
-                .get(&window)
-                .and_then(|v| v.as_main())
-                .and_then(|main| main.state.plugin_popup_key_target())
+            let main = views.get(&window).and_then(|v| v.as_main());
+            WindowKeyTargets {
+                popup: main.and_then(|main| main.state.plugin_popup_key_target()),
+                surface: main
+                    .zip(engines.window_read(window))
+                    .and_then(|(main, engine)| main.plugin_surface_key_target(&engine)),
+            }
         });
         let (resolved, cancelled) = self.plugin_edit_holds.settle(outcomes, now, live);
         if let Some(mgr) = self.plugin_manager.as_mut() {
@@ -285,13 +308,7 @@ impl App {
                 .get_mut(&window)
                 .and_then(|v| v.as_main_mut())
         {
-            main.copy_text(
-                &text,
-                false,
-                "toast.copied",
-                Vec::new(),
-                crate::adapters::ui::ToastScope::Window,
-            );
+            main.copy_text(&text, false, "toast.copied", Vec::new(), copy_scope(target));
         }
         self.replay_edit_steps(window, steps);
     }

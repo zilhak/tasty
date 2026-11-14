@@ -28,6 +28,9 @@ impl<'a> PluginDisplay<'a> {
     ) -> bool {
         self.manager.needs_egui_mesh_bootstrap(plugin, binding)
     }
+    pub(crate) fn supports_edit_outcome(self, plugin: &str) -> bool {
+        self.manager.supports_edit_outcome(plugin)
+    }
     pub(crate) fn egui_mesh_frame(self, surface: u32) -> Option<&'a EguiMeshFrame> {
         self.manager.egui_mesh_frame(surface)
     }
