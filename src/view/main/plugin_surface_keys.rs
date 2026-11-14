@@ -46,6 +46,42 @@ fn mirror_key(binding: Option<EditKey>) -> EguiKey {
     popup_key(verdict(binding, |_| Capability::No)).0
 }
 
+/// surface 판정이 키에 하는 일과 남길 편집 요청. 대상이 없으면 `None`이고 다음 판정이 받는다. 뗌은 그대로
+/// 보낸다. mirror 는 넘기고, 회신을 약속한 로컬 surface 는 팝업과 같은 규칙으로 판정해 기다리는 키를 Tasty 가
+/// 가져가고 원래 키를 붙잡은 요청을 남긴다. 붙여넣을 글자는 붙여넣기 바인딩일 때만 읽는다.
+pub(super) fn surface_key(
+    target: Option<SurfaceEditTarget>,
+    pressed: bool,
+    binding: Option<EditKey>,
+    paste_text: impl FnOnce() -> Option<String>,
+    original: &WindowEvent,
+) -> Option<(EguiKey, Option<PluginEditAsk>)> {
+    let target = target?;
+    if !pressed {
+        return Some((EguiKey::Free, None));
+    }
+    let (surface, plugin_id) = match target {
+        SurfaceEditTarget::Mirror => return Some((mirror_key(binding), None)),
+        SurfaceEditTarget::Local { surface, plugin_id } => (surface, plugin_id),
+    };
+    let mut text = None;
+    let judged = verdict(binding, |edit| {
+        if edit == EditKey::Paste {
+            text = paste_text();
+        }
+        popup_capability(edit, text.is_some())
+    });
+    let (key, asked) = popup_key(judged);
+    let ask = asked.map(|edit| PluginEditAsk {
+        target: PluginCopyTarget::Surface(surface),
+        plugin_id: Some(plugin_id),
+        edit,
+        text,
+        original: Some(original.clone()),
+    });
+    Some((key, ask))
+}
+
 /// 팔레트 편집 명령이 포커스 surface 에 하는 일.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum PaletteSurfaceEdit {
@@ -148,37 +184,23 @@ impl MainView {
         if self.base.gpu.edit_keys_busy() {
             return None;
         }
-        let target = self.surface_edit_target_now(engine)?;
-        if key.state != ElementState::Pressed {
-            return Some(EguiKey::Free);
-        }
-        let mods = self.base.state.modifiers;
-        let lookup =
-            crate::shortcuts::shortcut_lookup_key(&key.logical_key, &key.physical_key, mods);
-        let binding =
-            EditBindings::from_settings(&engine.settings.keybindings).binding(&lookup, mods);
-        let (surface, plugin_id) = match target {
-            SurfaceEditTarget::Mirror => return Some(mirror_key(binding)),
-            SurfaceEditTarget::Local { surface, plugin_id } => (surface, plugin_id),
+        let target = self.surface_edit_target_now(engine);
+        let pressed = key.state == ElementState::Pressed;
+        let binding = if target.is_some() && pressed {
+            let mods = self.base.state.modifiers;
+            let lookup =
+                crate::shortcuts::shortcut_lookup_key(&key.logical_key, &key.physical_key, mods);
+            EditBindings::from_settings(&engine.settings.keybindings).binding(&lookup, mods)
+        } else {
+            None
         };
-        let mut text = None;
-        let judged = verdict(binding, |edit| {
-            if edit == EditKey::Paste {
-                text = self.base.gpu.plugin_paste_text();
-            }
-            popup_capability(edit, text.is_some())
-        });
-        let (key, asked) = popup_key(judged);
-        if let Some(edit) = asked {
-            self.plugin_edit_ask = Some(PluginEditAsk {
-                target: PluginCopyTarget::Surface(surface),
-                plugin_id: Some(plugin_id),
-                edit,
-                text,
-                original: Some(event.clone()),
-            });
+        let gpu = &mut self.base.gpu;
+        let (judged, ask) =
+            surface_key(target, pressed, binding, || gpu.plugin_paste_text(), event)?;
+        if let Some(ask) = ask {
+            self.plugin_edit_ask = Some(ask);
         }
-        Some(key)
+        Some(judged)
     }
 }
 
@@ -224,16 +246,110 @@ mod tests {
         assert_eq!(mirror_key(None), EguiKey::Free);
     }
 
+    fn local() -> Option<SurfaceEditTarget> {
+        Some(SurfaceEditTarget::Local {
+            surface: 4,
+            plugin_id: "demo".into(),
+        })
+    }
+
+    fn judge(
+        target: Option<SurfaceEditTarget>,
+        pressed: bool,
+        binding: Option<EditKey>,
+        clipboard: Option<&str>,
+    ) -> Option<(EguiKey, Option<PluginEditAsk>)> {
+        surface_key(
+            target,
+            pressed,
+            binding,
+            || clipboard.map(str::to_string),
+            &WindowEvent::Focused(true),
+        )
+    }
+
+    /// 회신을 약속한 로컬 surface 의 편집 키는 Tasty 가 가져가고, 그 surface 에 원래 키를 붙잡은 요청을 남긴다.
+    /// 빈 클립보드의 붙여넣기와 바인딩이 아닌 키는 요청 없이 egui-winit 으로 가고, 뗌은 그대로 보낸다.
+    #[test]
+    fn a_surface_that_replies_takes_its_edit_keys_and_holds_the_original() {
+        for (edit, clip, text) in [
+            (EditKey::Copy, None, None),
+            (EditKey::Cut, None, None),
+            (EditKey::Paste, Some("hi"), Some("hi")),
+        ] {
+            let (key, ask) = judge(local(), true, Some(edit), clip).expect("판정 대상");
+            assert_eq!(key, EguiKey::Taken, "{edit:?}");
+            let ask = ask.expect("요청");
+            assert_eq!(ask.target, PluginCopyTarget::Surface(4));
+            assert_eq!(ask.plugin_id.as_deref(), Some("demo"));
+            assert_eq!(ask.edit, edit);
+            assert_eq!(ask.text.as_deref(), text);
+            assert_eq!(ask.original, Some(WindowEvent::Focused(true)));
+        }
+        let (key, ask) = judge(local(), true, Some(EditKey::Paste), None).expect("판정 대상");
+        assert_eq!((key, ask.is_none()), (EguiKey::Pass(EditKey::Paste), true));
+        let (key, ask) = judge(local(), true, None, Some("hi")).expect("판정 대상");
+        assert_eq!((key, ask.is_none()), (EguiKey::Free, true));
+        let (key, ask) = judge(local(), false, Some(EditKey::Copy), None).expect("판정 대상");
+        assert_eq!((key, ask.is_none()), (EguiKey::Free, true));
+    }
+
+    /// mirror 는 요청 없이 넘기고, 대상이 없으면 이 판정이 받지 않는다.
+    #[test]
+    fn a_mirror_passes_without_a_request_and_no_target_is_not_judged() {
+        let (key, ask) = judge(
+            Some(SurfaceEditTarget::Mirror),
+            true,
+            Some(EditKey::Paste),
+            Some("hi"),
+        )
+        .expect("판정 대상");
+        assert_eq!((key, ask.is_none()), (EguiKey::Pass(EditKey::Paste), true));
+        assert!(judge(None, true, Some(EditKey::Copy), Some("hi")).is_none());
+    }
+
+    /// 판정 입구는 대상·눌림·바인딩을 모아 판정에 넘기고, 판정 결과를 그대로 돌려주며 남길 요청만 기록한다.
+    /// 약속 surface 의 키를 판정 전에 돌려보내거나, egui-mesh 의 `Copy`·`Paste` 나 단축키 경로로 함께 보내는
+    /// 코드가 이 자리에 생기면 실패한다.
+    #[test]
+    fn the_surface_gate_only_records_the_request() {
+        let squash = |s: &str| s.split_whitespace().collect::<String>();
+        let file = include_str!("plugin_surface_keys.rs");
+        let (_, body) = file
+            .split_once("pub(super) fn judge_plugin_surface_edit_key(")
+            .expect("판정 입구");
+        let (body, _) = body.split_once("\n    }\n").expect("판정 입구의 끝");
+        let body: String = body
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.starts_with("//"))
+            .collect();
+        assert_eq!(
+            squash(&body),
+            squash(
+                "&mut self, engine: &EngineRead<'_>, event: &WindowEvent, ) -> Option<EguiKey> {
+                let WindowEvent::KeyboardInput { event: key, .. } = event else { return None; };
+                if self.base.gpu.edit_keys_busy() { return None; }
+                let target = self.surface_edit_target_now(engine);
+                let pressed = key.state == ElementState::Pressed;
+                let binding = if target.is_some() && pressed {
+                    let mods = self.base.state.modifiers;
+                    let lookup = crate::shortcuts::shortcut_lookup_key(&key.logical_key, &key.physical_key, mods);
+                    EditBindings::from_settings(&engine.settings.keybindings).binding(&lookup, mods)
+                } else { None };
+                let gpu = &mut self.base.gpu;
+                let (judged, ask) = surface_key(target, pressed, binding, || gpu.plugin_paste_text(), event)?;
+                if let Some(ask) = ask { self.plugin_edit_ask = Some(ask); }
+                Some(judged)"
+            ),
+            "판정 입구가 판정 결과 밖의 일을 한다"
+        );
+    }
+
     /// 팔레트 편집은 회신을 약속한 로컬 surface 만 요청으로 보낸다. 빈 클립보드의 붙여넣기는 보내지 않고 끝내며
     /// (터미널로 넘기지 않는다) mirror·약속 없는 플러그인·대상 없음은 기존 경로로 간다.
     #[test]
     fn a_palette_edit_asks_only_a_surface_that_replies() {
-        let local = || {
-            Some(SurfaceEditTarget::Local {
-                surface: 4,
-                plugin_id: "demo".into(),
-            })
-        };
         let ask = PaletteSurfaceEdit::Ask {
             surface: 4,
             plugin_id: "demo".into(),
