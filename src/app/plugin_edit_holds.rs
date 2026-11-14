@@ -2,7 +2,7 @@
 //! 플러그인 회신으로 소비·재생을 정한다. 보류 중에 그 창에 온 키·IME·포인터 입력은 받은 순서대로 줄을 선다.
 //! 계약: `docs/design/policies/key-mapping.md`의 "플러그인 입력칸" 절.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 
 use winit::event::WindowEvent;
@@ -12,7 +12,10 @@ use super::App;
 use super::edit_key_replay::{HoldSite, ReplayStep, replay_steps};
 use crate::adapters::ui::input::edit_key::{EditKey, EditKeyHold, Outcome};
 use crate::gfx::gpu::edit_keys::HeldEvent;
-use crate::plugin::manager::{PluginEditOutcome, PluginEditRequest, PluginEditResult};
+use crate::plugin::PluginManager;
+use crate::plugin::manager::{
+    PluginCopyTarget, PluginEditOutcome, PluginEditRequest, PluginEditResult,
+};
 
 /// 회신을 기다리는 상한. 넘으면 실행됐을 수 있으므로 원래 키를 소비하고 재생하지 않는다.
 const PLUGIN_HOLD_LIMIT: Duration = Duration::from_secs(1);
@@ -29,9 +32,10 @@ pub(crate) struct PluginEditHolds {
     holds: HashMap<WindowId, PluginEditHold>,
 }
 
-/// 풀린 보류. `steps`는 재생할 입력, `copied`는 소비한 편집이 복사한 글자다.
+/// 풀린 보류. `steps`는 재생할 입력, `copied`는 소비한 편집이 복사한 글자다. `target`은 요청을 보낸 때의 대상이다.
 pub(crate) struct ResolvedPluginEdit {
     pub(crate) window: WindowId,
+    pub(crate) target: PluginCopyTarget,
     pub(crate) steps: Vec<ReplayStep<WindowEvent>>,
     pub(crate) edit: EditKey,
     pub(crate) result: Option<PluginEditResult>,
@@ -98,6 +102,7 @@ impl PluginEditHolds {
             let edit = held.hold.edit();
             resolved.push(ResolvedPluginEdit {
                 window,
+                target: held.request.target,
                 steps: plugin_replay(held.hold.resolve(key_outcome)),
                 edit,
                 result: Some(outcome.result),
@@ -125,7 +130,62 @@ impl PluginEditHolds {
             let edit = held.hold.edit();
             resolved.push(ResolvedPluginEdit {
                 window,
+                target: held.request.target,
                 steps: plugin_replay(held.hold.resolve(Outcome::TimedOut)),
+                edit,
+                result: None,
+                copied: None,
+            });
+        }
+        (resolved, cancelled)
+    }
+
+    /// pump 직후 한 번 부른다. 대상을 잃은 보류를 먼저 끝낸 뒤 회신을 적용하고, 마지막에 시간 초과를 푼다. 회신을
+    /// 먼저 적용하면 닫혔거나 키를 잃은 대상의 회신이 원래 키를 재생하거나 복사 글자를 쓴다. 끝낸 보류의 회신은
+    /// 보류가 없어 버려진다. 돌려준 요청 id 는 더 기다리지 않는다.
+    pub(crate) fn settle(
+        &mut self,
+        outcomes: Vec<PluginEditOutcome>,
+        now: Instant,
+        live: impl Fn(WindowId, &PluginCopyTarget) -> bool,
+    ) -> (Vec<ResolvedPluginEdit>, Vec<u64>) {
+        let (mut resolved, mut cancelled) = self.end_lost_targets(live);
+        resolved.extend(self.resolve(outcomes));
+        let (late, expired) = self.expire(now);
+        resolved.extend(late);
+        cancelled.extend(expired);
+        (resolved, cancelled)
+    }
+
+    /// 대상을 잃은 보류를 바로 끝낸다(`live`가 false 인 창·대상). 대상 팝업·surface 가 닫혔거나, 그 창의 키를
+    /// 다른 팝업이 받게 됐다. 실행 여부를 모르므로 원래 키는 재생하지 않고 줄 선 입력만 재생한다. 돌려준 요청
+    /// id 는 더 기다리지 않는다.
+    pub(crate) fn end_lost_targets(
+        &mut self,
+        live: impl Fn(WindowId, &PluginCopyTarget) -> bool,
+    ) -> (Vec<ResolvedPluginEdit>, Vec<u64>) {
+        let closed: Vec<WindowId> = self
+            .holds
+            .iter()
+            .filter(|(w, h)| !live(**w, &h.request.target))
+            .map(|(w, _)| *w)
+            .collect();
+        let mut resolved = Vec::new();
+        let mut cancelled = Vec::new();
+        for window in closed {
+            let Some(held) = self.holds.remove(&window) else {
+                continue;
+            };
+            tracing::debug!(
+                edit_id = held.request.edit_id,
+                "plugin edit hold ended: its target closed or lost the keys"
+            );
+            cancelled.push(held.request.edit_id);
+            let edit = held.hold.edit();
+            resolved.push(ResolvedPluginEdit {
+                window,
+                target: held.request.target,
+                steps: plugin_replay(held.hold.resolve(Outcome::TargetGone)),
                 edit,
                 result: None,
                 copied: None,
@@ -140,6 +200,31 @@ impl PluginEditHolds {
             .values()
             .map(|h| h.since + PLUGIN_HOLD_LIMIT)
             .min()
+    }
+}
+
+/// 팝업 대상 보류가 아직 살아 있는지. 그 팝업이 열려 있고 그 창의 키를 지금도 받아야 한다. 회신과 재생은 키를
+/// 보낸 때의 instance 로 짝지으므로, 다른 팝업(호스트 팝업 포함)이 키를 받게 됐으면 그 보류는 끝난다.
+pub(crate) fn popup_target_live(
+    open: Option<&HashSet<u64>>,
+    key_target: Option<u64>,
+    instance: u64,
+) -> bool {
+    key_target == Some(instance) && open.is_some_and(|open| open.contains(&instance))
+}
+
+/// 보류 대상이 살아 있는지의 판정. 열린 팝업은 지금 `mgr`에서 한 번 모으고, 창의 키를 받는 plugin 팝업은
+/// `key_target_of`로 묻는다. 플러그인 관리자가 없으면 열린 팝업이 없다.
+pub(crate) fn hold_target_live(
+    mgr: Option<&PluginManager>,
+    key_target_of: impl Fn(WindowId) -> Option<u64>,
+) -> impl Fn(WindowId, &PluginCopyTarget) -> bool {
+    let open: Option<HashSet<u64>> =
+        mgr.map(|mgr| mgr.popup_instances().map(|(id, _)| id).collect());
+    move |window, target| match target {
+        PluginCopyTarget::Popup(id) => popup_target_live(open.as_ref(), key_target_of(window), *id),
+        // surface 대상 보류는 아직 만드는 경로가 없다. 그 경로가 surface 의 닫힘·키 소유 판정을 함께 넣는다.
+        PluginCopyTarget::Surface(_) => true,
     }
 }
 
@@ -165,9 +250,14 @@ impl App {
             .as_mut()
             .map(|mgr| mgr.take_edit_outcomes())
             .unwrap_or_default();
-        let mut resolved = self.plugin_edit_holds.resolve(outcomes);
-        let (late, cancelled) = self.plugin_edit_holds.expire(now);
-        resolved.extend(late);
+        let views = &self.view.views;
+        let live = hold_target_live(self.plugin_manager.as_ref(), |window| {
+            views
+                .get(&window)
+                .and_then(|v| v.as_main())
+                .and_then(|main| main.state.plugin_popup_key_target())
+        });
+        let (resolved, cancelled) = self.plugin_edit_holds.settle(outcomes, now, live);
         if let Some(mgr) = self.plugin_manager.as_mut() {
             for edit_id in cancelled {
                 mgr.cancel_edit_request(edit_id);
@@ -181,12 +271,13 @@ impl App {
     fn finish_plugin_edit(&mut self, item: ResolvedPluginEdit) {
         let ResolvedPluginEdit {
             window,
+            target,
             steps,
             edit,
             result,
             copied,
         } = item;
-        tracing::debug!(?edit, ?result, "plugin edit hold resolved");
+        tracing::debug!(?edit, ?target, ?result, "plugin edit hold resolved");
         if let Some(text) = copied
             && let Some(main) = self
                 .view
