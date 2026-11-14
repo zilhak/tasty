@@ -26,6 +26,8 @@ struct MeshDemoPlugin {
     popups: HashMap<u64, EguiMeshPopup>,
     /// popup instance_id → 클릭 횟수. 입력 forward 가 popup mesh 를 바꾸는 데모 상태.
     popup_clicks: HashMap<u64, u32>,
+    /// popup instance_id → 입력칸 글자. 호스트 편집 요청(복사·잘라내기·붙여넣기)과 결과 회신을 확인한다.
+    popup_texts: HashMap<u64, String>,
     /// Banner 인스턴스별 렌더 상태. 열 때 만들고 닫을 때 해제한다.
     banners: HashMap<u64, EguiMeshBanner>,
     /// banner instance_id → 클릭 횟수. 입력 forward 가 banner mesh 를 바꾸는 데모 상태.
@@ -39,6 +41,11 @@ impl Plugin for MeshDemoPlugin {
 
     fn version(&self) -> &str {
         PLUGIN_VERSION
+    }
+
+    /// popup 입력칸을 `EditField`로 그리므로 편집 결과를 회신한다.
+    fn reports_edit_outcomes(&self) -> bool {
+        true
     }
 
     fn create_surface(&mut self, _ctx: SurfaceCreateCtx) -> SurfaceResult {
@@ -71,6 +78,7 @@ impl Plugin for MeshDemoPlugin {
         // popup 이 닫히면 egui Context·shared buffer 매핑·데모 상태를 함께 해제.
         self.popups.remove(&ctx.instance_id);
         self.popup_clicks.remove(&ctx.instance_id);
+        self.popup_texts.remove(&ctx.instance_id);
     }
 
     fn open_banner(&mut self, ctx: BannerOpenCtx) {
@@ -130,8 +138,9 @@ impl MeshDemoPlugin {
             .entry(iid)
             .or_insert_with(|| EguiMeshPopup::new(iid));
         let clicks = self.popup_clicks.entry(iid).or_insert(0);
+        let text = self.popup_texts.entry(iid).or_default();
         let result = popup.paint(&ctx.host, &ctx.params, |egui_ctx| {
-            draw_popup(egui_ctx, clicks);
+            draw_popup(egui_ctx, clicks, text);
         });
         match result {
             Ok(Some(_gen)) => tracing::info!("mesh-demo popup {iid} paint sent"),
@@ -200,10 +209,11 @@ fn draw_demo(ctx: &egui::Context, clicks: &mut u32) {
     });
 }
 
-/// 데모 popup UI: label + 클릭 카운터 버튼. host 가 셸(scrim/border)을 그리고 이 콘텐츠만
-/// plugin mesh 로 합성된다 — 입력 forward(클릭)가 popup mesh 를 바꾸는지 검증한다.
+/// 데모 popup UI: label + 클릭 카운터 버튼 + 편집 결과를 회신하는 입력칸(`EditField`). host 가
+/// 셸(scrim/border)을 그리고 이 콘텐츠만 plugin mesh 로 합성된다 — 입력 forward(클릭)가 popup mesh 를
+/// 바꾸는지, 호스트 편집 요청이 입력칸에 닿고 결과가 회신되는지 검증한다.
 #[cfg(unix)]
-fn draw_popup(ctx: &egui::Context, clicks: &mut u32) {
+fn draw_popup(ctx: &egui::Context, clicks: &mut u32, text: &mut String) {
     egui::CentralPanel::default().show(ctx, |ui| {
         ui.heading(format!("egui-mesh popup — clicks: {clicks}"));
         ui.label("Drawn in the plugin process. Host owns the shell (scrim/border).");
@@ -212,6 +222,9 @@ fn draw_popup(ctx: &egui::Context, clicks: &mut u32) {
             *clicks += 1;
         }
         ui.separator();
+        tasty_plugin_sdk::egui_surface::edit::EditField::singleline(text)
+            .id_salt("mesh_demo_popup_text")
+            .show(ui, |t| t.desired_width(f32::INFINITY));
         ui.label("Press Esc or click outside to close.");
     });
 }
