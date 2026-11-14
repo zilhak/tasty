@@ -58,6 +58,23 @@ struct SurfaceOwners<'a> {
     live: Option<&'a str>,
 }
 
+/// 창마다 그 surface 의 두 주인을 모은다. `windows`는 창, 그 창이 직전 렌더에 그린 플러그인, 그 창의 엔진이고,
+/// `live_owner`는 엔진에서 surface id 로 지금 그 surface mesh 의 주인을 찾는다. 닫힌 surface 는 엔진 조회가 없어
+/// 그린 기록이 남아 있어도 `live`가 없다.
+fn surface_owners<'a, W, E>(
+    surface: u32,
+    windows: impl IntoIterator<Item = (W, Option<&'a str>, E)>,
+    live_owner: impl Fn(E, u32) -> Option<&'a str>,
+) -> Vec<(W, SurfaceOwners<'a>)> {
+    windows
+        .into_iter()
+        .map(|(window, drawn, engine)| {
+            let live = live_owner(engine, surface);
+            (window, SurfaceOwners { drawn, live })
+        })
+        .collect()
+}
+
 /// surface 복사 결과를 받을 창. 결과를 보낸 플러그인이 그렸고 지금도 그 surface 의 mesh 를 소유하는 첫 창
 /// 하나만 고르므로 결과가 한 번만 쓰인다.
 fn surface_copy_window<'a, W>(
@@ -117,19 +134,25 @@ impl App {
             .view
             .views
             .iter()
-            .map(|(id, view)| (*id, view, engines.window_read(*id)))
+            .map(|(id, view)| {
+                let drawn = view
+                    .as_main()
+                    .and_then(|main| main.egui_mesh_surface_plugin(surface));
+                (*id, drawn, engines.window_read(*id))
+            })
             .collect();
-        let shown = reads.iter().map(|(id, view, engine)| {
-            let drawn = view
-                .as_main()
-                .and_then(|main| main.egui_mesh_surface_plugin(surface));
-            let live = engine
-                .as_ref()
-                .and_then(|engine| engine.find_surface_by_id(surface))
-                .and_then(|found| found.mesh())
-                .map(|mesh| mesh.plugin_id.as_str());
-            (*id, SurfaceOwners { drawn, live })
-        });
+        let shown = surface_owners(
+            surface,
+            reads
+                .iter()
+                .map(|(id, drawn, engine)| (*id, *drawn, engine.as_ref())),
+            |engine, surface| {
+                engine?
+                    .find_surface_by_id(surface)?
+                    .mesh()
+                    .map(|mesh| mesh.plugin_id.as_str())
+            },
+        );
         match surface_copy_window(plugin_id, shown) {
             Ok(id) => {
                 if let Some(main) = self.view.views.get_mut(&id).and_then(|v| v.as_main_mut()) {
@@ -215,6 +238,46 @@ mod tests {
         );
     }
 
+    /// 창마다 그린 기록과 엔진 조회를 따로 담는다. 닫힌 surface(조회 없음)와 mesh 주인이 바뀐 surface 는 그린 기록이
+    /// 남아도 `live`가 그 조회 그대로이고, 살아 있는 surface 는 두 주인이 같다.
+    #[test]
+    fn owners_take_the_live_owner_from_the_engine_lookup() {
+        let engines = [
+            ("closed", None),
+            ("swapped", Some("q")),
+            ("alive", Some("p")),
+        ];
+        let lookup = |engine: &str, surface: u32| {
+            assert_eq!(surface, 9);
+            engines
+                .iter()
+                .find(|(name, _)| *name == engine)
+                .and_then(|(_, owner)| *owner)
+        };
+        let shown = surface_owners(
+            9,
+            [
+                ("a", Some("p"), "closed"),
+                ("b", Some("p"), "swapped"),
+                ("c", Some("p"), "alive"),
+            ],
+            lookup,
+        );
+        assert_eq!(
+            shown,
+            [
+                ("a", owners(Some("p"), None)),
+                ("b", owners(Some("p"), Some("q"))),
+                ("c", owners(Some("p"), Some("p"))),
+            ]
+        );
+        assert_eq!(surface_copy_window("p", shown), Ok("c"));
+        assert_eq!(
+            surface_copy_window("p", surface_owners(9, [("a", Some("p"), "closed")], lookup)),
+            Err(SurfaceCopyDrop::Gone)
+        );
+    }
+
     /// 닫힌 surface 는 다음 렌더까지 전송 기록에 그 플러그인이 남는다. 그 사이에 온 늦은 결과는 지금 엔진에 그
     /// surface 가 없거나 mesh 주인이 다르면 쓰지 않는다.
     #[test]
@@ -260,7 +323,7 @@ mod tests {
         for needle in [
             "PluginCopyTarget::Surface(surface) => { self.deliver_surface_copy(&plugin_id, surface, &text); }",
             ".and_then(|main| main.egui_mesh_surface_plugin(surface));",
-            ".and_then(|engine| engine.find_surface_by_id(surface)) .and_then(|found| found.mesh()) .map(|mesh| mesh.plugin_id.as_str());",
+            "let shown = surface_owners( surface, reads .iter() .map(|(id, drawn, engine)| (*id, *drawn, engine.as_ref())), |engine, surface| { engine? .find_surface_by_id(surface)? .mesh() .map(|mesh| mesh.plugin_id.as_str()) }, );",
             "match surface_copy_window(plugin_id, shown) {",
             "crate::adapters::ui::ToastScope::Surface(surface),",
         ] {
