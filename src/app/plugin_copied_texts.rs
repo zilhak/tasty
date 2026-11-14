@@ -129,31 +129,26 @@ impl App {
     }
 
     fn deliver_surface_copy(&mut self, plugin_id: &str, surface: u32, text: &str) {
+        // 창 고르기는 엔진 조회까지 호출식 하나다. 중간 값을 두면 판정 앞에서 바꿔칠 자리가 생긴다.
         let engines = &self.engines;
-        let reads: Vec<_> = self
-            .view
-            .views
-            .iter()
-            .map(|(id, view)| {
-                let drawn = view
-                    .as_main()
-                    .and_then(|main| main.egui_mesh_surface_plugin(surface));
-                (*id, drawn, engines.window_read(*id))
-            })
-            .collect();
-        let shown = surface_owners(
-            surface,
-            reads
-                .iter()
-                .map(|(id, drawn, engine)| (*id, *drawn, engine.as_ref())),
-            |engine, surface| {
-                engine?
-                    .find_surface_by_id(surface)?
-                    .mesh()
-                    .map(|mesh| mesh.plugin_id.as_str())
-            },
-        );
-        match surface_copy_window(plugin_id, shown) {
+        match surface_copy_window(
+            plugin_id,
+            surface_owners(
+                surface,
+                self.view.views.iter().map(|(id, view)| {
+                    let drawn = view
+                        .as_main()
+                        .and_then(|main| main.egui_mesh_surface_plugin(surface));
+                    (*id, drawn, engines.window_read(*id))
+                }),
+                |engine, surface| {
+                    engine?
+                        .find_surface_by_id(surface)?
+                        .mesh()
+                        .map(|mesh| mesh.plugin_id.as_str())
+                },
+            ),
+        ) {
             Ok(id) => {
                 if let Some(main) = self.view.views.get_mut(&id).and_then(|v| v.as_main_mut()) {
                     main.copy_text(
@@ -322,9 +317,7 @@ mod tests {
         let src = squash(code);
         for needle in [
             "PluginCopyTarget::Surface(surface) => { self.deliver_surface_copy(&plugin_id, surface, &text); }",
-            ".and_then(|main| main.egui_mesh_surface_plugin(surface));",
-            "let shown = surface_owners( surface, reads .iter() .map(|(id, drawn, engine)| (*id, *drawn, engine.as_ref())), |engine, surface| { engine? .find_surface_by_id(surface)? .mesh() .map(|mesh| mesh.plugin_id.as_str()) }, );",
-            "match surface_copy_window(plugin_id, shown) {",
+            "let engines = &self.engines; match surface_copy_window( plugin_id, surface_owners( surface, self.view.views.iter().map(|(id, view)| { let drawn = view .as_main() .and_then(|main| main.egui_mesh_surface_plugin(surface)); (*id, drawn, engines.window_read(*id)) }), |engine, surface| { engine? .find_surface_by_id(surface)? .mesh() .map(|mesh| mesh.plugin_id.as_str()) }, ), ) { Ok(id) => {",
             "crate::adapters::ui::ToastScope::Surface(surface),",
         ] {
             assert!(src.contains(&squash(needle)), "연결이 바뀌었다: {needle}");
