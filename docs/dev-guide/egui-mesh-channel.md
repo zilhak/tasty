@@ -397,9 +397,9 @@ Copy·Paste 는 위 표대로 각각 `egui_copy`·`egui_paste` capability 를 �
 `Paste` 는 형식 붙여넣기 신호다. 클립보드 내용을 싣지 않고 SDK 가 내용 없는 `egui::Event::Paste` 로
 바꾸므로, egui `TextEdit` 에 텍스트가 들어가지 않는다 — plugin 이 이벤트를 보고 필요한 형식을 클립보드에서
 직접 읽는다. 텍스트 붙여넣기는 `PasteText { text }` 가 나르고 SDK 가 `egui::Event::Paste(text)` 로 바꿔
-포커스된 `TextEdit` 에 넣는다. `Cut` 은 SDK 가 `egui::Event::Cut` 으로 바꾼다. `PasteText`·`Cut` 은 wire
-와 SDK 매핑만 있고 호스트는 아직 보내지 않는다. attach mesh mirror 와 popup 미러 경로에는 Copy·Paste
-전달이 없다.
+포커스된 `TextEdit` 에 넣는다. `Cut` 은 SDK 가 `egui::Event::Cut` 으로 바꾼다. plugin popup 에는 호스트가 편집 키 판정 뒤
+`PasteText`·`Copy`·`Cut` 을 보낸다(아래 "egui-mesh popup 채널"의 입력 게이트). egui-mesh surface 에는
+`PasteText`·`Cut` 을 아직 보내지 않는다. attach mesh mirror 와 popup 미러 경로에는 Copy·Paste 전달이 없다.
 
 편집 키 결과를 회신하는 plugin(hello `capabilities` 의 `edit_outcome`)에는 호스트가 위 편집 이벤트 대신
 `EditRequest { edit_id, edit }` 를 보낸다. `edit` 은 `copy`·`cut`·`paste_text { text }`·`paste` 이고 SDK 가 위와
@@ -423,7 +423,11 @@ egui-mesh surface 에 요청을 보내는 경로는 아직 없다.
 결과를 함께 꺼낸다. wire 와 결과에는 창 id 가 없으므로 GUI 에서는 pump 직후 한 번 꺼내 대상을 가진
 창으로 나눈다. 수신 스레드가 알림 줄마다
 이벤트 루프를 깨우므로 프레임 없이 복사 결과만 온 tick 에도 pump 직후 꺼낼 수 있다. headless host 는
-GUI 클립보드가 없어 큐를 버린다. GUI 에서 큐를 꺼내 OS 클립보드에 쓰는 경로는 아직 없다.
+GUI 클립보드가 없어 큐를 버린다. GUI 는 `App::deliver_plugin_copied_texts`(`src/app/plugin_copied_texts.rs`)가
+pump 직후 꺼낸다. popup 결과는 그 popup 에 복사·잘라내기를 가장 최근에 보낸 창을 고르고, 결과를 보낸
+plugin 이 지금 열린 그 instance 의 주인일 때만 그 창의 호스트 공통 복사 함수로 쓴다. 호스트 공통 복사
+함수가 클립보드에 쓰고 토스트를 띄운다(창 범위 `toast.copied`). 보낸 창이 없거나 instance 가 닫혔거나
+주인이 다르면 debug 로그만 남긴다. surface 결과는 아직 쓰지 않고 debug 로그만 남긴다.
 
 `RawInputEventWire` 는 `#[serde(other)] Unknown` fallback 을 가진다. 이 fallback 이 있는 SDK 로
 빌드한 plugin 은 모르는 입력 이벤트를 `Unknown` 으로 읽고 버리며, 같은 `set_context` 의 나머지
@@ -715,11 +719,12 @@ surface 뿐 아니라 **plugin popup 콘텐츠도 egui-mesh 로 자가 렌더**�
           lookup → decode → 전용 egui_wgpu::Renderer 로 content_rect 에 합성
 ```
 
-### 입력 게이트 — 키·텍스트·IME 는 최상단 popup 만 받는다
+### 입력 게이트 — 키·텍스트·IME·편집은 최상단 popup 만 받는다
 
 `collect_mesh_popup_input`(`src/plugin_bridge/popup_render.rs`)이 host egui ctx 에서 수집하는
-이벤트 중 포인터 계열은 콘텐츠 영역/가림 판정(`accepts_pointer`)을 타고, **키·텍스트·IME
-세 계열은 `has_key_focus`(= 이번 프레임 최상단 popup) 게이트**를 함께 탄다 — 아래 깔린
+이벤트 중 포인터 계열은 콘텐츠 영역/가림 판정(`accepts_pointer`)을 타고, **키·텍스트·IME·편집
+(`Paste`·`Copy`·`Cut`) 계열은 `has_key_focus`(= 보이는 host·plugin 팝업 중 순번이 가장 큰 것,
+`MainViewState::popup_key_owner`) 게이트**를 함께 탄다 — 아래 깔린
 popup 이 Esc·문자·조합 문자를 받아 자기 UI 로 처리하면 Esc 소유권 규칙
 ([popup.md § Host ↔ Plugin popup z-order](../design/systems/popup.md#host--plugin-popup-z-order))
 이 깨진다. 같은 값을 wire 의 `focused` 로도 실어 plugin 쪽 egui 가 커서/포커스 표시를 host
@@ -731,6 +736,15 @@ egui 0.31 `TextEdit` 의 Commit 분기는 `Enabled`/`Preedit` 에서 세워지�
 결과가 화면 파손도 에러도 없이 사라진다. 플랫폼 차이(Linux 가 winit `Ime::Enabled` 를 무시하고
 `Preedit` 수신 시 `Enabled` 를 합성하는 등)는 egui-winit 이 이미 흡수해 ctx 에 넣으므로 수집기는
 갈래 구분 없이 그대로 옮긴다.
+
+**편집 키는 egui 에 가기 전에 판정된다.** 창의 키 처리(`src/view/main/plugin_popup_keys.rs`)가 같은 판정으로
+키를 받는 popup 이 plugin popup 일 때 `copy`·`cut`·`paste` 바인딩을 egui-winit 보다 먼저 판정한다
+([편집 키 판정 — 플러그인 입력칸](../design/policies/key-mapping.md#플러그인-입력칸)). 회신을 약속한 plugin 이면 원래 키를
+보류하고 `EditRequest` 를 다음 렌더의 그 popup 입력 끝에 붙인다(`MainViewState::plugin_popup_edit_requests`). 그 밖의
+키는 egui-winit 이 처리하고, egui-winit 기본 편집 키가 만든 `Cut`·`Copy`·`Paste` 는 지우지 않는다. 수집기는 키를 다시
+판정하지 않고 `Paste(text)`(빈 값 제외) → `PasteText { text }`, `Copy` → `Copy`, `Cut` → `Cut` 으로 옮긴다. 요청 없이
+복사·잘라내기를 보낸 창은 instance 별 순번(`MainViewState::plugin_popup_edit_sent`)으로 기록하고, 그 popup 의
+`CopyText` 결과는 가장 최근에 보낸 창이 쓴다([클립보드](../features/clipboard/index.md#플러그인-팝업-입력칸의-붙여넣기복사잘라내기)).
 
 winit IME 이벤트를 터미널 PTY 로 보내지 않는 차단은 `src/view/main/ime.rs` 의
 `keyboard_overlay_open()` 분기가 담당한다 — 그 경로는 popup 으로 forward 하지 **않는다**.

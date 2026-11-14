@@ -50,6 +50,9 @@ arboard다. 성공하면 호출한 쪽이 정한 키의 Info 토스트를, 실�
   창, 셸 경로 설정 화면, 부팅 오류 화면, 홈 사용 중 화면(App 생성 실패 화면 포함)이 모두 이렇게
   동작한다. 메인 창 밖의 창과 화면은 각자 `TerminalClipboard`와 토스트 스택을 가진다. 토스트
   수명은 설정의 토스트 표시 시간이고, 설정 snapshot이 없으면 기본 수명(2000ms)이다.
+- **플러그인 팝업 입력칸**: egui-mesh 플러그인 팝업이 복사·잘라내기로 낸 텍스트는 플러그인이
+  호스트에 알리고 App이 같은 공통 함수로 쓴다. 토스트는 창 범위의 `toast.copied`이고 잘라내기도
+  같다. 아래 [플러그인 팝업 입력칸](#플러그인-팝업-입력칸의-붙여넣기복사잘라내기) 절.
 - **홈 사용 중 화면**: App 밖의 독립 이벤트 루프라 그 루프가 egui repaint 요청을 받아 토스트
   페이드를 돌리고, 네이티브 Wayland 선택의 큐도 직접 돌린다. 그래서 입력이 없어도 토스트가
   사라지고, 이 화면에서 복사한 글자를 다른 앱에서 붙여넣을 수 있다. 이 화면의 붙여넣기는 Wayland 선택을 읽지
@@ -171,7 +174,7 @@ IME preedit와 OS 후보창 위치도 같은 epoch·행 좌표를 사용한다. 
 
 host 가 아니라 plugin 자신의 egui `Context` 로 텍스트를 그리는 kind(`rendering = "egui-mesh"`)는, 매니페스트에서 `egui_copy = true` 를 선언하면 copy 단축키(위 `KeybindingSettings` 바인딩)가 그 surface 에 `Copy` wire 이벤트로 forward된다(`src/adapters/ui/input/shortcuts/copy_paste.rs` → `src/view/main/egui_mesh.rs`). host 자신의 top-level egui `Context` 는 plugin 위젯을 갖고 있지 않으므로 대상이 될 수 없다 — 반드시 포커스된 egui-mesh surface 자신에게 보내야 한다.
 
-plugin 쪽(`tasty-plugin-sdk`)은 이 wire 이벤트를 `egui::Event::Copy` 로 매핑해 자기 `Context::run` 에 흘린다. selectable label/`TextEdit` 등 egui 내장 선택-복사 로직이 텍스트를 만들면 SDK 의 `paint`·`repaint_last` 가 그 값을 `CopyText` 알림으로 host 에 보내고, host 는 plugin id 와 함께 일회성 큐에 담는다([egui-mesh 채널](../../dev-guide/egui-mesh-channel.md)). 네이티브 Wayland 에서는 selection 을 Tasty 프로세스가 소유하므로 plugin 이 직접 쓰지 않는다. 이 큐를 꺼내 OS 클립보드에 쓰는 host 경로는 아직 없다. 메커니즘 자체는 host 코드([`src/view/main/egui_mesh.rs`](../../../src/view/main/egui_mesh.rs) 등)에 남아 있으나, `markdown` 이 webview 로 전환된 뒤([WebView 호스트 계약](../../design/systems/webview.md)) 현재 이를 선언하는 번들 plugin 은 없다 — webview surface 는 native WebView 가 Ctrl+C 를 자체 처리하므로 이 wire 이벤트 자체가 불필요하다.
+plugin 쪽(`tasty-plugin-sdk`)은 이 wire 이벤트를 `egui::Event::Copy` 로 매핑해 자기 `Context::run` 에 흘린다. selectable label/`TextEdit` 등 egui 내장 선택-복사 로직이 텍스트를 만들면 SDK 의 `paint`·`repaint_last` 가 그 값을 `CopyText` 알림으로 host 에 보내고, host 는 plugin id 와 함께 일회성 큐에 담는다([egui-mesh 채널](../../dev-guide/egui-mesh-channel.md)). 네이티브 Wayland 에서는 selection 을 Tasty 프로세스가 소유하므로 plugin 이 직접 쓰지 않는다. App 은 pump 직후 이 큐를 한 번에 꺼낸다. 팝업 결과는 아래 팝업 입력칸 절대로 쓰고, surface 결과는 아직 쓰지 않고 debug 로그만 남긴다. 메커니즘 자체는 host 코드([`src/view/main/egui_mesh.rs`](../../../src/view/main/egui_mesh.rs) 등)에 남아 있으나, `markdown` 이 webview 로 전환된 뒤([WebView 호스트 계약](../../design/systems/webview.md)) 현재 이를 선언하는 번들 plugin 은 없다 — webview surface 는 native WebView 가 Ctrl+C 를 자체 처리하므로 이 wire 이벤트 자체가 불필요하다.
 
 ### egui-mesh plugin 의 붙여넣기 (`egui_paste` capability)
 
@@ -183,7 +186,21 @@ plugin 이 hello 에 `edit_outcome`을 알리면 호스트는 복사·잘라내�
 실행 여부(`acted`·`not_acted`·`unknown`)와 복사 글자를 한 메시지로 회신한다. 호스트는 그 회신으로 원래 키의 소비·재생을
 정하고, 소비한 편집의 복사 글자는 그 창의 복사 문으로 쓴다([편집 키 판정 — 플러그인 입력칸](../../design/policies/key-mapping.md#플러그인-입력칸)).
 SDK 는 입력칸 어댑터 `EditField`로 잘라내기·붙여넣기 결과를 정한다([플러그인 개발 — 편집 결과 회신](../../dev-guide/plugin-development.md#편집-결과-회신)).
-번들 plugin 은 아직 알리지 않으며, 요청을 보내는 팝업·surface 입력 경로도 아직 연결되지 않았다.
+번들 plugin 은 아직 알리지 않는다. 요청을 보내는 경로는 플러그인 팝업 입력칸에 연결돼 있고(아래 절) surface 입력 경로는 아직 없다.
+
+### 플러그인 팝업 입력칸의 붙여넣기·복사·잘라내기
+
+egui-mesh 플러그인 팝업(markdown 파일 열기의 경로 입력칸 등)이 키를 받는 동안의 붙여넣기·복사·잘라내기 키는 [편집 키 판정](../../design/policies/key-mapping.md#편집-키-판정) 원칙을 따른다. 사용자 단축키 설정(`KeybindingSettings` 의 `copy`·`cut`·`paste`)에 바인딩한 키는 동작할 수 있으면 동작하고 Tasty 가 소비한다. 바인딩하지 않았거나 동작하지 못한 키는 원래 키 그대로 egui-winit 에 넘긴다.
+
+- **키를 받는 팝업**: 보이는 host·plugin 팝업 중 순번(`z_seq`)이 가장 큰 하나다. 숨은 범위의 팝업은 후보가 아니다. 플러그인 팝업 렌더가 키를 전달할 팝업을 고를 때와 창의 키 처리가 편집 키를 판정할 때 같은 판정(`MainViewState::popup_key_owner`)을 쓴다. host 후보는 지금 열린 host 팝업이고 plugin 후보는 직전 프레임에 배치한 팝업이다. 그래서 plugin 팝업을 연 뒤 첫 렌더 전의 키는 그 팝업이 받지 않는다. host 팝업이 위에 있으면 host egui 입력칸의 판정이 적용된다.
+- **바인딩한 키**: 판정은 egui-winit 보다 먼저 한 번 한다(`src/view/main/plugin_popup_keys.rs`). 호스트는 팝업 안 입력칸의 선택을 모르므로 미리 소비하지 않는다. 한 키가 여러 바인딩에 겹치면 복사, 잘라내기, 붙여넣기 순으로 하나만 고른다.
+  - 붙여넣기인데 그 창의 클립보드에 글자가 없으면 할 수 없음을 알아 원래 키를 넘긴다. 네이티브 Wayland 에서 다른 앱의 선택은 기다리지 않는다. 읽기를 취소하고 원래 키를 넘긴다. 선택 읽기 오류도 경고 로그를 남기고 원래 키를 넘긴다.
+  - 그 밖에는 원래 키를 App 에 맡긴다. 팝업의 플러그인이 회신을 약속했으면(hello 의 `edit_outcome`) 요청 id 를 붙인 편집 요청(복사·잘라내기, 붙여넣기는 클립보드 글자를 실은 `paste_text`)을 그 팝업에 보내고 원래 키를 붙잡는다. 회신으로 소비·재생을 정한다([플러그인 입력칸](../../design/policies/key-mapping.md#플러그인-입력칸)). 약속하지 않았으면 원래 키를 그대로 넘긴다. 번들 플러그인은 지금 모두 약속하지 않으므로 바인딩한 키도 넘긴 키처럼 동작한다.
+- **넘긴 키와 바인딩하지 않은 키**: egui-winit 기본 처리로 간다. OS 기본 편집 키(Ctrl·⌘+C·X·V, Windows Shift+Insert·Ctrl+Insert·Shift+Delete 등)는 egui-winit 이 `Cut`·`Copy`·`Paste(클립보드 텍스트)` 로 바꿔 팝업에 간다. 그 밖의 키는 글자 입력 등 원래 효과를 낸다(예: 약속하지 않은 플러그인의 팝업에서 `paste` 에 묶은 Alt+V 는 `v` 를 입력한다). 바인딩에서 Ctrl+V 를 지워도 egui-winit 기본 붙여넣기로 붙여넣어진다. host egui 입력칸, HTML 주소 띠와 같다.
+- **전달**: 키를 받는 팝업에만 보낸다([egui-mesh 채널](../../dev-guide/egui-mesh-channel.md)). egui 의 `Paste(text)`(빈 값 제외)·`Copy`·`Cut` 은 `PasteText`·`Copy`·`Cut` 으로, 편집 요청은 `EditRequest` 로 간다. 플러그인 SDK 가 egui `Paste`·`Copy`·`Cut` 으로 바꿔 `TextEdit` 이 처리한다.
+- **복사 결과**: 편집 요청의 회신에 실린 복사 글자는 키를 보낸 창의 공통 복사 함수가 쓴다. 요청 없이 보낸 `Copy`·`Cut` 의 결과(`CopyText`)는 App 이 pump 직후 꺼낸다. 그 팝업에 복사·잘라내기를 가장 최근에 보낸 창이 받고, 결과를 보낸 플러그인이 지금 열린 그 팝업의 주인일 때만 그 창의 공통 복사 함수로 쓴다. 보낸 창이 없거나 팝업이 닫혔거나 주인이 다르면 쓰지 않고 debug 로그만 남긴다. 어느 쪽이든 쓰기 결과는 창 범위의 `toast.copied` 또는 실패 토스트 한 장이다.
+- **대상 팝업이 닫히거나 키를 잃음**: 회신을 기다리는 중에 팝업이 닫히거나 다른 팝업(host 팝업 포함)이 그 창의 키를 받게 되면 보류를 바로 끝낸다. 실행 여부를 모르므로 원래 키는 재생하지 않고 복사 글자도 쓰지 않으며, 그 뒤에 줄 선 입력은 바로 처리한다. 같은 때 도착한 회신은 버린다.
+- **네이티브 Wayland 의 늦은 붙여넣기**: egui-winit 기본 붙여넣기 키가 읽기 시작한 다른 앱의 선택은 나중에 도착한다. 요청할 때 키를 받던 plugin 팝업을 대상으로 기록하고, 도착했을 때 다른 팝업이나 host 위젯이 키를 받고 있으면 버린다. 호스트는 팝업 안의 어느 입력칸에 포커스가 있는지 볼 수 없으므로, 기다리는 동안 그 팝업에 포인터 누름·Tab·화살표·Escape 가 전달되면 기다리던 붙여넣기와 읽는 중인 요청을 버린다. 같은 프레임에 클릭한 뒤 붙여넣기 키를 누르면 그 붙여넣기도 버려진다.
 
 ### 현재 클립보드 뷰어
 

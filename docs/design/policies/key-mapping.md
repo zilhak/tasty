@@ -266,8 +266,20 @@ Tasty가 소비한다. 설정되지 않았거나 동작하지 못했으면 원�
   한다(`PluginEditHolds::settle`). 그래서 같은 pump 에 닫힘과 회신이 겹쳐도 그 회신은 원래 키를 재생하거나 복사 글자를
   쓰지 않고 버려진다. surface 대상 보류는 아직 만드는 경로가 없어 surface 닫힘은 판정하지 않는다.
 - headless 실행은 키를 붙잡는 창이 없으므로 회신을 pump 직후 꺼내 버린다(`src/boot/headless_plugins.rs`).
-- 편집 요청을 보내고 보류를 만드는 플러그인 팝업·surface 입력 경로는 아직 연결되지 않았다. 지금 플러그인 입력칸의 편집
-  키는 위 판정 없이 기존 경로(egui-winit 기본 키 변환과 surface 의 `Copy`·`Paste` 전달)로 간다.
+- 플러그인 팝업이 키를 받으면 메인 창이 egui-winit 보다 먼저 판정한다(`src/view/main/plugin_popup_keys.rs`). 키를 받는
+  팝업은 렌더와 같은 판정(`MainViewState::popup_key_owner`)으로 정한다. 호스트는 팝업 안 입력칸의 선택을 모르므로
+  `Act`를 내지 않는다.
+  - 바인딩이 없으면 `NoBinding`이다. egui-winit 기본 편집 키는 egui-winit 이 `Cut`·`Copy`·`Paste`로 바꿔 그 팝업에 간다.
+  - 붙여넣기인데 클립보드에 글자가 없으면 `Pass`다. 네이티브 Wayland 의 다른 앱 selection 은 기다리지 않는다. 읽기를
+    취소하고 `Pass`다. selection 읽기 오류도 경고 로그를 남기고 `Pass`다(호스트 egui 입력칸과 같은 처리다).
+  - 그 밖은 원래 키와 편집을 창에 남기고 App 이 그 창 view 처리 직후(플러그인 단축키 단계 뒤) 꺼낸다
+    (`src/app/plugin_popup_edit.rs`). 팝업의 플러그인이 회신을 약속했으면 요청을 다음 렌더의 그 팝업 입력에 붙이고 원래
+    키를 보류한다. 약속하지 않았거나 팝업이 그 사이 닫혔으면 원래 키를 넘긴 편집으로 한 번 재생한다(`Pass`와 같다).
+  - 회신과 재생은 키를 보낸 때의 팝업 instance 로 짝짓는다. 요청과 보류는 그 instance 를 대상으로 갖는다. 회신을 적용하기
+    전에 그 팝업이 열려 있고 그 창의 키를 지금도 받는지 확인한다. 키 소유자가 바뀌었으면(다른 plugin 팝업이나 호스트 팝업이
+    위로 왔다) 그 보류는 원래 키 재생과 복사 없이 끝나고 회신은 버려진다.
+- 편집 요청을 보내는 surface 입력 경로는 아직 없다. 플러그인 surface 의 편집 키는 위 판정 없이 기존 경로(surface 의
+  `Copy`·`Paste` 전달)로 간다.
 
 ## OS 고유 키 이름 혼용 금지
 
