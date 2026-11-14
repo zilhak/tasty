@@ -1,7 +1,8 @@
-//! `debug.inject_egui_clipboard` — 메인 창의 egui 입력에 붙여넣기·복사·잘라내기 하나를 넣는다.
-//! 실제 키가 거치는 편집 키 판정(바인딩 판정, 플러그인 회신 보류)과 egui-winit 기본 키 변환을 건너뛰고
-//! 그 뒤의 이벤트를 바로 넣어 플러그인 팝업 전달과 복사 결과 처리를 키 없이 재현한다. 사용자 입력 재현이므로
-//! release에는 두지 않는다.
+//! `debug.inject_egui_clipboard` — 지목한 창(생략하면 포커스된 메인 창)의 egui 입력에 붙여넣기·복사·잘라내기
+//! 하나를 넣는다. 실제 키가 거치는 편집 키 판정(바인딩 판정, 플러그인 회신 보류)과 egui-winit 기본 키 변환을
+//! 건너뛰고 그 뒤의 이벤트를 바로 넣어 플러그인 팝업 전달과 복사 결과 처리를 키 없이 재현한다. 플러그인 팝업
+//! 전달은 메인 창에만 있으므로 설정 같은 보조 창에서는 egui 입력칸 편집과 그 창의 복사 결과만 재현한다.
+//! 사용자 입력 재현이므로 release에는 두지 않는다.
 
 use crate::app::App;
 use crate::app::ipc::IpcStep;
@@ -56,9 +57,6 @@ impl App {
                 .ok_or_else(|| (-32603, "focused main window is gone".to_string()))?;
             (u64::from(focused), view.as_mut())
         };
-        if view.as_main().is_none() {
-            return Err((-32602, format!("Window id {wid} is not a main window")));
-        }
         view.base_mut().gpu.debug_push_egui_events(vec![event]);
         view.mark_dirty();
         Ok(serde_json::json!({ "injected": true, "window_id": wid }))

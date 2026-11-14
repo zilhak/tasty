@@ -4315,7 +4315,7 @@ help = "넣을 편집: paste, copy, cut."
 help = "붙여넣을 텍스트입니다. paste에는 비어 있지 않은 값이 필요하고 copy·cut에는 쓰지 않습니다."
 
 [cli.help._root.debug.inject.egui-clipboard.arg.window_id]
-help = "대상 메인 윈도우. 생략하면 포커스된 메인 윈도우로 보냅니다"
+help = "대상 윈도우. 메인 또는 보조 윈도우(Settings, Preset, Plugins). 생략하면 포커스된 메인 윈도우로 보냅니다"
 
 [cli.help._root.debug.plugin-banner]
 about = "플러그인을 거치지 않고 해당 플러그인의 배너를 직접 열거나 닫습니다(debug 빌드 전용). 호스트 내장 배너는 `debug banner`로 다룹니다."

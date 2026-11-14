@@ -4390,7 +4390,7 @@ help = "Edit to put: paste, copy or cut"
 help = "Text to paste. Required for paste and not empty; not used by copy or cut"
 
 [cli.help._root.debug.inject.egui-clipboard.arg.window_id]
-help = "Target main window. Omit to send to the focused main window"
+help = "Target window, main or auxiliary (Settings, Preset, Plugins). Omit to send to the focused main window"
 
 [cli.help._root.debug.plugin-banner]
 about = "Plugin-contributed banner force-open/close, bypassing the owning plugin. Debug builds only — `debug banner` is the host built-in banner instead"

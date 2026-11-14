@@ -4477,7 +4477,7 @@ help = "要放入的编辑：paste、copy 或 cut。"
 help = "要粘贴的文本。paste 需要非空值，copy 和 cut 不使用。"
 
 [cli.help._root.debug.inject.egui-clipboard.arg.window_id]
-help = "目标主窗口。省略时发送到获得焦点的主窗口"
+help = "目标窗口，主窗口或辅助窗口（设置、预设、插件）。省略则发送到获得焦点的主窗口"
 
 [cli.help._root.debug.plugin-banner]
 about = "绕过所属插件，强制打开或关闭插件提供的横幅。仅限调试构建——`debug banner` 则用于宿主内置横幅"

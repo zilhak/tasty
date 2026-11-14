@@ -759,7 +759,7 @@ pub enum InjectDebugCommands {
         /// Text to paste. Required for paste and not empty; not used by copy or cut.
         #[arg(long, required_if_eq("op", "paste"))]
         text: Option<String>,
-        /// Target main window. Omit to send to the focused main window
+        /// Target window, main or auxiliary (Settings, Preset, Plugins). Omit to send to the focused main window
         #[arg(long)]
         window_id: Option<u64>,
     },
