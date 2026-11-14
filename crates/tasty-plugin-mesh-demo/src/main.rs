@@ -22,6 +22,8 @@ struct MeshDemoPlugin {
     surfaces: HashMap<u32, EguiMeshSurface>,
     /// surface_id → 클릭 횟수. 입력 forward 가 mesh 를 바꾸는 것을 보이는 데모 상태.
     clicks: HashMap<u32, u32>,
+    /// surface_id → 입력칸 글자. 호스트 편집 요청(복사·잘라내기·붙여넣기)과 결과 회신을 확인한다.
+    texts: HashMap<u32, String>,
     /// Popup 인스턴스별 렌더 상태. 열 때 만들고 닫을 때 해제한다.
     popups: HashMap<u64, EguiMeshPopup>,
     /// popup instance_id → 클릭 횟수. 입력 forward 가 popup mesh 를 바꾸는 데모 상태.
@@ -43,7 +45,7 @@ impl Plugin for MeshDemoPlugin {
         PLUGIN_VERSION
     }
 
-    /// popup 입력칸을 `EditField`로 그리므로 편집 결과를 회신한다.
+    /// surface·popup 입력칸을 `EditField`로 그리므로 편집 결과를 회신한다.
     fn reports_edit_outcomes(&self) -> bool {
         true
     }
@@ -57,6 +59,7 @@ impl Plugin for MeshDemoPlugin {
         // surface 가 닫히면 egui Context·shared buffer 매핑·데모 상태를 함께 해제.
         self.surfaces.remove(&surface_id);
         self.clicks.remove(&surface_id);
+        self.texts.remove(&surface_id);
     }
 
     fn paint_surface(&mut self, ctx: SurfaceSetContextCtx) {
@@ -103,16 +106,17 @@ impl MeshDemoPlugin {
     #[cfg(unix)]
     fn paint(&mut self, ctx: SurfaceSetContextCtx) {
         let sid = ctx.params.surface_id;
-        // surfaces / clicks 는 서로소 필드라 동시 mutable 차용이 안전하다.
+        // surfaces / clicks / texts 는 서로소 필드라 동시 mutable 차용이 안전하다.
         let surface = self
             .surfaces
             .entry(sid)
             .or_insert_with(|| EguiMeshSurface::new(sid));
         let clicks = self.clicks.entry(sid).or_insert(0);
+        let text = self.texts.entry(sid).or_default();
         // tessellate+encode+commit 지연 측정 (docs/dev-guide/egui-mesh-channel.md#데이터-흐름 성능 확인).
         let t0 = std::time::Instant::now();
         let result = surface.paint(&ctx.host, &ctx.params, |egui_ctx| {
-            draw_demo(egui_ctx, clicks);
+            draw_demo(egui_ctx, clicks, text);
         });
         match result {
             Ok(Some(_gen)) => {
@@ -183,9 +187,10 @@ impl MeshDemoPlugin {
     fn paint_banner_impl(&mut self, _ctx: BannerSetContextCtx) {}
 }
 
-/// 기본 egui 색과 폰트를 사용하는 클릭·스크롤 데모.
+/// 기본 egui 색과 폰트를 사용하는 클릭·스크롤 데모. 편집 결과를 회신하는 입력칸(`EditField`)으로 호스트
+/// 편집 요청이 surface 입력칸에 닿고 결과가 회신되는지 검증한다.
 #[cfg(unix)]
-fn draw_demo(ctx: &egui::Context, clicks: &mut u32) {
+fn draw_demo(ctx: &egui::Context, clicks: &mut u32, text: &mut String) {
     egui::CentralPanel::default().show(ctx, |ui| {
         // 카운터를 heading 에 둬 입력 forward 효과(클릭)가 한눈에 보이게 한다.
         ui.heading(format!("Hello egui-mesh — clicks: {clicks}"));
@@ -195,6 +200,9 @@ fn draw_demo(ctx: &egui::Context, clicks: &mut u32) {
         if btn.clicked() {
             *clicks += 1;
         }
+        tasty_plugin_sdk::egui_surface::edit::EditField::singleline(text)
+            .id_salt("mesh_demo_surface_text")
+            .show(ui, |t| t.desired_width(f32::INFINITY));
         ui.separator();
         // 가로 자동 축소를 끄면 짧은 라벨의 오른쪽 빈 영역에서도 휠 입력을 받는다.
         egui::ScrollArea::vertical()
@@ -289,6 +297,7 @@ mod tests {
         let (w, h) = (1200.0_f32, 800.0_f32);
         let ctx = egui::Context::default();
         let mut clicks = 0_u32;
+        let mut text = String::new();
         let mut draw = |events: Vec<egui::Event>| -> Option<f32> {
             let raw = egui::RawInput {
                 screen_rect: Some(egui::Rect::from_min_size(
@@ -298,7 +307,7 @@ mod tests {
                 events,
                 ..Default::default()
             };
-            let out = ctx.run(raw, |ctx| draw_demo(ctx, &mut clicks));
+            let out = ctx.run(raw, |ctx| draw_demo(ctx, &mut clicks, &mut text));
             probe_line_y(&out)
         };
 
