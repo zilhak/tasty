@@ -3,8 +3,10 @@
 pub(crate) mod bed_focus;
 mod construction;
 mod navigation;
+mod post_message;
 use construction::create_missing_webviews;
 use navigation::{apply_agent_history_step, apply_user_nav};
+use post_message::drain_pending_scripts;
 
 use crate::plugin::PluginManager;
 use crate::plugin_bridge::remote_surface::RemoteSurface;
@@ -685,6 +687,7 @@ fn sync_webviews(
     // 아래 표시 판정보다 먼저 둔다. 이 프레임에 드러나는 WebView도 새 상태로 드러난다.
     bed_focus::sync(view, engine);
     resync_webview_urls(view, engine, &all_html_ids);
+    drain_pending_scripts(view, engine, &all_html_ids);
     update_html_script_banners(view, engine, &all_html_ids);
 
     // When any egui overlay (context menu, popup, dialog) is open,

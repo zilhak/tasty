@@ -39,6 +39,10 @@ pub struct RemoteSurface {
     /// 클릭 이후 페이지가 바뀌면 작성자를 잘못 판단할 수 있어 해당 프레임의 기록을 버린다.
     #[cfg(feature = "gui")]
     pub webview_owner_took_over: Arc<AtomicBool>,
+    /// webview.post_message로 받은 아직 실행하지 않은 메시지 스크립트. webview 동기화가 도착 순서대로 비운다.
+    /// 스크립트는 각각 독립된 조작이라 URL처럼 마지막 값만 남기지 않고 모두 쌓는다.
+    #[cfg(any(feature = "gui", test))]
+    pub pending_scripts: Arc<Mutex<Vec<String>>>,
     /// 네이티브 WebView의 탐색 상태 사본. 호스트 UI가 로딩·오류를 표시할 때 쓴다.
     #[cfg(any(feature = "gui", test))]
     pub nav_state: Arc<Mutex<NavState>>,
@@ -74,6 +78,8 @@ pub(crate) static SNAPSHOT_POISON_REPORTED: AtomicBool = AtomicBool::new(false);
 static DISPLAY_NAME_POISON_REPORTED: AtomicBool = AtomicBool::new(false);
 static WEBVIEW_URL_POISON_REPORTED: AtomicBool = AtomicBool::new(false);
 #[cfg(any(feature = "gui", test))]
+static PENDING_SCRIPTS_POISON_REPORTED: AtomicBool = AtomicBool::new(false);
+#[cfg(any(feature = "gui", test))]
 static NAV_STATE_POISON_REPORTED: AtomicBool = AtomicBool::new(false);
 static HTML_SOURCE_POISONED: AtomicBool = AtomicBool::new(false);
 static CWD_POISON_REPORTED: AtomicBool = AtomicBool::new(false);
@@ -81,6 +87,8 @@ static CWD_POISON_REPORTED: AtomicBool = AtomicBool::new(false);
 pub(crate) const SNAPSHOT_WHAT: &str = "remote surface snapshot cache";
 const DISPLAY_NAME_WHAT: &str = "remote surface display name";
 const WEBVIEW_URL_WHAT: &str = "remote surface webview url";
+#[cfg(any(feature = "gui", test))]
+const PENDING_SCRIPTS_WHAT: &str = "remote surface pending scripts";
 #[cfg(feature = "gui")]
 static WEBVIEW_LABEL_POISON_REPORTED: AtomicBool = AtomicBool::new(false);
 #[cfg(feature = "gui")]
@@ -96,6 +104,33 @@ const WEBVIEW_NAV_WHAT: &str = "remote surface webview nav info";
 static HTML_SCRIPT_POISON_REPORTED: AtomicBool = AtomicBool::new(false);
 #[cfg(feature = "gui")]
 const HTML_SCRIPT_WHAT: &str = "remote surface html script state";
+
+/// surface 하나가 WebView를 기다리며 쌓아 둘 수 있는 메시지 개수 상한.
+/// 큐는 WebView가 있는 프레임에만 비므로(아직 만들지 않았거나 해제된 surface 포함) 상한이 없으면
+/// 호스트 메모리가 무한히 자라고, WebView가 생기는 순간 밀린 메시지가 한꺼번에 돈다.
+#[cfg(any(feature = "gui", test))]
+pub const MAX_PENDING_SCRIPTS: usize = 64;
+
+/// 같은 큐의 바이트 상한. 개수 상한 안에서도 큰 메시지(하나당 1 MiB까지)가 쌓일 수 있다.
+#[cfg(any(feature = "gui", test))]
+pub const MAX_PENDING_SCRIPT_BYTES: usize = 4 * 1024 * 1024;
+
+/// 상한을 넘은 만큼 가장 오래된 것부터 버리고 버린 개수를 돌려준다.
+/// 마지막 하나는 상한보다 커도 남긴다 — 그 메시지는 호출 시점에 이미 받아들인 값이다.
+#[cfg(any(feature = "gui", test))]
+fn trim_pending_scripts(queue: &mut Vec<String>) -> usize {
+    let mut dropped = 0;
+    while queue.len() > MAX_PENDING_SCRIPTS {
+        queue.remove(0);
+        dropped += 1;
+    }
+    let mut bytes: usize = queue.iter().map(String::len).sum();
+    while bytes > MAX_PENDING_SCRIPT_BYTES && queue.len() > 1 {
+        bytes -= queue.remove(0).len();
+        dropped += 1;
+    }
+    dropped
+}
 
 impl RemoteSurface {
     pub fn new(
@@ -118,6 +153,8 @@ impl RemoteSurface {
             webview_page_by_owner: Arc::new(AtomicBool::new(false)),
             #[cfg(feature = "gui")]
             webview_owner_took_over: Arc::new(AtomicBool::new(false)),
+            #[cfg(any(feature = "gui", test))]
+            pending_scripts: Arc::new(Mutex::new(Vec::new())),
             #[cfg(any(feature = "gui", test))]
             nav_state: Arc::new(Mutex::new(NavState::Idle)),
             #[cfg(feature = "gui")]
@@ -206,6 +243,42 @@ impl RemoteSurface {
             &WEBVIEW_LABEL_POISON_REPORTED,
         )
         .clone()
+    }
+
+    /// webview.post_message가 메시지 스크립트를 큐에 넣는다. 상한을 넘으면 가장 오래된 것부터
+    /// 버리고 버린 개수를 돌려준다 — 0이면 모두 남았다. 가장 새 메시지가 가장 쓸모 있는 상태라
+    /// 새 것을 거절하지 않고 오래된 것을 버린다. 버림은 호출자가 로그에 남긴다.
+    #[cfg(any(feature = "gui", test))]
+    pub fn queue_script(&self, script: String) -> usize {
+        let mut queue = crate::poison::recover_mutex(
+            self.pending_scripts.lock(),
+            PENDING_SCRIPTS_WHAT,
+            &PENDING_SCRIPTS_POISON_REPORTED,
+        );
+        queue.push(script);
+        trim_pending_scripts(&mut queue)
+    }
+
+    /// WebView가 없거나 페이지가 plugin이 실은 문서가 아닐 때 쌓인 메시지를 버린다.
+    /// 버린 개수를 돌려준다.
+    #[cfg(any(feature = "gui", test))]
+    pub fn drop_scripts(&self) -> usize {
+        let mut queue = crate::poison::recover_mutex(
+            self.pending_scripts.lock(),
+            PENDING_SCRIPTS_WHAT,
+            &PENDING_SCRIPTS_POISON_REPORTED,
+        );
+        std::mem::take(&mut *queue).len()
+    }
+
+    /// 쌓인 스크립트를 도착 순서대로 꺼내고 큐를 비운다.
+    #[cfg(any(feature = "gui", test))]
+    pub fn take_scripts(&self) -> Vec<String> {
+        std::mem::take(&mut *crate::poison::recover_mutex(
+            self.pending_scripts.lock(),
+            PENDING_SCRIPTS_WHAT,
+            &PENDING_SCRIPTS_POISON_REPORTED,
+        ))
     }
 
     #[cfg(any(feature = "gui", test))]
@@ -420,6 +493,80 @@ impl Surface for RemoteSurface {
 #[allow(clippy::let_underscore_must_use)]
 mod tests {
     use super::*;
+
+    // 스크립트는 각각 독립된 조작이라 덮어쓰면 갱신이 사라진다. 꺼낸 뒤에는 비어야 같은 조작이 두 번 가지 않는다.
+    #[test]
+    fn queued_scripts_keep_their_order_and_count() {
+        let s = RemoteSurface::new(1, "markdown", "com.x".into(), "Doc".into());
+        s.queue_script("a()".into());
+        s.queue_script("b()".into());
+        s.queue_script("c()".into());
+        assert_eq!(s.take_scripts(), vec!["a()", "b()", "c()"]);
+        assert!(s.take_scripts().is_empty());
+    }
+
+    // 개수 상한을 넘으면 가장 오래된 것부터 버린다. 남는 것은 늘 가장 새 상태다.
+    #[test]
+    fn the_queue_drops_its_oldest_messages_past_the_count_cap() {
+        let s = RemoteSurface::new(1, "markdown", "com.x".into(), "Doc".into());
+        for i in 0..MAX_PENDING_SCRIPTS {
+            assert_eq!(
+                s.queue_script(format!("m{i}()")),
+                0,
+                "상한 안에서는 안 버린다"
+            );
+        }
+        assert_eq!(s.queue_script("over()".into()), 1);
+        let kept = s.take_scripts();
+        assert_eq!(kept.len(), MAX_PENDING_SCRIPTS);
+        assert_eq!(kept[0], "m1()", "가장 오래된 것이 빠진다");
+        assert_eq!(kept[kept.len() - 1], "over()", "가장 새 것은 남는다");
+    }
+
+    // 바이트 상한은 개수 상한 안에서도 큰 메시지가 쌓이는 경우를 막는다.
+    // 정확히 4개가 상한을 꽉 채우게 잡아 다섯 번째에서 처음 버리는지 본다.
+    #[test]
+    fn the_queue_drops_its_oldest_messages_past_the_byte_cap() {
+        let s = RemoteSurface::new(1, "markdown", "com.x".into(), "Doc".into());
+        let quarter = MAX_PENDING_SCRIPT_BYTES / 4;
+        assert_eq!(quarter * 4, MAX_PENDING_SCRIPT_BYTES, "상한이 4로 나뉜다");
+        let big = "x".repeat(quarter);
+        for _ in 0..4 {
+            assert_eq!(s.queue_script(big.clone()), 0, "상한까지는 안 버린다");
+        }
+        assert_eq!(s.queue_script(big.clone()), 1, "다섯 번째가 상한을 넘긴다");
+        assert_eq!(s.take_scripts().len(), 4);
+    }
+
+    // 하나로 상한을 넘기는 메시지도 그 하나는 남긴다 — 호출 시점에 이미 받아들인 값이다.
+    #[test]
+    fn a_single_oversized_message_is_still_delivered() {
+        let s = RemoteSurface::new(1, "markdown", "com.x".into(), "Doc".into());
+        let huge = "y".repeat(MAX_PENDING_SCRIPT_BYTES + 1);
+        assert_eq!(s.queue_script(huge), 0);
+        assert_eq!(s.take_scripts().len(), 1);
+    }
+
+    // WebView 가 없거나 문서가 바뀌면 쌓인 것을 버린다. 버린 개수를 알려야 로그에 남는다.
+    #[test]
+    fn dropping_the_queue_reports_how_many_it_threw_away() {
+        let s = RemoteSurface::new(1, "markdown", "com.x".into(), "Doc".into());
+        assert_eq!(s.drop_scripts(), 0);
+        s.queue_script("a()".into());
+        s.queue_script("b()".into());
+        assert_eq!(s.drop_scripts(), 2);
+        assert!(s.take_scripts().is_empty());
+    }
+
+    // 큐는 surface마다 따로다. 한 탭의 갱신이 다른 탭으로 가면 안 된다.
+    #[test]
+    fn two_surfaces_do_not_share_a_queue() {
+        let a = RemoteSurface::new(1, "markdown", "com.x".into(), "A".into());
+        let b = RemoteSurface::new(2, "markdown", "com.x".into(), "B".into());
+        a.queue_script("only_a()".into());
+        assert!(b.take_scripts().is_empty());
+        assert_eq!(a.take_scripts(), vec!["only_a()"]);
+    }
 
     #[test]
     fn surface_kind_returns_static() {
