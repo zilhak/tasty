@@ -207,6 +207,9 @@ impl ApplicationHandler<AppEvent> for App {
             AppEvent::TransferProgressTick => {
                 self.drain_transfer_progress();
             }
+            AppEvent::WebviewMenuClosed { plugin_id, payload } => {
+                self.on_webview_menu_closed(&plugin_id, payload);
+            }
             AppEvent::IdentifyDone {
                 request_id,
                 target,
