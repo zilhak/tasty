@@ -285,27 +285,51 @@ fn a_plugin_surface_turned_into_a_terminal_after_it_was_shown_still_gets_unfocus
     );
 }
 
-/// 낸 프레임에서 plugin surface였어도 감지할 때 레이아웃에 없으면(닫힘, `surface.closed`가 알린다) 잃음을 내지 않는다.
-/// 들어옴은 그대로 낸다.
+/// 낸 프레임에서 plugin surface였어도 감지할 때 레이아웃에서 사라졌으면(탭을 닫음) 잃음을 내지 않는다. 왼쪽 pane의
+/// 활성 탭 101을 plugin surface로 바꿔 키 포커스를 주고, 키를 가져가는 팝업 아래 프레임을 낸 뒤 그 탭을 닫고 창의 감지
+/// 단계(`observe_window_focus`)를 돌린다.
 #[test]
-fn a_plugin_surface_gone_by_the_poll_gets_no_unfocused() {
-    use crate::state::PendingHostEvent;
-    let (mut state, mut session) = scene();
+fn a_plugin_surface_closed_before_the_poll_gets_no_unfocused() {
+    crate::i18n::init("en");
+    let (mut state, mut session) = crate::state::tests::two_pane_fixture();
+    session.runtime.surfaces.insert(
+        101,
+        Box::new(crate::runtime::egui_mesh_surface::EguiMeshSurface::new(
+            101,
+            "mesh-demo",
+            "com.example.demo".into(),
+            "Mesh".into(),
+            None,
+        )),
+    );
+    assert!(state.focus_surface_by_id(&session.borrow_mut().read(), 101));
     show(&mut state, &mut session);
     poll(&mut state, &mut session);
 
-    assert!(state.focus_surface_by_id(&session.borrow_mut().read(), 101));
+    open_focused_popup(&mut state);
     show(&mut state, &mut session);
-    let events = state.detect_focus_change(|sid| sid != 201);
-    assert!(
-        matches!(
-            events.as_slice(),
-            [PendingHostEvent::SurfaceFocused {
-                surface_id: 101,
-                prev_surface_id: Some(201)
-            }]
-        ),
-        "{events:?}"
+    let before = crate::state::tests::test_model(crate::state::tests::two_pane_events());
+    let revision = before.applied.revision.unwrap_or(0) + 1;
+    let mut retired = Vec::new();
+    tasty_core::projection::apply(
+        session.borrow_mut().core,
+        &before,
+        &tasty_core::DomainBatch {
+            batch_id: 2,
+            events: vec![tasty_core::RecordedEvent {
+                revision,
+                event: tasty_core::DomainEvent::TabClosed { id: 101 },
+            }],
+        },
+        &mut retired,
+    )
+    .expect("the tab closes");
+    session.runtime.surfaces.remove(&101);
+    assert!(!session.borrow_mut().core.has_surface(101), "closed");
+    assert_eq!(
+        poll(&mut state, &mut session),
+        vec![],
+        "closed, not unfocused"
     );
 }
 
