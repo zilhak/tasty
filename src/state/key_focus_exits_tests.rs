@@ -308,3 +308,27 @@ fn a_plugin_surface_gone_by_the_poll_gets_no_unfocused() {
         "{events:?}"
     );
 }
+
+/// 화면에 내지 못한 프레임(제출 실패)은 키를 가진 팝업 값을 적지 않아 잃음이 없다. 다음에 낸 프레임에서 온다.
+#[test]
+fn a_frame_that_was_not_shown_sends_no_unfocused() {
+    let (mut state, mut session) = scene();
+    show(&mut state, &mut session);
+    poll(&mut state, &mut session);
+
+    open_focused_popup(&mut state);
+    {
+        let engine = session.borrow_mut();
+        let read = engine.read();
+        state.refresh_frame_key_focus(&read);
+        assert_eq!(state.frame_key_focus(), None, "the popup holds the keys");
+        state.finish_frame_key_focus(&read, false);
+        state.note_shown_key_focus(&read, false);
+    }
+    assert_eq!(poll(&mut state, &mut session), vec![], "not shown");
+    show(&mut state, &mut session);
+    assert_eq!(
+        poll(&mut state, &mut session),
+        vec![Ev::Unfocused(201, None)]
+    );
+}
