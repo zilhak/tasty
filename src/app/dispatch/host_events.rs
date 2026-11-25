@@ -228,9 +228,8 @@ pub(crate) fn observe_window_focus(
         engine.refresh_tab_osc_title(selected);
     }
     let mut observed = {
-        let read = engine.read();
-        state
-            .detect_focus_change(|sid| crate::state::key_focus_exits::is_plugin_surface(&read, sid))
+        let core: &crate::core::CoreState = engine.core;
+        state.detect_focus_change(|sid| core.has_surface(sid))
     };
     observed.extend(state.detect_workspace_activation(engine.core));
     observed.extend(state.detect_tab_focus_change(engine.core));

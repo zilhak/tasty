@@ -7,11 +7,12 @@ impl RequestContext {
     /// plugin `surface.focused`·`surface.unfocused`로 갈 이벤트를 일어난 순서대로 낸다
     /// (`MainViewState::take_key_focus_moves`). `surface.focused`는 화면에 낸 프레임에서 host 키 포커스가 surface로
     /// 들어갈 때마다 하나다. 키를 가진 팝업이 닫혀 같은 surface로 돌아오면 앞 값 없이 다시 낸다.
-    /// `surface.unfocused`는 키 포커스가 plugin surface(`is_plugin_surface`)를 떠날 때 그 surface에 하나이고, 다른
-    /// surface로 옮겨 가면 그 surface의 `surface.focused`보다 먼저다.
+    /// `surface.unfocused`는 키 포커스가 plugin surface를 떠날 때 그 surface에 하나이고, 다른 surface로 옮겨 가면 그
+    /// surface의 `surface.focused`보다 먼저다. plugin surface인지는 그 surface를 낸 프레임에서 적은 값이다. 감지할 때
+    /// `surface_exists`가 거짓인 surface(닫힘, `surface.closed`가 알린다)에는 내지 않는다.
     pub fn detect_focus_change(
         &mut self,
-        is_plugin_surface: impl Fn(u32) -> bool,
+        surface_exists: impl Fn(u32) -> bool,
     ) -> Vec<PendingHostEvent> {
         use crate::state::key_focus_exits::KeyFocusMove;
         self.take_key_focus_moves()
@@ -23,12 +24,16 @@ impl RequestContext {
                         prev_surface_id: prev,
                     })
                 }
-                KeyFocusMove::Left { surface_id, next } => {
-                    is_plugin_surface(surface_id).then_some(PendingHostEvent::SurfaceUnfocused {
+                KeyFocusMove::Left {
+                    surface_id,
+                    next,
+                    plugin,
+                } => (plugin && surface_exists(surface_id)).then_some(
+                    PendingHostEvent::SurfaceUnfocused {
                         surface_id,
                         next_surface_id: next,
-                    })
-                }
+                    },
+                ),
             })
             .collect()
     }

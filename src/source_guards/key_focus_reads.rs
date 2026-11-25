@@ -139,7 +139,7 @@ fn the_frame_value_is_filled_before_its_first_reader() {
         .find(&squash("self.state.finish_frame_key_focus(engine, shown);"))
         .expect("the shown frame is recorded");
     let note = render
-        .find(&squash("self.state.note_shown_key_focus(shown);"))
+        .find(&squash("self.state.note_shown_key_focus(engine, shown);"))
         .expect("the shown key focus is noted for surface.unfocused");
     assert!(ensure < submit && submit < finish && finish < note);
 

@@ -7,7 +7,20 @@ use crate::runtime::engine_session::EngineSession;
 use crate::state::{PendingHostEvent, RequestContext};
 
 const fn left(surface_id: u32, next: Option<u32>) -> KeyFocusMove {
-    KeyFocusMove::Left { surface_id, next }
+    KeyFocusMove::Left {
+        surface_id,
+        next,
+        plugin: true,
+    }
+}
+
+/// 떠난 surface는 모두 plugin surface로 적힌 것으로 본다.
+fn moves(
+    told: Option<u32>,
+    entries: &[(u32, Option<u32>)],
+    shown: Option<u32>,
+) -> (Vec<KeyFocusMove>, Option<u32>) {
+    key_focus_moves(told, entries, shown, |_| true)
 }
 const fn entered(surface_id: u32, prev: Option<u32>) -> KeyFocusMove {
     KeyFocusMove::Entered { surface_id, prev }
@@ -17,31 +30,46 @@ const fn entered(surface_id: u32, prev: Option<u32>) -> KeyFocusMove {
 /// 뒤의 surface 없는 값(키를 가진 팝업)은 떠남 하나가 된다. 바뀐 것이 없으면 이동도 없다.
 #[test]
 fn moves_are_rebuilt_in_order_from_the_entries_and_the_shown_value() {
-    assert_eq!(key_focus_moves(None, &[], None), (vec![], None));
-    assert_eq!(key_focus_moves(Some(1), &[], Some(1)), (vec![], Some(1)));
+    assert_eq!(moves(None, &[], None), (vec![], None));
+    assert_eq!(moves(Some(1), &[], Some(1)), (vec![], Some(1)));
     assert_eq!(
-        key_focus_moves(None, &[(1, None)], Some(1)),
+        moves(None, &[(1, None)], Some(1)),
         (vec![entered(1, None)], Some(1))
     );
     assert_eq!(
-        key_focus_moves(Some(1), &[], None),
+        moves(Some(1), &[], None),
         (vec![left(1, None)], None),
         "keys went to a popup"
     );
     assert_eq!(
-        key_focus_moves(Some(1), &[(2, Some(1))], Some(2)),
+        moves(Some(1), &[(2, Some(1))], Some(2)),
         (vec![left(1, Some(2)), entered(2, Some(1))], Some(2)),
         "to another surface: left first"
     );
     assert_eq!(
-        key_focus_moves(Some(1), &[(1, None)], Some(1)),
+        moves(Some(1), &[(1, None)], Some(1)),
         (vec![left(1, None), entered(1, None)], Some(1)),
         "to a popup and back between two polls"
     );
     assert_eq!(
-        key_focus_moves(Some(1), &[(1, None)], None),
+        moves(Some(1), &[(1, None)], None),
         (vec![left(1, None), entered(1, None), left(1, None)], None),
         "back and away again between two polls"
+    );
+    assert_eq!(
+        key_focus_moves(Some(1), &[(2, Some(1))], Some(2), |sid| sid == 2),
+        (
+            vec![
+                KeyFocusMove::Left {
+                    surface_id: 1,
+                    next: Some(2),
+                    plugin: false
+                },
+                entered(2, Some(1))
+            ],
+            Some(2)
+        ),
+        "the left surface carries what it was when shown"
     );
 }
 
@@ -68,8 +96,10 @@ fn scene() -> (RequestContext, EngineSession) {
 
 /// 창이 프레임 하나를 화면에 낸 것처럼 마친다(`render_if_dirty`의 두 호출).
 fn show(state: &mut RequestContext, session: &mut EngineSession) {
-    state.show_key_focus_frame(&session.borrow_mut().read());
-    state.note_shown_key_focus(true);
+    let engine = session.borrow_mut();
+    let read = engine.read();
+    state.show_key_focus_frame(&read);
+    state.note_shown_key_focus(&read, true);
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -205,4 +235,76 @@ fn plugin_surfaces_are_the_mesh_and_webview_surfaces() {
     assert!(!super::is_plugin_surface(&read, 999), "missing");
     let terminal = terminal_session.borrow_mut();
     assert!(!super::is_plugin_surface(&terminal.read(), 101), "terminal");
+}
+
+/// 떠남의 plugin 판정은 그 surface를 화면에 낸 프레임의 값이다. 터미널로 낸 201이 감지 전에 같은 ID의 webview로
+/// 바뀌어도 잃음은 없다.
+#[test]
+fn a_terminal_turned_into_a_webview_after_it_was_shown_gets_no_unfocused() {
+    crate::i18n::init("en");
+    let (mut state, mut session) = crate::state::tests::two_pane_fixture();
+    show(&mut state, &mut session);
+    assert_eq!(poll(&mut state, &mut session), vec![Ev::Focused(201, None)]);
+
+    open_focused_popup(&mut state);
+    show(&mut state, &mut session);
+    session.runtime.surfaces.insert(
+        201,
+        Box::new(crate::plugin_bridge::remote_surface::RemoteSurface::new(
+            201,
+            "html",
+            "com.tasty.html".into(),
+            "html".into(),
+        )),
+    );
+    assert_eq!(
+        poll(&mut state, &mut session),
+        vec![],
+        "shown as a terminal"
+    );
+}
+
+/// plugin surface로 낸 201이 감지 전에 같은 ID의 터미널로 바뀌어도(레이아웃에는 남음) 낸 프레임의 사실대로 잃음이
+/// 온다.
+#[test]
+fn a_plugin_surface_turned_into_a_terminal_after_it_was_shown_still_gets_unfocused() {
+    let (mut state, mut session) = scene();
+    show(&mut state, &mut session);
+    poll(&mut state, &mut session);
+
+    open_focused_popup(&mut state);
+    show(&mut state, &mut session);
+    assert!(
+        session.runtime.surfaces.remove(&201).is_some(),
+        "now a terminal"
+    );
+    assert_eq!(
+        poll(&mut state, &mut session),
+        vec![Ev::Unfocused(201, None)],
+        "shown as a plugin surface"
+    );
+}
+
+/// 낸 프레임에서 plugin surface였어도 감지할 때 레이아웃에 없으면(닫힘, `surface.closed`가 알린다) 잃음을 내지 않는다.
+/// 들어옴은 그대로 낸다.
+#[test]
+fn a_plugin_surface_gone_by_the_poll_gets_no_unfocused() {
+    use crate::state::PendingHostEvent;
+    let (mut state, mut session) = scene();
+    show(&mut state, &mut session);
+    poll(&mut state, &mut session);
+
+    assert!(state.focus_surface_by_id(&session.borrow_mut().read(), 101));
+    show(&mut state, &mut session);
+    let events = state.detect_focus_change(|sid| sid != 201);
+    assert!(
+        matches!(
+            events.as_slice(),
+            [PendingHostEvent::SurfaceFocused {
+                surface_id: 101,
+                prev_surface_id: Some(201)
+            }]
+        ),
+        "{events:?}"
+    );
 }

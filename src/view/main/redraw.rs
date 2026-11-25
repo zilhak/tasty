@@ -307,7 +307,7 @@ impl MainView {
         self.base.begin_surface_frame();
         let shown = self.submit_gpu_frame(engine, plugin_manager);
         self.state.finish_frame_key_focus(engine, shown);
-        self.state.note_shown_key_focus(shown);
+        self.state.note_shown_key_focus(engine, shown);
         self.drain_full_texture_requests(engine);
     }
 
