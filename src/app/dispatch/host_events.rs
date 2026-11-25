@@ -68,6 +68,10 @@ impl App {
                     surface_id,
                     prev_surface_id,
                 } => surface::emit_focused(mgr, surface_id, prev_surface_id),
+                PendingHostEvent::SurfaceUnfocused {
+                    surface_id,
+                    next_surface_id,
+                } => surface::emit_unfocused(mgr, surface_id, next_surface_id),
                 PendingHostEvent::SurfaceTitleChanged {
                     surface_id, title, ..
                 } => surface::emit_title_changed(mgr, surface_id, title),
@@ -223,7 +227,11 @@ pub(crate) fn observe_window_focus(
     if let Some(selected) = state.detect_selection_change(engine.core) {
         engine.refresh_tab_osc_title(selected);
     }
-    let mut observed = state.detect_focus_change();
+    let mut observed = {
+        let read = engine.read();
+        state
+            .detect_focus_change(|sid| crate::state::key_focus_exits::is_plugin_surface(&read, sid))
+    };
     observed.extend(state.detect_workspace_activation(engine.core));
     observed.extend(state.detect_tab_focus_change(engine.core));
     engine.runtime.pending_host_events.extend(observed);

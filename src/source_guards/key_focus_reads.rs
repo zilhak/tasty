@@ -110,7 +110,8 @@ fn paint_and_focus_behaviors_read_the_frame_key_focus() {
     );
 }
 
-/// 프레임 값은 그 프레임의 첫 소비자(FocusObserved)보다 먼저, 그리기는 준비를 건너뛰었어도 그리기 전에 정한다.
+/// 프레임 값은 그 프레임의 첫 소비자(FocusObserved)보다 먼저, 그리기는 준비를 건너뛰었어도 그리기 전에 정한다. 낸 프레임의 값은
+/// 마친 뒤 포커스 잃음 감지(`note_shown_key_focus`)에 적는다.
 #[test]
 fn the_frame_value_is_filled_before_its_first_reader() {
     let prepare = body("src/view/main/redraw.rs", "fn prepare_render_inputs(");
@@ -137,7 +138,10 @@ fn the_frame_value_is_filled_before_its_first_reader() {
     let finish = render
         .find(&squash("self.state.finish_frame_key_focus(engine, shown);"))
         .expect("the shown frame is recorded");
-    assert!(ensure < submit && submit < finish);
+    let note = render
+        .find(&squash("self.state.note_shown_key_focus(shown);"))
+        .expect("the shown key focus is noted for surface.unfocused");
+    assert!(ensure < submit && submit < finish && finish < note);
 
     let done = body("src/view/main/redraw.rs", "fn finish_redraw(");
     let moved = done

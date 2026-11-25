@@ -389,6 +389,10 @@ pub struct MainViewState {
     #[cfg(feature = "gui")]
     pub(crate) key_focus: crate::state::key_focus::KeyFocusFrames,
 
+    /// 화면에 낸 프레임의 키 포커스 값과 마지막으로 알린 값(`state::key_focus_exits`). plugin `surface.unfocused` 감지가 읽는다.
+    #[cfg(feature = "gui")]
+    pub(crate) key_focus_exits: crate::state::key_focus_exits::KeyFocusExits,
+
     /// 버튼을 누른 mesh leaf. 뗄 때까지 포인터를 그 leaf가 받는다(띠 행이나 leaf 밖에서 떼도).
     #[cfg(feature = "gui")]
     pub(crate) mesh_press: crate::state::mesh_frames::MeshPresses,

@@ -3,6 +3,7 @@
 use tasty_plugin_protocol::EventScope;
 use tasty_plugin_protocol::events::payloads::{
     SurfaceCreated, SurfaceCreatedBy, SurfaceFocused, SurfaceRefreshRequested, SurfaceTitleChanged,
+    SurfaceUnfocused,
 };
 
 use crate::hooks::lua::AutofireCtx;
@@ -14,6 +15,18 @@ pub(super) fn emit_focused(mgr: &mut PluginManager, surface_id: u32, prev_surfac
         prev_surface_id,
     };
     mgr.emit_host_event("surface.focused", &payload, EventScope::Surface);
+}
+
+pub(super) fn emit_unfocused(
+    mgr: &mut PluginManager,
+    surface_id: u32,
+    next_surface_id: Option<u32>,
+) {
+    let payload = SurfaceUnfocused {
+        surface_id,
+        next_surface_id,
+    };
+    mgr.emit_host_event("surface.unfocused", &payload, EventScope::Surface);
 }
 
 pub(super) fn emit_title_changed(mgr: &mut PluginManager, surface_id: u32, title: String) {

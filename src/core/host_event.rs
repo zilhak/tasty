@@ -33,6 +33,11 @@ pub enum PendingHostEvent {
         surface_id: u32,
         prev_surface_id: Option<u32>,
     },
+    /// plugin surface가 키 포커스를 잃었다. 키가 간 surface가 없으면(키를 가진 팝업·무대) next는 None이다.
+    SurfaceUnfocused {
+        surface_id: u32,
+        next_surface_id: Option<u32>,
+    },
     SurfaceTitleChanged {
         surface_id: u32,
         generation: tasty_terminal::ResourceGeneration,

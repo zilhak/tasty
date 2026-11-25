@@ -249,7 +249,7 @@ fn surface_focused_follows_shown_key_focus_entries() {
     let (mut state, mut session, sid) = scene();
     let focused = |state: &mut RequestContext| -> Vec<(u32, Option<u32>)> {
         state
-            .detect_focus_change()
+            .detect_focus_change(|_| false)
             .into_iter()
             .filter_map(|e| match e {
                 crate::state::PendingHostEvent::SurfaceFocused {

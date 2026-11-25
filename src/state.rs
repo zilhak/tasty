@@ -41,6 +41,8 @@ pub(crate) mod held_keys;
 pub(crate) mod input_destination;
 #[cfg(feature = "gui")]
 pub(crate) mod key_focus;
+#[cfg(feature = "gui")]
+pub(crate) mod key_focus_exits;
 #[cfg(any(feature = "gui", test))]
 mod layout;
 #[cfg(feature = "gui")]
@@ -434,6 +436,8 @@ impl RequestContext {
             surface_focus_edges: Vec::new(),
             #[cfg(feature = "gui")]
             key_focus: Default::default(),
+            #[cfg(feature = "gui")]
+            key_focus_exits: Default::default(),
             #[cfg(feature = "gui")]
             mesh_press: Default::default(),
             #[cfg(feature = "gui")]
