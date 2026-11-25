@@ -48,6 +48,14 @@ pub struct SurfaceFocused {
     pub prev_surface_id: Option<u32>,
 }
 
+/// `surface.unfocused` 페이로드. scope=Surface. 키 포커스를 잃은 plugin surface와 키 포커스가 간 surface다.
+/// 키를 가진 팝업이나 무대로 가면 `next_surface_id`는 `null`로 실린다(필드를 빼지 않는다).
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct SurfaceUnfocused {
+    pub surface_id: u32,
+    pub next_surface_id: Option<u32>,
+}
+
 /// `surface.resized` 페이로드. scope=Surface.
 /// 호스트가 150ms leading+trailing 쓰로틀 적용 후 발화.
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -565,6 +573,24 @@ mod tests {
         assert_eq!(v["created_by"]["source_plugin"], "com.tasty.claude");
         let back: SurfaceCreated = serde_json::from_value(v).unwrap();
         assert_eq!(back.surface_id, 1);
+    }
+
+    /// 키 포커스가 surface 없는 곳으로 가면 `next_surface_id`는 빠지지 않고 `null`로 실린다.
+    #[test]
+    fn surface_unfocused_carries_a_null_next_surface() {
+        let p = SurfaceUnfocused {
+            surface_id: 5,
+            next_surface_id: None,
+        };
+        let v = serde_json::to_value(&p).unwrap();
+        assert_eq!(
+            v,
+            serde_json::json!({ "surface_id": 5, "next_surface_id": null })
+        );
+        let back: SurfaceUnfocused =
+            serde_json::from_value(serde_json::json!({ "surface_id": 5, "next_surface_id": 6 }))
+                .unwrap();
+        assert_eq!((back.surface_id, back.next_surface_id), (5, Some(6)));
     }
 
     #[test]
