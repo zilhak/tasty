@@ -8,6 +8,8 @@ mod workspace;
 
 #[cfg(test)]
 mod created_window_tests;
+#[cfg(test)]
+mod focus_delivery_tests;
 
 use crate::app::App;
 use crate::app::window_access::engines_mut;
