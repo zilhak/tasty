@@ -1016,13 +1016,27 @@ fn an_event_key_the_plugin_does_not_know_is_handed_over_and_answered() {
         seen: seen.clone(),
         focused: focused.clone(),
     };
+    // host가 보내는 그대로의 payload(`surface_id`·`next_surface_id`).
     let unknown = event_dispatch_params(
         "surface.unfocused",
-        json!({ "surface_id": 7, "next_surface_id": null, "extra": [1, 2] }),
+        json!({ "surface_id": 7, "next_surface_id": null }),
     );
     let resp = build_response(
         1,
         dispatch(&mut plugin, METHOD_EVENT_DISPATCH, &unknown, &host),
+    );
+    assert_eq!(
+        (resp.result, resp.error, resp.error_code),
+        (Some(Value::Null), None, None)
+    );
+    // 뒤에 필드가 더해진 payload도 같다.
+    let extended = event_dispatch_params(
+        "surface.unfocused",
+        json!({ "surface_id": 7, "next_surface_id": 9, "extra": [1, 2] }),
+    );
+    let resp = build_response(
+        4,
+        dispatch(&mut plugin, METHOD_EVENT_DISPATCH, &extended, &host),
     );
     assert_eq!(
         (resp.result, resp.error, resp.error_code),
@@ -1040,6 +1054,7 @@ fn an_event_key_the_plugin_does_not_know_is_handed_over_and_answered() {
     assert_eq!(
         *seen.lock().unwrap(),
         vec![
+            "surface.unfocused".to_string(),
             "surface.unfocused".to_string(),
             "surface.focused".to_string()
         ]
