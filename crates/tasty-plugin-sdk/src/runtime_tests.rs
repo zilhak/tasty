@@ -967,3 +967,88 @@ fn hello_lists_edit_outcome_only_for_plugins_that_opt_in() {
         vec![tasty_plugin_protocol::CAPABILITY_EDIT_OUTCOME.to_string()]
     );
 }
+
+/// 아는 키(`surface.focused`)만 처리하고 받은 키를 남기는 플러그인. 지금 배포된 플러그인의 `on_event` 꼴이다.
+struct KnownKeysPlugin {
+    seen: Arc<Mutex<Vec<String>>>,
+    focused: Arc<Mutex<Vec<u32>>>,
+}
+impl Plugin for KnownKeysPlugin {
+    fn id(&self) -> &str {
+        "test.known_keys"
+    }
+    fn create_surface(&mut self, _ctx: SurfaceCreateCtx) -> SurfaceResult {
+        SurfaceResult::default()
+    }
+    fn on_event(&mut self, ctx: crate::plugin::EventDispatchCtx) {
+        self.seen.lock().unwrap().push(ctx.envelope.key.clone());
+        if ctx.envelope.key == "surface.focused"
+            && let Ok(p) = serde_json::from_value::<
+                tasty_plugin_protocol::events::payloads::SurfaceFocused,
+            >(ctx.envelope.payload)
+        {
+            self.focused.lock().unwrap().push(p.surface_id);
+        }
+    }
+}
+
+/// host가 보내는 `event.dispatch` params. 키와 payload는 SDK가 모르는 것이어도 그대로 실린다.
+fn event_dispatch_params(key: &str, payload: Value) -> Value {
+    json!({
+        "sub_id": 3,
+        "envelope": {
+            "key": key,
+            "payload": payload,
+            "meta": { "trace_id": "h1", "hop": 0, "origin": { "kind": "host" }, "scope": "surface" }
+        }
+    })
+}
+
+/// 플러그인이 모르는 이벤트 키(새로 더한 host 이벤트, `surface.*` 구독이 받는다)가 와도 SDK는 오류 없이 `on_event`에
+/// 넘기고 응답한다. 아는 키만 처리하는 플러그인은 그 이벤트를 무시하고, 뒤이은 아는 이벤트는 그대로 처리한다.
+/// 기본 `on_event`(구현하지 않은 플러그인)도 같은 응답을 낸다.
+#[test]
+fn an_event_key_the_plugin_does_not_know_is_handed_over_and_answered() {
+    let host = dummy_host();
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let focused = Arc::new(Mutex::new(Vec::new()));
+    let mut plugin = KnownKeysPlugin {
+        seen: seen.clone(),
+        focused: focused.clone(),
+    };
+    let unknown = event_dispatch_params(
+        "surface.unfocused",
+        json!({ "surface_id": 7, "next_surface_id": null, "extra": [1, 2] }),
+    );
+    let resp = build_response(
+        1,
+        dispatch(&mut plugin, METHOD_EVENT_DISPATCH, &unknown, &host),
+    );
+    assert_eq!(
+        (resp.result, resp.error, resp.error_code),
+        (Some(Value::Null), None, None)
+    );
+    let known = event_dispatch_params(
+        "surface.focused",
+        json!({ "surface_id": 8, "prev_surface_id": null }),
+    );
+    let resp = build_response(
+        2,
+        dispatch(&mut plugin, METHOD_EVENT_DISPATCH, &known, &host),
+    );
+    assert_eq!(resp.error, None);
+    assert_eq!(
+        *seen.lock().unwrap(),
+        vec![
+            "surface.unfocused".to_string(),
+            "surface.focused".to_string()
+        ]
+    );
+    assert_eq!(*focused.lock().unwrap(), vec![8]);
+
+    let resp = build_response(
+        3,
+        dispatch(&mut DefaultPlugin, METHOD_EVENT_DISPATCH, &unknown, &host),
+    );
+    assert_eq!((resp.result, resp.error), (Some(Value::Null), None));
+}
