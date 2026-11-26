@@ -5,6 +5,8 @@ mod filter_chip;
 mod folder;
 mod footer;
 mod indicator;
+#[cfg(test)]
+mod indicator_tests;
 mod path_bar;
 mod path_fit;
 #[cfg(test)]

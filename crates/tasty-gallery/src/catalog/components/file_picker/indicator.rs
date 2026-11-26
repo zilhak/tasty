@@ -9,9 +9,6 @@ use crate::catalog::icons::{self, MockGlyph};
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 use crate::i18n::t;
 
-/// C안의 프레임 위 띠 높이. 시안 `FilePickerFrame` 의 2px 리터럴이며 대응 토큰이 없다.
-const BORDER_STRIP_H: LogicalPx = LogicalPx(2.0);
-
 /// B안에서 제목 옆에 적는 호스트 글자 크기. 시안 `fontSize: 12` 리터럴이며 대응 UI 토큰이 없다.
 const GLYPH_HOST_FONT_PRIMITIVE_12: LogicalPx = LogicalPx(12.0);
 
@@ -77,7 +74,7 @@ pub(super) fn top_strip(ui: &mut egui::Ui, theme: &Theme, v: Variant) -> Logical
         return LogicalPx(0.0);
     }
     let (rect, _) = ui.allocate_exact_size(
-        egui::vec2(v.w.value(), BORDER_STRIP_H.value()),
+        egui::vec2(v.w.value(), theme.fp_remote_strip_height().value()),
         egui::Sense::hover(),
     );
     // 시안은 프레임의 overflow hidden 으로 띠의 위 모서리를 둥글게 자른다.
@@ -92,7 +89,7 @@ pub(super) fn top_strip(ui: &mut egui::Ui, theme: &Theme, v: Variant) -> Logical
         },
         theme.accent_info().to_egui(),
     );
-    BORDER_STRIP_H
+    theme.fp_remote_strip_height()
 }
 
 /// 헤더 글리프와 색. 원격 B·C안은 remote 글리프, B안만 info 색이다.
