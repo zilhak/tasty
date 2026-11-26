@@ -14,6 +14,11 @@ pub(crate) trait InputPassState {
     fn begin_key_pass(&mut self, escape_held: bool);
     /// 패스 콜백 첫머리, 위젯을 그리기 전. 닫힌 팝업 레이어의 egui 포커스를 놓는다(`PopupManager::release_closed_focus`).
     fn release_closed_focus(&mut self, ctx: &egui::Context);
+    /// 패스 콜백 끝. egui 내부 패스(최대 두 번) 하나가 IME 출력을 냈으면 그 패스가 그린 몫의 노드를 그 출력의 출처로
+    /// 적는다. egui 는 뒤 패스가 IME 출력을 내지 않으면 앞 패스의 출력을 최종 출력에 남긴다(`PlatformOutput::append`).
+    fn note_pass_ime(&mut self, ctx: &egui::Context);
+    /// egui 실행 뒤, 몫을 닫기 전. 최종 IME 출력을 낸 내부 패스의 출처를 그린 몫의 노드로 둔다.
+    fn settle_ime_source(&mut self);
     /// 직전 일반 패스가 그린 Find 입력칸 id.
     fn find_fields(&self) -> &[u64];
     /// 그 몫의 노드가 지금 그리는 화면에 없으면 입력을 뺀다. 뺐으면 참이다.
@@ -48,6 +53,19 @@ impl InputPassState for MainViewState {
 
     fn release_closed_focus(&mut self, ctx: &egui::Context) {
         self.popups.release_closed_focus(ctx);
+    }
+
+    /// 이 내부 패스가 IME 출력을 냈으면 지금 그린 몫의 노드(팝업 층을 그리지 않았으면 몫의 노드)를 그 출처로 남긴다.
+    fn note_pass_ime(&mut self, ctx: &egui::Context) {
+        if ctx.output(|o| o.ime.is_some()) {
+            self.ime_output_source = Some(self.closed_segment_focus.or(self.segment_focus));
+        }
+    }
+
+    fn settle_ime_source(&mut self) {
+        if let Some(source) = self.ime_output_source.take() {
+            self.closed_segment_focus = source;
+        }
     }
 
     fn find_fields(&self) -> &[u64] {
@@ -134,11 +152,14 @@ pub(crate) fn run_input_pass<S: InputPassState>(
         .extend(found.into_iter().map(egui::Event::Paste));
     adjust(&mut raw_input);
     let drawn = state.fullscreen_stage_id();
-    // egui 가 패스를 다시 돌려도(최대 두 번) 매 패스 위젯보다 먼저 닫힌 레이어의 포커스를 놓는다.
+    // egui 가 패스를 다시 돌려도(최대 두 번) 매 패스 위젯보다 먼저 닫힌 레이어의 포커스를 놓고, 패스마다 IME 출력의
+    // 출처를 적는다.
     let output = host.run(raw_input, state, |ctx, state| {
         state.release_closed_focus(ctx);
         ui(ctx, state);
+        state.note_pass_ime(ctx);
     });
+    state.settle_ime_source();
     state.close_input_pass(host.egui_ctx());
     let (cuts, raw_left) = host.cuts_and_raw_left();
     state.seal_after_drawing_transition(drawn, cuts, raw_left);

@@ -150,3 +150,70 @@ fn closing_the_top_cover_in_the_pass_judges_ime_on_the_passive_cover_left() {
         FocusNode::Popup(PopupNode::Host(below))
     );
 }
+
+/// 위젯 IME 출력 하나.
+fn ime_output() -> egui::output::IMEOutput {
+    let rect = egui::Rect::from_min_size(egui::pos2(530.0, 530.0), egui::vec2(80.0, 20.0));
+    egui::output::IMEOutput {
+        rect,
+        cursor_rect: rect,
+    }
+}
+
+/// X7: Given IME 위젯을 그린 host 자식 A 가 부모 B 위의 포커스 노드일 때, When 한 번의 egui 실행에서 첫 내부 패스가 A 를
+/// 그리며 IME 출력을 내고 A 를 닫은 뒤 그 패스를 버리고(discard), 둘째 패스가 B 를 그리며 IME 출력을 내지 않으면, Then
+/// egui 가 최종 출력에 남긴 A 의 IME 출력은 B 의 허용 근거가 아니다. 대조: 둘째 패스도 IME 출력을 내면 그 출력(B)으로
+/// 켠다.
+#[test]
+fn an_ime_output_kept_from_a_discarded_pass_lends_nothing_to_the_next_pass_node() {
+    let run = |second_ime: bool| {
+        let (mut state, mut session) = scene(PANE_L);
+        let (parent, child) = parent_and_child(&mut state);
+        let engine = session.borrow_mut();
+        let read = engine.read();
+        let ctx = egui::Context::default();
+        let mut input = WindowInput::default();
+        keyless_pass(&ctx, &mut state, &read, &mut input, None);
+        let mut held = HeldPastes::default();
+        let mut passes = 0;
+        let (_, out) = input.run_pass(
+            &mut state,
+            &ctx,
+            screen(),
+            &mut held,
+            &mut |_| {},
+            |ctx, state| {
+                passes += 1;
+                draw_popup_layer(ctx, state, &read, &layout());
+                if passes == 1 {
+                    ctx.output_mut(|o| o.ime = Some(ime_output()));
+                    state
+                        .popups
+                        .close_instance(child, PopupCloseReason::CloseButton);
+                    ctx.request_discard("the child closed");
+                } else if second_ime {
+                    ctx.output_mut(|o| o.ime = Some(ime_output()));
+                }
+            },
+        );
+        assert_eq!(passes, 2, "egui 가 둘째 내부 패스를 돌렸다");
+        assert!(
+            out.platform_output.ime.is_some(),
+            "최종 출력에 IME 출력이 남는다"
+        );
+        assert_eq!(
+            state.focus_node(&read),
+            FocusNode::Popup(PopupNode::Host(parent))
+        );
+        let drawn = state.closed_segment_focus;
+        window_ime_allowed(&mut state, &read, drawn, true)
+    };
+    assert!(
+        run(true),
+        "대조: 둘째 패스가 낸 출력은 그 패스 노드의 근거다"
+    );
+    assert!(
+        !run(false),
+        "버린 패스의 A 출력은 둘째 패스 노드 B 를 켜지 않는다"
+    );
+}

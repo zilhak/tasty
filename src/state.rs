@@ -275,6 +275,8 @@ impl RequestContext {
             #[cfg(feature = "gui")]
             closed_segment_focus: None,
             #[cfg(feature = "gui")]
+            ime_output_source: None,
+            #[cfg(feature = "gui")]
             webview_key_released: std::collections::BTreeSet::new(),
             #[cfg(feature = "gui")]
             segment_notice: None,

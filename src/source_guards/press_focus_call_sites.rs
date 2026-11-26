@@ -397,7 +397,7 @@ fn the_window_picks_the_stage_pass_by_the_live_stage_and_drops_input_without_its
     );
     let run = at(
         &pass,
-        "host.run(raw_input,state,|ctx,state|{state.release_closed_focus(ctx);ui(ctx,state);});",
+        "host.run(raw_input,state,|ctx,state|{state.release_closed_focus(ctx);ui(ctx,state);state.note_pass_ime(ctx);});",
         "egui 패스",
     );
     assert!(
@@ -438,9 +438,10 @@ fn the_input_pass_order_is_shared_by_the_product_and_the_harness() {
         ("adjust(&mutraw_input);", "입력 조정"),
         ("letdrawn=state.fullscreen_stage_id();", "그린 화면"),
         (
-            "letoutput=host.run(raw_input,state,|ctx,state|{state.release_closed_focus(ctx);ui(ctx,state);});",
-            "패스(위젯 전에 닫힌 레이어 포커스 놓기)",
+            "letoutput=host.run(raw_input,state,|ctx,state|{state.release_closed_focus(ctx);ui(ctx,state);state.note_pass_ime(ctx);});",
+            "패스(위젯 전에 닫힌 레이어 포커스 놓기, 패스마다 IME 출처 적기)",
         ),
+        ("state.settle_ime_source();", "최종 IME 출력의 출처"),
         ("state.close_input_pass(host.egui_ctx());", "몫 닫기"),
         (
             "state.seal_after_drawing_transition(drawn,cuts,raw_left);",

@@ -176,9 +176,14 @@ pub struct MainViewState {
     /// 마지막으로 닫은 그리기 몫의 노드. 패스 시작이 비우고, host 팝업 층 그리기가 그 몫을 그리며 확정한 노드
     /// (`pass_focus_node`, 키 없는 몫은 그때의 포커스 노드)를 적는다. 팝업 층을 그리지 않은 패스는 닫을 때 그 몫의
     /// `segment_focus` 다(`close_input_pass`). 패스 출력 입구의 IME 허용(`ime_permission::window_ime_allowed`)이 그
-    /// 몫 위젯의 IME 출력이 어느 노드의 것인지 읽는다.
+    /// 몫 위젯의 IME 출력이 어느 노드의 것인지 읽는다. egui 가 내부 패스를 두 번 돌리면 최종 IME 출력을 낸 내부 패스의
+    /// 값이다(`ime_output_source`).
     #[cfg(feature = "gui")]
     pub(crate) closed_segment_focus: Option<crate::state::focus_node::FocusNode>,
+    /// 최종 IME 출력을 낸 egui 내부 패스의 그린 몫 노드(`InputPassState::note_pass_ime`). 패스 콜백 끝이 적고, egui 실행
+    /// 뒤 `settle_ime_source` 가 꺼내 `closed_segment_focus` 로 둔다. IME 출력을 낸 내부 패스가 없으면 `None` 이다.
+    #[cfg(feature = "gui")]
+    pub(crate) ime_output_source: Option<Option<crate::state::focus_node::FocusNode>>,
     /// W2 회수 기록: 이번 구간에 OS 키 포커스 회수를 부른 WebView surface(`webview_sync::key_release`). 재회수를
     /// 막지 않는다.
     #[cfg(feature = "gui")]

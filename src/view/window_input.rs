@@ -41,6 +41,11 @@ impl<T: WindowPopups> InputPassState for WindowPass<'_, T> {
         self.state.window_popups().release_closed_focus(ctx);
     }
 
+    /// 별도 창은 IME 허용을 포커스 노드로 정하지 않는다.
+    fn note_pass_ime(&mut self, _ctx: &egui::Context) {}
+
+    fn settle_ime_source(&mut self) {}
+
     fn find_fields(&self) -> &[u64] {
         &[]
     }
