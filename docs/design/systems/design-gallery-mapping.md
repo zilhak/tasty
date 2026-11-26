@@ -14,7 +14,7 @@
 |---|---|---|
 | `RemoteTool`(container) | `draw_remote_tool_popup` | `components/remote.rs` `remote` spec (프레임 + 3탭 + add-bar + 목록). 셸(프레임·add-bar·목록 배치)은 갤러리가 본체 구성을 다시 그린 사본, **안의 탭 스트립과 로컬 ssh 섹션은 공용 view 호출** |
 | `TabBtn`(내부, 3탭) | `draw_tab_bar` (wrapper) → `tasty_ui_widgets::draw_tab_strip` | `components/remote.rs` `tab_bar` 이 **같은 공용 view 를 호출**한다 |
-| `WarnBadge` | `tasty_ui_widgets::warn_badge` — 경고 글리프(icon-glyph-xs) + `font-label` micro 글자 pill. 높이 `tag-size`, 좌우 `tag-padding-x`, 간격 `tag-gap`, 모서리 `tag-radius`, 채움 accent-warning × `tint-fill-alpha`, 테두리 accent-warning 40% | 같은 공용 view 를 세 탭 행과 프로토콜 필터가 부른다 |
+| `WarnBadge` | `tasty_ui_widgets::warn_badge` — 경고 글리프(icon-glyph-xs) + `font-label` micro 글자 pill. 높이 `tag-size`, 좌우 `tag-padding-x`, 간격 `tag-gap`, 모서리 `tag-radius`, 채움 accent-warning × `tint-fill-alpha`, 테두리 accent-warning × `tint-border-alpha` | 같은 공용 view 를 세 탭 행과 프로토콜 필터가 부른다 |
 | `ListShell` | `draw_profile_list` / `draw_attach_list` / `draw_passkey_list` (add-bar+scroll 합침) | — |
 | `ProtocolFilter`(add-bar 버튼) | `tasty_ui_widgets::draw_protocol_filter_button` | `components/remote.rs` `remote-filter` spec — 닫힘 2 상태(가린 것 없음 / 1 개 가림) |
 | `ProtocolFilter`(드롭다운/팝오버) | `tasty_ui_widgets::draw_protocol_filter_body` (본체 wrapper `draw_protocol_filter` 가 memory·배치·닫기를 소유) | `components/remote.rs` `remote-filter` spec — 열림 1 상태 |

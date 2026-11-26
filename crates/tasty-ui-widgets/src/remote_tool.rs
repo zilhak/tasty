@@ -66,7 +66,7 @@ pub fn ghost_button(ui: &mut egui::Ui, th: &Theme, label: &str) -> egui::Respons
 
 /// 경고 배지 — 시안 `WarnBadge`. 경고 글리프(icon-glyph-xs)와 font-label micro 글자를 담은 pill이며
 /// 높이·좌우 여백·간격·모서리는 Tag 토큰, 채움은 accent-warning × `tint-fill-alpha`,
-/// 테두리는 Tag 상태 테두리와 같은 40%다. `text`·`tooltip` 은 호출자가 번역해 넘긴다.
+/// 테두리는 accent-warning × `tint-border-alpha`다. `text`·`tooltip` 은 호출자가 번역해 넘긴다.
 /// base 바탕(목록 행)용이다. raised 프로토콜 필터 메뉴 안은 글리프 잉크만 다르다.
 pub fn warn_badge(ui: &mut egui::Ui, th: &Theme, text: &str, tooltip: &str) -> egui::Response {
     warn_badge_on(ui, th, text, tooltip, false)
@@ -103,7 +103,7 @@ fn warn_badge_on(
         radius,
         egui::Stroke::new(
             th.border_width.value(),
-            warn.gamma_multiply(WARN_BADGE_BORDER_OPACITY),
+            warn.gamma_multiply(th.tint_border_alpha()),
         ),
         egui::StrokeKind::Inside,
     );
@@ -122,9 +122,6 @@ fn warn_badge_on(
     ui.painter().galley(pos, galley, ink);
     resp.on_hover_text(tooltip)
 }
-
-/// 경고 배지 테두리 계수. 시안 `color-mix(accent-warning 40%)` 이며 Tag 상태 테두리와 같다.
-const WARN_BADGE_BORDER_OPACITY: f32 = 0.4;
 
 /// (좌우 여백, 글리프 크기, 글리프와 글자 사이 간격).
 fn warn_badge_metrics(th: &Theme) -> (f32, f32, f32) {

@@ -388,3 +388,58 @@ fn the_filter_menu_rules_are_menu_separator_and_the_dot_stays_separator() {
         assert_eq!(dot, dot_ink, "the dot ornament keeps separator ink");
     }
 }
+
+/// 그린 경고 배지의 테두리 색. 채움(accent-warning × tint-fill-alpha)으로 배지 상자를 찾고 같은 상자에 그린
+/// 테두리를 읽는다.
+fn painted_warn_badge_border(th: &Theme) -> egui::Color32 {
+    let ctx = egui::Context::default();
+    let raw = egui::RawInput {
+        screen_rect: Some(egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(640.0, 480.0),
+        )),
+        ..Default::default()
+    };
+    let out = ctx.run(raw, |ctx| {
+        egui::CentralPanel::default().show(ctx, |ui| {
+            warn_badge(ui, th, "passkey missing", "hint");
+        });
+    });
+    let mut shapes = Vec::new();
+    for clipped in out.shapes {
+        flatten(&clipped.shape, &mut shapes);
+    }
+    let warn = th.accent_warning().to_egui();
+    let badge_fill = warn.gamma_multiply(th.tint_fill_alpha());
+    let badges: Vec<egui::Rect> = shapes
+        .iter()
+        .filter_map(|s| match s {
+            egui::Shape::Rect(r) if r.brush.is_none() && r.fill == badge_fill => Some(r.rect),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(badges.len(), 1, "one warning badge fill is painted");
+    let strokes: Vec<egui::Color32> = shapes
+        .iter()
+        .filter_map(|s| match s {
+            egui::Shape::Rect(r) if r.rect == badges[0] && r.stroke.width > 0.0 => {
+                Some(r.stroke.color)
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(strokes.len(), 1, "one warning badge border is painted");
+    strokes[0]
+}
+
+/// 경고 배지 테두리는 정본 `tint-border-alpha`(Tag 상태 테두리와 같은 tint 테두리)를 accent-warning에 곱한다.
+#[test]
+fn painted_warn_badge_border_reads_tint_border_alpha() {
+    for th in [tasty_themes::mocha_fallback(), latte()] {
+        let warn = th.accent_warning().to_egui();
+        assert_eq!(
+            painted_warn_badge_border(&th),
+            warn.gamma_multiply(th.tint_border_alpha()),
+        );
+    }
+}
