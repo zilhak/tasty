@@ -678,8 +678,8 @@ fn detail_column(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, st: &mut Wi
     draw_scope_body(ui, theme, preview.shrink(theme.spacing_md.value()), &scope);
 }
 
-/// 편집 중 이름 입력 — 시안 `<input>`: 150 × 26, border-default, radius, surface-raised,
-/// 13px, 좌우 8.
+/// 편집 중 이름 입력 — 시안 `<input>`: 150 × 26, Input 칸 모양(input-bg 채움, input-border 테두리,
+/// input-fg 글자), radius, 13px, 좌우 8.
 fn name_input(ui: &mut egui::Ui, theme: &Theme, buf: &mut String) {
     let (rect, _) = ui.allocate_exact_size(
         egui::vec2(NAME_INPUT_W.value(), NAME_INPUT_H.value()),
@@ -687,11 +687,11 @@ fn name_input(ui: &mut egui::Ui, theme: &Theme, buf: &mut String) {
     );
     let radius = theme.corner_radius.value();
     ui.painter()
-        .rect_filled(rect, radius, theme.surface_raised().to_egui());
+        .rect_filled(rect, radius, theme.input_bg().to_egui());
     ui.painter().rect_stroke(
         rect,
         radius,
-        egui::Stroke::new(theme.border_width.value(), theme.border_default().to_egui()),
+        egui::Stroke::new(theme.border_width.value(), theme.input_border().to_egui()),
         egui::StrokeKind::Inside,
     );
     let inner = rect.shrink2(egui::vec2(theme.spacing_sm.value(), 0.0));
@@ -702,12 +702,43 @@ fn name_input(ui: &mut egui::Ui, theme: &Theme, buf: &mut String) {
             .margin(egui::Margin::ZERO)
             .desired_width(inner.width())
             .font(egui::FontId::proportional(theme.font_size_body.value()))
-            .text_color(theme.text_primary().to_egui()),
+            .text_color(theme.input_fg().to_egui()),
     );
 }
 
 #[cfg(test)]
 mod tests {
+    /// 편집 중 이름 칸은 Input 칸 모양이다: input-bg 채움과 input-border 테두리.
+    #[test]
+    fn the_name_field_reads_the_input_field_tokens() {
+        for theme in [
+            tasty_themes::mocha_fallback(),
+            crate::host_shell::latte_theme(),
+        ] {
+            assert_ne!(theme.input_border(), theme.border_default());
+            let p = crate::catalog::components::painted::paint(|ui| {
+                let mut buf = "Dev".to_owned();
+                super::name_input(ui, &theme, &mut buf);
+            });
+            let size = egui::vec2(super::NAME_INPUT_W.value(), super::NAME_INPUT_H.value());
+            let field = p
+                .shapes
+                .iter()
+                .filter_map(|s| match s {
+                    egui::Shape::Rect(r) if r.rect.size() == size => Some(r.clone()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            let fill = field
+                .iter()
+                .find(|r| r.fill != egui::Color32::TRANSPARENT)
+                .expect("채움");
+            let edge = field.iter().find(|r| r.stroke.width > 0.0).expect("테두리");
+            assert_eq!(fill.fill, theme.input_bg().to_egui(), "채움");
+            assert_eq!(edge.stroke.color, theme.input_border().to_egui(), "테두리");
+        }
+    }
+
     /// 본문 열 폭 `col_w`에서 표본 무대를 한 번 그린다.
     fn layout_in_column(col_w: f32) -> (egui::Rect, Option<egui::Rect>) {
         let theme = tasty_themes::mocha_fallback();
