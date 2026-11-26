@@ -64,7 +64,9 @@ macro_rules! fill_icon {
 }
 
 // ── Actions ──
+// 출처: Lucide "plus", 같은 도형. lucide-static 0.460.0, ISC·Feather 부분 MIT(LICENSES/Lucide-ISC.txt, LICENSES/Feather-MIT.txt).
 stroke_icon!(PLUS, "plus", r#"<path d="M12 5v14M5 12h14"/>"#);
+// 출처: Lucide "x", 같은 도형. lucide-static 0.460.0, ISC·Feather 부분 MIT(LICENSES/Lucide-ISC.txt, LICENSES/Feather-MIT.txt).
 stroke_icon!(CLOSE, "close", r#"<path d="M18 6 6 18M6 6l12 12"/>"#);
 stroke_icon!(
     WINDOW_MINIMIZE,
@@ -86,17 +88,21 @@ stroke_icon!(
     "caption_restore",
     r#"<rect x="6.6" y="9" width="8.4" height="8.4" stroke-linejoin="miter"/><path d="M9 6.6h8.4V9"/>"#
 );
+// 출처: Lucide "check", 같은 도형. lucide-static 0.460.0, ISC·Feather 부분 MIT(LICENSES/Lucide-ISC.txt, LICENSES/Feather-MIT.txt).
 stroke_icon!(CHECK, "check", r#"<path d="m20 6-11 11-5-5"/>"#);
+// 출처: Lucide "rotate-cw", 고쳐 온 도형. lucide-static 0.460.0, ISC·Feather 부분 MIT(LICENSES/Lucide-ISC.txt, LICENSES/Feather-MIT.txt).
 stroke_icon!(
     REFRESH,
     "refresh",
     r#"<path d="M21 12a9 9 0 1 1-2.6-6.4M21 3v6h-6"/>"#
 );
+// 출처: Lucide "pen-line", 고쳐 온 도형. lucide-static 0.460.0, ISC·Feather 부분 MIT(LICENSES/Lucide-ISC.txt, LICENSES/Feather-MIT.txt).
 stroke_icon!(
     EDIT,
     "edit",
     r#"<path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/>"#
 );
+// 출처: Lucide "trash", 고쳐 온 도형. lucide-static 0.460.0, ISC·Feather 부분 MIT(LICENSES/Lucide-ISC.txt, LICENSES/Feather-MIT.txt).
 stroke_icon!(
     TRASH,
     "trash",
@@ -124,6 +130,7 @@ stroke_icon!(
 // 방향 전환/교체(design `swap`).
 stroke_icon!(SWAP, "swap", r#"<path d="M7 7h11l-3-3M17 17H6l3 3"/>"#);
 // 수평 3-dot "더보기" 트리거(design `more`, 마우스 캡처 배너 컨텍스트 메뉴 트리거).
+// 출처: Lucide "ellipsis", 고쳐 온 도형. lucide-static 0.460.0, ISC·Feather 부분 MIT(LICENSES/Lucide-ISC.txt, LICENSES/Feather-MIT.txt).
 stroke_icon!(MORE, "more", r#"<path d="M5 12h.01M12 12h.01M19 12h.01"/>"#);
 // 디스크로 저장/내려받기(design `download`).
 stroke_icon!(
@@ -140,28 +147,35 @@ stroke_icon!(
 );
 
 // ── Navigation & disclosure ──
+// 출처: Lucide "chevron-left", 같은 도형. lucide-static 0.460.0, ISC·Feather 부분 MIT(LICENSES/Lucide-ISC.txt, LICENSES/Feather-MIT.txt).
 stroke_icon!(
     CHEVRON_LEFT,
     "chevron_left",
     r#"<path d="m15 18-6-6 6-6"/>"#
 );
+// 출처: Lucide "chevron-right", 같은 도형. lucide-static 0.460.0, ISC·Feather 부분 MIT(LICENSES/Lucide-ISC.txt, LICENSES/Feather-MIT.txt).
 stroke_icon!(
     CHEVRON_RIGHT,
     "chevron_right",
     r#"<path d="m9 18 6-6-6-6"/>"#
 );
+// 출처: Lucide "chevron-up", 같은 도형. lucide-static 0.460.0, ISC·Feather 부분 MIT(LICENSES/Lucide-ISC.txt, LICENSES/Feather-MIT.txt).
 stroke_icon!(CHEVRON_UP, "chevron_up", r#"<path d="m18 15-6-6-6 6"/>"#);
+// 출처: Lucide "chevron-down", 같은 도형. lucide-static 0.460.0, ISC·Feather 부분 MIT(LICENSES/Lucide-ISC.txt, LICENSES/Feather-MIT.txt).
 stroke_icon!(CHEVRON_DOWN, "chevron_down", r#"<path d="m6 9 6 6 6-6"/>"#);
+// 출처: Lucide "chevrons-left", 같은 도형. lucide-static 0.460.0, ISC·Feather 부분 MIT(LICENSES/Lucide-ISC.txt, LICENSES/Feather-MIT.txt).
 stroke_icon!(
     CHEVRONS_LEFT,
     "chevrons_left",
     r#"<path d="m11 17-5-5 5-5M18 17l-5-5 5-5"/>"#
 );
+// 출처: Lucide "chevrons-right", 같은 도형. lucide-static 0.460.0, ISC·Feather 부분 MIT(LICENSES/Lucide-ISC.txt, LICENSES/Feather-MIT.txt).
 stroke_icon!(
     CHEVRONS_RIGHT,
     "chevrons_right",
     r#"<path d="m13 17 5-5-5-5M6 17l5-5-5-5"/>"#
 );
+// 출처: Lucide "arrow-right", 고쳐 온 도형. lucide-static 0.460.0, ISC·Feather 부분 MIT(LICENSES/Lucide-ISC.txt, LICENSES/Feather-MIT.txt).
 stroke_icon!(
     ARROW_RIGHT,
     "arrow_right",
@@ -188,6 +202,7 @@ stroke_icon!(
     r#"<path d="M9 4v4a1 1 0 0 1-1 1H4M20 9h-4a1 1 0 0 1-1-1V4M15 20v-4a1 1 0 0 1 1-1h4M4 15h4a1 1 0 0 1 1 1v4"/>"#
 );
 // 4방향 이동/재배치(design `move`).
+// 출처: Lucide "move", 같은 도형. lucide-static 0.460.0, ISC·Feather 부분 MIT(LICENSES/Lucide-ISC.txt, LICENSES/Feather-MIT.txt).
 stroke_icon!(
     MOVE,
     "move",
@@ -222,6 +237,7 @@ stroke_icon!(
     r#"<path d="M4 20h16a1 1 0 0 0 1-1V8a1 1 0 0 0-1-1h-7l-2-2H4a1 1 0 0 0-1 1v13a1 1 0 0 0 1 1z"/>"#
 );
 // explorer 주소표시줄 앞 폴더(design `folderOpen`).
+// 출처: Lucide "folder-open", 고쳐 온 도형. lucide-static 0.460.0, ISC·Feather 부분 MIT(LICENSES/Lucide-ISC.txt, LICENSES/Feather-MIT.txt).
 stroke_icon!(
     FOLDER_OPEN,
     "folder_open",
@@ -244,12 +260,14 @@ stroke_icon!(
     "file_plus",
     r#"<path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z"/><path d="M12 11v6M9 14h6"/>"#
 );
+// 출처: Lucide "image", 고쳐 온 도형. lucide-static 0.460.0, ISC·Feather 부분 MIT(LICENSES/Lucide-ISC.txt, LICENSES/Feather-MIT.txt).
 stroke_icon!(
     IMAGE,
     "image",
     r#"<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/>"#
 );
 // 헤더용 bare 터미널 프롬프트(`>_`, design `remote`). host 는 `TERMINAL_PROMPT` 로 별칭.
+// 출처: Lucide "terminal", 같은 도형. lucide-static 0.460.0, ISC·Feather 부분 MIT(LICENSES/Lucide-ISC.txt, LICENSES/Feather-MIT.txt).
 stroke_icon!(
     REMOTE,
     "remote",
@@ -297,6 +315,7 @@ stroke_icon!(
     r#"<circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="9" r="2.5"/><path d="M18 11.5a6 6 0 0 1-6 6H8.5M6 8.5v7"/>"#
 );
 // git 트리/계보(design `gitTree`).
+// 출처: Lucide "git-commit-vertical", 같은 도형. lucide-static 0.460.0, ISC·Feather 부분 MIT(LICENSES/Lucide-ISC.txt, LICENSES/Feather-MIT.txt).
 stroke_icon!(
     GIT_TREE,
     "git_tree",
@@ -311,12 +330,14 @@ stroke_icon!(
 
 // ── View modes & favorites (explorer) ──
 // host 는 GRID / LIST_VIEW / DETAIL 로 별칭한다.
+// 출처: Lucide "layout-grid", 같은 도형. lucide-static 0.460.0, ISC·Feather 부분 MIT(LICENSES/Lucide-ISC.txt, LICENSES/Feather-MIT.txt).
 stroke_icon!(
     LAYOUT_GRID,
     "layout_grid",
     r#"<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/>"#
 );
 // design `listView` — 행 + leading 마커 점. host 는 LIST_VIEW 로 별칭. (log 라인은 `LOG`=design `list`.)
+// 출처: Lucide "list", 같은 도형. lucide-static 0.460.0, ISC·Feather 부분 MIT(LICENSES/Lucide-ISC.txt, LICENSES/Feather-MIT.txt).
 stroke_icon!(
     LIST,
     "list",
@@ -328,12 +349,14 @@ stroke_icon!(
     r#"<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M7 13h10M7 16.5h6"/>"#
 );
 // 즐겨찾기 outline star — design `star`(채운 STAR_FILL 과 같은 지오메트리).
+// 출처: Lucide "star", 고쳐 온 도형. lucide-static 0.460.0, ISC·Feather 부분 MIT(LICENSES/Lucide-ISC.txt, LICENSES/Feather-MIT.txt).
 stroke_icon!(
     STAR,
     "star",
     r#"<path d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.68a2.12 2.12 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.12 2.12 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.12 2.12 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.12 2.12 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.12 2.12 0 0 0 1.597-1.16z"/>"#
 );
 // 채운 별 — 즐겨찾기 populated 행 (design `starFill`, accent-warning 색).
+// 출처: Lucide "star", 고쳐 온 도형. lucide-static 0.460.0, ISC·Feather 부분 MIT(LICENSES/Lucide-ISC.txt, LICENSES/Feather-MIT.txt).
 fill_icon!(
     STAR_FILL,
     "star_fill",
@@ -341,6 +364,7 @@ fill_icon!(
 );
 
 // ── Visibility ──
+// 출처: Lucide "eye", 고쳐 온 도형. lucide-static 0.460.0, ISC·Feather 부분 MIT(LICENSES/Lucide-ISC.txt, LICENSES/Feather-MIT.txt).
 stroke_icon!(
     EYE,
     "eye",
@@ -358,11 +382,13 @@ stroke_icon!(
     r#"<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>"#
 );
 // html surface 주소 칸의 원격 콘텐츠 표지: 허용(design `globe`)과 차단(design `globeOff`).
+// 출처: Lucide "globe", 고쳐 온 도형. lucide-static 0.460.0, ISC·Feather 부분 MIT(LICENSES/Lucide-ISC.txt, LICENSES/Feather-MIT.txt).
 stroke_icon!(
     GLOBE,
     "globe",
     r#"<circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14 14 0 0 1 0 18a14 14 0 0 1 0-18z"/>"#
 );
+// 출처: Lucide "globe", 고쳐 온 도형. lucide-static 0.460.0, ISC·Feather 부분 MIT(LICENSES/Lucide-ISC.txt, LICENSES/Feather-MIT.txt).
 stroke_icon!(
     GLOBE_OFF,
     "globe_off",
@@ -375,6 +401,7 @@ stroke_icon!(
     "alert_triangle",
     r#"<path d="M10.3 3.9 1.8 18a1 1 0 0 0 .9 1.5h18.6a1 1 0 0 0 .9-1.5L13.7 3.9a1 1 0 0 0-1.7 0z"/><path d="M12 9v4M12 17h.01"/>"#
 );
+// 출처: Lucide "circle-alert", 고쳐 온 도형. lucide-static 0.460.0, ISC·Feather 부분 MIT(LICENSES/Lucide-ISC.txt, LICENSES/Feather-MIT.txt).
 stroke_icon!(
     ALERT_CIRCLE,
     "alert_circle",
@@ -385,23 +412,27 @@ stroke_icon!(
     "shield_check",
     r#"<path d="M12 3l7 3v6c0 4-3 6.5-7 9-4-2.5-7-5-7-9V6z"/><path d="M9 12l2 2 4-4"/>"#
 );
+// 출처: Lucide "bell", 고쳐 온 도형. lucide-static 0.460.0, ISC·Feather 부분 MIT(LICENSES/Lucide-ISC.txt, LICENSES/Feather-MIT.txt).
 stroke_icon!(
     BELL,
     "bell",
     r#"<path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0"/>"#
 );
+// 출처: Lucide "circle-help", 같은 도형. lucide-static 0.460.0, ISC·Feather 부분 MIT(LICENSES/Lucide-ISC.txt, LICENSES/Feather-MIT.txt).
 stroke_icon!(
     HELP_CIRCLE,
     "help_circle",
     r#"<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>"#
 );
 // 속성·정보(design `info`).
+// 출처: Lucide "info", 고쳐 온 도형. lucide-static 0.460.0, ISC·Feather 부분 MIT(LICENSES/Lucide-ISC.txt, LICENSES/Feather-MIT.txt).
 stroke_icon!(
     INFO,
     "info",
     r#"<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/>"#
 );
 // 심볼릭 링크(design `link`). explorer 속성·목록 행.
+// 출처: Lucide "link", 고쳐 온 도형. lucide-static 0.460.0, ISC·Feather 부분 MIT(LICENSES/Lucide-ISC.txt, LICENSES/Feather-MIT.txt).
 stroke_icon!(
     LINK,
     "link",
@@ -462,6 +493,7 @@ stroke_icon!(
     r#"<path d="m15 14 5-5-5-5M20 9H9a5 5 0 0 0 0 10h1"/>"#
 );
 // 테마 토글 Mocha/Latte(design `theme`).
+// 출처: Lucide "moon", 고쳐 온 도형. lucide-static 0.460.0, ISC·Feather 부분 MIT(LICENSES/Lucide-ISC.txt, LICENSES/Feather-MIT.txt).
 stroke_icon!(
     THEME,
     "theme",
@@ -469,12 +501,14 @@ stroke_icon!(
 );
 // SUN과 THEME이 같은 아이콘 슬롯에서 비슷한 크기로 보이도록 도형 자체의 범위를 맞춘다.
 // 테마별 크기로 보정하지 않으며 아래 래스터 검사가 두 도형의 경계 차이를 확인한다.
+// 출처: Lucide "sun-medium", 고쳐 온 도형. lucide-static 0.460.0, ISC·Feather 부분 MIT(LICENSES/Lucide-ISC.txt, LICENSES/Feather-MIT.txt).
 stroke_icon!(
     SUN,
     "sun",
     r#"<circle cx="12" cy="12" r="4"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M18.4 5.6l-1.4 1.4M7 17l-1.4 1.4"/>"#
 );
 // 숫자/탭 전환 digits(design `hash`).
+// 출처: Lucide "hash", 같은 도형. lucide-static 0.460.0, ISC·Feather 부분 MIT(LICENSES/Lucide-ISC.txt, LICENSES/Feather-MIT.txt).
 stroke_icon!(
     HASH,
     "hash",
@@ -484,6 +518,7 @@ stroke_icon!(
 // ── Modifier keys (macOS) ──
 // macOS 보조 키는 폰트에 해당 문자가 없어도 표시되도록 SVG로 제공한다.
 // 범용 명령 아이콘 COMMAND는 키캡 기호 CMD_KEY와 구분한다.
+// 출처: Lucide "command", 같은 도형. lucide-static 0.460.0, ISC·Feather 부분 MIT(LICENSES/Lucide-ISC.txt, LICENSES/Feather-MIT.txt).
 stroke_icon!(
     CMD_KEY,
     "cmd_key",
