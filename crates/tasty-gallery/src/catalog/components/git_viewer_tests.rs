@@ -84,3 +84,41 @@ fn diff_line_numbers_take_the_row_ground_muted_ink() {
         }
     }
 }
+
+/// `content` 줄과 같은 높이에 그린 부호(`sign`) 글자의 색.
+fn sign_ink(p: &Painted, content: &str, sign: &str) -> egui::Color32 {
+    let row_y = p.text(content).rect.center().y;
+    let signs: Vec<egui::Color32> = p
+        .texts
+        .iter()
+        .filter(|t| t.text == sign && (t.rect.center().y - row_y).abs() < ROW_SLACK)
+        .map(|t| t.color)
+        .collect();
+    assert_eq!(signs.len(), 1, "{content:?} row has one {sign:?}");
+    signs[0]
+}
+
+/// 줄 본문 잉크는 hunk accent-info-raised, 추가 accent-success-raised, 삭제 accent-danger-raised, 맥락
+/// text-primary다. 추가·삭제 부호도 같은 줄 잉크다.
+#[test]
+fn diff_rows_ink_text_and_sign_with_the_raised_accents() {
+    for theme in [tasty_themes::mocha_fallback(), latte()] {
+        let p = painted_diff(&theme);
+        for (text, ink) in [
+            (HUNK, theme.accent_info_raised()),
+            (ADD, theme.accent_success_raised()),
+            (DEL, theme.accent_danger_raised()),
+            (CTX, theme.text_primary()),
+        ] {
+            assert_eq!(p.text(text).color, ink.to_egui(), "{text}");
+        }
+        assert_eq!(
+            sign_ink(&p, ADD, "+"),
+            theme.accent_success_raised().to_egui()
+        );
+        assert_eq!(
+            sign_ink(&p, DEL, "-"),
+            theme.accent_danger_raised().to_egui()
+        );
+    }
+}

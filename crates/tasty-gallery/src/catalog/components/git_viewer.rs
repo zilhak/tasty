@@ -685,20 +685,20 @@ fn diff_line(
     let sz = theme.font_size_caption.value();
     let h = (sz * 1.65).round();
     let rect = egui::Rect::from_min_size(egui::pos2(well.left(), *ly), egui::vec2(well.width(), h));
-    // diff 줄 채움은 정본 git-diff-*-bg(tint-fill-alpha)다.
+    // diff 줄 채움은 정본 git-diff-*-bg(tint-fill-alpha)다. 본문과 부호는 같은 줄 잉크를 그대로 쓴다.
     let (fg, bg, sign) = match kind {
         DiffKind::Hunk => (
-            theme.accent_info().to_egui(),
+            theme.accent_info_raised().to_egui(),
             theme.git_diff_hunk_bg().to_egui(),
             "",
         ),
         DiffKind::Add => (
-            theme.accent_success().to_egui(),
+            theme.accent_success_raised().to_egui(),
             theme.git_diff_add_bg().to_egui(),
             "+",
         ),
         DiffKind::Del => (
-            theme.accent_danger().to_egui(),
+            theme.accent_danger_raised().to_egui(),
             theme.git_diff_del_bg().to_egui(),
             "-",
         ),

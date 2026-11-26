@@ -807,10 +807,11 @@ popup`). git-viewer 팝업은 UiNode tree 가 아니라 **egui-mesh** 로 그린
 | `ChRow`(status pill + dir/file) | `ch_row` | `ch_row` |
 | `CmRow`(oid + refs + summary + author + time) | `cm_row` | `cm_row` |
 | `DiffLine`(거터 + 부호 + ± tint / hunk band) | `diff_line`(+`draw_diff` well) | `diff_line`(+`diff_pane`) |
-| oid·refs·`main`·hunk = sky | `accent_info` (Tag `Info` 톤) | 동일 |
-| current·added·`+` / locked·modified / invalid·deleted·`-` | `accent_success`/`-warning`/`-danger` | 동일 |
+| oid·refs·`main` = sky | `accent_info` (Tag `Info` 톤) | 동일 |
+| current·added / locked·modified / invalid·deleted | `accent_success`/`-warning`/`-danger` | 동일 |
 | diff 줄 채움 | hunk·추가·삭제 줄 `git-diff-hunk-bg`·`-add-bg`·`-del-bg`(= `tint-*-bg`). 맥락 줄은 채우지 않는다 | 동일 |
 | diff 줄 번호 | 추가·삭제 줄 `text_muted_raised`, 맥락 줄 `text_muted`. hunk 줄은 번호 칸이 비어 있다 | 동일 |
+| diff 줄 글자와 부호 | hunk·추가·삭제 `accent_info_raised`·`accent_success_raised`·`accent_danger_raised`, 맥락 `text_primary`. 부호 `+`·`-`는 추가·삭제 줄만 같은 잉크로 그리고 hunk 줄은 부호 칸이 비어 있다 | 동일 |
 
 `normal`(rail \| Changes/Commits) / `diff` 두 cluster(`StageVariant::Column`)로 하단 pane 의
 Commits↔Diff 교체를 함께 노출. Tag `Info`(sky) 톤은 `tasty-ui-widgets` `chip.rs` 에 추가되어
