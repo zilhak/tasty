@@ -205,9 +205,23 @@ fn tone(theme: &Theme, color: HexColor, dimmed: bool) -> egui::Color32 {
     }
 }
 
-/// block 티어 채움 농도 — 시안 `color-mix(in srgb, <accent> 55%, surface-raised)`.
-/// 색 혼합비는 토큰 생성기가 다루지 않아 대응 토큰이 없다.
-const BLOCK_FILL_MIX: f32 = 0.55;
+/// block 티어 채움 — 정본 `dag-*-block-bg`. 입력 대기는 상태 대신 대기 채움을 쓴다.
+fn dag_block_fill(theme: &Theme, status: DagStatus, awaiting: bool) -> HexColor {
+    if awaiting {
+        return theme.dag_phase_awaiting_block_bg();
+    }
+    match status {
+        DagStatus::Waiting => theme.dag_status_waiting_block_bg(),
+        DagStatus::Ready => theme.dag_status_ready_block_bg(),
+        DagStatus::Running => theme.dag_status_running_block_bg(),
+        DagStatus::Succeeded => theme.dag_status_succeeded_block_bg(),
+        DagStatus::Failed => theme.dag_status_failed_block_bg(),
+        DagStatus::Cancelled => theme.dag_status_cancelled_block_bg(),
+        DagStatus::Skipped => theme.dag_status_skipped_block_bg(),
+        DagStatus::Unknown => theme.dag_status_unknown_block_bg(),
+        DagStatus::PartiallyFailed => theme.dag_status_partially_failed_block_bg(),
+    }
+}
 
 /// 대기·취소·스킵은 중립 테두리, 나머지는 상태색 테두리.
 pub fn dag_status_border(theme: &Theme, status: DagStatus) -> HexColor {
@@ -275,10 +289,7 @@ pub fn paint_dag_card(
     };
 
     if lod == Lod::Block {
-        let fill = theme
-            .surface_raised()
-            .to_egui()
-            .lerp_to_gamma(accent.to_egui(), BLOCK_FILL_MIX);
+        let fill = dag_block_fill(theme, card.status, card.awaiting).to_egui();
         painter.rect_filled(
             rect,
             corner,
@@ -419,3 +430,7 @@ pub fn paint_dag_card(
         );
     }
 }
+
+#[cfg(test)]
+#[path = "dag_card_tests.rs"]
+mod tests;
