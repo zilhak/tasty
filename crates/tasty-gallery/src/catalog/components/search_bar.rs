@@ -110,7 +110,7 @@ fn bar_state(ui: &mut egui::Ui, theme: &Theme, count: &str, invalid: bool, focus
                         r.y_range(),
                         egui::Stroke::new(
                             theme.border_width.value(),
-                            theme.separator.to_egui_premultiplied(),
+                            theme.border_strong().to_egui(),
                         ),
                     );
                     icon_btn(ui, theme, icons::CLOSE, false);
@@ -151,4 +151,30 @@ fn toggle_chip(ui: &mut egui::Ui, theme: &Theme, label: &str, active: bool) {
     }
     ui.painter()
         .galley(rect.center() - galley.rect.size() * 0.5, galley, fg);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::catalog::components::painted::paint;
+
+    /// 토글과 닫기 사이 세로 구분선은 raised 바 위 선이라 border-strong으로 그린다.
+    #[test]
+    fn the_divider_before_close_is_border_strong() {
+        for theme in [
+            tasty_themes::mocha_fallback(),
+            crate::host_shell::latte_theme(),
+        ] {
+            let strong = theme.border_strong().to_egui();
+            assert_ne!(strong, theme.separator.to_egui_premultiplied());
+            let p = paint(|ui| bar(ui, &theme, "1/3", false));
+            let vertical: Vec<_> = p
+                .segments()
+                .into_iter()
+                .filter(|(a, b, _)| a.x == b.x && a.y != b.y)
+                .collect();
+            assert_eq!(vertical.len(), 1, "세로 구분선 하나: {vertical:?}");
+            assert_eq!(vertical[0].2, strong);
+        }
+    }
 }

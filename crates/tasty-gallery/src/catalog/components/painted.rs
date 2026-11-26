@@ -274,6 +274,19 @@ impl Painted {
         (chip, swatch)
     }
 
+    /// 그려진 곧은 선(`hline`·`vline`·`line_segment`)의 두 끝점과 획 색.
+    pub(crate) fn segments(&self) -> Vec<(egui::Pos2, egui::Pos2, egui::Color32)> {
+        self.shapes
+            .iter()
+            .filter_map(|s| match s {
+                egui::Shape::LineSegment { points, stroke } => {
+                    Some((points[0], points[1], stroke.color))
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
     /// `area` 안에 `text`와 똑같은 글자가 그려졌는가.
     pub(crate) fn has_text_in(&self, text: &str, area: egui::Rect) -> bool {
         self.texts
