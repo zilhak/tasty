@@ -669,6 +669,7 @@ fn markdown_mirror_local(sess: &AttachClientSession, remote_surface_id: u32) -> 
 }
 
 /// 원격 ID를 로컬 markdown ID로 바꿔 회신한다. leaf가 사라졌거나 kind가 바뀌었으면 무시한다.
+/// 회신 마감 만료 처리로 이미 실패로 끝낸 요청의 늦은 회신도 plugin에 보내지 않는다.
 #[allow(clippy::too_many_arguments)] // reason: wire 회신 필드를 풀어 받는다(GitQueryResult 적용과 같은 형태)
 fn apply_markdown_content_result_event(
     sess: &mut AttachClientSession,
@@ -683,7 +684,10 @@ fn apply_markdown_content_result_event(
     reason: Option<String>,
 ) {
     let agent_origin = sess.state.agent_requests.take_markdown(request_id);
-    sess.state.markdown_requests.answer(request_id);
+    if !sess.state.markdown_requests.answer(request_id) {
+        tracing::debug!("markdown_content_result {request_id}: 기다리던 요청이 아니라 버린다");
+        return;
+    }
     let Some(local) = markdown_mirror_local(sess, remote_surface_id) else {
         return;
     };

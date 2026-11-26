@@ -903,6 +903,9 @@ fn an_agent_markdown_reload_truncation_does_not_toast() {
     sess.state.markdown_locals.insert(300);
     sess.state.agent_requests.note_markdown(true, 11);
     sess.state.agent_requests.note_markdown(false, 12);
+    let sent = std::time::Instant::now();
+    sess.state.markdown_requests.note(11, 300, sent);
+    sess.state.markdown_requests.note(12, 300, sent);
     let mut plugin_manager: Option<crate::plugin::PluginManager> = None;
     let (mut state, mut engine_session) = crate::state::tests::test_state();
     let mut engine = engine_session.borrow_mut();
@@ -947,6 +950,63 @@ fn an_agent_markdown_reload_truncation_does_not_toast() {
         state.toasts.len(),
         1,
         "plugin 자신의 요청은 종전대로 toast 를 낸다"
+    );
+}
+
+/// Given 만료 처리로 실패로 끝낸 원문 요청, When 그 회신이 늦게 오면, Then 그 회신은 버려져 잘림 toast 도 없다.
+/// 아직 기다리는 요청의 같은 회신은 종전대로 toast 를 낸다.
+#[test]
+fn a_markdown_result_after_its_request_expired_is_dropped() {
+    use tasty_remote::markdown_requests::MARKDOWN_CONTENT_REPLY_TIMEOUT;
+    let mut sess = test_session(9_000, HashMap::from([(30, 300)]));
+    sess.state.markdown_locals.insert(300);
+    let sent = std::time::Instant::now();
+    sess.state.markdown_requests.note(21, 300, sent);
+    // 22 는 21 의 마감 시각에 보낸 요청이라 아직 기다린다.
+    sess.state
+        .markdown_requests
+        .note(22, 300, sent + MARKDOWN_CONTENT_REPLY_TIMEOUT);
+    assert_eq!(
+        sess.state
+            .markdown_requests
+            .take_due(sent + MARKDOWN_CONTENT_REPLY_TIMEOUT),
+        vec![(21, 300)]
+    );
+    let mut plugin_manager: Option<crate::plugin::PluginManager> = None;
+    let (mut state, mut engine_session) = crate::state::tests::test_state();
+    let mut engine = engine_session.borrow_mut();
+    let truncated = |request_id| MirrorEvent::MarkdownContentResult {
+        request_id,
+        surface_id: 30,
+        ok: true,
+        file: Some("/r/a.md".to_string()),
+        source: Some("# a".to_string()),
+        truncated: true,
+        reason: None,
+    };
+    {
+        let mut host = MirrorHost::windowed(&mut state, &mut engine);
+        apply_mirror_events(
+            &mut sess,
+            &mut host,
+            &mut plugin_manager,
+            vec![truncated(21)],
+        );
+    }
+    assert_eq!(state.toasts.len(), 0, "the late result is dropped");
+    {
+        let mut host = MirrorHost::windowed(&mut state, &mut engine);
+        apply_mirror_events(
+            &mut sess,
+            &mut host,
+            &mut plugin_manager,
+            vec![truncated(22)],
+        );
+    }
+    assert_eq!(
+        state.toasts.len(),
+        1,
+        "the result of a request still waiting is applied"
     );
 }
 
