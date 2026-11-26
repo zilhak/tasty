@@ -276,8 +276,10 @@ impl TcpIpcServer {
                     match listener.accept() {
                         Ok((stream, _)) => {
                             connections.record_accept_wait(clock.bound(std::time::Instant::now()));
-                            // 거절 응답을 쓰는 연결도 자식에게 넘어가지 않게 분기 전에 끈다. 끄지 못한
-                            // 연결은 자리를 받은 뒤 닫아 accept 대기 = 받음 + 거절 집계를 지킨다.
+                            // 거절 응답을 쓰는 연결도 이 뒤에 뜨는 자식에게 넘어가지 않게 분기 전에 끈다.
+                            // accept가 돌아온 뒤 끄기 전에 다른 스레드가 띄운 자식은 여전히 물려받을 수
+                            // 있다. 끄지 못한 연결은 자리를 받은 뒤 닫아 accept 대기 = 받음 + 거절 집계를
+                            // 지킨다.
                             #[cfg(all(test, windows))]
                             inherit_seam::after_accept(&stream);
                             let kept_out = Self::keep_out_of_children(&stream);
@@ -463,7 +465,7 @@ impl TcpIpcServer {
         tracing::debug!("IPC client disconnected from {:?}", peer);
     }
 
-    /// accept한 소켓을 std `Command`로 뜨는 자식(플러그인·ssh 등)이 물려받지 않게 한다(Windows).
+    /// accept한 소켓을 이 뒤에 std `Command`로 뜨는 자식(플러그인·ssh 등)이 물려받지 않게 한다(Windows).
     /// 끄지 못하면 경고를 남기고 false를 돌려준다. 호출자는 그 연결만 닫고 다음 accept로 간다.
     fn keep_out_of_children(stream: &std::net::TcpStream) -> bool {
         let cleared = tasty_utils::socket_inherit::disable_inherit(stream);
@@ -492,7 +494,7 @@ impl TcpIpcServer {
         if !Self::configure_socket(&stream) {
             return None;
         }
-        // reader 복제도 자식 프로세스가 물려받지 않게 한다(Windows). 원본은 accept 루프가 끈다.
+        // reader 복제도 이 뒤에 뜨는 자식 프로세스가 물려받지 않게 한다(Windows). 원본은 accept 루프가 끈다.
         let reader = BufReader::new(
             match tasty_utils::socket_inherit::try_clone_uninherited(&stream) {
                 Ok(s) => s,

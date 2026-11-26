@@ -1,5 +1,5 @@
-//! 원격 JSON-RPC 요청 한 번(`probe_method_bound`)의 원본 소켓, writer 복제, 시도 취소용 복제는 자식
-//! 프로세스가 물려받지 않는다(Windows). 원본은 연결 직후 자리(`attempt_seam`)에서 상속을 일부러 켜서,
+//! 원격 JSON-RPC 요청 한 번(`probe_method_bound`)의 원본 소켓, writer 복제, 시도 취소용 복제는 상속
+//! 플래그가 꺼져 있다(Windows). 원본은 연결 직후 자리(`attempt_seam`)에서 상속을 일부러 켜서,
 //! 끄는 호출이 빠지면 std가 돌려준 값과 상관없이 실패하게 한다.
 
 use crate::attempt_seam::{self, Stage};

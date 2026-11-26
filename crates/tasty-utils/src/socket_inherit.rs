@@ -4,6 +4,9 @@
 //! 상속 가능으로 남는 경우가 관측됐다. `accept`한 소켓은 std가 상속을 막지 않는다. std
 //! `Command`는 상속 가능한 핸들을 모두 자식에게 넘기므로, 그 순간 std `Command`로 뜬 자식(플러그인·
 //! ssh 등)이 연결을 쥔 채 남을 수 있다. 그래서 만든 직후 핸들의 상속 플래그를 직접 끈다.
+//! 이것이 막는 것은 끈 뒤에 띄우는 자식의 상속이다. 생성·복제·accept가 돌아온 뒤 끄기 전까지의 짧은
+//! 구간에 다른 스레드가 띄운 자식은 여전히 핸들을 물려받을 수 있고, std `Command`의 핸들 목록 제한
+//! 없이는 이 구간을 닫을 수 없다.
 //! 다른 OS의 std는 소켓을 이미 close-on-exec로 만들므로 아무것도 하지 않는다.
 
 use std::io;
@@ -21,7 +24,8 @@ pub fn disable_inherit(_stream: &TcpStream) -> io::Result<()> {
     Ok(())
 }
 
-/// `try_clone`한 뒤 그 복제의 상속을 끈다. 끄지 못하면 복제를 닫고 오류를 돌려준다.
+/// `try_clone`한 뒤 그 복제의 상속을 끈다. 끄지 못하면 복제를 닫고 오류를 돌려준다. 복제가 돌아온 뒤
+/// 끄기 전의 짧은 구간에 다른 스레드가 띄운 자식은 그 복제를 물려받을 수 있다(모듈 설명).
 pub fn try_clone_uninherited(stream: &TcpStream) -> io::Result<TcpStream> {
     let clone = stream.try_clone()?;
     disable_inherit(&clone)?;

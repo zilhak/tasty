@@ -1,4 +1,4 @@
-//! 원격 연결의 원본 소켓, control 소켓과 시도 취소용 복제는 자식 프로세스가 물려받지 않는다(Windows).
+//! 원격 연결의 원본 소켓, control 소켓과 시도 취소용 복제는 상속 플래그가 꺼져 있다(Windows).
 //! 원본은 연결 직후 자리(`attempt_seam`)에서 상속을 일부러 켜고, stream open이 다시 끄기 전인 등록 직후
 //! 자리에서 본다. 그래서 연결 직후의 끄는 호출이 빠지면 std가 돌려준 값과 상관없이 실패한다.
 //! reader·writer 핸들은 `StreamConnection`이 만들고 tasty-ipc 시험이 본다.

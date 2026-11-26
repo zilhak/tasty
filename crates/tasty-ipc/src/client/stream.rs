@@ -86,7 +86,7 @@ impl StreamConnection {
         bulk_workspace: Option<u32>,
         timeout: Duration,
     ) -> Result<(Self, u32)> {
-        // 받은 소켓을 자식 프로세스가 물려받지 않게 가장 먼저 끈다(Windows). 복제는 아래에서 끈다.
+        // 받은 소켓을 이 뒤에 뜨는 자식 프로세스가 물려받지 않게 가장 먼저 끈다(Windows). 복제는 아래에서 끈다.
         tasty_utils::socket_inherit::disable_inherit(&stream)?;
         // 조용한 네트워크 단절 감지용 read timeout. writer/reader 는 이 소켓의 clone이라
         // 옵션이 공유되므로 여기서 한 번만 걸면 이후 모든 `recv()`(핸드셰이크 ack 대기
@@ -172,7 +172,7 @@ mod tests {
     use std::net::{TcpListener, TcpStream};
     use tasty_utils::socket_inherit::{is_inheritable, make_inheritable};
 
-    /// 연결의 reader·writer와 꺼낸 writer 복제는 자식 프로세스가 물려받지 않는다. 넘기는 소켓의 상속을
+    /// 연결의 reader·writer와 꺼낸 writer 복제는 상속 플래그가 꺼져 있다. 넘기는 소켓의 상속을
     /// 일부러 켜서, open이 끄는 호출이 빠지면 std가 돌려준 값과 상관없이 실패하게 한다.
     #[test]
     fn stream_connection_sockets_are_not_inheritable() {

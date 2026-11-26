@@ -132,7 +132,7 @@ pub(crate) fn probe_method_bound(
         .with_context(|| format!("터널 localport 127.0.0.1:{port} 연결 실패"))?;
     #[cfg(test)]
     crate::attempt_seam::at(crate::attempt_seam::Stage::AfterConnect, &stream);
-    // 이 연결과 writer 복제는 자식 프로세스가 물려받지 않게 한다(Windows).
+    // 이 연결과 writer 복제는 이 뒤에 뜨는 자식 프로세스가 물려받지 않게 한다(Windows).
     tasty_utils::socket_inherit::disable_inherit(&stream)?;
     if let Some(attempt) = attempt {
         attempt.register_socket(&stream)?;
