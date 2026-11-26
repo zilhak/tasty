@@ -206,7 +206,7 @@ pub(super) fn seg_toggle(
         egui::Color32::from(theme.surface_raised()),
         egui::Stroke::new(
             theme.border_width.value(),
-            egui::Color32::from(theme.border_default()),
+            egui::Color32::from(theme.border_strong()),
         ),
         egui::StrokeKind::Inside,
     );
@@ -247,4 +247,33 @@ pub(super) fn seg_toggle(
         sx += seg_w + gap;
     }
     clicked
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::catalog::components::painted::paint;
+
+    /// 보기 토글의 바깥 틀은 raised 채움이라 외곽이 border-strong이다.
+    #[test]
+    fn the_view_toggle_frame_edges_with_border_strong() {
+        for theme in [
+            tasty_themes::mocha_fallback(),
+            crate::host_shell::latte_theme(),
+        ] {
+            let strong = theme.border_strong().to_egui();
+            assert_ne!(strong, theme.border_default().to_egui());
+            let p = paint(|ui| {
+                seg_toggle(ui, &theme, 0, None);
+            });
+            let raised = egui::Color32::from(theme.surface_raised());
+            let frames: Vec<_> = p
+                .stroked_rects()
+                .into_iter()
+                .filter(|(r, fill, _)| *fill == raised && r.width() == seg_toggle_width(&theme))
+                .collect();
+            assert_eq!(frames.len(), 1, "바깥 틀 하나: {frames:?}");
+            assert_eq!(frames[0].2, strong);
+        }
+    }
 }

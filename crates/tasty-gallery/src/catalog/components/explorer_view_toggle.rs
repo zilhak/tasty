@@ -59,7 +59,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("hover (off)", "overlay-hover"),
             (
                 "container",
-                "surface-raised + border-default 1px · radius — unchanged; width = pad*2 + seg*3 + gap*2 + border*2",
+                "surface-raised + border-strong 1px · radius — width = pad*2 + seg*3 + gap*2 + border*2",
             ),
             (
                 "ink contrast",
