@@ -26,9 +26,12 @@ fn an_unanswered_request_ends_as_a_failure_for_its_own_request_id() {
     let before = take_expired(&mut sessions, t0 + MARKDOWN_CONTENT_REPLY_TIMEOUT / 4);
     assert!(before.is_empty(), "nothing fails before its deadline");
     let expired = take_expired(&mut sessions, t0 + MARKDOWN_CONTENT_REPLY_TIMEOUT);
-    let failures = settle_expired(&expired, std::iter::empty());
-    assert_eq!(failures.len(), 1, "only the request past its deadline ends");
-    let failure = &failures[0];
+    let (mut manager, stub) = owned_by_plugin(16);
+    deliver_expired_failures(&mut manager, &mut sessions, &expired);
+    let events = received(&stub);
+    assert_eq!(events.len(), 1, "only the request past its deadline ends");
+    let (key, failure) = &events[0];
+    assert_eq!(key, "markdown_mirror.content_result");
     assert_eq!(failure["surface_id"], LOCAL);
     assert_eq!(failure["request_id"], 4);
     assert_eq!(failure["ok"], false);
@@ -74,7 +77,7 @@ fn an_expired_request_takes_down_only_its_own_wait() {
         });
     }
     let expired = take_expired(&mut sessions, t0 + MARKDOWN_CONTENT_REPLY_TIMEOUT);
-    settle_expired(&expired, std::iter::once(&mut state.attach_pending));
+    lower_expired_waits(&expired, std::iter::once(&mut state.attach_pending));
     let left: Vec<u64> = state
         .attach_pending
         .queries
@@ -207,5 +210,49 @@ fn a_replaced_connection_fails_its_queued_unsent_requests_before_the_change_sign
             failure(6),
             ("markdown_mirror.changed".to_owned(), None, Value::Null),
         ]
+    );
+}
+
+/// Given 송신 큐가 가득 찬 plugin, When 만료 실패가 큐에 들어가지 못하면, Then 요청 기록이 남아 그동안 온 원격
+/// 회신은 회신으로 치지 않고, 큐가 빈 다음 회차에 같은 request_id 실패가 들어간다. 들어간 뒤에는 다시 보내지 않는다.
+#[test]
+fn an_expiry_failure_refused_by_a_full_plugin_queue_is_sent_again_next_round() {
+    let t0 = Instant::now();
+    let mut sessions = vec![session_with_requests(t0)];
+    let (mut manager, stub) = owned_by_plugin(1);
+    // 큐 하나뿐인 자리를 앞 이벤트가 차지한다.
+    push_markdown_changed(&mut manager, LOCAL);
+    let deadline = t0 + MARKDOWN_CONTENT_REPLY_TIMEOUT;
+    let expired = take_expired(&mut sessions, deadline);
+    deliver_expired_failures(&mut manager, &mut sessions, &expired);
+    let first: Vec<String> = received(&stub).into_iter().map(|(key, _)| key).collect();
+    assert_eq!(
+        first,
+        vec!["markdown_mirror.changed"],
+        "the failure did not fit"
+    );
+    assert!(
+        !sessions[0].state.markdown_requests.answer(4),
+        "a reply that arrives while the failure is owed is still past the deadline"
+    );
+
+    let next = deadline + std::time::Duration::from_secs(1);
+    let again = take_expired(&mut sessions, next);
+    deliver_expired_failures(&mut manager, &mut sessions, &again);
+    let second: Vec<(String, Option<u64>, Value)> = received(&stub)
+        .into_iter()
+        .map(|(key, payload)| (key, payload["request_id"].as_u64(), payload["ok"].clone()))
+        .collect();
+    assert_eq!(
+        second,
+        vec![(
+            "markdown_mirror.content_result".to_owned(),
+            Some(4),
+            Value::Bool(false)
+        )]
+    );
+    assert!(
+        take_expired(&mut sessions, next + std::time::Duration::from_secs(1)).is_empty(),
+        "a failure that reached the plugin is not sent again"
     );
 }

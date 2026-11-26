@@ -49,19 +49,19 @@ pub(super) fn push_markdown_changed(
     super::documents::emit_to_owner(plugin_manager, local_surface_id, event, &payload);
 }
 
-/// payload.surface_id는 플러그인이 아는 로컬 ID여야 한다.
+/// payload.surface_id는 플러그인이 아는 로컬 ID여야 한다. 결과가 plugin 송신 큐에 들어갔는지 돌려준다.
 pub(super) fn push_markdown_content_result(
     plugin_manager: &mut Option<crate::plugin::PluginManager>,
     payload: &Value,
-) {
+) -> tasty_host_plugin::manager::HostEventDelivery {
     let Some(local) = payload["surface_id"]
         .as_u64()
         .and_then(|id| u32::try_from(id).ok())
     else {
-        return;
+        return tasty_host_plugin::manager::HostEventDelivery::Unreachable;
     };
     let event = MARKDOWN_MIRROR_CONTENT_RESULT_EVENT;
-    super::documents::emit_to_owner(plugin_manager, local, event, payload);
+    super::documents::emit_to_owner(plugin_manager, local, event, payload)
 }
 
 /// 요청을 보낼 수 없거나 회신 마감이 지나거나 연결이 끊기면 실패를 합성한다. request_id=0은 대기 요청 취소다.

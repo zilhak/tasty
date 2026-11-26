@@ -966,12 +966,16 @@ fn a_markdown_result_after_its_request_expired_is_dropped() {
     sess.state
         .markdown_requests
         .note(22, 300, sent + MARKDOWN_CONTENT_REPLY_TIMEOUT);
-    assert_eq!(
-        sess.state
-            .markdown_requests
-            .take_due(sent + MARKDOWN_CONTENT_REPLY_TIMEOUT),
-        vec![(21, 300)]
-    );
+    let due: Vec<u64> = sess
+        .state
+        .markdown_requests
+        .due(sent + MARKDOWN_CONTENT_REPLY_TIMEOUT)
+        .iter()
+        .map(|request| request.request_id)
+        .collect();
+    assert_eq!(due, vec![21]);
+    // 만료 처리가 실패를 plugin 에 넘겼다.
+    sess.state.markdown_requests.settle(21);
     let mut plugin_manager: Option<crate::plugin::PluginManager> = None;
     let (mut state, mut engine_session) = crate::state::tests::test_state();
     let mut engine = engine_session.borrow_mut();

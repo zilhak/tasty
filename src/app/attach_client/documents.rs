@@ -5,6 +5,7 @@ use crate::model::{DeferredPlugin, EmptySurface, Surface};
 use crate::remote::mirror_role;
 use crate::runtime::surface_registry::{KindCapabilities, SurfaceKindRegistry};
 use serde_json::Value;
+use tasty_host_plugin::manager::HostEventDelivery;
 use tasty_plugin_protocol::EventScope::System as SYSTEM;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -125,18 +126,22 @@ pub(super) fn destroy(
 }
 
 /// `surface_id`(로컬 ID)를 소유한 plugin에만 보낸다. 게시 전이거나 닫힌 surface면 보내지 않는다.
+/// 이벤트가 plugin 송신 큐에 들어갔는지 돌려준다.
 pub(super) fn emit_to_owner(
     plugin_manager: &mut Option<crate::plugin::PluginManager>,
     surface_id: u32,
     event: &str,
     payload: &Value,
-) {
+) -> HostEventDelivery {
     let Some(manager) = plugin_manager.as_mut() else {
-        return;
+        return HostEventDelivery::Unreachable;
     };
     match manager.remote_surface_owner(surface_id).map(str::to_owned) {
-        Some(owner) => manager.emit_host_event_to_plugin(&owner, event, payload, SYSTEM),
-        None => tracing::debug!(surface_id, event, "attach mirror document has no owner"),
+        Some(owner) => manager.try_emit_host_event_to_plugin(&owner, event, payload, SYSTEM),
+        None => {
+            tracing::debug!(surface_id, event, "attach mirror document has no owner");
+            HostEventDelivery::Unreachable
+        }
     }
 }
 
