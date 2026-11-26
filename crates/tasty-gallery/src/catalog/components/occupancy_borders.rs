@@ -116,26 +116,46 @@ fn occ_pane(ui: &mut egui::Ui, theme: &Theme, kind: Kind) {
         mono.clone(),
         egui::Color32::from(theme.accent_success()),
     );
-    let line2 = match kind {
-        Kind::Soft => "❯ running tests…",
-        Kind::Hard => "❯ mirror (readonly)",
-        Kind::Done => "❯ build passed ✓",
-        Kind::NeedsInput => "❯ proceed? (y/n)",
-    };
     let fg = if readonly {
         egui::Color32::from(term.unfocused_fg)
     } else {
         egui::Color32::from(term.focused_fg)
     };
-    p.text(
-        egui::pos2(
-            rect.min.x + pad,
-            body_y + theme.font_size_term_sm.value() + theme.spacing_xs.value(),
+    // 시안 occPane 처럼 프롬프트는 터미널 내용이라 ANSI magenta, 뒤 문구는 soft·completed 가
+    // text-secondary 다. 시안에 없는 hard·needs-input 문구는 본문 잉크 그대로 둔다.
+    let (line2, rest_ink) = match kind {
+        Kind::Soft => (
+            "running tests…",
+            egui::Color32::from(theme.text_secondary()),
         ),
+        Kind::Hard => ("mirror (readonly)", fg),
+        Kind::Done => (
+            "build passed ✓",
+            egui::Color32::from(theme.text_secondary()),
+        ),
+        Kind::NeedsInput => ("proceed? (y/n)", fg),
+    };
+    let line2_pos = egui::pos2(
+        rect.min.x + pad,
+        body_y + theme.font_size_term_sm.value() + theme.spacing_xs.value(),
+    );
+    let prompt_w = ui
+        .fonts(|f| f.layout_no_wrap("❯ ".to_owned(), mono.clone(), egui::Color32::PLACEHOLDER))
+        .size()
+        .x;
+    p.text(
+        line2_pos,
+        egui::Align2::LEFT_TOP,
+        "❯",
+        mono.clone(),
+        egui::Color32::from(theme.ansi_magenta),
+    );
+    p.text(
+        line2_pos + egui::vec2(prompt_w, 0.0),
         egui::Align2::LEFT_TOP,
         line2,
         mono,
-        fg,
+        rest_ink,
     );
 
     // hard 한정: 우상단 force-detach 버튼(× 아이콘, peach).
@@ -291,4 +311,41 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         theme,
         "테두리는 응답 대기, 점유, 완료 순서로 표시한다. 점유 중에는 완료 테두리를 숨기지만 응답 대기는 계속 알린다. 탭 제목과 워크스페이스 배지도 응답 대기를 완료보다 우선한다. 강제 연결 해제는 서피스의 × 또는 사이드바 우클릭 메뉴에서 시작하며, 확인창은 워크스페이스 이름과 연결 해제 결과를 안내한다.",
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Kind, occ_pane};
+    use crate::catalog::components::painted::{mocha_latte, paint};
+
+    /// 시안 occPane 의 프롬프트는 ANSI magenta 이고, soft·completed 의 뒤 문구는 text-secondary 다.
+    #[test]
+    fn occupancy_prompt_is_ansi_magenta_and_the_soft_line_is_text_secondary() {
+        for (name, th) in mocha_latte() {
+            for (kind, label, rest) in [
+                (Kind::Soft, "soft", "running tests…"),
+                (Kind::Done, "done", "build passed ✓"),
+            ] {
+                let p = paint(|ui| occ_pane(ui, &th, kind));
+                let prompts: Vec<_> = p.texts.iter().filter(|t| t.text == "❯").collect();
+                assert_eq!(prompts.len(), 1, "{name} {label}: one prompt");
+                assert_eq!(
+                    prompts[0].color,
+                    egui::Color32::from(th.ansi_magenta),
+                    "{name} {label}: prompt ink"
+                );
+                let line: Vec<_> = p.texts.iter().filter(|t| t.text == rest).collect();
+                assert_eq!(line.len(), 1, "{name} {label}: one line after the prompt");
+                assert_eq!(
+                    line[0].color,
+                    egui::Color32::from(th.text_secondary()),
+                    "{name} {label}: line ink"
+                );
+                assert!(
+                    line[0].rect.left() > prompts[0].rect.right(),
+                    "{name} {label}: the line follows the prompt"
+                );
+            }
+        }
+    }
 }
