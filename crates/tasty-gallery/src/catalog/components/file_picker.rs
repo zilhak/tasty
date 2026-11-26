@@ -915,10 +915,9 @@ fn row(ui: &mut egui::Ui, theme: &Theme, r: &Row, state: RowState) {
     } else {
         (
             icons::FILE,
+            // kit FpRow 쉬는·선택 칸은 text-muted 다. hover 칸은 이 표본이 그리지 않는다.
             if inert {
                 theme.fp_folder_file_fg()
-            } else if selected {
-                theme.text_on_active()
             } else {
                 theme.text_muted()
             }

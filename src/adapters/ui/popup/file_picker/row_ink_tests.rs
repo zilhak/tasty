@@ -116,3 +116,23 @@ fn the_folder_glyph_reads_the_primary_glyph_cell_of_each_row_state() {
         "쉼 · hover · 선택 · 선택+hover"
     );
 }
+
+/// 파일 글리프: 쉼·선택 text-muted, hover `fp-row-glyph-fg-hover`(text-secondary), 선택+hover text-on-active.
+#[test]
+fn the_file_glyph_reads_the_kit_ink_of_each_row_state() {
+    let th = latte();
+    let (muted, hover, on_active) = (
+        th.text_muted().to_egui(),
+        th.fp_row_glyph_fg_hover().to_egui(),
+        th.text_on_active().to_egui(),
+    );
+    assert!(
+        muted != hover && muted != on_active && hover != on_active,
+        "Latte 에서 세 잉크가 갈려야 시험이 뜻을 갖는다"
+    );
+    assert_eq!(
+        four_states(&th, FILE),
+        [muted, hover, muted, on_active],
+        "쉼 · hover · 선택 · 선택+hover"
+    );
+}

@@ -39,7 +39,7 @@ pub(super) fn entry_row(
     }
     let (glyph, mut glyph_color) = match entry.is_dir {
         true => (icons::FOLDER, folder_glyph_ink(th, state)),
-        false => (icons::FILE, state.glyph(th)),
+        false => (icons::FILE, file_glyph_ink(th, state)),
     };
     let c = cols(rect, th);
     let glyph_size = th.icon_glyph_size_md.value();
@@ -128,5 +128,18 @@ fn folder_glyph_ink(
         S::SelectedHover | S::SelectedPress => th.accent_primary_on_active(),
         S::Hover | S::Press => th.accent_primary(),
         S::Selected | S::Rest | S::DropTarget | S::Disabled => th.accent_primary_raised(),
+    }
+}
+
+/// 파일 글리프 잉크. 쉼·선택은 text-muted, hover 는 `fp-row-glyph-fg-hover`, 선택+hover 는 text-on-active 다(kit `FpRow`).
+fn file_glyph_ink(
+    th: &Theme,
+    state: tasty_ui_widgets::RowState,
+) -> tasty_type_appearance::color::HexColor {
+    use tasty_ui_widgets::RowState as S;
+    match state {
+        S::SelectedHover | S::SelectedPress => th.text_on_active(),
+        S::Hover | S::Press => th.fp_row_glyph_fg_hover(),
+        S::Selected | S::Rest | S::DropTarget | S::Disabled => th.text_muted(),
     }
 }
