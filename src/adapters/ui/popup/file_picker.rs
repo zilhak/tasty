@@ -29,6 +29,8 @@ mod remote_open_tests;
 mod rows;
 
 mod paths;
+#[cfg(test)]
+mod row_ink_tests;
 pub(crate) mod save;
 #[cfg(test)]
 mod save_tests;

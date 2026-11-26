@@ -909,12 +909,8 @@ fn row(ui: &mut egui::Ui, theme: &Theme, r: &Row, state: RowState) {
     let (icon_glyph, icon_color): (MockGlyph, egui::Color32) = if r.folder {
         (
             icons::FOLDER,
-            if selected {
-                theme.text_on_active()
-            } else {
-                theme.accent_primary()
-            }
-            .to_egui(),
+            // kit FpRow 쉬는·선택 칸. hover 칸(accent-primary · accent-primary-on-active)은 이 표본이 그리지 않는다.
+            theme.accent_primary_raised().to_egui(),
         )
     } else {
         (

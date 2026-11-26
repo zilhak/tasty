@@ -38,8 +38,7 @@ pub(super) fn entry_row(
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
     }
     let (glyph, mut glyph_color) = match entry.is_dir {
-        true if selected => (icons::FOLDER, state.glyph(th)),
-        true => (icons::FOLDER, th.accent_primary()),
+        true => (icons::FOLDER, folder_glyph_ink(th, state)),
         false => (icons::FILE, state.glyph(th)),
     };
     let c = cols(rect, th);
@@ -116,5 +115,18 @@ pub(super) fn entry_row(
         Some(FilePickerAction::Select(entry.name.clone()))
     } else {
         None
+    }
+}
+
+/// 폴더 글리프 잉크. 색이 뜻을 담는 글리프라 행 바탕 칸의 primary 글리프 칸을 읽는다(kit `FpRow`).
+fn folder_glyph_ink(
+    th: &Theme,
+    state: tasty_ui_widgets::RowState,
+) -> tasty_type_appearance::color::HexColor {
+    use tasty_ui_widgets::RowState as S;
+    match state {
+        S::SelectedHover | S::SelectedPress => th.accent_primary_on_active(),
+        S::Hover | S::Press => th.accent_primary(),
+        S::Selected | S::Rest | S::DropTarget | S::Disabled => th.accent_primary_raised(),
     }
 }
