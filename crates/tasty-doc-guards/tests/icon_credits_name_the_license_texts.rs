@@ -123,7 +123,7 @@ fn read_credits(src: &str) -> (Vec<Credit>, Vec<String>) {
             continue;
         };
         // 고지 경로는 주석 끝의 `(…).` 안에 쉼표로 나눠 적는다. 경로 전체를 읽어야 다른 폴더의
-        // 같은 이름(`docs/LICENSES/…`)을 본문으로 잘못 세지 않고, 괄호가 주석 끝이어야 괄호 밖에
+        // 같은 이름(`other/LICENSES/…`)을 본문으로 잘못 세지 않고, 괄호가 주석 끝이어야 괄호 밖에
         // 덧붙인 경로를 놓치지 않는다.
         let Some(inside) = rest
             .strip_suffix(").")
@@ -219,7 +219,7 @@ fn every_lucide_credit_names_shipped_license_texts() {
 fn credit_reader_takes_the_definition_kind_and_texts() {
     let src = "// 출처: Lucide \"x\", 같은 도형. v(LICENSES/a.txt, LICENSES/b.txt).\n\
                stroke_icon!(CLOSE, \"close\", r#\"\"#);\n\
-               // 출처: Lucide \"star\", 고쳐 온 도형. v(docs/LICENSES/a.txt).\n\
+               // 출처: Lucide \"star\", 고쳐 온 도형. v(other/LICENSES/a.txt).\n\
                fill_icon!(\n\
                \x20   STAR_FILL,\n\
                // 출처: Lucide \"y\", 같은 도형. v(LICENSES/a.txt).\n\
@@ -244,7 +244,7 @@ fn credit_reader_takes_the_definition_kind_and_texts() {
                 definition: "STAR_FILL".into(),
                 lucide: "star".into(),
                 kind: Kind::Adapted,
-                texts: vec!["docs/LICENSES/a.txt".to_string()],
+                texts: vec!["other/LICENSES/a.txt".to_string()],
             },
         ]
     );
