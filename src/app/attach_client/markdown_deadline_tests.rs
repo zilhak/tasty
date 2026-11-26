@@ -95,3 +95,64 @@ fn a_session_without_a_connection_forgets_its_requests_without_failing_them() {
     assert!(!sessions[0].state.markdown_requests.answer(4));
     assert!(!sessions[0].state.markdown_requests.answer(5));
 }
+
+const OWNER: &str = "com.test.markdown-owner";
+
+/// `LOCAL` 문서를 소유한 plugin stub. 요청 큐는 `capacity` 개만 받는다.
+fn owned_by_plugin(
+    capacity: usize,
+) -> (
+    Option<crate::plugin::PluginManager>,
+    tasty_host_plugin::manager::CallerStub,
+) {
+    let mut manager = crate::plugin::PluginManager::with_registries(
+        std::sync::Arc::new(tasty_terminal::waker_factory::NoopWakerFactory),
+        std::sync::Arc::new(crate::file::format::FileFormatRegistry::new()),
+        std::sync::Arc::new(crate::file::handler::FileHandlerRegistry::new()),
+    );
+    let stub = manager.attach_surface_owner_stub_for_test(OWNER, LOCAL, capacity);
+    (Some(manager), stub)
+}
+
+/// plugin 이 받은 이벤트를 받은 순서대로 (key, payload) 로 꺼낸다.
+fn received(stub: &tasty_host_plugin::manager::CallerStub) -> Vec<(String, Value)> {
+    stub.drain_requests()
+        .into_iter()
+        .map(|(_, params)| {
+            let envelope = &params["envelope"];
+            let key = envelope["key"].as_str().unwrap_or_default().to_owned();
+            (key, envelope["payload"].clone())
+        })
+        .collect()
+}
+
+/// Given 옛 연결로 보낸 원문 요청 둘(4·5)을 든 세션, When 연결이 바뀌면, Then plugin 은 두 요청의 같은
+/// request_id 실패를 받은 뒤에 그 문서의 변경 신호를 받는다.
+#[test]
+fn a_replaced_connection_fails_its_sent_requests_before_the_change_signal() {
+    let (mut manager, stub) = owned_by_plugin(16);
+    let mut sess = session_with_requests(Instant::now());
+    end_replaced_connection_requests(&mut manager, &mut sess.state);
+    let events = received(&stub);
+    let order: Vec<(&str, Option<u64>)> = events
+        .iter()
+        .map(|(key, payload)| (key.as_str(), payload["request_id"].as_u64()))
+        .collect();
+    assert_eq!(
+        order,
+        vec![
+            ("markdown_mirror.content_result", Some(4)),
+            ("markdown_mirror.content_result", Some(5)),
+            ("markdown_mirror.changed", None),
+        ]
+    );
+    for (_, payload) in &events[..2] {
+        assert_eq!(payload["surface_id"], LOCAL);
+        assert_eq!(payload["ok"], false, "{payload}");
+    }
+    assert_eq!(events[2].1["surface_id"], LOCAL);
+    assert!(
+        !sess.state.markdown_requests.answer(4) && !sess.state.markdown_requests.answer(5),
+        "a reply from the old connection no longer answers anything"
+    );
+}
