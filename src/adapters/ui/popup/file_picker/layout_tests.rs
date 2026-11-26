@@ -150,16 +150,44 @@ pub(super) fn painted_frames_themed(
     events: &dyn Fn(usize, egui::Rect) -> Vec<egui::Event>,
     filters: &[String],
 ) -> (egui::Rect, Vec<egui::epaint::ClippedShape>) {
+    painted_frames_tweaked(
+        th,
+        popup,
+        (crumbs, mode, entries, selection),
+        frames,
+        events,
+        filters,
+        &|_| {},
+    )
+}
+
+/// [`painted_frames_themed`] 에서 그리기 전에 `tweak` 으로 props 를 고친다(행 포커스·링).
+pub(super) fn painted_frames_tweaked(
+    th: &Theme,
+    popup: &crate::adapters::ui::popup::PopupState,
+    (crumbs, mode, entries, selection): (
+        &[CrumbView],
+        FilePickerMode<'_>,
+        &[FilePickerEntryView],
+        &str,
+    ),
+    frames: usize,
+    events: &dyn Fn(usize, egui::Rect) -> Vec<egui::Event>,
+    filters: &[String],
+    tweak: &dyn Fn(&mut FilePickerProps<'_>),
+) -> (egui::Rect, Vec<egui::epaint::ClippedShape>) {
     let ctx = egui::Context::default();
     let content = popup.content_rect();
     let selected = vec![selection.to_string()];
-    let props = FilePickerProps {
+    let mut props = FilePickerProps {
         theme: th,
         remote_host: None,
         crumbs,
         state: FpViewState::Loaded,
         entries,
         selected: &selected,
+        focus_row: None,
+        ring: false,
         mode,
         title_label: "title",
         name_field_label: "File name",
@@ -185,6 +213,7 @@ pub(super) fn painted_frames_themed(
         filters,
         filter_showing: "Showing {list}",
     };
+    tweak(&mut props);
     let mut out = Vec::new();
     // 첫 프레임은 폰트가 확정되지 않아 galley 가 비는 경우가 있어 두 번 이상 돈다.
     for frame in 0..frames {

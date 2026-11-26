@@ -134,6 +134,10 @@ pub struct FilePickerProps<'a> {
     pub entries: &'a [FilePickerEntryView],
     /// 선택된 엔트리 이름(현재 디렉토리 기준).
     pub selected: &'a [String],
+    /// 행 포커스(키보드가 목록에서 서 있는 행) 이름.
+    pub focus_row: Option<&'a str>,
+    /// 행 포커스 링을 그린다. 키 포커스가 없는 인스턴스면 호출처가 `false`로 넘긴다.
+    pub ring: bool,
     pub mode: FilePickerMode<'a>,
 
     // i18n — 호출처가 t() 로 미리 해상해서 전달(file_handler_picker.rs 관례).
@@ -767,6 +771,8 @@ pub fn draw_file_picker(
         state: view_state,
         entries: &view_entries,
         selected: &data.selected,
+        focus_row: None,
+        ring: false,
         mode: match &data.save_name {
             _ if data.folder => FilePickerMode::Folder {
                 path: &folder_target,

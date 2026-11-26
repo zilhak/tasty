@@ -80,10 +80,12 @@ pub(super) fn entry_row(
         name_color,
     );
     let mono = egui::FontId::monospace(th.font_size_caption.value());
-    let meta_fg = if inert {
-        th.fp_folder_file_fg()
-    } else {
-        state.meta(th, parent)
+    let meta_fg = match state {
+        _ if inert => th.fp_folder_file_fg(),
+        tasty_ui_widgets::RowState::Hover | tasty_ui_widgets::RowState::Press => {
+            th.fp_row_meta_fg_hover()
+        }
+        _ => state.meta(th, parent),
     };
     ui.painter().text(
         egui::pos2(size_right.value(), rect.center().y),
@@ -99,6 +101,9 @@ pub(super) fn entry_row(
         mono,
         meta_fg.into(),
     );
+    if props.ring && !inert && props.focus_row == Some(entry.name.as_str()) {
+        paint_focus_ring(ui.painter(), th, rect, state);
+    }
     if inert {
         if let FilePickerMode::Folder { file_tooltip, .. } = props.mode {
             resp.on_hover_text(file_tooltip);
@@ -142,4 +147,26 @@ fn file_glyph_ink(
         S::Hover | S::Press => th.fp_row_glyph_fg_hover(),
         S::Selected | S::Rest | S::DropTarget | S::Disabled => th.text_muted(),
     }
+}
+
+/// 행 포커스 링. 행을 다 그린 뒤 행 안쪽에 `fp-row-focus-ring-width` 선을 `radius-sm` 모서리로 그린다(레이아웃 불변).
+/// 색은 링 아래 바탕 칸이다: 쉼·hover `fp-row-focus-ring`, 선택 `-selected`, 선택+hover `-selected-hover`.
+fn paint_focus_ring(
+    painter: &egui::Painter,
+    th: &Theme,
+    rect: egui::Rect,
+    state: tasty_ui_widgets::RowState,
+) {
+    use tasty_ui_widgets::RowState as S;
+    let color = match state {
+        S::SelectedHover | S::SelectedPress => th.fp_row_focus_ring_selected_hover(),
+        S::Selected => th.fp_row_focus_ring_selected(),
+        S::Hover | S::Press | S::Rest | S::DropTarget | S::Disabled => th.fp_row_focus_ring(),
+    };
+    painter.rect_stroke(
+        rect,
+        th.corner_radius_sm.value(),
+        egui::Stroke::new(th.fp_row_focus_ring_width().value(), color.to_egui()),
+        egui::StrokeKind::Inside,
+    );
 }

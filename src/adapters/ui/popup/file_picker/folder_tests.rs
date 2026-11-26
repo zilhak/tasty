@@ -160,6 +160,8 @@ fn folder_key(
         state: FpViewState::Loaded,
         entries: &entries,
         selected: &selected,
+        focus_row: None,
+        ring: false,
         mode,
         title_label: "",
         name_field_label: "",

@@ -516,6 +516,8 @@ fn draw_view(
         state: s.load.clone(),
         entries: &entries,
         selected: &s.selected,
+        focus_row: None,
+        ring: false,
         mode,
         title_label: s.title(),
         name_field_label: t(if s.is_folder() {

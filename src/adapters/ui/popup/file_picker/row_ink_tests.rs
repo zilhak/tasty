@@ -1,5 +1,5 @@
 //! 목록 행 글리프 잉크를 행 상태(쉼 · hover · 선택 · 선택+hover)마다 그린 도형으로 본다. 정본은 kit `FpRow`다.
-use super::layout_tests::{deep_crumbs, painted_frames_themed, picker_state};
+use super::layout_tests::{deep_crumbs, painted_frames_tweaked, picker_state};
 use super::*;
 
 const FOLDER: &str = "dir-a";
@@ -31,12 +31,22 @@ fn paint(
     selection: &str,
     pointer: Option<egui::Pos2>,
 ) -> Vec<egui::epaint::ClippedShape> {
+    paint_focused(th, selection, pointer, None)
+}
+
+/// `focus` 가 `Some((행, 링))` 이면 그 행에 행 포커스를 두고 링 표시를 정한다.
+fn paint_focused(
+    th: &Theme,
+    selection: &str,
+    pointer: Option<egui::Pos2>,
+    focus: Option<(&'static str, bool)>,
+) -> Vec<egui::epaint::ClippedShape> {
     let events = move |_: usize, _: egui::Rect| {
         pointer
             .map(|p| vec![egui::Event::PointerMoved(p)])
             .unwrap_or_default()
     };
-    painted_frames_themed(
+    painted_frames_tweaked(
         th,
         &picker_state(egui::vec2(640.0, 480.0)),
         (
@@ -48,6 +58,12 @@ fn paint(
         3,
         &events,
         &[],
+        &|p| {
+            if let Some((row, ring)) = focus {
+                p.focus_row = Some(row);
+                p.ring = ring;
+            }
+        },
     )
     .1
 }
@@ -135,4 +151,113 @@ fn the_file_glyph_reads_the_kit_ink_of_each_row_state() {
         [muted, hover, muted, on_active],
         "쉼 · hover · 선택 · 선택+hover"
     );
+}
+
+/// 행 사각형 안쪽에 그린 테두리 선(링 후보): (도형 순번, 사각형, 반경, 선).
+fn strokes_on_row(
+    shapes: &[egui::epaint::ClippedShape],
+    name: &str,
+) -> Vec<(usize, egui::Rect, f32, egui::Stroke)> {
+    let text = name_rect(shapes, name);
+    shapes
+        .iter()
+        .enumerate()
+        .filter_map(|(i, c)| match &c.shape {
+            egui::Shape::Rect(r)
+                if r.stroke.width > 0.0
+                    && r.rect.contains_rect(text)
+                    && r.rect.height() < text.height() * 4.0 =>
+            {
+                Some((i, r.rect, f32::from(r.corner_radius.nw), r.stroke))
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+/// 이름 글자를 그린 도형 순번.
+fn name_index(shapes: &[egui::epaint::ClippedShape], name: &str) -> usize {
+    shapes
+        .iter()
+        .position(|c| matches!(&c.shape, egui::Shape::Text(t) if t.galley.text() == name))
+        .unwrap_or_else(|| panic!("{name} 이 칠해진다"))
+}
+
+/// 링: 행 포커스 행에만, 행을 다 그린 뒤, 행 높이 그대로 안쪽 `fp-row-focus-ring-width` 선과 `radius-sm` 모서리로
+/// 그린다. 색은 바탕 칸(쉼·hover `fp-row-focus-ring`, 선택 `-selected`, 선택+hover `-selected-hover`)이다.
+#[test]
+fn the_row_focus_ring_is_an_inset_line_inked_by_the_row_ground() {
+    for th in [
+        latte(),
+        Theme::with_colors(tasty_themes::mocha_fallback_colors(), false),
+    ] {
+        let (rest, selected, selected_hover) = (
+            th.fp_row_focus_ring().to_egui(),
+            th.fp_row_focus_ring_selected().to_egui(),
+            th.fp_row_focus_ring_selected_hover().to_egui(),
+        );
+        assert!(rest != selected && selected != selected_hover && rest != selected_hover);
+        let at = name_rect(&paint(&th, "", None), FOLDER).center();
+        let row_h = row_height(&th).value();
+        for (case, selection, pointer, ink) in [
+            ("쉼", "", None, rest),
+            ("hover", "", Some(at), rest),
+            ("선택", FOLDER, None, selected),
+            ("선택+hover", FOLDER, Some(at), selected_hover),
+        ] {
+            let shapes = paint_focused(&th, selection, pointer, Some((FOLDER, true)));
+            let rings = strokes_on_row(&shapes, FOLDER);
+            assert_eq!(rings.len(), 1, "{case}: 링 하나 {rings:?}");
+            let (i, rect, radius, stroke) = rings[0];
+            assert_eq!(stroke.color, ink, "{case}: 링 색");
+            assert_eq!(
+                stroke.width,
+                th.fp_row_focus_ring_width().value(),
+                "{case}: 선 굵기"
+            );
+            assert_eq!(radius, th.corner_radius_sm.value(), "{case}: 모서리");
+            assert_eq!(rect.height(), row_h, "{case}: 행 높이 그대로");
+            assert!(
+                i > name_index(&shapes, FOLDER),
+                "{case}: 행 내용 뒤에 그린다"
+            );
+            // 같은 행 상태에서 링을 끄면 레이아웃이 그대로다.
+            let off = paint_focused(&th, selection, pointer, Some((FOLDER, false)));
+            assert!(
+                strokes_on_row(&off, FOLDER).is_empty(),
+                "{case}: 링을 끄면 없다"
+            );
+            assert_eq!(
+                name_rect(&off, FOLDER),
+                name_rect(&shapes, FOLDER),
+                "{case}: 위치 불변"
+            );
+            assert!(
+                strokes_on_row(&shapes, FILE).is_empty(),
+                "{case}: 다른 행엔 없다"
+            );
+        }
+    }
+}
+
+/// hover 행의 크기·날짜는 `fp-row-meta-fg-hover` 잉크다.
+#[test]
+fn the_hovered_row_meta_reads_the_hover_meta_token() {
+    let th = latte();
+    let at = name_rect(&paint(&th, "", None), FILE).center();
+    let shapes = paint(&th, "", Some(at));
+    let text = name_rect(&shapes, FILE);
+    let inks: Vec<egui::Color32> = shapes
+        .iter()
+        .filter_map(|c| match &c.shape {
+            egui::Shape::Text(t)
+                if t.galley.text() == "1 KB"
+                    && (t.pos.y + t.galley.size().y * 0.5 - text.center().y).abs() < 1.0 =>
+            {
+                Some(t.fallback_color)
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(inks, vec![th.fp_row_meta_fg_hover().to_egui()]);
 }
