@@ -278,6 +278,34 @@ fn an_escape_the_explorer_does_not_use_interrupts_the_tutorial() {
     assert!(state.tutorial.active.is_none(), "튜토리얼이 중단된다");
 }
 
+/// Given 탐색기가 포커스이고 말풍선을 그린 뒤 전체화면 무대만 그린 패스가 지났을 때, When 무대를 닫고 일반 화면을 다시
+/// 그리기 전에 bare Esc 를 누르면, Then 직전 패스에 말풍선이 없었으므로 말풍선은 붙은 수신자가 아니고 튜토리얼은 계속된다.
+#[test]
+fn a_stage_pass_leaves_no_callout_record_for_the_next_escape() {
+    let (mut state, mut session, _, _) = explorer_scene();
+    let engine = session.borrow_mut();
+    let read = engine.read();
+    let ctx = egui::Context::default();
+    let mut input = WindowInput::default();
+    draw(&ctx, &mut state, &read, &mut input);
+    assert!(state.tutorial.callout_rect.is_some(), "말풍선을 그렸다");
+    assert!(state.open_fullscreen_stage("blank"));
+    let mut held = HeldPastes::default();
+    drop(input.run_pass(
+        &mut state,
+        &ctx,
+        screen(),
+        &mut held,
+        &mut |_| {},
+        |ctx, state| crate::adapters::ui::draw_fullscreen_stage(ctx, state, &read),
+    ));
+    assert!(state.close_fullscreen_stage());
+    let (receiver, consumed) = bare(&mut state, &read, &mut input);
+    assert_ne!(receiver, KeyReceiver::Tutorial);
+    assert!(!consumed);
+    assert!(state.tutorial.active.is_some(), "튜토리얼은 계속된다");
+}
+
 /// T-TUT-5: Given 같은 장면에서 탐색기에 고른 항목이 있을 때, When bare Esc 를 누르면, Then 탐색기의 선택 해제 단축키가
 /// 받고 창은 처리하지 않으며 튜토리얼은 계속된다.
 #[test]

@@ -36,7 +36,9 @@ pub(crate) trait InputPassState {
 }
 
 impl InputPassState for MainViewState {
+    /// 메인 창의 일반·무대 패스가 모두 지나는 시작 자리다. 말풍선 표시 기록은 여기서 비우고 그린 자리에서만 세운다.
     fn begin_key_pass(&mut self, escape_held: bool) {
+        self.tutorial.callout_drawn = false;
         self.popups.begin_key_pass(escape_held);
     }
 

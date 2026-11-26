@@ -68,7 +68,6 @@ pub fn draw_tutorial_overlay(
     content: egui::Rect,
     theme: &Theme,
 ) {
-    state.tutorial.callout_drawn = false;
     state.tutorial.start_pending();
     let Some(a) = state.tutorial.active else {
         return;
