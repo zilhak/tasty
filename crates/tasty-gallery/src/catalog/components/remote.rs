@@ -996,10 +996,6 @@ pub fn draw_filter(ui: &mut egui::Ui, theme: &Theme) {
                 "dropdown",
                 "remote-filter-dropdown-width 240 border-box · menu container frame · title · checkbox list · bulk row · Reset/Apply",
             ),
-            (
-                "unknown",
-                "warn badge on a kind tasty has no dedicated form for",
-            ),
             ("commit", "apply-on-confirm — the draft is the hidden set"),
         ],
         &[
@@ -1027,9 +1023,14 @@ pub fn draw_filter(ui: &mut egui::Ui, theme: &Theme) {
             TokenChip::without_color("menu-radius", "dropdown corners"),
             TokenChip::without_color("shadow-popover", "dropdown shadow"),
             TokenChip::new(
-                "accent-warning",
-                "unknown badge",
-                theme.accent_warning().to_egui(),
+                "menu-separator",
+                "protocol filter menu rules",
+                theme.menu_separator().to_egui(),
+            ),
+            TokenChip::new(
+                "accent-warning-raised",
+                "filter unknown badge glyph (raised menu)",
+                theme.accent_warning_raised().to_egui(),
             ),
         ],
     );
