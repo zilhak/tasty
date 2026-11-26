@@ -72,7 +72,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "selected card",
                 theme.accent_primary().to_egui(),
             ),
-            TokenChip::without_color("border-default", "unselected edge"),
+            TokenChip::without_color("border-strong", "unselected edge"),
             TokenChip::new(
                 "surface-raised",
                 "card fill",
@@ -94,7 +94,7 @@ fn choice(
     let border = if selected {
         theme.accent_primary()
     } else {
-        theme.border_default()
+        theme.border_strong()
     };
     let bw = if selected {
         theme.focus_ring_width.value()
@@ -127,4 +127,39 @@ fn choice(
                     .color(theme.text_muted_raised().to_egui()),
             );
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::catalog::components::painted::paint;
+
+    /// 선택 카드의 테두리: 미선택은 raised 카드 외곽인 border-strong, 선택은 accent-primary다.
+    #[test]
+    fn the_unselected_choice_edges_with_border_strong() {
+        for theme in [
+            tasty_themes::mocha_fallback(),
+            crate::host_shell::latte_theme(),
+        ] {
+            assert_ne!(theme.border_strong(), theme.border_default());
+            for (selected, want) in [
+                (false, theme.border_strong()),
+                (true, theme.accent_primary()),
+            ] {
+                let p = paint(|ui| {
+                    choice(
+                        ui,
+                        &theme,
+                        LogicalPx(200.0),
+                        icons::FILE,
+                        "Viewer",
+                        "Read",
+                        selected,
+                    )
+                });
+                let title = p.text("Viewer").rect;
+                assert_eq!(p.edge_around(title), want.to_egui(), "selected={selected}");
+            }
+        }
+    }
 }
