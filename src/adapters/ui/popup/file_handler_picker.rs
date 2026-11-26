@@ -443,7 +443,12 @@ fn fallback_strip(ui: &mut egui::Ui, props: &FileHandlerPickerProps<'_>) {
         egui::vec2(FH_FRAME_WIDTH.value(), th.border_width.value()),
         egui::Sense::hover(),
     );
-    hline(ui, th, rect, rect.center().y);
+    // raised 띠 아래선이라 공용 hline(separator) 대신 border-strong으로 긋는다.
+    ui.painter().hline(
+        rect.x_range(),
+        rect.center().y,
+        egui::Stroke::new(th.border_width.value(), th.border_strong().to_egui()),
+    );
 }
 
 /// 그룹 제목·개수·설명. 디자인 원본에 그룹 제목의 자간 값이 없어 별도 자간은 적용하지 않는다.
@@ -1336,6 +1341,28 @@ mod tests {
         selected: Option<String>,
         default_id: Option<String>,
         fallback: bool,
+    }
+
+    /// fallback 안내 띠는 raised라 아래선이 border-strong이다.
+    #[test]
+    fn the_fallback_strip_rule_is_border_strong() {
+        for theme in crate::painted_test_support::themes() {
+            let strong = theme.border_strong().to_egui();
+            assert_ne!(strong, theme.separator.to_egui_premultiplied());
+            let case = Case {
+                theme,
+                fallback: true,
+                ..Case::new()
+            };
+            let p = crate::painted_test_support::paint(|ui| fallback_strip(ui, &case.props()));
+            let rules: Vec<_> = p
+                .segments()
+                .into_iter()
+                .filter(|(a, b, _)| a.y == b.y && a.x != b.x)
+                .collect();
+            assert_eq!(rules.len(), 1, "아래선 하나: {rules:?}");
+            assert_eq!(rules[0].2, strong);
+        }
     }
 
     impl Case {
