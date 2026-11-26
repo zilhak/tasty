@@ -483,3 +483,7 @@ mod scene_keys;
 #[cfg(feature = "gui")]
 #[path = "cover_floor_tests.rs"]
 mod cover_floor;
+
+#[cfg(feature = "gui")]
+#[path = "pass_ime_source_tests.rs"]
+mod pass_ime_source;

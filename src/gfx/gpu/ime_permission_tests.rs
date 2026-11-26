@@ -114,7 +114,7 @@ fn ime_is_allowed_when_the_focus_node_is_a_surface_beside_an_unfocused_popup() {
     let read = engine.read();
     state.normalize_focus(&read);
     assert!(matches!(state.focus_node(&read), FocusNode::Surface(_)));
-    assert!(window_ime_allowed(&state, &read, None, false));
+    assert!(window_ime_allowed(&mut state, &read, None, false));
 }
 
 /// T-IME-2: Given 선언 `Keys` 인 plugin 팝업이 포커스 노드일 때, When IME 허용을 정하면, Then 끈다.
@@ -129,7 +129,7 @@ fn ime_is_off_for_a_keys_plugin_popup_focus_node() {
         state.focus_node(&read),
         FocusNode::Popup(PopupNode::Plugin(42))
     );
-    assert!(!window_ime_allowed(&state, &read, None, false));
+    assert!(!window_ime_allowed(&mut state, &read, None, false));
 }
 
 /// T-IME-3: Given 선언 `Text` 인 plugin 팝업이 포커스 노드일 때, When IME 허용을 정하면, Then 켠다.
@@ -144,7 +144,7 @@ fn ime_is_on_for_a_text_plugin_popup_focus_node() {
         state.focus_node(&read),
         FocusNode::Popup(PopupNode::Plugin(42))
     );
-    assert!(window_ime_allowed(&state, &read, None, false));
+    assert!(window_ime_allowed(&mut state, &read, None, false));
 }
 
 /// T-IME-5: Given 포커스를 가진 host 팝업(명령 팔레트)이 관리자 칸에 남은 채 전체화면 무대가 열렸을 때, When 무대
@@ -158,7 +158,7 @@ fn ime_is_on_for_a_stage_over_an_open_host_popup() {
     let read = engine.read();
     assert!(state.popups.has_focused(), "관리자 칸에 팔레트가 남는다");
     assert_eq!(state.focus_node(&read), FocusNode::Stage);
-    assert!(window_ime_allowed(&state, &read, None, false));
+    assert!(window_ime_allowed(&mut state, &read, None, false));
 }
 
 /// T-IME-8a: Given 그린 몫이 host 텍스트 팝업(명령 팔레트)이라 egui IME 출력이 있지만 지금 노드가 선언 `Keys` 인 plugin
@@ -176,7 +176,7 @@ fn ime_is_off_when_the_drawn_widget_has_output_but_the_next_node_is_a_keys_plugi
         state.focus_node(&read),
         FocusNode::Popup(PopupNode::Plugin(42))
     );
-    assert!(!window_ime_allowed(&state, &read, Some(drawn), true));
+    assert!(!window_ime_allowed(&mut state, &read, Some(drawn), true));
 }
 
 /// T-IME-8b: Given 그린 몫이 host 텍스트 팝업 A(명령 팔레트, IME 출력 있음)이고 지금 노드가 다른 host 팝업 B(알림 목록)일
@@ -194,13 +194,13 @@ fn ime_output_of_one_host_instance_does_not_allow_another() {
         FocusNode::Popup(PopupNode::Host(b))
     );
     assert!(!window_ime_allowed(
-        &state,
+        &mut state,
         &read,
         Some(FocusNode::Popup(PopupNode::Host(a))),
         true
     ));
     assert!(window_ime_allowed(
-        &state,
+        &mut state,
         &read,
         Some(FocusNode::Popup(PopupNode::Host(b))),
         true

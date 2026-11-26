@@ -51,13 +51,15 @@ pub(crate) fn ime_target(state: &MainViewState, node: FocusNode, drawn: FocusNod
 /// 다음 입력의 IME 허용. 대상은 지금 포커스 노드다(`set_ime_allowed` 는 다음 입력부터 적용되므로 다음 입력의 출발
 /// 노드를 읽는다). 그리기 판정이 아니라 `source_guards::draw_pass_key_reads` 의 몫 노드 원칙 밖이다. `drawn` 은 몫을
 /// 닫기 전에 붙잡은 그 몫의 노드(없으면 지금 노드, `input_pass::run_input_pass`)이고 `egui_ime_output` 은 그 몫
-/// 위젯의 IME 출력이다.
+/// 위젯의 IME 출력이다. 입구에서 포커스를 정규화해 그 패스의 닫기와 plugin 덮음 갱신까지 반영한 노드를 읽는다(W2 입구
+/// `webview_sync::key_release::release_webview_key_focus` 와 같은 정규화).
 pub(crate) fn window_ime_allowed(
-    state: &MainViewState,
+    state: &mut MainViewState,
     core: &crate::core::CoreState,
     drawn: Option<FocusNode>,
     egui_ime_output: bool,
 ) -> bool {
+    state.normalize_focus(core);
     let node = state.focus_node(core);
     ime_allowed(
         ime_target(state, node, drawn.unwrap_or(node)),

@@ -8,7 +8,7 @@ mod egui_mesh_prepare;
 mod fonts;
 mod frame_timing;
 #[cfg(any(not(windows), test))]
-mod ime_permission;
+pub(crate) mod ime_permission;
 pub(crate) mod input_pass;
 pub(crate) mod loading;
 mod overlay_paint;
@@ -806,7 +806,7 @@ impl GpuState {
     fn apply_platform_output(
         &mut self,
         window: &Window,
-        state: &MainViewState,
+        state: &mut MainViewState,
         engine: &crate::runtime::engine_read::EngineRead<'_>,
         platform_output: egui::PlatformOutput,
     ) {
@@ -821,10 +821,11 @@ impl GpuState {
         {
             // 허용 대상은 다음 입력의 출발 노드(지금 포커스 노드)다. 그린 몫 위젯의 IME 출력은 그 몫이 같은 host
             // 인스턴스일 때만 근거가 된다.
+            let drawn = state.closed_segment_focus;
             window.set_ime_allowed(ime_permission::window_ime_allowed(
                 state,
                 engine,
-                state.closed_segment_focus,
+                drawn,
                 ime_widget_focused,
             ));
         }
