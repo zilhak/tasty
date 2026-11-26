@@ -75,7 +75,8 @@ OFL 1.1과 Ubuntu Font Licence 1.0은 폰트를 재배포할 때 저작권 고�
 - 버전: lucide-static 0.460.0
 - 적용 범위: `crates/tasty-icons/src/lib.rs`의 아이콘 정의 중 Lucide 아이콘과 도형이 같거나 Lucide 아이콘에서
   고쳐 온 것. 해당 정의마다 바로 위 주석에 Lucide 아이콘 이름과 "같은 도형" 또는 "고쳐 온 도형"을 적었습니다.
-  이 정의는 본체 바이너리에 들어갑니다.
+  `tasty-icons`는 본체와 디자인 갤러리가 함께 쓰는 아이콘 크레이트이고, 본체와 갤러리는 이 정의 중
+  필요한 것을 각자 참조합니다.
 - 라이선스: ISC — Lucide 부분, MIT — Feather 부분
 - 라이선스 본문:
   - [`LICENSES/Lucide-ISC.txt`](LICENSES/Lucide-ISC.txt) — npm `lucide-static` 0.460.0 패키지의 `LICENSE`와 바이트 동일
