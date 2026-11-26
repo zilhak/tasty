@@ -321,10 +321,7 @@ fn group_header(
     ui.painter().hline(
         rect.x_range(),
         rect.bottom() - theme.border_width.value() * 0.5,
-        egui::Stroke::new(
-            theme.border_width.value(),
-            theme.separator.to_egui_premultiplied(),
-        ),
+        egui::Stroke::new(theme.border_width.value(), theme.border_strong().to_egui()),
     );
 }
 
@@ -407,4 +404,65 @@ fn value_cell(
     let g = truncated(ui, text, font, fg, max_w);
     let pos = egui::pos2(rect.left() + x, rect.center().y - g.rect.height() * 0.5);
     ui.painter().galley(pos, g, egui::Color32::PLACEHOLDER);
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeSet;
+
+    use super::*;
+    use crate::catalog::components::painted::paint;
+
+    /// 그룹 머리(raised) 아래선은 border-strong, base 위의 열 머리·행 선은 separator다.
+    #[test]
+    fn the_group_header_rule_is_border_strong_and_cell_rules_stay_separator() {
+        for theme in [
+            tasty_themes::mocha_fallback(),
+            crate::host_shell::latte_theme(),
+        ] {
+            let strong = theme.border_strong().to_egui();
+            let sep = theme.separator.to_egui_premultiplied();
+            assert_ne!(strong, sep);
+            let p = paint(|ui| {
+                let mut st = State {
+                    changed_only: false,
+                    collapsed: BTreeSet::new(),
+                    deselected: BTreeSet::new(),
+                    l2_filter_active: false,
+                    notices_expanded: false,
+                    export_failed: false,
+                };
+                diff_table(ui, &theme, &mut st);
+            });
+            let raised = theme.surface_raised().to_egui();
+            let beds: Vec<egui::Rect> = p
+                .shapes
+                .iter()
+                .filter_map(|s| match s {
+                    egui::Shape::Rect(r) if r.fill == raised && r.stroke.width == 0.0 => {
+                        Some(r.rect)
+                    }
+                    _ => None,
+                })
+                .collect();
+            assert_eq!(beds.len(), GROUPS.len(), "그룹 머리마다 raised 바탕");
+            let bw = theme.border_width.value();
+            let rules: Vec<_> = p
+                .segments()
+                .into_iter()
+                .filter(|(a, b, _)| a.y == b.y && a.x != b.x)
+                .collect();
+            let rows: usize = GROUPS.iter().map(|g| g.rows.len()).sum();
+            assert_eq!(
+                rules.len(),
+                1 + GROUPS.len() + rows,
+                "열 머리·그룹 머리·행 선"
+            );
+            for (a, _, color) in rules {
+                let under_bed = beds.iter().any(|r| a.y == r.bottom() - bw * 0.5);
+                let want = if under_bed { strong } else { sep };
+                assert_eq!(color, want, "y={}", a.y);
+            }
+        }
+    }
 }
