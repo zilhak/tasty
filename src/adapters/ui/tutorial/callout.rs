@@ -518,9 +518,11 @@ mod tests {
         (a.max(b) + 0.05) / (a.min(b) + 0.05)
     }
 
-    /// 말풍선을 그려 칠해진 글자와 그 색을 모은다. 새 Area는 첫 프레임에 크기만 재므로 두 번 그린다.
+    /// 말풍선을 그려 칠해진 글자와 그 색을 모은다. 새 Area는 첫 프레임에 크기만 재므로 두 번 그리고,
+    /// 페이드인 중간 알파가 섞이지 않게 애니메이션 시간을 0으로 둔다.
     fn painted_texts(theme: &Theme) -> Vec<(String, egui::Color32)> {
         let ctx = egui::Context::default();
+        ctx.style_mut(|s| s.animation_time = 0.0);
         let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0));
         let mut texts = Vec::new();
         for _ in 0..2 {
