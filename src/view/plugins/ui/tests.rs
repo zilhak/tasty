@@ -522,3 +522,22 @@ fn the_add_tab_body_ends_space_xl_inside_a_narrow_window() {
         th.spacing_xl.value()
     );
 }
+
+/// 선택된 헤더 탭은 surface-raised 채움에 border-strong 테두리다(헤더 mantle 위 raised 탭의 외곽).
+#[test]
+fn the_selected_segment_tab_is_raised_with_a_border_strong_edge() {
+    for th in crate::painted_test_support::themes() {
+        assert_ne!(th.border_strong(), th.border_default());
+        let p = crate::painted_test_support::paint(|ui| {
+            segment_tab(ui, &th, "Installed", Some(2), false, true);
+        });
+        let edges = p.stroked_rects();
+        assert_eq!(edges.len(), 1, "{edges:?}");
+        assert_eq!(edges[0].1, egui::Color32::from(th.surface_raised()), "채움");
+        assert_eq!(
+            edges[0].2,
+            egui::Color32::from(th.border_strong()),
+            "테두리"
+        );
+    }
+}

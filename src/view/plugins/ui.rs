@@ -572,7 +572,7 @@ fn segment_tab(
             egui::Color32::from(th.surface_raised()),
             egui::Stroke::new(
                 th.border_width.value(),
-                egui::Color32::from(th.border_default()),
+                egui::Color32::from(th.border_strong()),
             ),
             egui::StrokeKind::Inside,
         );
