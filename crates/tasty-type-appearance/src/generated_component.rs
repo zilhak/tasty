@@ -6304,10 +6304,22 @@ impl crate::theme::Theme {
         self.text_on_active()
     }
 
+    /// `component.tag-attached-border` → `{semantic.tint-attached-border}`
+    #[inline]
+    pub fn tag_attached_border(&self) -> HexColor {
+        self.tint_attached_border()
+    }
+
     /// `component.tag-attached-fg` → `{semantic.accent-attached-raised}`
     #[inline]
     pub fn tag_attached_fg(&self) -> HexColor {
         self.accent_attached_raised()
+    }
+
+    /// `component.tag-attention-border` → `{semantic.tint-attention-border}`
+    #[inline]
+    pub fn tag_attention_border(&self) -> HexColor {
+        self.tint_attention_border()
     }
 
     /// `component.tag-attention-fg` → `{semantic.accent-attention-raised}`
@@ -6326,6 +6338,12 @@ impl crate::theme::Theme {
     #[inline]
     pub fn tag_border(&self) -> HexColor {
         self.border_default()
+    }
+
+    /// `component.tag-danger-border` → `{semantic.tint-danger-border}`
+    #[inline]
+    pub fn tag_danger_border(&self) -> HexColor {
+        self.tint_danger_border()
     }
 
     /// `component.tag-danger-fg` → `{semantic.accent-danger-raised}`
@@ -6376,6 +6394,12 @@ impl crate::theme::Theme {
         self.spacing_xs
     }
 
+    /// `component.tag-info-border` → `{semantic.tint-info-border}`
+    #[inline]
+    pub fn tag_info_border(&self) -> HexColor {
+        self.tint_info_border()
+    }
+
     /// `component.tag-info-fg` → `{semantic.accent-info-raised}`
     #[inline]
     pub fn tag_info_fg(&self) -> HexColor {
@@ -6400,10 +6424,22 @@ impl crate::theme::Theme {
         LogicalPx((16.0 * self.ui_zoom).round())
     }
 
+    /// `component.tag-success-border` → `{semantic.tint-success-border}`
+    #[inline]
+    pub fn tag_success_border(&self) -> HexColor {
+        self.tint_success_border()
+    }
+
     /// `component.tag-success-fg` → `{semantic.accent-success-ink}`
     #[inline]
     pub fn tag_success_fg(&self) -> HexColor {
         self.accent_success_ink()
+    }
+
+    /// `component.tag-warning-border` → `{semantic.tint-warning-border}`
+    #[inline]
+    pub fn tag_warning_border(&self) -> HexColor {
+        self.tint_warning_border()
     }
 
     /// `component.tag-warning-fg` → `{semantic.accent-warning-raised}`

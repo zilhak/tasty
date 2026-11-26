@@ -4,12 +4,14 @@
 //! `-on-active`는 선택 행과 그 hover·press에서 등급을 유지한다.
 
 use crate::color::HexColor;
-use crate::theme::{TINT_FILL_ALPHA, Theme, mix_srgb};
+use crate::theme::{TINT_BORDER_ALPHA, TINT_FILL_ALPHA, Theme, mix_srgb};
 
 /// color-mix가 섞는 DTCG `primitive.color-black`.
 const BLACK: HexColor = crate::hex!("#000000");
 /// color-mix가 섞는 DTCG `primitive.color-white`.
 const WHITE: HexColor = crate::hex!("#ffffff");
+/// CSS color-mix 결과 알파가 0일 때의 값(투명 검정). 정본 식의 `transparent`와 같다.
+pub(crate) const CSS_TRANSPARENT: HexColor = crate::hex!("#00000000");
 /// 내장 Latte 테마의 `search_match_active_bg`.
 const LATTE_ACTIVE_MATCH: HexColor = crate::hex!("#df8e1d80");
 /// `semantic.search-match-active-selected-bg`의 Latte 값(yellow 80%).
@@ -428,6 +430,48 @@ impl Theme {
         tint(self.accent_agent())
     }
 
+    /// `semantic.tint-primary-border`.
+    #[inline]
+    pub fn tint_primary_border(&self) -> HexColor {
+        tint_border(self.accent_primary())
+    }
+
+    /// `semantic.tint-info-border`.
+    #[inline]
+    pub fn tint_info_border(&self) -> HexColor {
+        tint_border(self.accent_info())
+    }
+
+    /// `semantic.tint-success-border`.
+    #[inline]
+    pub fn tint_success_border(&self) -> HexColor {
+        tint_border(self.accent_success())
+    }
+
+    /// `semantic.tint-warning-border`.
+    #[inline]
+    pub fn tint_warning_border(&self) -> HexColor {
+        tint_border(self.accent_warning())
+    }
+
+    /// `semantic.tint-attention-border`.
+    #[inline]
+    pub fn tint_attention_border(&self) -> HexColor {
+        tint_border(self.accent_attention())
+    }
+
+    /// `semantic.tint-danger-border`.
+    #[inline]
+    pub fn tint_danger_border(&self) -> HexColor {
+        tint_border(self.accent_danger())
+    }
+
+    /// `semantic.tint-attached-border`.
+    #[inline]
+    pub fn tint_attached_border(&self) -> HexColor {
+        tint_border(self.border_attached())
+    }
+
     /// 터미널 vi 커서 칸의 글자. `semantic.vi-cursor-fg`.
     #[inline]
     pub fn vi_cursor_fg(&self) -> HexColor {
@@ -489,4 +533,14 @@ impl Theme {
 /// 강조색을 틴트 채움 비율로 낮춘다. 비율은 8비트 alpha로 반올림한다.
 fn tint(accent: HexColor) -> HexColor {
     accent.with_alpha((TINT_FILL_ALPHA * 255.0).round() as u8)
+}
+
+/// 강조색을 틴트 테두리 비율로 낮춘다. `color-mix(강조색 36%, transparent)`처럼 강조색 자신의 알파에
+/// 비율을 곱하고 8비트 alpha로 반올림한다. 불투명한 강조색이면 비율 × 255다. 강조색이 완전히 투명하면
+/// 섞은 알파가 0이라 CSS처럼 투명 검정이다.
+fn tint_border(accent: HexColor) -> HexColor {
+    if accent.a() == 0 {
+        return CSS_TRANSPARENT;
+    }
+    accent.with_alpha((f32::from(accent.a()) * TINT_BORDER_ALPHA).round() as u8)
 }

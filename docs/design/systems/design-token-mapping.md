@@ -54,7 +54,7 @@
 | `border-control` · `border-control-raised` | Mocha neutral-600·700, Latte neutral-800 혼합·neutral-900 | 컨트롤 테두리. 3:1 |
 | `control-thumb` · `control-thumb-raised` | Mocha neutral-1100·white, Latte white | Switch thumb |
 | `scrollbar-thumb` · `-raised` · `-hover` | `border-control` · `border-control-raised` · `text-muted-raised` | 스크롤바 thumb |
-| `accent-success-fill` · `attention-needs-input-fill` · `tint-*-bg` | Mocha 원 역할, Latte 혼합. 틴트는 tint-fill 비율의 알파 | 틴트 상자와 채움 |
+| `accent-success-fill` · `attention-needs-input-fill` · `tint-*-bg` · `tint-*-border` | Mocha 원 역할, Latte 혼합. 틴트는 tint-fill·tint-border 비율의 알파 | 틴트 상자의 채움과 테두리 |
 | `vi-cursor-fg` | Mocha neutral-0, Latte black | 터미널 vi 커서 칸의 글자 |
 | `surface-on-raised` | Mocha `surface-hover`, Latte neutral-200 | `banner-button-bg` |
 
