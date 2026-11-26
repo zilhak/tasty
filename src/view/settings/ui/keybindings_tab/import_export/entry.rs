@@ -30,7 +30,7 @@ pub(super) fn action_row(
         .fill(th.surface_raised().to_egui())
         .stroke(egui::Stroke::new(
             th.border_width.value(),
-            th.border_default().to_egui(),
+            th.border_strong().to_egui(),
         ))
         .corner_radius(th.corner_radius.value())
         .inner_margin(tasty_ui_widgets::margin_all(th.spacing_md))
@@ -95,4 +95,35 @@ pub(super) fn action_row(
             }
         });
     clicked
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::painted_test_support::{paint, themes};
+
+    /// 액션 행 카드는 raised 카드라 외곽이 border-strong이다.
+    #[test]
+    fn the_action_row_card_edges_with_border_strong() {
+        let desc = crate::i18n::t("settings.keybindings.ie_export_desc");
+        for th in themes() {
+            let strong = th.border_strong().to_egui();
+            assert_ne!(strong, th.border_default().to_egui());
+            let p = paint(|ui| {
+                action_row(
+                    ui,
+                    &th,
+                    icons::DOWNLOAD,
+                    "Export",
+                    desc,
+                    "Export…",
+                    ButtonVariant::Secondary,
+                    true,
+                    None,
+                    None,
+                );
+            });
+            assert_eq!(p.edge_around(p.text_rect(desc)), strong);
+        }
+    }
 }
