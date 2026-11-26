@@ -5,7 +5,7 @@ use tasty_ui_widgets::{
     Button, ButtonVariant, filter_readout, filter_readout_label, filter_readout_width,
 };
 
-use super::{FOLDER_SEL, FpState, MULTI_PICKED, Mode, Variant};
+use super::{FpState, MULTI_PICKED, Mode, Variant};
 use crate::catalog::icons;
 use crate::catalog::widgets::dialog as kit;
 use tasty_type_appearance::theme::Theme;
@@ -32,7 +32,7 @@ pub(super) fn footer_height(ui: &egui::Ui, theme: &Theme, v: Variant) -> Logical
     }
     let gap = theme.fp_section_gap();
     let mut h = pad + theme.input_height() + gap + theme.button_height() + pad;
-    for _ in 0..usize::from(v.overwrite()) + usize::from(v.folder_sel) {
+    for _ in 0..usize::from(v.overwrite()) + usize::from(v.selected_folder().is_some()) {
         h = h + warning_line_height(ui, theme) + gap;
     }
     h
@@ -79,9 +79,11 @@ pub(super) fn footer(ui: &mut egui::Ui, theme: &Theme, v: Variant, footer_h: Log
     // 폴더는 그 값이 될 수 없다. 저장 모드는 이름 칸이 목록과 독립이라 그대로 둔다.
     let (name_text, placeholder): (String, bool) = match (v.mode, v.state) {
         (Mode::Save(save), _) => (save.name().to_owned(), false),
-        (Mode::Open, _) if v.folder_sel => (String::new(), true),
         (Mode::Open, FpState::Loaded) if multi => (MULTI_PICKED.join(", "), false),
-        (Mode::Open, FpState::Loaded) => ("README.md".to_owned(), false),
+        (Mode::Open, FpState::Loaded) => match v.selected_row() {
+            Some(name) if !super::is_folder(name) => (name.to_owned(), false),
+            _ => (String::new(), true),
+        },
         _ => (String::new(), true),
     };
     let placeholder_text = match v.mode {
@@ -127,8 +129,8 @@ pub(super) fn footer(ui: &mut egui::Ui, theme: &Theme, v: Variant, footer_h: Log
         }
     });
 
-    if v.folder_sel {
-        folder_line(&mut col, theme, v.mode);
+    if let Some(folder) = v.selected_folder() {
+        folder_line(&mut col, theme, v.mode, folder);
     }
     if v.overwrite() {
         overwrite_line(&mut col, theme, &name_text);
@@ -145,7 +147,11 @@ pub(super) fn footer(ui: &mut egui::Ui, theme: &Theme, v: Variant, footer_h: Log
         }
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             let (label, enabled) = match v.mode {
-                Mode::Open => ("Open", v.state == FpState::Loaded),
+                // 열기는 목록이 있고 고른 것이 있을 때만 켜진다(앱 footer.rs `can_confirm`).
+                Mode::Open => (
+                    "Open",
+                    v.state == FpState::Loaded && (multi || v.selected_row().is_some()),
+                ),
                 Mode::Save(_) if v.overwrite() => ("Overwrite", !name_text.is_empty()),
                 Mode::Save(_) => ("Save", !name_text.is_empty()),
                 Mode::Folder { .. } => unreachable!(),
@@ -162,7 +168,7 @@ pub(super) fn footer(ui: &mut egui::Ui, theme: &Theme, v: Variant, footer_h: Log
 }
 
 /// 폴더를 고르면 저장 대상으로 쓸 수 없거나 Open으로 들어갈 수 있다고 안내한다.
-fn folder_line(ui: &mut egui::Ui, theme: &Theme, mode: Mode) {
+fn folder_line(ui: &mut egui::Ui, theme: &Theme, mode: Mode, folder: &str) {
     let muted = theme.text_muted().to_egui();
     let size = theme.font_size_caption.value();
     let prose = egui::TextFormat::simple(egui::FontId::proportional(size), muted);
@@ -179,11 +185,11 @@ fn folder_line(ui: &mut egui::Ui, theme: &Theme, mode: Mode) {
                     0.0,
                     prose.clone(),
                 );
-                job.append(FOLDER_SEL, 0.0, mono);
+                job.append(folder, 0.0, mono);
                 job.append(" to open it.", 0.0, prose);
             }
             Mode::Open => {
-                job.append(FOLDER_SEL, 0.0, mono);
+                job.append(folder, 0.0, mono);
                 job.append(" is a folder — ", 0.0, prose.clone());
                 job.append(
                     "Open",

@@ -166,19 +166,38 @@ pub fn cluster(
     label: &str,
     add_contents: impl FnOnce(&mut egui::Ui),
 ) {
-    let body = |ui: &mut egui::Ui| {
-        ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
-        ui.label(
-            egui::RichText::new(label.to_uppercase())
-                .size(theme.font_size_micro.value())
-                .color(col(theme.text_muted())),
-        );
-        ui.horizontal_wrapped(|ui| {
-            ui.spacing_mut().item_spacing.x = theme.spacing_md.value();
-            add_contents(ui);
-        });
-    };
-    wrap_item(ui, body);
+    wrap_item(ui, |ui| cluster_body(ui, theme, label, add_contents));
+}
+
+/// 줄바꿈 줄 밖, 본문 세로 배치에 바로 놓는 [`cluster`]. 직전 프레임 크기를 기억하지 않고 매 프레임 본문 컬럼 폭
+/// 안에서 줄을 바꾼다. 안에 든 것이 여럿이라 폭에 따라 줄 수가 바뀌는 묶음에 쓴다 — [`wrap_item`] 은 첫 프레임에
+/// 잰 넓은 폭을 다음 프레임에도 그대로 잡는다.
+pub fn column_cluster(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    label: &str,
+    add_contents: impl FnOnce(&mut egui::Ui),
+) {
+    body_column(ui, |ui| cluster_body(ui, theme, label, add_contents));
+}
+
+/// 묶음 이름 한 줄과 그 아래 줄바꿈 줄.
+fn cluster_body(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    label: &str,
+    add_contents: impl FnOnce(&mut egui::Ui),
+) {
+    ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
+    ui.label(
+        egui::RichText::new(label.to_uppercase())
+            .size(theme.font_size_micro.value())
+            .color(col(theme.text_muted())),
+    );
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing.x = theme.spacing_md.value();
+        add_contents(ui);
+    });
 }
 
 /// 줄바꿈 줄(stage Wrap · `horizontal_wrapped`)에 놓는 묶음 하나. 감싸는 줄은 크기를 모르는

@@ -2786,6 +2786,12 @@ fn file_picker_specs() -> Vec<Spec> {
             picker::draw_gesture_table,
         ),
         (
+            "row-focus-and-list-keys",
+            "File picker — row focus and list keys",
+            "Target spec for future implementation. List keys move through rows in open, save and folder mode. Row focus marks the keyboard's place in the list and uses the explorer's current-item ring.",
+            picker::draw_row_focus,
+        ),
+        (
             "filepicker-path-bar",
             "Path bar — what gives way when the folded path still doesn't fit",
             "current folder → parent → root → the … menu · five steps, each at its floor",

@@ -1263,9 +1263,9 @@ C 프레임보더) 중 **A 배지가 사용자 확정**되었다. 본체와 갤�
 | host 배지(§6.1 A안, 채택) | `host_badge` | mono 호스트 글자(attach 프로필 이름) · 빈 호스트는 `attach.mirror_pill_label` 낱말을 font-label · 글리프 13 · 간격 5 · 잉크 `accent-info-raised` · `accent-info` 14%/45% 배경/보더 |
 | path bar(`FpCrumbs`+Up+refresh) | `path_bar` → `crumbs` | `bg-sidebar` 전폭 띠 · 아래 `separator` 1px. 경로 · Up(`chevronUp`) · refresh 를 `fp-section-gap` 간격으로 놓는다. root=mono, 조상=accent 링크, 현재 폴더=`text-primary` 보통 굵기 비클릭, 글자 `font-size-caption` |
 | list header(NAME/SIZE/MODIFIED) | `list_header` | loaded/multi 상태만, `cols()` 좌표 공유 |
-| `FpRow` | `row` | selected=surface-active+2px accent 좌측바, focus=1px accent outline(선택과 구분) |
+| `FpRow`(`focus` · `hover`) | `file_picker/row.rs::row` | 바탕은 본체와 같은 `RowState::paint_fill`(선택 surface-active, hover overlay-hover). 이름 · 크기·날짜 · 글리프는 `FpRow` 의 `ink(rest, restHover, sel, selHover)` 칸. 선택 막대는 `accent-primary-on-active`, 행 포커스 링은 행을 다 그린 뒤 안쪽 `fp-row-focus-ring-width` 선 · `radius-sm` 모서리로 바탕 칸마다 `fp-row-focus-ring` · `-selected` · `-selected-hover` |
 | 로딩/빈폴더/에러(권한·연결끊김) | `body` → `center` → 공용 `CenterState` | Spinner · folderOpen · 부품 소유 오류 글리프(alertTriangle). Retry/Reconnect 는 refresh 아이콘을 단 위젯 액션으로, 가운데 정렬 밖 보조 슬롯 아래에 매달린다 |
-| footer(name field+filter chip+Cancel/Open) | `footer` + 공용 `filter_readout` | `kit::field` 재사용, Open 은 loaded 상태에서만 활성. 라벨·칩·버튼 flex:none, 이름 칸만 준다 |
+| footer(name field+filter chip+Cancel/Open) | `footer` + 공용 `filter_readout` | `kit::field` 재사용, Open 은 loaded 이고 고른 행이 있을 때만 활성(`Variant::selected_row`). 라벨·칩·버튼 flex:none, 이름 칸만 준다 |
 | `FilePickerFrame filters` prop · `overlays-windows.jsx` "File-type filter chip — a read-only readout" | `Variant::filtered` · `Variant::sized` · `draw_filter_chip`(Spec `filepicker-filter-chip`) | 4 프레임(필터 없음 · 하나 · 둘+저장 · 여섯=상한 말줄임), 디자인과 같은 480×300 카드. 읽기 전용 표시라 chevron·채움·hover 없음, 툴팁 "Showing …" |
 | footer overwrite line(`save="picked"`) | `overwrite_line` · `footer_height` | alertTriangle + 이름 mono · `accent-warning-raised`. footer 가 커지면 본문이 준다 |
 | `FilePickerFrame mode/save` prop | `Variant` · `Mode` · `SaveState` | Save file 제목 · Save/Overwrite 라벨 · 저장 모드 선택 행 |
@@ -1275,13 +1275,15 @@ C 프레임보더) 중 **A 배지가 사용자 확정**되었다. 본체와 갤�
 | `FpCrumbMenu`(`crumbMenu` prop) | `Variant::crumb_menu_open` · `path_bar::crumb_menu` | 숨긴 조상을 경로 순서로, `folder` 글리프 + `menu_item`. 틀은 `menu-bg` · `menu-border` · `menu-radius`, 안쪽 여백 `popup-content-margin`. 폭은 가장 긴 줄에 틀(여백·테두리)을 더한 바깥 폭을 `fp-crumb-menu-min-width`(180)~`fp-crumb-menu-max-width`(320) 밴드에 맞춘다(본체 `menu_width` 와 같은 식). 첫 줄 `menu-item-bg-hover` |
 | `overlays-windows.jsx` "Path bar — what gives way when the folded path still doesn't fit" | `draw_path_fit`(Spec `filepicker-path-bar`) | 측정 카드 폭 사다리 — longtwo 640 · 520 · 440 · 360 · 320, longroot 320(높이 300). 라벨은 그 카드 폭에서 `plan` 이 돌려준 단계 + Meta + Do/Don't + Note. 디자인의 "stage diagram (forced)" 카드는 접힘을 강제한 그림이라 옮기지 않는다 |
 | `overlays-windows.jsx` "Save mode — one confirm, in the footer" | `draw_save_mode` | 4 프레임(new · picked · edited · deep) + Meta + Note |
+| `FilePickerFrame pick` · `focusRow` · `hoverRow` prop | `Variant::picked` · `Variant::row_focus` · `Variant::row_hover` | `pick` 은 모든 모드의 선택 행을 바꾸고(`Some(None)` 은 선택 없음), 열기 모드 이름 칸 · 폴더 줄 · 폴더 모드 경로 · 안내도 그 행을 읽는다. 저장 모드 이름 칸 · Overwrite 는 `SaveState` 를 따른다 |
+| `overlays-windows.jsx` Spec `row-focus-and-list-keys` | `draw_row_focus`(`file_picker/row_focus.rs`) | Stage 2 카드(열기 · 저장) + View 8: `fp-row-focus-row-states`(여덟 행 상태 × 폴더 · 파일 상자, Mocha · Latte 바탕) · `entry` · `first-up` · `pointer` · `after-click` · `save-space-folder` · `folder-skip` · `folder-clear` + Meta(spec 표 중 그림에 닿는 줄) |
 
 본체 `src/adapters/ui/popup/file_picker.rs::entry_row`도 `FpRow`의 오른쪽 고정 열과
 이름 가변 열 배치를 따른다. 고정 열 폭은 갤러리와 본체 모두 `fp_size_col_width()`·`fp_modified_col_width()`를 읽는다. 이름은 남은 열 폭에서 egui 단일 행 galley로 말줄임하며,
 선택·확정에 사용하는 원래 이름은 보존한다.
 
 **갤러리 vs 디자인 차이**: 긴 파일명 말줄임은 jsx `text-overflow:ellipsis`(CSS 네이티브)
-대신 `elide()`(문자 단위 폭 측정 후 컷 + `…`)로 근사한다. 브레드크럼은 jsx 처럼 `elide`·`single` prop 으로
+대신 `elide()`(문자 단위 폭 측정 후 컷 + `…`)로 근사한다. `FpRow` 의 폴더 이름 굵기 500 은 갤러리·본체 모두 보통 굵기로 그린다(글꼴 등록에 중간 굵기 글꼴이 없다). 행 상태 상자는 jsx `overflow:hidden` 처럼 둥근 모서리로 행 바탕을 자르지 않고 테두리 안쪽에 행을 둔다. 브레드크럼은 jsx 처럼 `elide`·`single` prop 으로
 접힘 단계를 정하지 않고 본체와 같은 `crumb_alloc::plan` 이 카드 폭으로 정한다. 카드 라벨은 갤러리가 실제로 그린
 단계를 적는다. `…` 메뉴 예제는 깊은 경로가 접히는 피커 바닥 폭(`fp-popup-min-width`, 320×420) 카드에 둔다. 갤러리
 카드는 크기가 고정이라 직전 단계(히스테리시스)를 넘기지 않는다. 디자인 · 갤러리 · 본체의 path bar 는 모두 Up 버튼을 두고,

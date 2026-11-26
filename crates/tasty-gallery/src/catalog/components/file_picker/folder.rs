@@ -18,12 +18,7 @@ pub(super) enum Language {
 }
 
 pub(super) fn props(v: Variant) -> FolderPickerFooter<'static> {
-    let Mode::Folder {
-        selected,
-        lang,
-        long,
-    } = v.mode
-    else {
+    let Mode::Folder { lang, long, .. } = v.mode else {
         unreachable!()
     };
     let (label, confirm, cancel, current, picked) = match lang {
@@ -49,21 +44,26 @@ pub(super) fn props(v: Variant) -> FolderPickerFooter<'static> {
             "{name} を開くにはダブルクリックします。",
         ),
     };
-    let name = "configs";
+    let name = v.selected_row();
+    let selected = name.is_some();
     FolderPickerFooter {
         label,
         confirm,
         cancel,
         hint: if selected { picked } else { current },
-        selected: selected.then_some(name),
+        selected: name,
         path: if long {
             if selected {
                 "/Users/maya/long-folder-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/current-folder-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/configs"
             } else {
                 "/Users/maya/long-folder-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/current-folder-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
             }
-        } else if selected {
-            "/Users/maya/projects/configs"
+        } else if let Some(name) = name {
+            match name {
+                "logs" => "/Users/maya/projects/logs",
+                "node_modules" => "/Users/maya/projects/node_modules",
+                _ => "/Users/maya/projects/configs",
+            }
         } else {
             "/Users/maya/projects"
         },

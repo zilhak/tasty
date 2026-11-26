@@ -263,7 +263,7 @@ fn 시안에서_옮긴_결정_specimen_은_id_충돌_없이_렌더된다() {
         components_settled, foundations_settled, layouts_settled, overlays_settled, plugins_settled,
     };
     let theme = tasty_themes::mocha_fallback();
-    let specs: [(&str, SpecFn); 22] = [
+    let specs: [(&str, SpecFn); 23] = [
         ("shadows", foundations_settled::draw_shadows),
         ("half-pixel", foundations_settled::draw_half_pixel),
         ("tint", foundations_settled::draw_tint),
@@ -276,6 +276,7 @@ fn 시안에서_옮긴_결정_specimen_은_id_충돌_없이_렌더된다() {
         ("profile-form", remote::draw_profile_form),
         ("generic-passkey", remote::draw_generic_passkey_forms),
         ("path-fit", file_picker::draw_path_fit),
+        ("row-focus", file_picker::draw_row_focus),
         ("plugin-identity", overlays_settled::draw_plugin_identity),
         ("diff-toolbar", overlays_settled::draw_diff_toolbar),
         ("drag-handles", overlays_settled::draw_drag_handles),

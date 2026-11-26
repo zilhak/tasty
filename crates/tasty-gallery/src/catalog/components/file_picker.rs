@@ -9,6 +9,10 @@ mod indicator;
 mod indicator_tests;
 mod path_bar;
 mod path_fit;
+mod row;
+mod row_focus;
+#[cfg(test)]
+mod row_focus_tests;
 #[cfg(test)]
 mod states_tests;
 
@@ -19,13 +23,15 @@ use indicator::Indicator;
 pub use indicator::draw_remote_indicator;
 use path_bar::PathKind;
 pub use path_fit::draw_path_fit;
+use row::{RowState, row};
+pub use row_focus::draw_row_focus;
 
 use tasty_egui_theme::overlay_edge::BoxEdge;
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
-use tasty_ui_widgets::{CenterState, ControlSize, IconButton, IconButtonVariant, checkbox};
+use tasty_ui_widgets::{CenterState, ControlSize, IconButton, IconButtonVariant};
 
-use crate::catalog::icons::{self, MockGlyph};
+use crate::catalog::icons;
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 use crate::catalog::widgets::dialog as kit;
 
@@ -139,6 +145,10 @@ const FILES: &[Row] = &[
     },
 ];
 
+fn is_folder(name: &str) -> bool {
+    FILES.iter().any(|f| f.folder && f.name == name)
+}
+
 // 디자인 multi 상태 checked seed (README.md / package.json / pipeline.yaml).
 const MULTI_PICKED: &[&str] = &["README.md", "package.json", "pipeline.yaml"];
 
@@ -205,6 +215,13 @@ struct Variant {
     /// 카드 크기 — 디자인 `FilePickerFrame w`/`h`.
     w: LogicalPx,
     h: LogicalPx,
+    /// 고른 행 — 디자인 `FilePickerFrame pick`. `None` 이면 모드의 기본 선택, `Some(None)` 이면 선택 없음.
+    /// 저장 모드에서는 선택만 바꾸고 이름 칸·Overwrite 는 `SaveState` 를 따른다.
+    pick: Option<Option<&'static str>>,
+    /// 행 포커스 — 디자인 `FilePickerFrame focusRow`.
+    focus_row: Option<&'static str>,
+    /// 포인터가 올라간 행 — 디자인 `FilePickerFrame hoverRow`.
+    hover_row: Option<&'static str>,
 }
 
 impl Variant {
@@ -226,6 +243,9 @@ impl Variant {
             filters: &[],
             w: FRAME_W,
             h: FRAME_H,
+            pick: None,
+            focus_row: None,
+            hover_row: None,
         }
     }
 
@@ -247,6 +267,9 @@ impl Variant {
             filters: &[],
             w: FRAME_W,
             h: FRAME_H,
+            pick: None,
+            focus_row: None,
+            hover_row: None,
         }
     }
 
@@ -291,6 +314,51 @@ impl Variant {
         self.w = w;
         self.h = h;
         self
+    }
+
+    /// 고른 행을 정한다 — 디자인 `pick`. 키 이동이나 Space 가 남긴 선택이다.
+    const fn picked(mut self, pick: Option<&'static str>) -> Self {
+        self.pick = Some(pick);
+        self
+    }
+
+    /// 행 포커스를 둔다 — 디자인 `focusRow`.
+    const fn row_focus(mut self, row: &'static str) -> Self {
+        self.focus_row = Some(row);
+        self
+    }
+
+    /// 포인터를 행 위에 둔다 — 디자인 `hoverRow`.
+    const fn row_hover(mut self, row: &'static str) -> Self {
+        self.hover_row = Some(row);
+        self
+    }
+
+    /// 선택된 행. `pick` 이 없으면 모드의 기본 선택이다(열기 README.md, 저장 `SaveState`, 폴더 configs).
+    fn selected_row(self) -> Option<&'static str> {
+        if let Some(pick) = self.pick {
+            return pick;
+        }
+        if self.folder_sel {
+            return Some(FOLDER_SEL);
+        }
+        match self.mode {
+            Mode::Save(save) => save.selected(),
+            Mode::Folder { selected, .. } => selected.then_some(FOLDER_SEL),
+            Mode::Open => (!self.multi).then_some("README.md"),
+        }
+    }
+
+    /// 열기·저장 모드에서 고른 폴더 — 디자인 `selFolder`. 폴더 안내 줄이 이 이름을 쓴다.
+    fn selected_folder(self) -> Option<&'static str> {
+        if self.folder_sel {
+            return Some(FOLDER_SEL);
+        }
+        match (self.mode, self.pick) {
+            (Mode::Folder { .. }, _) => None,
+            (_, Some(Some(name))) if is_folder(name) => Some(name),
+            _ => None,
+        }
     }
 
     fn overwrite(self) -> bool {
@@ -429,7 +497,7 @@ pub fn draw_states(ui: &mut egui::Ui, theme: &Theme) {
     spec::note(
         ui,
         theme,
-        "The loaded example marks pipeline.yaml with a keyboard focus ring, separate from the selected row background. The multi-select example shows checkboxes, joined names and a selected count; it does not perform file operations.",
+        "The multi-select example shows checkboxes, joined names and a selected count; it does not perform file operations.",
     );
 }
 
@@ -846,130 +914,6 @@ fn list_header(ui: &mut egui::Ui, theme: &Theme, w: LogicalPx, multi: bool) {
     );
 }
 
-struct RowState {
-    multi: bool,
-    checked: bool,
-    selected: bool,
-    focus: bool,
-    inert: bool,
-    file_tooltip: &'static str,
-}
-fn row(ui: &mut egui::Ui, theme: &Theme, r: &Row, state: RowState) {
-    let RowState {
-        multi,
-        checked,
-        selected,
-        focus,
-        inert,
-        file_tooltip,
-    } = state;
-    let w = ui.available_width();
-    let h = row_height(theme);
-    let (rect, response) = ui.allocate_exact_size(egui::vec2(w, h.value()), egui::Sense::hover());
-    if inert {
-        response.on_hover_text(file_tooltip);
-    }
-    if selected {
-        ui.painter()
-            .rect_filled(rect, 0.0, theme.surface_active().to_egui());
-        let bar = egui::Rect::from_min_size(
-            rect.min,
-            egui::vec2(theme.selection_edge_width.value(), rect.height()),
-        );
-        ui.painter()
-            .rect_filled(bar, 0.0, theme.accent_primary().to_egui());
-    }
-    if focus {
-        // outlineOffset -1 흉내 — rect 안쪽 1px.
-        ui.painter().rect_stroke(
-            rect.shrink(theme.border_width.value() * 0.5),
-            0.0,
-            egui::Stroke::new(theme.border_width.value(), theme.accent_primary().to_egui()),
-            egui::StrokeKind::Inside,
-        );
-    }
-    let c = cols(rect, theme, multi);
-    let glyph_size = theme.icon_glyph_size_md.value();
-    if let Some(cx) = c.checkbox_x {
-        let mut chk = checked;
-        let cb_rect = egui::Rect::from_min_size(
-            egui::pos2(cx.value(), rect.center().y - glyph_size * 0.5),
-            egui::vec2(glyph_size, glyph_size),
-        );
-        let mut child = ui.new_child(egui::UiBuilder::new().max_rect(cb_rect));
-        checkbox(
-            &mut child,
-            theme,
-            &mut chk,
-            "",
-            true,
-            tasty_ui_widgets::Ground::Panel,
-        );
-    }
-    let (icon_glyph, icon_color): (MockGlyph, egui::Color32) = if r.folder {
-        (
-            icons::FOLDER,
-            // kit FpRow 쉬는·선택 칸. hover 칸(accent-primary · accent-primary-on-active)은 이 표본이 그리지 않는다.
-            theme.accent_primary_raised().to_egui(),
-        )
-    } else {
-        (
-            icons::FILE,
-            // kit FpRow 쉬는·선택 칸은 text-muted 다. hover 칸은 이 표본이 그리지 않는다.
-            if inert {
-                theme.fp_folder_file_fg()
-            } else {
-                theme.text_muted()
-            }
-            .to_egui(),
-        )
-    };
-    let ir = egui::Rect::from_min_size(
-        egui::pos2(c.icon_x.value(), rect.center().y - glyph_size * 0.5),
-        egui::vec2(glyph_size, glyph_size),
-    );
-    icon_glyph.image(glyph_size, icon_color).paint_at(ui, ir);
-    let name_color = if inert {
-        theme.fp_folder_file_fg()
-    } else if selected {
-        theme.text_on_active()
-    } else {
-        theme.text_secondary()
-    };
-    let name_font = egui::FontId::proportional(theme.font_size_body.value());
-    let name_text = elide(ui, r.name, name_font.clone(), c.name_right - c.name_left);
-    ui.painter().text(
-        egui::pos2(c.name_left.value(), rect.center().y),
-        egui::Align2::LEFT_CENTER,
-        name_text,
-        name_font,
-        name_color.to_egui(),
-    );
-    let mono_caption = egui::FontId::monospace(theme.font_size_caption.value());
-    let muted = if inert {
-        theme.fp_folder_file_fg()
-    } else if selected {
-        theme.text_on_active()
-    } else {
-        theme.text_muted()
-    }
-    .to_egui();
-    ui.painter().text(
-        egui::pos2(c.size_right.value(), rect.center().y),
-        egui::Align2::RIGHT_CENTER,
-        r.size,
-        mono_caption.clone(),
-        muted,
-    );
-    ui.painter().text(
-        egui::pos2(c.mod_right.value(), rect.center().y),
-        egui::Align2::RIGHT_CENTER,
-        r.modified,
-        mono_caption,
-        muted,
-    );
-}
-
 fn body(ui: &mut egui::Ui, theme: &Theme, v: Variant, body_h: LogicalPx) {
     let multi = v.multi;
     match v.state {
@@ -989,21 +933,18 @@ fn body(ui: &mut egui::Ui, theme: &Theme, v: Variant, body_h: LogicalPx) {
             );
             col.set_clip_rect(rect.intersect(ui.clip_rect()));
             col.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
+            let inert_files = matches!(v.mode, Mode::Folder { .. });
             for f in FILES {
-                let (selected, focus) = if v.folder_sel {
-                    (f.name == FOLDER_SEL, false)
-                } else {
-                    match v.mode {
-                        Mode::Save(save) => (save.selected() == Some(f.name), false),
-                        Mode::Folder {selected, ..} => (selected && f.name == FOLDER_SEL, false),
-                        Mode::Open => (
-                            !multi && f.name == "README.md",
-                            !multi && f.name == "pipeline.yaml",
-                        ),
-                    }
+                let state = RowState {
+                    multi,
+                    checked: multi && MULTI_PICKED.contains(&f.name),
+                    selected: v.selected_row() == Some(f.name),
+                    focus: v.focus_row == Some(f.name),
+                    hover: v.hover_row == Some(f.name),
+                    inert: inert_files && !f.folder,
+                    file_tooltip: folder::file_tooltip(v),
                 };
-                let checked = multi && MULTI_PICKED.contains(&f.name);
-                row(&mut col, theme, f, RowState {multi, checked, selected, focus, inert: matches!(v.mode, Mode::Folder {..}) && !f.folder, file_tooltip: folder::file_tooltip(v)});
+                row(&mut col, theme, f, state);
             }
         }
         // 로딩·연결 끊김은 디자인 정본 `gallery/parts/overlay-frames.jsx` 의 `FilePickerFrame` 처럼 호스트가
