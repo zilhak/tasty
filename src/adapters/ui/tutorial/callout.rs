@@ -3,7 +3,7 @@
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
-use tasty_ui_widgets::{Button, ButtonVariant, ControlSize};
+use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, Ground};
 
 use crate::i18n::t;
 
@@ -281,9 +281,11 @@ pub fn draw_callout(
                             action = CalloutClick::Practice;
                         }
 
+                        // 말풍선은 raised 바탕이라 ghost 글자도 raised 잉크로 그린다.
                         if Button::new(t("tutorial.btn_skip"))
                             .variant(ButtonVariant::Ghost)
                             .size(ControlSize::Sm)
+                            .ground(Ground::Raised)
                             .show(ui, theme)
                             .clicked()
                         {
@@ -488,6 +490,111 @@ mod tests {
                 );
                 assert!(screen.contains_rect(rect), "{title}: {rect:?}");
             }
+        }
+    }
+
+    fn latte() -> Theme {
+        let file = tasty_themes::ThemeFile::parse(tasty_themes::LATTE_TOML_TEXT).expect("latte");
+        let (partial, is_light) = file.to_partial();
+        let mut colors = tasty_themes::mocha_fallback_colors();
+        colors.apply_partial(&partial);
+        Theme::with_colors(colors, is_light.unwrap_or(true))
+    }
+
+    /// WCAG 대비. 두 색 모두 불투명이다.
+    fn contrast(a: egui::Color32, b: egui::Color32) -> f64 {
+        let lum = |c: egui::Color32| {
+            let lin = |v: u8| {
+                let s = f64::from(v) / 255.0;
+                if s <= 0.04045 {
+                    s / 12.92
+                } else {
+                    ((s + 0.055) / 1.055).powf(2.4)
+                }
+            };
+            0.2126 * lin(c.r()) + 0.7152 * lin(c.g()) + 0.0722 * lin(c.b())
+        };
+        let (a, b) = (lum(a), lum(b));
+        (a.max(b) + 0.05) / (a.min(b) + 0.05)
+    }
+
+    /// 말풍선을 그려 칠해진 글자와 그 색을 모은다. 새 Area는 첫 프레임에 크기만 재므로 두 번 그린다.
+    fn painted_texts(theme: &Theme) -> Vec<(String, egui::Color32)> {
+        let ctx = egui::Context::default();
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0));
+        let mut texts = Vec::new();
+        for _ in 0..2 {
+            let out = ctx.run(
+                egui::RawInput {
+                    screen_rect: Some(screen),
+                    ..Default::default()
+                },
+                |ctx| {
+                    let size = measure_callout(ctx, theme, "Title", "Body", screen.size());
+                    let placement = place_callout(
+                        egui::Rect::from_center_size(screen.center(), egui::Vec2::ZERO),
+                        size,
+                        screen,
+                        theme.spacing_md.value(),
+                        theme.spacing_sm.value(),
+                    );
+                    draw_callout(
+                        ctx,
+                        theme,
+                        placement,
+                        CalloutProps {
+                            step: 2,
+                            total: 6,
+                            title: "Title",
+                            body: "Body",
+                            first: false,
+                            last: false,
+                            ready: true,
+                            prepare: false,
+                            size,
+                            keyboard_focus: false,
+                            anchored: true,
+                        },
+                    );
+                },
+            );
+            fn collect(shape: &egui::Shape, out: &mut Vec<(String, egui::Color32)>) {
+                match shape {
+                    egui::Shape::Vec(v) => v.iter().for_each(|s| collect(s, out)),
+                    egui::Shape::Text(t) => {
+                        let section = t.galley.job.sections.first().map(|s| s.format.color);
+                        let color = t.override_text_color.unwrap_or(match section {
+                            Some(c) if c != egui::Color32::PLACEHOLDER => c,
+                            _ => t.fallback_color,
+                        });
+                        out.push((t.galley.text().to_owned(), color));
+                    }
+                    _ => {}
+                }
+            }
+            texts.clear();
+            for clipped in &out.shapes {
+                collect(&clipped.shape, &mut texts);
+            }
+        }
+        texts
+    }
+
+    #[test]
+    fn topics_ghost_reads_the_raised_ink_and_clears_text_contrast() {
+        crate::i18n::init("en");
+        let topics = t("tutorial.btn_skip");
+        let latte = latte();
+        // Latte에서 panel 잉크와 raised 잉크가 갈려야 이 시험이 바탕을 가린다.
+        assert_ne!(latte.button_ghost_fg(), latte.button_ghost_raised_fg());
+        for (name, theme) in [("mocha", tasty_themes::mocha_fallback()), ("latte", latte)] {
+            let texts = painted_texts(&theme);
+            let drawn: Vec<_> = texts.iter().filter(|(s, _)| s == topics).collect();
+            assert_eq!(drawn.len(), 1, "{name}: {texts:?}");
+            let ink = drawn[0].1;
+            assert_eq!(ink, theme.button_ghost_raised_fg().to_egui(), "{name}");
+            let ratio = contrast(ink, theme.surface_raised().to_egui());
+            assert!(ratio >= 4.5, "{name}: {topics} {ratio:.2}:1");
         }
     }
 }
