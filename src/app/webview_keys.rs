@@ -254,12 +254,12 @@ pub(crate) fn consume_native_focus_requests(
     core: &crate::core::CoreState,
     bridge: &crate::webview::WebViewKeyBridge,
 ) -> bool {
-    let requests = bridge.take_focus_requests();
-    if requests.is_empty() {
+    let inputs = bridge.take_inputs();
+    if inputs.is_empty() {
         return false;
     }
     let mut changed = false;
-    for surface_id in requests {
+    for crate::webview::NativeInput::Press { surface_id, .. } in inputs {
         crate::app::webview_sync::key_release::note_native_webview_focus(state, surface_id);
         changed |= state.focus_surface_by_id(core, surface_id);
     }

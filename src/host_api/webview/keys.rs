@@ -319,8 +319,31 @@ pub trait WebViewKeySink {
         mods: ModifiersState,
     ) -> bool;
 
-    /// native 클릭 또는 포커스 관측을 알린다. 실제 모델 선택 변경은 host가 판단한다.
+    /// 그 WebView 의 실제 버튼 누름을 알린다(Linux `button-press-event`, macOS `mouseDown:`, Windows 버튼 메시지).
+    /// 실제 모델 선택 변경은 host가 판단한다.
+    fn note_press(&self, surface_id: u32);
+
+    /// 누름 없는 포커스 획득(Windows controller `GotFocus`, macOS `becomeFirstResponder`)을 알린다. Linux 는 누름만 알린다.
+    #[cfg(any(windows, target_os = "macos", test))]
     fn note_focus(&self, surface_id: u32);
+}
+
+/// native 누름 알림의 종류.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PressKind {
+    /// 그 WebView 의 실제 버튼 누름([`WebViewKeySink::note_press`]).
+    Click,
+    /// 누름 없는 포커스 획득([`WebViewKeySink::note_focus`]).
+    #[cfg(any(windows, target_os = "macos", test))]
+    Focus,
+}
+
+/// 다리가 도착 순서대로 쌓는 native 입력 한 건. host 가 그 순서로 소비한다
+/// (`webview_keys::consume_native_focus_requests`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NativeInput {
+    /// 그 surface 의 누름 또는 포커스 획득.
+    Press { surface_id: u32, kind: PressKind },
 }
 
 /// 창의 WebView들이 Rc로 공유한다. RefCell 상태는 GUI 스레드에서만 접근해야 한다.
@@ -334,7 +357,8 @@ pub struct WebViewKeyBridge {
     pending: RefCell<Vec<WebViewKeyEvent>>,
     /// 다음에 가져갈 키의 일련번호.
     next_key_id: std::cell::Cell<u64>,
-    focus_requests: RefCell<Vec<u32>>,
+    /// native 입력의 도착 순서 대기열([`NativeInput`]).
+    inputs: RefCell<std::collections::VecDeque<NativeInput>>,
     /// host 모달이 열려 있다. 모달을 열고 닫을 때 바로 바꾼다.
     modal_open: std::cell::Cell<bool>,
     /// 창의 키 쥘 곳(`key_focus::webview_key_holder_of`). 프레임 동기화에서 바꾼다.
@@ -364,13 +388,23 @@ impl WebViewKeyBridge {
         std::mem::take(&mut *self.pending.borrow_mut())
     }
 
-    /// 소비하지 않은 native 포커스 알림이 있는지.
+    /// 소비하지 않은 native 입력이 있는지.
     pub fn has_focus_requests(&self) -> bool {
-        !self.focus_requests.borrow().is_empty()
+        !self.inputs.borrow().is_empty()
     }
 
-    pub fn take_focus_requests(&self) -> Vec<u32> {
-        std::mem::take(&mut *self.focus_requests.borrow_mut())
+    /// 대기열의 native 입력을 도착 순서대로 꺼낸다.
+    pub fn take_inputs(&self) -> Vec<NativeInput> {
+        self.inputs.borrow_mut().drain(..).collect()
+    }
+
+    /// 누름 알림을 대기열 끝에 넣는다. 바로 앞 입력과 같으면 넣지 않는다.
+    fn push_press(&self, surface_id: u32, kind: PressKind) {
+        let press = NativeInput::Press { surface_id, kind };
+        let mut q = self.inputs.borrow_mut();
+        if q.back() != Some(&press) {
+            q.push_back(press);
+        }
     }
 
     pub fn set_modal_open(&self, open: bool) {
@@ -524,11 +558,13 @@ impl WebViewKeySink for WebViewKeyBridge {
         self.claims(surface_id, &key, mods)
     }
 
+    fn note_press(&self, surface_id: u32) {
+        self.push_press(surface_id, PressKind::Click);
+    }
+
+    #[cfg(any(windows, target_os = "macos", test))]
     fn note_focus(&self, surface_id: u32) {
-        let mut q = self.focus_requests.borrow_mut();
-        if q.last() != Some(&surface_id) {
-            q.push(surface_id);
-        }
+        self.push_press(surface_id, PressKind::Focus);
     }
 }
 
@@ -1036,7 +1072,7 @@ mod tests {
         let bridge = WebViewKeyBridge::new();
         bridge.set_policy(edit_policy(&[(WebViewEditAction::Paste, &["alt+v"])]));
         bridge.set_key_holder(Some(11));
-        bridge.note_focus(12);
+        bridge.note_press(12);
         assert!(crate::app::webview_keys::consume_native_focus_requests(
             &mut state,
             engine.core,
@@ -1068,7 +1104,7 @@ mod tests {
         crate::system_tray::pump_events_each(
             || !queue.borrow().is_empty(),
             || match queue.borrow_mut().pop_front() {
-                Some(NativeEvent::Click(sid)) => bridge.note_focus(sid),
+                Some(NativeEvent::Click(sid)) => bridge.note_press(sid),
                 Some(NativeEvent::EditKey(sid)) => {
                     judged.push((sid, bridge.blocks_edit_key(sid, &ch("v"), &phys, alt_mod())));
                 }
@@ -1128,14 +1164,25 @@ mod tests {
         assert_eq!(state.focused_surface_id(&engine.read()), Some(11));
     }
 
+    /// 누름 알림은 도착 순서대로 쌓이고, 바로 앞과 같은 알림(같은 surface·종류)만 합친다. 누름과 포커스 획득은 따로
+    /// 남는다.
     #[test]
     fn focus_requests_dedupe_consecutive() {
         let bridge = WebViewKeyBridge::new();
+        bridge.note_press(3);
+        bridge.note_press(3);
         bridge.note_focus(3);
-        bridge.note_focus(3);
-        bridge.note_focus(5);
-        assert_eq!(bridge.take_focus_requests(), vec![3, 5]);
-        assert!(bridge.take_focus_requests().is_empty());
+        bridge.note_press(5);
+        let press = |surface_id, kind| NativeInput::Press { surface_id, kind };
+        assert_eq!(
+            bridge.take_inputs(),
+            vec![
+                press(3, PressKind::Click),
+                press(3, PressKind::Focus),
+                press(5, PressKind::Click),
+            ]
+        );
+        assert!(bridge.take_inputs().is_empty());
     }
 
     /// 새로고침은 수식키와 관계없이 가져가고, 페이지 예약 조합과 같으면 페이지에 남긴다.

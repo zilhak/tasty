@@ -149,7 +149,7 @@ pub(crate) fn note_webview_button(
 ) {
     if press {
         click.press(now);
-        sink.note_focus(surface_id);
+        sink.note_press(surface_id);
     } else {
         click.release(now);
     }
@@ -177,6 +177,13 @@ mod tests {
 
     /// Given 다른 surface 가 키 쥘 곳인 창, When WebView 7 로 가는 왼쪽 버튼 누름이 오면, Then 그 누름이 surface 7 의
     /// native 포커스 알림을 낸다(Windows 메시지 훅). 뗌만으로는 알림이 없다. 같은 WebView 를 다시 눌러도 알림이 또 온다.
+    fn click_7() -> crate::host_api::webview::keys::NativeInput {
+        crate::host_api::webview::keys::NativeInput::Press {
+            surface_id: 7,
+            kind: crate::host_api::webview::keys::PressKind::Click,
+        }
+    }
+
     #[test]
     fn a_button_press_on_a_webview_notes_its_focus_and_a_release_does_not() {
         let bridge = crate::host_api::webview::keys::WebViewKeyBridge::default();
@@ -184,17 +191,14 @@ mod tests {
         let g = ClickGesture::default();
         let t = Instant::now();
         note_webview_button(&g, &bridge, 7, false, t);
-        assert!(
-            bridge.take_focus_requests().is_empty(),
-            "뗌만으로는 알림이 없다"
-        );
+        assert!(bridge.take_inputs().is_empty(), "뗌만으로는 알림이 없다");
         note_webview_button(&g, &bridge, 7, true, t + ms(10));
         note_webview_button(&g, &bridge, 7, false, t + ms(60));
-        assert_eq!(bridge.take_focus_requests(), [7]);
+        assert_eq!(bridge.take_inputs(), [click_7()]);
         note_webview_button(&g, &bridge, 7, true, t + ms(500));
         assert_eq!(
-            bridge.take_focus_requests(),
-            [7],
+            bridge.take_inputs(),
+            [click_7()],
             "이미 포커스를 가진 WebView 를 다시 눌러도 알림이 온다"
         );
         assert!(g.take(t + ms(520), Some(true)), "누름은 제스처도 남긴다");

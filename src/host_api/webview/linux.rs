@@ -451,7 +451,7 @@ impl PlatformWebView {
             let edit_guard = edit_guard.clone();
             webview.connect_button_press_event(move |_wv, _ev| {
                 edit_guard.bump();
-                bridge.note_focus(surface_id);
+                bridge.note_press(surface_id);
                 gtk::glib::Propagation::Proceed
             });
         }

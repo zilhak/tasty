@@ -540,7 +540,7 @@ define_class!(
             let ivars = self.ivars();
             tracing::debug!(surface_id = ivars.surface_id, "WebView OS mouse down");
             ivars.click.press(Instant::now());
-            ivars.key_bridge.note_focus(ivars.surface_id);
+            ivars.key_bridge.note_press(ivars.surface_id);
             // SAFETY: main thread AppKit. super 구현에 위임.
             unsafe { msg_send![super(self), mouseDown: event] }
         }
