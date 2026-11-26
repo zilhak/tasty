@@ -193,6 +193,53 @@ fn tint_border_accessors_match_the_design_mix() {
     ]);
 }
 
+/// DAG block 티어 채움 `dag-*-block-bg`(상태색 55% + surface-raised).
+#[test]
+fn dag_block_fill_accessors_match_the_design_mix() {
+    assert_accessors_match(&[
+        (
+            "component.dag-status-waiting-block-bg",
+            Theme::dag_status_waiting_block_bg,
+        ),
+        (
+            "component.dag-status-ready-block-bg",
+            Theme::dag_status_ready_block_bg,
+        ),
+        (
+            "component.dag-status-running-block-bg",
+            Theme::dag_status_running_block_bg,
+        ),
+        (
+            "component.dag-status-succeeded-block-bg",
+            Theme::dag_status_succeeded_block_bg,
+        ),
+        (
+            "component.dag-status-failed-block-bg",
+            Theme::dag_status_failed_block_bg,
+        ),
+        (
+            "component.dag-status-cancelled-block-bg",
+            Theme::dag_status_cancelled_block_bg,
+        ),
+        (
+            "component.dag-status-skipped-block-bg",
+            Theme::dag_status_skipped_block_bg,
+        ),
+        (
+            "component.dag-status-unknown-block-bg",
+            Theme::dag_status_unknown_block_bg,
+        ),
+        (
+            "component.dag-status-partially-failed-block-bg",
+            Theme::dag_status_partially_failed_block_bg,
+        ),
+        (
+            "component.dag-phase-awaiting-block-bg",
+            Theme::dag_phase_awaiting_block_bg,
+        ),
+    ]);
+}
+
 /// 시험 입력 `sky 36%, transparent`의 기대 알파(0.36 × 255 반올림). 제품 계수가 아니라 계산기 시험의 기대값이다.
 const SKY_36_ALPHA: u8 = 92;
 
@@ -278,8 +325,12 @@ fn design_mix_with(path: &str, mode: ThemeMode, vars: &[(&str, HexColor)]) -> He
 
 /// 사용자 테마의 반투명 강조색 `[accent] yellow`(알파 128).
 const TRANSLUCENT_YELLOW: &str = "[accent]\nyellow = \"#f9e2af80\"\n";
+/// 사용자 테마의 반투명 강조색 `[accent] sky`(알파 128).
+const TRANSLUCENT_SKY: &str = "[accent]\nsky = \"#89dceb80\"\n";
 /// 알파 128 강조색을 `color-mix(… 36%, transparent)`로 낮춘 기대 알파(128 × 0.36 반올림).
 const HALF_ALPHA_AT_TINT_BORDER: u8 = 46;
+/// 알파 128 강조색 55%를 불투명 바탕에 섞은 기대 알파(128/255 × 0.55 + 0.45, × 255 반올림).
+const HALF_ALPHA_AT_BLOCK_FILL: u8 = 185;
 
 /// Tag 테두리는 반투명 강조색의 알파에 tint-border 비율을 곱한다(덮어쓰지 않는다).
 #[test]
@@ -295,4 +346,95 @@ fn tint_border_multiplies_a_translucent_accent_alpha() {
     assert_eq!(expected, accent.with_alpha(HALF_ALPHA_AT_TINT_BORDER));
     assert_eq!(th.tint_warning_border(), expected, "tint-warning-border");
     assert_eq!(th.tag_warning_border(), expected, "tag-warning-border");
+}
+
+/// DAG block 채움은 반투명 강조색의 알파를 color-mix 규칙대로 섞는다(바탕 알파를 그대로 쓰지 않는다).
+#[test]
+fn dag_block_fill_mixes_a_translucent_accent_alpha() {
+    let th = user_theme(MOCHA_TOML_TEXT, false, TRANSLUCENT_SKY);
+    let accent = th.accent_info_raised();
+    let surface = th.surface_raised();
+    assert_eq!(accent.a(), 128, "the user accent must stay translucent");
+    assert_eq!(surface.a(), u8::MAX, "the block ground is opaque");
+    let expected = design_mix_with(
+        "component.dag-status-ready-block-bg",
+        ThemeMode::Mocha,
+        &[("accent-info-raised", accent), ("surface-raised", surface)],
+    );
+    assert_eq!(expected.a(), HALF_ALPHA_AT_BLOCK_FILL);
+    assert_eq!(th.dag_status_ready_block_bg(), expected);
+}
+
+/// 정본 식 계산이 정확히 .5에 떨어지는 사용자 테마. 앞은 sky(알파 221)로 Ready block R이 120.5, 뒤는
+/// sky(알파 1)와 surface0(알파 31)으로 알파가 14.5다. 정본 반올림은 둘 다 올린다.
+const HALF_STEP_SKY: &str = "[accent]\nsky = \"#bcdcebdd\"\n";
+const HALF_STEP_ALPHA: &str =
+    "[accent]\nsky = \"#89dceb01\"\n[palette]\nsurface0 = \"#3132441f\"\n";
+/// 위 두 입력의 정본 값(120.5 → 121, 14.5 → 15).
+const HALF_STEP_RED: u8 = 121;
+const HALF_STEP_ALPHA_BYTE: u8 = 15;
+/// 불투명 두 색에서 R이 정확히 23.5인 사용자 테마(sky R 1, surface0 R 51). f32 보간은 23으로 내린다.
+const HALF_STEP_OPAQUE: &str = "[accent]\nsky = \"#01dceb\"\n[palette]\nsurface0 = \"#333244\"\n";
+/// 투명 sky와 알파 10 surface0으로 알파가 정확히 4.5인 사용자 테마. f64 비율 0.55로 계산하면 4로 내린다.
+const HALF_STEP_FAINT_ALPHA: &str =
+    "[accent]\nsky = \"#89dceb00\"\n[palette]\nsurface0 = \"#3132440a\"\n";
+/// 위 두 입력의 정본 값(23.5 → 24, 4.5 → 5).
+const HALF_STEP_OPAQUE_RED: u8 = 24;
+const HALF_STEP_FAINT_ALPHA_BYTE: u8 = 5;
+/// 강조색과 바탕이 모두 완전히 투명한 사용자 테마.
+const CLEAR_SKY_AND_GROUND: &str =
+    "[accent]\nsky = \"#89dceb00\"\n[palette]\nsurface0 = \"#31324400\"\n";
+
+/// 사용자 테마의 Ready block 채움과 그 정본 식 계산값.
+fn ready_block_against_design(overlay: &str) -> (HexColor, HexColor) {
+    let th = user_theme(MOCHA_TOML_TEXT, false, overlay);
+    let expected = design_mix_with(
+        "component.dag-status-ready-block-bg",
+        ThemeMode::Mocha,
+        &[
+            ("accent-info-raised", th.accent_info_raised()),
+            ("surface-raised", th.surface_raised()),
+        ],
+    );
+    (th.dag_status_ready_block_bg(), expected)
+}
+
+/// 정본 계산이 .5에 떨어지는 채널과 알파도 정본처럼 올린다.
+#[test]
+fn dag_block_fill_rounds_half_steps_like_the_design_mix() {
+    let (got, expected) = ready_block_against_design(HALF_STEP_SKY);
+    assert_eq!(expected.r(), HALF_STEP_RED, "{}", expected.to_hex());
+    assert_eq!(got, expected, "red half step");
+    let (got, expected) = ready_block_against_design(HALF_STEP_ALPHA);
+    assert_eq!(expected.a(), HALF_STEP_ALPHA_BYTE, "{}", expected.to_hex());
+    assert_eq!(got, expected, "alpha half step");
+}
+
+/// 두 색이 불투명해도 정확한 .5 채널을 정본처럼 올린다(f32 보간은 23으로 내린다).
+#[test]
+fn dag_block_fill_rounds_an_opaque_half_step_like_the_design_mix() {
+    let (got, expected) = ready_block_against_design(HALF_STEP_OPAQUE);
+    assert_eq!(expected.r(), HALF_STEP_OPAQUE_RED, "{}", expected.to_hex());
+    assert_eq!(got, expected, "opaque red half step");
+}
+
+/// 정확히 4.5인 옅은 알파도 정본처럼 5로 올린다(f64 비율 0.55 계산은 4로 내린다).
+#[test]
+fn dag_block_fill_rounds_a_faint_alpha_half_step_like_the_design_mix() {
+    let (got, expected) = ready_block_against_design(HALF_STEP_FAINT_ALPHA);
+    assert_eq!(
+        expected.a(),
+        HALF_STEP_FAINT_ALPHA_BYTE,
+        "{}",
+        expected.to_hex()
+    );
+    assert_eq!(got, expected, "faint alpha half step");
+}
+
+/// 강조색과 바탕이 모두 완전히 투명하면 block 채움은 정본 식처럼 투명 검정이다.
+#[test]
+fn dag_block_fill_of_clear_inputs_is_transparent_black() {
+    let (got, expected) = ready_block_against_design(CLEAR_SKY_AND_GROUND);
+    assert_eq!(expected.to_hex(), "#00000000");
+    assert_eq!(got, expected);
 }

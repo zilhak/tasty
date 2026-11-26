@@ -235,11 +235,35 @@ pub const TINT_BORDER_ALPHA: f32 = 0.36;
 
 /// 불투명한 두 색의 CSS color-mix(in srgb)에 맞춰 RGB 채널을 보간한다.
 /// 반환값의 alpha는 b를 그대로 사용한다.
-#[allow(clippy::disallowed_methods)] // reason: 디자인 토큰 color-mix 식의 유일한 구현부
+#[allow(clippy::disallowed_methods)] // reason: 불투명 color-mix 식의 f32 구현부(정수로 알파까지 따르는 식은 mix_srgb_premultiplied)
 pub(crate) fn mix_srgb(a: HexColor, ratio: f32, b: HexColor) -> HexColor {
     let t = ratio.clamp(0.0, 1.0);
     let ch = |x: u8, y: u8| (f32::from(x) * t + f32::from(y) * (1.0 - t)).round() as u8;
     HexColor::from_rgba(ch(a.r(), b.r()), ch(a.g(), b.g()), ch(a.b(), b.b()), b.a())
+}
+
+/// CSS color-mix(in srgb)를 알파까지 따라 보간한다. 결과 알파는 두 알파를 비율대로 섞은 값이고, RGB는
+/// 알파를 곱한(premultiplied) 값을 보간한 뒤 결과 알파로 나눈다. 정본 식처럼 비율은 정수 퍼센트로 받고,
+/// 불투명·반투명 입력 모두 정수로 계산해 정확한 유리수 값을 반올림(.5는 올림)하므로 정본 값과 같다.
+/// f32로 보간하는 `mix_srgb`와 달리 불투명 입력의 정확한 .5도 올린다. 섞은 알파가 0이면 CSS처럼 투명 검정이다.
+#[allow(clippy::disallowed_methods)] // reason: 디자인 토큰 color-mix 식의 알파 규칙 구현부
+pub(crate) fn mix_srgb_premultiplied(a: HexColor, percent: u8, b: HexColor) -> HexColor {
+    let pa = u32::from(percent.min(100));
+    // 가중치 단위는 1 / (255 × 100).
+    let wa = u32::from(a.a()) * pa;
+    let wb = u32::from(b.a()) * (100 - pa);
+    let sum = wa + wb;
+    if sum == 0 {
+        return crate::state_ink::CSS_TRANSPARENT;
+    }
+    let round_div = |n: u32, d: u32| ((2 * n + d) / (2 * d)) as u8;
+    let ch = |x: u8, y: u8| round_div(u32::from(x) * wa + u32::from(y) * wb, sum);
+    HexColor::from_rgba(
+        ch(a.r(), b.r()),
+        ch(a.g(), b.g()),
+        ch(a.b(), b.b()),
+        round_div(sum, 100),
+    )
 }
 
 // ============================================================================
