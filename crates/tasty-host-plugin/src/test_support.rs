@@ -100,7 +100,8 @@ fn restore(key: &str, prev: Option<&OsString>) {
 }
 
 /// 이 시험 바이너리의 본체 버전을 1.0.0·거절로 정한다. 같은 값이면 여러 시험이 불러도 된다.
-/// 다른 시험의 매니페스트에는 `min_tasty_version`이 없어 결과가 바뀌지 않는다.
+/// 공식 플러그인 픽스처 매니페스트는 `min_tasty_version = "0.14.1"`을 선언하고 1.0.0보다 낮아 그대로 받아들여진다.
+/// 이 키에 다른 값을 쓰는 시험 매니페스트는 그 판정을 재는 `builtin::file_upgrade::min_version` 시험뿐이다.
 pub(crate) fn host_tasty_1_0_0() {
     tasty_plugin_manifest::set_host_tasty_version(
         "1.0.0",

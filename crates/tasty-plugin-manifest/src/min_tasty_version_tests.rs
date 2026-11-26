@@ -147,7 +147,7 @@ fn source_that_is_not_toml_is_left_to_load() {
 }
 
 #[test]
-fn locked_official_plugin_manifests_still_load_without_a_constraint() {
+fn locked_official_plugin_manifests_load() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../tasty-test-support/fixtures/official-plugins");
     let mut seen = 0;
@@ -158,8 +158,6 @@ fn locked_official_plugin_manifests_still_load_without_a_constraint() {
             continue;
         }
         Manifest::load(&dir).expect("fixture manifest loads");
-        let source = std::fs::read_to_string(&path).expect("read");
-        assert!(judge(&source, "0.0.0").is_ok(), "{dir:?}");
         seen += 1;
     }
     assert!(seen > 0, "no fixture manifests under {root:?}");

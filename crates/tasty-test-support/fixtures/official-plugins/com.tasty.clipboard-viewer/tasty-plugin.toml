@@ -1,24 +1,17 @@
 manifest_version = 1
 id = "com.tasty.clipboard-viewer"
 name = "Clipboard Viewer"
-version = "0.2.2"
+version = "0.2.6"
 description = "Read-only viewer of the current system clipboard"
 api_version = "1"
-# 클립보드를 직접 읽으므로 호스트의 권한 검사를 거치지 않는다. 사용 목적의 선언으로 남긴다.
-permissions = ["clipboard.read", "ui.popup", "ui.tool_item"]
 lang_dir = "lang"
+min_tasty_version = "0.14.1"
 
 [entry]
 type = "process"
 command = "tasty-plugin-clipboard-viewer"
 
-[[contributes.popup]]
-id = "viewer"
-trigger = { kind = "ipc" }
-rendering = "egui-mesh"
-size_hint = { width = 480, height = 360 }
-anchor = "screen-center"
-dismiss_on_outside_click = true
+# 팝업 `viewer`는 플러그인이 시작할 때 실행 중 선언(popup.declare)한다.
 
 [[contributes.tool]]
 id = "open-viewer"

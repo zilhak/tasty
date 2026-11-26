@@ -4,9 +4,9 @@ schema = 1
 
 [release]
 repository = "zilhak/tasty-official-plugins"
-tag = "v0.1.2"
-commit = "7dc7ec7d8ff23700a9da8944fa161744c43b6b9b"
-tasty_rev = "5098adbf65c375f84550f003f1522b5e46e79043"
+tag = "v0.1.3"
+commit = "90eb78d4064164895eb1877cd8b0f45bf52f931e"
+tasty_rev = "ed10dc4eacf24b87f1398d227da5f1352ba79949"
 host_api_version = "1"
 protocol_version = "0.2.16"
 manifest_version = 1
@@ -15,280 +15,280 @@ epaint_patch_tree = "37251c43b1d13d12fb6d4c81f3589ace67a0ac12"
 
 [[plugin]]
 id = "com.tasty.agent-stream"
-version = "0.2.2"
+version = "0.2.6"
 bundle = false
 
   [[plugin.artifact]]
   platform = "macos-arm64"
-  file = "com.tasty.agent-stream-0.2.2-macos-arm64.tar.gz"
-  url = "https://github.com/zilhak/tasty-official-plugins/releases/download/v0.1.2/com.tasty.agent-stream-0.2.2-macos-arm64.tar.gz"
-  sha256 = "0391e60c52ec19ecc6bd3a4ea748b5f189a0d259e9e41b53322b7b433155ef94"
+  file = "com.tasty.agent-stream-0.2.6-macos-arm64.tar.gz"
+  url = "https://github.com/zilhak/tasty-official-plugins/releases/download/v0.1.3/com.tasty.agent-stream-0.2.6-macos-arm64.tar.gz"
+  sha256 = "9aa32a800c66abc168673e2ffaf145947530707f9428331312702c02059ecee5"
 
   [[plugin.artifact]]
   platform = "windows-x64"
-  file = "com.tasty.agent-stream-0.2.2-windows-x64.tar.gz"
-  url = "https://github.com/zilhak/tasty-official-plugins/releases/download/v0.1.2/com.tasty.agent-stream-0.2.2-windows-x64.tar.gz"
-  sha256 = "95471eece36f000c152bc07a7b2d1fe7b7d4906d158820110d2381cc9fb5dc06"
+  file = "com.tasty.agent-stream-0.2.6-windows-x64.tar.gz"
+  url = "https://github.com/zilhak/tasty-official-plugins/releases/download/v0.1.3/com.tasty.agent-stream-0.2.6-windows-x64.tar.gz"
+  sha256 = "ea304d9d1220ba685ca91b9a4d5f83457e405249e73286fe3644de9a8dd4db72"
 
   [[plugin.artifact]]
   platform = "windows-arm64"
-  file = "com.tasty.agent-stream-0.2.2-windows-arm64.tar.gz"
-  url = "https://github.com/zilhak/tasty-official-plugins/releases/download/v0.1.2/com.tasty.agent-stream-0.2.2-windows-arm64.tar.gz"
-  sha256 = "ec9e27d81f1edd7a872fc2ac7e52c5bdbf25307dc18e4b708f3b173fe7f9d404"
+  file = "com.tasty.agent-stream-0.2.6-windows-arm64.tar.gz"
+  url = "https://github.com/zilhak/tasty-official-plugins/releases/download/v0.1.3/com.tasty.agent-stream-0.2.6-windows-arm64.tar.gz"
+  sha256 = "7ecb6f88c8e154c83805c4a3e8a60547b9152c8a77a29fd6999c87af9f41dc44"
 
   [[plugin.artifact]]
   platform = "linux-x64"
-  file = "com.tasty.agent-stream-0.2.2-linux-x64.tar.gz"
-  url = "https://github.com/zilhak/tasty-official-plugins/releases/download/v0.1.2/com.tasty.agent-stream-0.2.2-linux-x64.tar.gz"
-  sha256 = "831d0d6f6f46a08e731ff587d610a3c8c36b931dafb0d7035970a01f84b760c9"
+  file = "com.tasty.agent-stream-0.2.6-linux-x64.tar.gz"
+  url = "https://github.com/zilhak/tasty-official-plugins/releases/download/v0.1.3/com.tasty.agent-stream-0.2.6-linux-x64.tar.gz"
+  sha256 = "c6ac01e6ae8b674c86f250e096f0ec628b39217ae7a622f75529453d1e60dc4b"
 
   [[plugin.artifact]]
   platform = "linux-arm64"
-  file = "com.tasty.agent-stream-0.2.2-linux-arm64.tar.gz"
-  url = "https://github.com/zilhak/tasty-official-plugins/releases/download/v0.1.2/com.tasty.agent-stream-0.2.2-linux-arm64.tar.gz"
-  sha256 = "389d3cae06a7d10219df6afc9c664896d8922a7d2213fccdaf269b2a525355ac"
+  file = "com.tasty.agent-stream-0.2.6-linux-arm64.tar.gz"
+  url = "https://github.com/zilhak/tasty-official-plugins/releases/download/v0.1.3/com.tasty.agent-stream-0.2.6-linux-arm64.tar.gz"
+  sha256 = "160527b458ddf294fb6eeabe98d3dac5f17d832cfeefa1a75219309ddd6ea082"
 
 [[plugin]]
 id = "com.tasty.claude"
-version = "0.3.4"
+version = "0.3.10"
 bundle = true
 
   [[plugin.artifact]]
   platform = "macos-arm64"
-  file = "com.tasty.claude-0.3.4-macos-arm64.tar.gz"
-  url = "https://github.com/zilhak/tasty-official-plugins/releases/download/v0.1.2/com.tasty.claude-0.3.4-macos-arm64.tar.gz"
-  sha256 = "273e15164a14df2dc07ce9b3f1df98882912aef4416081860ad77daf8b793da7"
+  file = "com.tasty.claude-0.3.10-macos-arm64.tar.gz"
+  url = "https://github.com/zilhak/tasty-official-plugins/releases/download/v0.1.3/com.tasty.claude-0.3.10-macos-arm64.tar.gz"
+  sha256 = "683af649d83adc74360fc96822170e812eafe45e724d800c759811503455b40d"
 
   [[plugin.artifact]]
   platform = "windows-x64"
-  file = "com.tasty.claude-0.3.4-windows-x64.tar.gz"
-  url = "https://github.com/zilhak/tasty-official-plugins/releases/download/v0.1.2/com.tasty.claude-0.3.4-windows-x64.tar.gz"
-  sha256 = "64ddd072de116e9cd1bb57af091023f34ad8e91081088b620cfe9121fb92a5e5"
+  file = "com.tasty.claude-0.3.10-windows-x64.tar.gz"
+  url = "https://github.com/zilhak/tasty-official-plugins/releases/download/v0.1.3/com.tasty.claude-0.3.10-windows-x64.tar.gz"
+  sha256 = "1b02bd7c9517987a03beef41851e1fdef5bd27ff4ae81a26ca80eb85052553c9"
 
   [[plugin.artifact]]
   platform = "windows-arm64"
-  file = "com.tasty.claude-0.3.4-windows-arm64.tar.gz"
-  url = "https://github.com/zilhak/tasty-official-plugins/releases/download/v0.1.2/com.tasty.claude-0.3.4-windows-arm64.tar.gz"
-  sha256 = "5aa04ca488c5106da4a423113f88dfc5d69786366a49019003b9819d66288d43"
+  file = "com.tasty.claude-0.3.10-windows-arm64.tar.gz"
+  url = "https://github.com/zilhak/tasty-official-plugins/releases/download/v0.1.3/com.tasty.claude-0.3.10-windows-arm64.tar.gz"
+  sha256 = "ef9e5ffed12c91549df25867fd0cac43a9317677c0200bc1d30075df2b4dd4fd"
 
   [[plugin.artifact]]
   platform = "linux-x64"
-  file = "com.tasty.claude-0.3.4-linux-x64.tar.gz"
-  url = "https://github.com/zilhak/tasty-official-plugins/releases/download/v0.1.2/com.tasty.claude-0.3.4-linux-x64.tar.gz"
-  sha256 = "319345ab78691b57ad4f0eb19c16fe4e3339631b95c969c3cb9c99f736d76da0"
+  file = "com.tasty.claude-0.3.10-linux-x64.tar.gz"
+  url = "https://github.com/zilhak/tasty-official-plugins/releases/download/v0.1.3/com.tasty.claude-0.3.10-linux-x64.tar.gz"
+  sha256 = "1295fd4e636c398a56340d2b94cb4f9e2be80a89849fa59e66520591960be533"
 
   [[plugin.artifact]]
   platform = "linux-arm64"
-  file = "com.tasty.claude-0.3.4-linux-arm64.tar.gz"
-  url = "https://github.com/zilhak/tasty-official-plugins/releases/download/v0.1.2/com.tasty.claude-0.3.4-linux-arm64.tar.gz"
-  sha256 = "7e59aa3201dca32c006e3cb18a702acce168734a3cfc5e72b9fb816d176c9e33"
+  file = "com.tasty.claude-0.3.10-linux-arm64.tar.gz"
+  url = "https://github.com/zilhak/tasty-official-plugins/releases/download/v0.1.3/com.tasty.claude-0.3.10-linux-arm64.tar.gz"
+  sha256 = "1ace9d2da16f7e0dd1607c809cfb089ff608bd143fd5c5605975bd842961f431"
 
 [[plugin]]
 id = "com.tasty.clipboard-viewer"
-version = "0.2.2"
+version = "0.2.6"
 bundle = true
 
   [[plugin.artifact]]
   platform = "macos-arm64"
-  file = "com.tasty.clipboard-viewer-0.2.2-macos-arm64.tar.gz"
-  url = "https://github.com/zilhak/tasty-official-plugins/releases/download/v0.1.2/com.tasty.clipboard-viewer-0.2.2-macos-arm64.tar.gz"
-  sha256 = "b749eab1858e9aaa198038446813a413ae1554fd063e0863753823dc7248a58b"
+  file = "com.tasty.clipboard-viewer-0.2.6-macos-arm64.tar.gz"
+  url = "https://github.com/zilhak/tasty-official-plugins/releases/download/v0.1.3/com.tasty.clipboard-viewer-0.2.6-macos-arm64.tar.gz"
+  sha256 = "8b621e2d45f3f4c4e18dde72ce0e0317a0868daa290be6c32f35c0efa0ba39ce"
 
   [[plugin.artifact]]
   platform = "windows-x64"
-  file = "com.tasty.clipboard-viewer-0.2.2-windows-x64.tar.gz"
-  url = "https://github.com/zilhak/tasty-official-plugins/releases/download/v0.1.2/com.tasty.clipboard-viewer-0.2.2-windows-x64.tar.gz"
-  sha256 = "db06a8436ccba9e89544d6fe24ba5553bfee63d08f93de112ccf8c8bbc290bbc"
+  file = "com.tasty.clipboard-viewer-0.2.6-windows-x64.tar.gz"
+  url = "https://github.com/zilhak/tasty-official-plugins/releases/download/v0.1.3/com.tasty.clipboard-viewer-0.2.6-windows-x64.tar.gz"
+  sha256 = "280d6b5aae3a9b1e09f4295ed80b9d6ec1a5453fb297e1e7070f82ad407ba74b"
 
   [[plugin.artifact]]
   platform = "windows-arm64"
-  file = "com.tasty.clipboard-viewer-0.2.2-windows-arm64.tar.gz"
-  url = "https://github.com/zilhak/tasty-official-plugins/releases/download/v0.1.2/com.tasty.clipboard-viewer-0.2.2-windows-arm64.tar.gz"
-  sha256 = "f8e1ac9572ff3c4725753dfec2b804b2fbc0f95be1f66aa92516c4a3f5d7b8fd"
+  file = "com.tasty.clipboard-viewer-0.2.6-windows-arm64.tar.gz"
+  url = "https://github.com/zilhak/tasty-official-plugins/releases/download/v0.1.3/com.tasty.clipboard-viewer-0.2.6-windows-arm64.tar.gz"
+  sha256 = "545d9326cb71f5137332a9af3a64666e199486e7220c0ee75db005f23da112b3"
 
   [[plugin.artifact]]
   platform = "linux-x64"
-  file = "com.tasty.clipboard-viewer-0.2.2-linux-x64.tar.gz"
-  url = "https://github.com/zilhak/tasty-official-plugins/releases/download/v0.1.2/com.tasty.clipboard-viewer-0.2.2-linux-x64.tar.gz"
-  sha256 = "8ab47a6e60ea5bf2833391f2467bb4600ac531c8edb2f4eae277bf6118b04df2"
+  file = "com.tasty.clipboard-viewer-0.2.6-linux-x64.tar.gz"
+  url = "https://github.com/zilhak/tasty-official-plugins/releases/download/v0.1.3/com.tasty.clipboard-viewer-0.2.6-linux-x64.tar.gz"
+  sha256 = "b86e8c605887156a55aa563042f352a9e45165cf1cc21dca2296d7a1ceafc914"
 
   [[plugin.artifact]]
   platform = "linux-arm64"
-  file = "com.tasty.clipboard-viewer-0.2.2-linux-arm64.tar.gz"
-  url = "https://github.com/zilhak/tasty-official-plugins/releases/download/v0.1.2/com.tasty.clipboard-viewer-0.2.2-linux-arm64.tar.gz"
-  sha256 = "f8be8ca89daf230a0857c97293f945e33e1956c1bdea5857893a2db3d55f6ab2"
+  file = "com.tasty.clipboard-viewer-0.2.6-linux-arm64.tar.gz"
+  url = "https://github.com/zilhak/tasty-official-plugins/releases/download/v0.1.3/com.tasty.clipboard-viewer-0.2.6-linux-arm64.tar.gz"
+  sha256 = "de4af4e2086f33113c322fbe7a41f9439580e9137b89f00c86098597a22bb1b9"
 
 [[plugin]]
 id = "com.tasty.codex"
-version = "0.3.4"
+version = "0.3.19"
 bundle = true
 
   [[plugin.artifact]]
   platform = "macos-arm64"
-  file = "com.tasty.codex-0.3.4-macos-arm64.tar.gz"
-  url = "https://github.com/zilhak/tasty-official-plugins/releases/download/v0.1.2/com.tasty.codex-0.3.4-macos-arm64.tar.gz"
-  sha256 = "5386aecb9549365ed4de8038273ca7b89468a8fe211b1c685042a1130cd304c0"
+  file = "com.tasty.codex-0.3.19-macos-arm64.tar.gz"
+  url = "https://github.com/zilhak/tasty-official-plugins/releases/download/v0.1.3/com.tasty.codex-0.3.19-macos-arm64.tar.gz"
+  sha256 = "8fde936e15667adc069f97e11e184c09dc722aacbb31f12d14d1e9dcb132fb98"
 
   [[plugin.artifact]]
   platform = "windows-x64"
-  file = "com.tasty.codex-0.3.4-windows-x64.tar.gz"
-  url = "https://github.com/zilhak/tasty-official-plugins/releases/download/v0.1.2/com.tasty.codex-0.3.4-windows-x64.tar.gz"
-  sha256 = "6dc466eb4ef1faf8aec76110161b06a1492b792bc2b3b36ee693a99db280ff1e"
+  file = "com.tasty.codex-0.3.19-windows-x64.tar.gz"
+  url = "https://github.com/zilhak/tasty-official-plugins/releases/download/v0.1.3/com.tasty.codex-0.3.19-windows-x64.tar.gz"
+  sha256 = "e1d2f52ba758048be99e49d3a195ba4f249fa5aebc7fddbebd56f7724e34fb48"
 
   [[plugin.artifact]]
   platform = "windows-arm64"
-  file = "com.tasty.codex-0.3.4-windows-arm64.tar.gz"
-  url = "https://github.com/zilhak/tasty-official-plugins/releases/download/v0.1.2/com.tasty.codex-0.3.4-windows-arm64.tar.gz"
-  sha256 = "019626af53f3db1f90fb6d6938e6a6c75818e3d097af356e3251c164e8ca8d05"
+  file = "com.tasty.codex-0.3.19-windows-arm64.tar.gz"
+  url = "https://github.com/zilhak/tasty-official-plugins/releases/download/v0.1.3/com.tasty.codex-0.3.19-windows-arm64.tar.gz"
+  sha256 = "3e3f4934ca0778fcad977ee954eb928131abebbb2756d1aea6478f8e452b676b"
 
   [[plugin.artifact]]
   platform = "linux-x64"
-  file = "com.tasty.codex-0.3.4-linux-x64.tar.gz"
-  url = "https://github.com/zilhak/tasty-official-plugins/releases/download/v0.1.2/com.tasty.codex-0.3.4-linux-x64.tar.gz"
-  sha256 = "17cb609a40a2cc20cb228976a0deacc3e10c571a4e62985b35fffcbee584430a"
+  file = "com.tasty.codex-0.3.19-linux-x64.tar.gz"
+  url = "https://github.com/zilhak/tasty-official-plugins/releases/download/v0.1.3/com.tasty.codex-0.3.19-linux-x64.tar.gz"
+  sha256 = "60c9a7cf1f3b7ca76209a71670ec6373d3fbbd89ae62ed3ce24e4852b7b9230d"
 
   [[plugin.artifact]]
   platform = "linux-arm64"
-  file = "com.tasty.codex-0.3.4-linux-arm64.tar.gz"
-  url = "https://github.com/zilhak/tasty-official-plugins/releases/download/v0.1.2/com.tasty.codex-0.3.4-linux-arm64.tar.gz"
-  sha256 = "a73ede5ff39dc14dc3746b45dc64d8c15dfb1758d583eb90b7462121571f447b"
+  file = "com.tasty.codex-0.3.19-linux-arm64.tar.gz"
+  url = "https://github.com/zilhak/tasty-official-plugins/releases/download/v0.1.3/com.tasty.codex-0.3.19-linux-arm64.tar.gz"
+  sha256 = "f02a81a006d17850ca2555c3c46c633d029ac0501bbe9c402afe68902463147b"
 
 [[plugin]]
 id = "com.tasty.git-viewer"
-version = "0.2.2"
+version = "0.2.8"
 bundle = true
 
   [[plugin.artifact]]
   platform = "macos-arm64"
-  file = "com.tasty.git-viewer-0.2.2-macos-arm64.tar.gz"
-  url = "https://github.com/zilhak/tasty-official-plugins/releases/download/v0.1.2/com.tasty.git-viewer-0.2.2-macos-arm64.tar.gz"
-  sha256 = "c50164ea3f97e379282632c086b507949f96ba72208eb1d389839786a66da9d9"
+  file = "com.tasty.git-viewer-0.2.8-macos-arm64.tar.gz"
+  url = "https://github.com/zilhak/tasty-official-plugins/releases/download/v0.1.3/com.tasty.git-viewer-0.2.8-macos-arm64.tar.gz"
+  sha256 = "59212cb7350d6863353f55966f90171b21fa2de9efc0620d3f580b1b693899a1"
 
   [[plugin.artifact]]
   platform = "windows-x64"
-  file = "com.tasty.git-viewer-0.2.2-windows-x64.tar.gz"
-  url = "https://github.com/zilhak/tasty-official-plugins/releases/download/v0.1.2/com.tasty.git-viewer-0.2.2-windows-x64.tar.gz"
-  sha256 = "8daba0983e3be858045a64f49090a956b181298ec74e3a0ac7d789efe994082b"
+  file = "com.tasty.git-viewer-0.2.8-windows-x64.tar.gz"
+  url = "https://github.com/zilhak/tasty-official-plugins/releases/download/v0.1.3/com.tasty.git-viewer-0.2.8-windows-x64.tar.gz"
+  sha256 = "c9a07a3cbdd708296cee88d7a0e44df33a4e3d02790045518b098a182f35ef74"
 
   [[plugin.artifact]]
   platform = "windows-arm64"
-  file = "com.tasty.git-viewer-0.2.2-windows-arm64.tar.gz"
-  url = "https://github.com/zilhak/tasty-official-plugins/releases/download/v0.1.2/com.tasty.git-viewer-0.2.2-windows-arm64.tar.gz"
-  sha256 = "acb515e4e98a132201628b71055ce4a50637e84c6f1438cfac5e99f053c1687b"
+  file = "com.tasty.git-viewer-0.2.8-windows-arm64.tar.gz"
+  url = "https://github.com/zilhak/tasty-official-plugins/releases/download/v0.1.3/com.tasty.git-viewer-0.2.8-windows-arm64.tar.gz"
+  sha256 = "850351cf62b858ebecf14372a6a991273ff79d4051faf1ccea978ebeb7c5dbac"
 
   [[plugin.artifact]]
   platform = "linux-x64"
-  file = "com.tasty.git-viewer-0.2.2-linux-x64.tar.gz"
-  url = "https://github.com/zilhak/tasty-official-plugins/releases/download/v0.1.2/com.tasty.git-viewer-0.2.2-linux-x64.tar.gz"
-  sha256 = "8b55d0a0b672c7f105aa3bd877d4be02e505efe398e9460bd9a709bb45de5ffe"
+  file = "com.tasty.git-viewer-0.2.8-linux-x64.tar.gz"
+  url = "https://github.com/zilhak/tasty-official-plugins/releases/download/v0.1.3/com.tasty.git-viewer-0.2.8-linux-x64.tar.gz"
+  sha256 = "bd2d465f2e31a43fdbb7278a6c04aa8a0cd1153a3c013efd1106dbf101312e6e"
 
   [[plugin.artifact]]
   platform = "linux-arm64"
-  file = "com.tasty.git-viewer-0.2.2-linux-arm64.tar.gz"
-  url = "https://github.com/zilhak/tasty-official-plugins/releases/download/v0.1.2/com.tasty.git-viewer-0.2.2-linux-arm64.tar.gz"
-  sha256 = "7036ff6f4f6e7be47c9340cc293416bf6da6c9b7c8f5fd1fb245051fa2d5bd73"
+  file = "com.tasty.git-viewer-0.2.8-linux-arm64.tar.gz"
+  url = "https://github.com/zilhak/tasty-official-plugins/releases/download/v0.1.3/com.tasty.git-viewer-0.2.8-linux-arm64.tar.gz"
+  sha256 = "eeeead5270d109014c3074c5b3a0310c92b7c05cc0e8a2cf068435018ee7ef7a"
 
 [[plugin]]
 id = "com.tasty.html"
-version = "0.2.2"
+version = "0.2.6"
 bundle = true
 
   [[plugin.artifact]]
   platform = "macos-arm64"
-  file = "com.tasty.html-0.2.2-macos-arm64.tar.gz"
-  url = "https://github.com/zilhak/tasty-official-plugins/releases/download/v0.1.2/com.tasty.html-0.2.2-macos-arm64.tar.gz"
-  sha256 = "d03935deed71ebd668d4b2575891f60023ec1c9ac790b540c8e40f07ab89a3ff"
+  file = "com.tasty.html-0.2.6-macos-arm64.tar.gz"
+  url = "https://github.com/zilhak/tasty-official-plugins/releases/download/v0.1.3/com.tasty.html-0.2.6-macos-arm64.tar.gz"
+  sha256 = "298c5eee23db839f37fa07e6e8bfa486c1116259e25ebe0c19b3ea3b58a2d98f"
 
   [[plugin.artifact]]
   platform = "windows-x64"
-  file = "com.tasty.html-0.2.2-windows-x64.tar.gz"
-  url = "https://github.com/zilhak/tasty-official-plugins/releases/download/v0.1.2/com.tasty.html-0.2.2-windows-x64.tar.gz"
-  sha256 = "98574d3a4d1ce685c2b84431a2d7740887848a7f584eaae07f973fd6ef54d233"
+  file = "com.tasty.html-0.2.6-windows-x64.tar.gz"
+  url = "https://github.com/zilhak/tasty-official-plugins/releases/download/v0.1.3/com.tasty.html-0.2.6-windows-x64.tar.gz"
+  sha256 = "3558a9767c0165e4214c71810eaee4b0863819110bdedd72a58e615935c6ee71"
 
   [[plugin.artifact]]
   platform = "windows-arm64"
-  file = "com.tasty.html-0.2.2-windows-arm64.tar.gz"
-  url = "https://github.com/zilhak/tasty-official-plugins/releases/download/v0.1.2/com.tasty.html-0.2.2-windows-arm64.tar.gz"
-  sha256 = "f92a9528baef812408e3fb9513fbce559988bb0cfb5435fc33ed3442979aa179"
+  file = "com.tasty.html-0.2.6-windows-arm64.tar.gz"
+  url = "https://github.com/zilhak/tasty-official-plugins/releases/download/v0.1.3/com.tasty.html-0.2.6-windows-arm64.tar.gz"
+  sha256 = "4d7b79d18f062e50faa1e64871dac8a370341f00389b901f2553a64baf176839"
 
   [[plugin.artifact]]
   platform = "linux-x64"
-  file = "com.tasty.html-0.2.2-linux-x64.tar.gz"
-  url = "https://github.com/zilhak/tasty-official-plugins/releases/download/v0.1.2/com.tasty.html-0.2.2-linux-x64.tar.gz"
-  sha256 = "1a217d562cfabb0c5c699abf05764aa28eb0fdc0572da6ffeaae9f36bc2c9413"
+  file = "com.tasty.html-0.2.6-linux-x64.tar.gz"
+  url = "https://github.com/zilhak/tasty-official-plugins/releases/download/v0.1.3/com.tasty.html-0.2.6-linux-x64.tar.gz"
+  sha256 = "ceab78af2e90a5aca376c752a5aa1c7c660860bbfbc03458b0717597cdf9a3a6"
 
   [[plugin.artifact]]
   platform = "linux-arm64"
-  file = "com.tasty.html-0.2.2-linux-arm64.tar.gz"
-  url = "https://github.com/zilhak/tasty-official-plugins/releases/download/v0.1.2/com.tasty.html-0.2.2-linux-arm64.tar.gz"
-  sha256 = "ec32fd326f1913deb69b6cd917267bda941168a4bcb2fc40dd2b6ebb131678ed"
+  file = "com.tasty.html-0.2.6-linux-arm64.tar.gz"
+  url = "https://github.com/zilhak/tasty-official-plugins/releases/download/v0.1.3/com.tasty.html-0.2.6-linux-arm64.tar.gz"
+  sha256 = "725c6035a571feda701a8cc6758b2ca422a2f54def3d6a34430a9fdb63cf9a4d"
 
 [[plugin]]
 id = "com.tasty.image"
-version = "0.2.4"
+version = "0.2.8"
 bundle = true
 
   [[plugin.artifact]]
   platform = "macos-arm64"
-  file = "com.tasty.image-0.2.4-macos-arm64.tar.gz"
-  url = "https://github.com/zilhak/tasty-official-plugins/releases/download/v0.1.2/com.tasty.image-0.2.4-macos-arm64.tar.gz"
-  sha256 = "4edeade2f7f0e5e0922543704ae0d640eef4dfe1152f314c614121e5f75ae027"
+  file = "com.tasty.image-0.2.8-macos-arm64.tar.gz"
+  url = "https://github.com/zilhak/tasty-official-plugins/releases/download/v0.1.3/com.tasty.image-0.2.8-macos-arm64.tar.gz"
+  sha256 = "743dde7e4c9ba3bc1bcc10861374c8278c6fd5dcfde684749c59e072b85e4999"
 
   [[plugin.artifact]]
   platform = "windows-x64"
-  file = "com.tasty.image-0.2.4-windows-x64.tar.gz"
-  url = "https://github.com/zilhak/tasty-official-plugins/releases/download/v0.1.2/com.tasty.image-0.2.4-windows-x64.tar.gz"
-  sha256 = "ddf3a989a4fbfe23bf8d32da78e4a17fcd581c6ee339941fdae2ec13708b25be"
+  file = "com.tasty.image-0.2.8-windows-x64.tar.gz"
+  url = "https://github.com/zilhak/tasty-official-plugins/releases/download/v0.1.3/com.tasty.image-0.2.8-windows-x64.tar.gz"
+  sha256 = "851fdb1037a9e9cd811d17810794421038a1156e8ea640612b2e119a7fa7dc83"
 
   [[plugin.artifact]]
   platform = "windows-arm64"
-  file = "com.tasty.image-0.2.4-windows-arm64.tar.gz"
-  url = "https://github.com/zilhak/tasty-official-plugins/releases/download/v0.1.2/com.tasty.image-0.2.4-windows-arm64.tar.gz"
-  sha256 = "5b9a2b1085838ed13cf0283e359acbdf2065d63911d6ee16d3876812c540da98"
+  file = "com.tasty.image-0.2.8-windows-arm64.tar.gz"
+  url = "https://github.com/zilhak/tasty-official-plugins/releases/download/v0.1.3/com.tasty.image-0.2.8-windows-arm64.tar.gz"
+  sha256 = "b41892669ca3e4ad277f8ccb4421fc9802e251d342c4c88298f19a1526aeba59"
 
   [[plugin.artifact]]
   platform = "linux-x64"
-  file = "com.tasty.image-0.2.4-linux-x64.tar.gz"
-  url = "https://github.com/zilhak/tasty-official-plugins/releases/download/v0.1.2/com.tasty.image-0.2.4-linux-x64.tar.gz"
-  sha256 = "d6b44c8adf7a9babdf0144d7911cd79748411268a91f198f1a340ee1ce81e137"
+  file = "com.tasty.image-0.2.8-linux-x64.tar.gz"
+  url = "https://github.com/zilhak/tasty-official-plugins/releases/download/v0.1.3/com.tasty.image-0.2.8-linux-x64.tar.gz"
+  sha256 = "6c945fb6e8eb8148d4fc794ed7ba427f70e43c6b807c52c855561f7802f39e27"
 
   [[plugin.artifact]]
   platform = "linux-arm64"
-  file = "com.tasty.image-0.2.4-linux-arm64.tar.gz"
-  url = "https://github.com/zilhak/tasty-official-plugins/releases/download/v0.1.2/com.tasty.image-0.2.4-linux-arm64.tar.gz"
-  sha256 = "e48ef465fa536bed6e5b6f2066343bc8565f0674caaaebec127a0c0ca8b7120e"
+  file = "com.tasty.image-0.2.8-linux-arm64.tar.gz"
+  url = "https://github.com/zilhak/tasty-official-plugins/releases/download/v0.1.3/com.tasty.image-0.2.8-linux-arm64.tar.gz"
+  sha256 = "af7dbc98b2a10db7465fafd24a4b4840834e4a8333734f3546ad79e47adb8fb1"
 
 [[plugin]]
 id = "com.tasty.markdown"
-version = "0.2.2"
+version = "0.2.6"
 bundle = true
 
   [[plugin.artifact]]
   platform = "macos-arm64"
-  file = "com.tasty.markdown-0.2.2-macos-arm64.tar.gz"
-  url = "https://github.com/zilhak/tasty-official-plugins/releases/download/v0.1.2/com.tasty.markdown-0.2.2-macos-arm64.tar.gz"
-  sha256 = "7bcd3ee86e7fbeff74c4c1a5af42c1c86dc0e6871c01204216ec8e25289c087c"
+  file = "com.tasty.markdown-0.2.6-macos-arm64.tar.gz"
+  url = "https://github.com/zilhak/tasty-official-plugins/releases/download/v0.1.3/com.tasty.markdown-0.2.6-macos-arm64.tar.gz"
+  sha256 = "d79feb8fd27e7bda1ca0c17733e1498eb29fa5e817306dcb7705fe4dd56d624d"
 
   [[plugin.artifact]]
   platform = "windows-x64"
-  file = "com.tasty.markdown-0.2.2-windows-x64.tar.gz"
-  url = "https://github.com/zilhak/tasty-official-plugins/releases/download/v0.1.2/com.tasty.markdown-0.2.2-windows-x64.tar.gz"
-  sha256 = "0fc334d83a12cdad954572869d697b2549803ed142dd01f9d03db1770c10720c"
+  file = "com.tasty.markdown-0.2.6-windows-x64.tar.gz"
+  url = "https://github.com/zilhak/tasty-official-plugins/releases/download/v0.1.3/com.tasty.markdown-0.2.6-windows-x64.tar.gz"
+  sha256 = "c9889a87691dee3815bf54595152f5cd474ea027fe64654de2f4cdcfc79545b4"
 
   [[plugin.artifact]]
   platform = "windows-arm64"
-  file = "com.tasty.markdown-0.2.2-windows-arm64.tar.gz"
-  url = "https://github.com/zilhak/tasty-official-plugins/releases/download/v0.1.2/com.tasty.markdown-0.2.2-windows-arm64.tar.gz"
-  sha256 = "3549cebdfa56ac6ffe9851cf961e6121ba45f6f89134937d5ca5f8b1d7177f64"
+  file = "com.tasty.markdown-0.2.6-windows-arm64.tar.gz"
+  url = "https://github.com/zilhak/tasty-official-plugins/releases/download/v0.1.3/com.tasty.markdown-0.2.6-windows-arm64.tar.gz"
+  sha256 = "0cd745540f6604c0f3a64ca0a35feaaed253e0fd03279e58d2746f6c8b8a8391"
 
   [[plugin.artifact]]
   platform = "linux-x64"
-  file = "com.tasty.markdown-0.2.2-linux-x64.tar.gz"
-  url = "https://github.com/zilhak/tasty-official-plugins/releases/download/v0.1.2/com.tasty.markdown-0.2.2-linux-x64.tar.gz"
-  sha256 = "5162cf2fbcc9bf04d079a7043941f82b97278cd93389a4f69948804f81307d30"
+  file = "com.tasty.markdown-0.2.6-linux-x64.tar.gz"
+  url = "https://github.com/zilhak/tasty-official-plugins/releases/download/v0.1.3/com.tasty.markdown-0.2.6-linux-x64.tar.gz"
+  sha256 = "b26fa1665412183ca9695115b6b9b8395c1992e1cfbb48ec05a021e5f0208bc9"
 
   [[plugin.artifact]]
   platform = "linux-arm64"
-  file = "com.tasty.markdown-0.2.2-linux-arm64.tar.gz"
-  url = "https://github.com/zilhak/tasty-official-plugins/releases/download/v0.1.2/com.tasty.markdown-0.2.2-linux-arm64.tar.gz"
-  sha256 = "0acf5c3c838771f7949d4ba7eb4444a47c108551cb3d76ad5593a9774c5a6fe3"
+  file = "com.tasty.markdown-0.2.6-linux-arm64.tar.gz"
+  url = "https://github.com/zilhak/tasty-official-plugins/releases/download/v0.1.3/com.tasty.markdown-0.2.6-linux-arm64.tar.gz"
+  sha256 = "d8db4256522847265cb61e7735b860e289eb3385b2b8763987cd819cc17cab79"
