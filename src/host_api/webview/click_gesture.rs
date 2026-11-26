@@ -135,6 +135,26 @@ fn within_window(now: Instant, at: Instant) -> bool {
     now.saturating_duration_since(at) <= GESTURE_WINDOW
 }
 
+/// WebView 로 가는 왼쪽 버튼 메시지 하나를 기록한다(Windows host 입력 경로의 메시지 훅). 누름은 클릭 제스처에
+/// 남기고 그 surface 의 native 포커스 알림(`WebViewKeySink::note_focus`)을 낸다. Linux
+/// `connect_button_press_event` 와 같은 자리의 알림이다. controller `GotFocus` 는 이미 포커스를 가진 것으로 보는
+/// controller 를 다시 누르면 오지 않으므로 누름 알림을 대신하지 못한다. 뗌은 제스처 시각만 옮긴다.
+#[cfg(any(windows, test))]
+pub(crate) fn note_webview_button(
+    click: &ClickGesture,
+    sink: &dyn crate::host_api::webview::keys::WebViewKeySink,
+    surface_id: u32,
+    press: bool,
+    now: Instant,
+) {
+    if press {
+        click.press(now);
+        sink.note_focus(surface_id);
+    } else {
+        click.release(now);
+    }
+}
+
 /// 이 key-down 이 페이지의 버튼·링크를 활성화하는 사용자 입력인지. 수식키 조합은 활성화가 아니라
 /// 단축키일 수 있어서, host 가 소비한 키는 페이지에 닿지 않아서 뺀다. IME 조합 키는 `VK_PROCESSKEY` 로
 /// 와서 빠진다. Numpad Enter 도 `VK_RETURN` 이다.
@@ -153,6 +173,31 @@ mod tests {
 
     fn ms(n: u64) -> Duration {
         Duration::from_millis(n)
+    }
+
+    /// Given 다른 surface 가 키 쥘 곳인 창, When WebView 7 로 가는 왼쪽 버튼 누름이 오면, Then 그 누름이 surface 7 의
+    /// native 포커스 알림을 낸다(Windows 메시지 훅). 뗌만으로는 알림이 없다. 같은 WebView 를 다시 눌러도 알림이 또 온다.
+    #[test]
+    fn a_button_press_on_a_webview_notes_its_focus_and_a_release_does_not() {
+        let bridge = crate::host_api::webview::keys::WebViewKeyBridge::default();
+        bridge.set_key_holder(Some(3));
+        let g = ClickGesture::default();
+        let t = Instant::now();
+        note_webview_button(&g, &bridge, 7, false, t);
+        assert!(
+            bridge.take_focus_requests().is_empty(),
+            "뗌만으로는 알림이 없다"
+        );
+        note_webview_button(&g, &bridge, 7, true, t + ms(10));
+        note_webview_button(&g, &bridge, 7, false, t + ms(60));
+        assert_eq!(bridge.take_focus_requests(), [7]);
+        note_webview_button(&g, &bridge, 7, true, t + ms(500));
+        assert_eq!(
+            bridge.take_focus_requests(),
+            [7],
+            "이미 포커스를 가진 WebView 를 다시 눌러도 알림이 온다"
+        );
+        assert!(g.take(t + ms(520), Some(true)), "누름은 제스처도 남긴다");
     }
 
     #[test]

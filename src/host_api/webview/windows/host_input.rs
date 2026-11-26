@@ -36,7 +36,9 @@ use super::keyboard::{
     current_winit_mods, key_down_message, key_up_vk, layout_character_key, vk_to_winit_key,
     win32_scancode_to_physical,
 };
-use crate::host_api::webview::click_gesture::{ClickGesture, proves_activation};
+use crate::host_api::webview::click_gesture::{
+    ClickGesture, note_webview_button, proves_activation,
+};
 use crate::host_api::webview::key_hold::RepeatRoute;
 use crate::host_api::webview::keys::{KeyDownRoute, WebViewKeySink, route_key_down};
 
@@ -120,7 +122,8 @@ fn route_of<T>(hwnd: HWND, pick: impl FnOnce(&Route) -> T) -> Option<T> {
     })
 }
 
-/// WebView로 가는 왼쪽 버튼 누름·뗌을 클릭으로 기록한다. 메시지는 소비하지 않는다.
+/// WebView로 가는 왼쪽 버튼 누름·뗌을 클릭으로 기록하고, 누름이면 그 surface의 native 포커스 알림을 낸다
+/// (`note_webview_button`). 메시지는 소비하지 않는다.
 /// 페이지 스크립트가 만든 이벤트는 창 메시지가 아니므로 여기에 오지 않는다.
 fn note_click(msg: &MSG) {
     let press = match msg.message {
@@ -128,12 +131,10 @@ fn note_click(msg: &MSG) {
         WM_LBUTTONUP => false,
         _ => return,
     };
-    if let Some(click) = route_of(msg.hwnd, |r| r.click.clone()) {
-        if press {
-            click.press(Instant::now());
-        } else {
-            click.release(Instant::now());
-        }
+    if let Some((click, sink, surface_id)) = route_of(msg.hwnd, |r| {
+        (r.click.clone(), r.sink.clone(), r.surface_id)
+    }) {
+        note_webview_button(&click, &*sink, surface_id, press, Instant::now());
     }
 }
 

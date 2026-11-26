@@ -207,6 +207,13 @@ WebViewKeySink에 보내고 공통 bridge가 소비 여부를 동기 반환한�
 | edit_action | 사용자 편집 바인딩이면 실행할 편집 명령을 반환한다 |
 | note_focus | native 클릭·focus 획득을 알려 모델 focus를 맞춘다 |
 
+note_focus 출처는 플랫폼마다 누름 자리 하나와 포커스 획득이다.
+- Linux: WebView `button-press-event`.
+- macOS: `KeyWebView`의 `mouseDown:`과 `becomeFirstResponder`.
+- Windows: host 입력 경로 메시지 훅의 `WM_LBUTTONDOWN`·`WM_LBUTTONDBLCLK`(`click_gesture::note_webview_button`)와 controller `GotFocus`.
+  - `GotFocus`는 이미 포커스를 가진 것으로 보는 controller를 다시 누르면 오지 않았다(sub 측정). 그래서 누름 알림은 메시지 훅이 낸다.
+  - host 입력 경로를 쓰지 못한 view는 `GotFocus`만 쓴다.
+
 backend는 Rc<dyn WebViewKeySink>만 받는다. 정책 교체와 큐 관리는 구체 bridge가 맡는다.
 callback은 main thread에서 실행하므로 Rc·RefCell을 사용한다.
 HostShortcutPolicy는 ShortcutSources의 host·page_reserved·plugin·address·refresh 목록을 받는다.
