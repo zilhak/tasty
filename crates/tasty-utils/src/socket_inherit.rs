@@ -60,6 +60,20 @@ mod windows {
         }
     }
 
+    /// 시험 전용: 상속을 일부러 켠다. 끄는 함수가 실제로 플래그를 바꾸는지 보려고 쓴다.
+    #[cfg(test)]
+    pub(super) fn set_inherit_flag(stream: &TcpStream) -> io::Result<()> {
+        // SAFETY: as in `clear_inherit_flag`.
+        let ok = unsafe {
+            SetHandleInformation(handle(stream), HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT)
+        };
+        if ok != 0 {
+            Ok(())
+        } else {
+            Err(io::Error::last_os_error())
+        }
+    }
+
     #[cfg(any(test, feature = "test-support"))]
     pub(super) fn read_inherit_flag(stream: &TcpStream) -> io::Result<bool> {
         use windows_sys::Win32::Foundation::GetHandleInformation;
@@ -78,6 +92,29 @@ mod windows {
 mod tests {
     use super::{disable_inherit, is_inheritable, try_clone_uninherited};
     use std::net::{TcpListener, TcpStream};
+
+    /// 상속을 일부러 켠 핸들도 끈다. std가 이미 꺼 둔 핸들만 보면 아무것도 하지 않는 구현도 통과한다.
+    #[test]
+    fn an_inheritable_handle_is_made_uninheritable() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let client = TcpStream::connect(listener.local_addr().expect("addr")).expect("connect");
+        let (accepted, _) = listener.accept().expect("accept");
+        for (name, socket) in [("client", &client), ("accepted", &accepted)] {
+            super::windows::set_inherit_flag(socket).expect(name);
+            assert!(
+                is_inheritable(socket).expect(name),
+                "{name}: flag was not set"
+            );
+            disable_inherit(socket).expect(name);
+            assert!(!is_inheritable(socket).expect(name), "{name}: flag remains");
+        }
+        super::windows::set_inherit_flag(&client).expect("client again");
+        let clone = try_clone_uninherited(&client).expect("clone");
+        assert!(
+            !is_inheritable(&clone).expect("clone"),
+            "clone: flag remains"
+        );
+    }
 
     /// 연결 원본·accept한 소켓·복제 모두 처리한 뒤에는 상속되지 않는다.
     #[test]
