@@ -153,7 +153,7 @@ mod tests {
                         LogicalPx(200.0),
                         icons::FILE,
                         "Viewer",
-                        "Read",
+                        "Sample description",
                         selected,
                     )
                 });
