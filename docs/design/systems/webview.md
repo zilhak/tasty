@@ -218,7 +218,7 @@ Windows key-down 판정 순서는 편집 키 차단 → 편집 명령 → host �
 - macOS: `KeyWebView`의 `mouseDown:`(누름)과 `becomeFirstResponder`(포커스 획득).
 - Windows: host 입력 경로 메시지 훅의 `WM_LBUTTONDOWN`·`WM_LBUTTONDBLCLK`(`click_gesture::note_webview_button`, 누름)와 controller `GotFocus`(포커스 획득).
   - `GotFocus`는 이미 포커스를 가진 것으로 보는 controller를 다시 누르면 오지 않는다. 그래서 누름 알림은 메시지 훅이 낸다.
-  - host 입력 경로를 쓰지 못한 view는 `GotFocus`만 쓴다.
+  - host 입력 경로를 쓰지 못한 view(옛 runtime 등)는 메시지 훅 대신 TASTY_WEBVIEW 창이 받는 자식 창 `WM_PARENTNOTIFY`(왼쪽 버튼 누름)로 누름을 알린다(`click_gesture::note_parent_notify`).
 
 native 입력 순서: 누름 알림과 host가 가져간 조합은 bridge의 대기열 하나에 도착 순서대로 쌓이고, 호스트 루프가
 그 순서로 소비한다(`webview_keys::consume_native_inputs`). 누름 한 건마다 창 누름 전이를 적용한다. 실제 누름이면 주소 띠의

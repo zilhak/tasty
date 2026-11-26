@@ -16,6 +16,7 @@ mod key_replay;
 mod keyboard;
 mod navigation;
 mod overlay;
+mod parent_press;
 mod remote_block;
 mod same_document;
 mod view_navigation;
@@ -105,6 +106,9 @@ pub struct PlatformWebView {
     pointer: RefCell<PointerGate>,
     /// host 입력 경로(winit 메시지 훅) 등록. 옵션을 쓰지 못한 view는 None이고 accelerator 경로를 쓴다.
     host_input: Option<host_input::RouteGuard>,
+    /// host 입력 경로가 없는 view의 누름 알림(자식 창 `WM_PARENTNOTIFY`). host 입력 경로가 있는 view는 None이다.
+    /// 놓을 때 등록을 지우려고만 쥔다.
+    _parent_press: Option<parent_press::ParentPressGuard>,
     /// host가 가져간 키를 결과까지 붙잡는다. 훅과 accelerator 경로가 같이 쓴다.
     key_replay: Rc<key_replay::KeyReplay>,
     bed_focus: bed_focus::BedFocusScript,
@@ -205,10 +209,7 @@ impl PlatformWebView {
             let wc = WNDCLASSEXW {
                 cbSize: std::mem::size_of::<WNDCLASSEXW>() as u32,
                 style: CS_HREDRAW | CS_VREDRAW,
-                lpfnWndProc: Some(std::mem::transmute::<
-                    usize,
-                    unsafe extern "system" fn(HWND, u32, WPARAM, LPARAM) -> LRESULT,
-                >(DefWindowProcW as *const () as usize)),
+                lpfnWndProc: Some(parent_press::webview_window_proc),
                 hInstance: GetModuleHandleW(None).unwrap_or_default().into(),
                 lpszClassName: class_name,
                 ..Default::default()
@@ -897,6 +898,9 @@ impl PlatformWebView {
                     key_replay.clone(),
                 )
             });
+            let parent_press = host_input
+                .is_none()
+                .then(|| parent_press::register(hwnd, surface_id, key_bridge.clone()));
             let click = host_input.as_ref().map(host_input::RouteGuard::click);
             click_slot.borrow_mut().clone_from(&click);
             same_document::install(&webview, surface_id, parent, &pending_navigations, click)
@@ -937,6 +941,7 @@ impl PlatformWebView {
                 region: RefCell::new(WindowRegion::default()),
                 pointer: RefCell::new(PointerGate::default()),
                 host_input,
+                _parent_press: parent_press,
                 key_replay,
                 bed_focus,
             })

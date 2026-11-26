@@ -19,6 +19,9 @@ pub(crate) const GESTURE_WINDOW: Duration = Duration::from_secs(1);
 const VK_RETURN: u32 = 0x0D;
 #[cfg(any(windows, test))]
 const VK_SPACE: u32 = 0x20;
+/// `WM_PARENTNOTIFY` wParam 아래 16비트의 왼쪽 버튼 누름(`WM_LBUTTONDOWN`).
+#[cfg(any(windows, test))]
+const PARENT_NOTIFY_LEFT_PRESS: u32 = 0x0201;
 
 /// 증명을 만든 입력. 뗌은 자기 누름의 시각만 옮긴다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -136,7 +139,7 @@ fn within_window(now: Instant, at: Instant) -> bool {
 }
 
 /// WebView 로 가는 왼쪽 버튼 메시지 하나를 기록한다(Windows host 입력 경로의 메시지 훅). 누름은 클릭 제스처에
-/// 남기고 그 surface 의 native 포커스 알림(`WebViewKeySink::note_focus`)을 낸다. Linux
+/// 남기고 그 surface 의 누름 알림(`WebViewKeySink::note_press`)을 낸다. Linux
 /// `connect_button_press_event` 와 같은 자리의 알림이다. controller `GotFocus` 는 이미 포커스를 가진 것으로 보는
 /// controller 를 다시 누르면 오지 않으므로 누름 알림을 대신하지 못한다. 뗌은 제스처 시각만 옮긴다.
 #[cfg(any(windows, test))]
@@ -153,6 +156,23 @@ pub(crate) fn note_webview_button(
     } else {
         click.release(now);
     }
+}
+
+/// host 입력 경로를 쓰지 못한 view(옛 runtime 등)의 TASTY_WEBVIEW 창이 받은 `WM_PARENTNOTIFY` 하나를 본다.
+/// `event` 는 wParam 아래 16비트다. 다른 프로세스 Chromium 자식 창의 왼쪽 버튼 누름이면 그 surface 의 누름
+/// 알림(`WebViewKeySink::note_press`)을 내고 참을 돌려준다. 메시지 훅이 없는 view 의 누름 자리다(훅이 있는 view 는
+/// `note_webview_button` 이 알린다). 같은 페이지를 다시 눌러도 알림이 온다.
+#[cfg(any(windows, test))]
+pub(crate) fn note_parent_notify(
+    sink: &dyn crate::host_api::webview::keys::WebViewKeySink,
+    surface_id: u32,
+    event: u32,
+) -> bool {
+    let press = event == PARENT_NOTIFY_LEFT_PRESS;
+    if press {
+        sink.note_press(surface_id);
+    }
+    press
 }
 
 /// 이 key-down 이 페이지의 버튼·링크를 활성화하는 사용자 입력인지. 수식키 조합은 활성화가 아니라
@@ -182,6 +202,29 @@ mod tests {
             surface_id: 7,
             kind: crate::host_api::webview::keys::PressKind::Click,
         }
+    }
+
+    /// 옛 runtime view(host 입력 경로 없음): Given TASTY_WEBVIEW 창이 자식의 `WM_PARENTNOTIFY` 를 받을 때, When 그
+    /// 알림이 왼쪽 버튼 누름이면, Then 그 surface 의 누름 알림을 낸다. 이미 누른 페이지를 다시 눌러도 또 낸다. 대조:
+    /// 자식 창 만들기(`WM_CREATE`)와 오른쪽 버튼 누름(`WM_RBUTTONDOWN`) 알림은 누름 알림을 내지 않는다.
+    #[test]
+    fn a_parent_notify_of_a_left_press_notes_the_press_of_that_webview() {
+        let bridge = crate::host_api::webview::keys::WebViewKeyBridge::default();
+        bridge.set_key_holder(Some(3));
+        assert!(!note_parent_notify(&bridge, 7, 0x0001));
+        assert!(!note_parent_notify(&bridge, 7, 0x0204));
+        assert!(
+            bridge.take_inputs().is_empty(),
+            "누름이 아닌 알림은 누름 알림이 없다"
+        );
+        assert!(note_parent_notify(&bridge, 7, 0x0201));
+        assert_eq!(bridge.take_inputs(), [click_7()]);
+        assert!(note_parent_notify(&bridge, 7, 0x0201));
+        assert_eq!(
+            bridge.take_inputs(),
+            [click_7()],
+            "이미 누른 페이지를 다시 눌러도 알림이 온다"
+        );
     }
 
     #[test]
