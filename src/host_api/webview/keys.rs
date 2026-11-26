@@ -969,19 +969,77 @@ mod tests {
         );
     }
 
-    /// T-FWD-8: A 가 키 쥘 곳으로 게시된 뒤 B 의 native 클릭 알림이 와도 다음 프레임 게시 전까지는 게시값을 쓴다. B 편집
-    /// 키는 막히고 A 는 허용된다. 알림 소비와 같은 전이를 다리에 차례로 적용하면 이 기대가 바뀐다.
+    /// 좌우 두 pane(surface 11·12)의 창 상태. 포커스는 왼쪽 11 이다.
+    fn two_surfaces() -> (
+        crate::state::MainViewState,
+        crate::runtime::engine_session::EngineSession,
+    ) {
+        use tasty_core::{DomainEvent as E, SurfaceSpec};
+        let mut events = vec![
+            E::CategoryCreated {
+                id: 0,
+                name: "normal".into(),
+                index: 0,
+            },
+            E::WorkspaceCreated {
+                id: 1,
+                name: "w".into(),
+                category: 0,
+                index: 0,
+                pane: 1,
+            },
+            E::PaneSplit {
+                target: 1,
+                pane: 2,
+                split: tasty_core::SplitSpec {
+                    direction: crate::model::SplitDirection::Vertical,
+                    ratio: tasty_core::Ratio::from_f32(0.5),
+                    placement: tasty_core::Placement::After,
+                },
+            },
+        ];
+        for (id, pane) in [(11, 1), (12, 2)] {
+            events.push(E::TabCreated {
+                id,
+                pane,
+                index: 0,
+                name: "page".into(),
+                surface: SurfaceSpec {
+                    id,
+                    kind: "terminal".into(),
+                    data: None,
+                },
+            });
+        }
+        let (mut state, mut session) =
+            crate::state::tests::test_state_from_model(crate::state::tests::test_model(events));
+        {
+            let engine = session.borrow_mut();
+            state.focus_surface_by_id(engine.core, 11);
+            assert_eq!(state.focused_surface_id(&engine.read()), Some(11));
+        }
+        (state, session)
+    }
+
+    /// T-FWD-8: Given A(11)가 키 쥘 곳으로 게시됐다, When B(12)의 native 클릭 알림을 알림 소비 전이
+    /// (`webview_keys::consume_native_focus_requests`)가 소비하면, Then 다음 프레임 게시 전에도 B 편집 키는 B 에서
+    /// 처리되고 A 편집 키는 막힌다.
     #[test]
-    fn right_after_a_native_click_the_bridge_keeps_the_frame_value() {
+    fn right_after_a_native_click_the_clicked_page_takes_its_edit_key() {
+        let (mut state, mut session) = two_surfaces();
+        let engine = session.borrow_mut();
         let bridge = WebViewKeyBridge::new();
         bridge.set_policy(edit_policy(&[(WebViewEditAction::Paste, &["alt+v"])]));
-        bridge.set_key_holder(Some(1));
-        bridge.note_focus(2);
+        bridge.set_key_holder(Some(11));
+        bridge.note_focus(12);
+        assert!(crate::app::webview_keys::consume_native_focus_requests(
+            &mut state,
+            engine.core,
+            &bridge
+        ));
         let phys = unknown_physical();
-        assert!(bridge.blocks_edit_key(2, &ch("v"), &phys, alt_mod()));
-        assert!(!bridge.blocks_edit_key(1, &ch("v"), &phys, alt_mod()));
-        bridge.set_key_holder(Some(2));
-        assert!(!bridge.blocks_edit_key(2, &ch("v"), &phys, alt_mod()));
+        assert!(!bridge.blocks_edit_key(12, &ch("v"), &phys, alt_mod()));
+        assert!(bridge.blocks_edit_key(11, &ch("v"), &phys, alt_mod()));
     }
 
     #[test]

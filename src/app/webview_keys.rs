@@ -37,8 +37,10 @@ impl App {
         #[cfg(target_os = "linux")]
         crate::system_tray::pump_gtk_events();
 
+        // 클릭으로 옮긴 포커스를 먼저 반영해야 단축키가 그 surface에 적용된다.
+        self.consume_webview_focus_requests();
+
         // 이후 dispatch가 self를 가변 대여하므로 view 순회 중에는 이벤트만 모은다.
-        let mut focus_batch: Vec<(winit::window::WindowId, Vec<u32>)> = Vec::new();
         let mut key_batch: Vec<(
             winit::window::WindowId,
             Vec<crate::webview::WebViewKeyEvent>,
@@ -47,20 +49,9 @@ impl App {
             let Some(main) = w.as_main() else {
                 continue;
             };
-            let focus = main.webview_key_bridge.take_focus_requests();
-            if !focus.is_empty() {
-                focus_batch.push((*id, focus));
-            }
             let keys = main.webview_key_bridge.take_pending();
             if !keys.is_empty() {
                 key_batch.push((*id, keys));
-            }
-        }
-
-        // 클릭으로 옮긴 포커스를 먼저 반영해야 단축키가 그 surface에 적용된다.
-        for (id, surfaces) in focus_batch {
-            for sid in surfaces {
-                self.focus_surface_from_webview(id, sid);
             }
         }
 
@@ -68,16 +59,23 @@ impl App {
         needs_poll
     }
 
-    fn focus_surface_from_webview(&mut self, id: winit::window::WindowId, surface_id: u32) {
-        let Some((main, engine)) = engines_mut!(self).window_pair(id) else {
-            return;
-        };
-        crate::app::webview_sync::key_release::note_native_webview_focus(
-            &mut main.state,
-            surface_id,
-        );
-        if main.state.focus_surface_by_id(engine.core, surface_id) {
-            main.mark_dirty();
+    /// 창마다 native 포커스 알림을 소비한다(`consume_native_focus_requests`). 알림으로 포커스가 바뀐 창은 다시 그린다.
+    pub(crate) fn consume_webview_focus_requests(&mut self) {
+        let ids: Vec<winit::window::WindowId> = self
+            .view
+            .views
+            .iter()
+            .filter(|(_, w)| w.as_main().is_some())
+            .map(|(id, _)| *id)
+            .collect();
+        for id in ids {
+            let Some((main, engine)) = engines_mut!(self).window_pair(id) else {
+                continue;
+            };
+            if consume_native_focus_requests(&mut main.state, engine.core, &main.webview_key_bridge)
+            {
+                main.mark_dirty();
+            }
         }
     }
 
@@ -229,6 +227,30 @@ fn consume_forwarded_keys(
             consumer.finish(id, surface_id, key_id, outcome);
         }
     }
+}
+
+/// 한 창의 native 포커스 알림(사용자가 그 native 페이지를 누름)을 알림 순서대로 소비한다. 알림마다 회수 기록을
+/// 지우고(`note_native_webview_focus`) 그 surface 로 포커스를 옮긴다. 소비한 알림이 있으면 그 전이 끝에 다음 입력이
+/// 볼 키 쥘 곳(`key_release::webview_key_holder`)을 다리에 게시한다. 그래서 누른 직후의 편집 키는 다음 프레임 게시를
+/// 기다리지 않고 누른 페이지에서 처리된다. 포커스가 바뀌었으면 참이다.
+pub(crate) fn consume_native_focus_requests(
+    state: &mut crate::state::MainViewState,
+    core: &crate::core::CoreState,
+    bridge: &crate::webview::WebViewKeyBridge,
+) -> bool {
+    let requests = bridge.take_focus_requests();
+    if requests.is_empty() {
+        return false;
+    }
+    let mut changed = false;
+    for surface_id in requests {
+        crate::app::webview_sync::key_release::note_native_webview_focus(state, surface_id);
+        changed |= state.focus_surface_by_id(core, surface_id);
+    }
+    bridge.set_key_holder(crate::app::webview_sync::key_release::webview_key_holder(
+        state, core,
+    ));
+    changed
 }
 
 /// native WebView가 넘긴 키의 처리 결과.
