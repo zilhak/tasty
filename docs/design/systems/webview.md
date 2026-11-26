@@ -171,7 +171,7 @@ PendingNavigation은 URL과 user_gesture를 포함한다. Linux는 WebKit is_use
 Windows는 IsUserInitiated를 사용하며 실패 시 warning과 false로 처리한다. 같은 문서 fragment 이동은 아래 별도 경로를 탄다.
 macOS의 WKNavigationAction 공개 API에는 같은 값이 없다. `navigationType`·`buttonNumber`·`modifierFlags`는 스크립트가 만든 합성 이벤트에도 채워질 수 있어 근거로 쓰지 않는다.
 대신 WebView가 OS에서 직접 받은 왼쪽 클릭을 근거로 한다(`click_gesture::ClickGesture`).
-- `KeyWebView`의 `mouseDown:`이 클릭을 기록하고 `mouseUp:`이 시각을 뗀 때로 옮긴다. 이 경로는 포커스 알림(`note_focus`)과 같다. 페이지 스크립트의 `dispatchEvent`·`click()`·`location.hash` 변경은 NSResponder를 거치지 않으므로 클릭을 만들지 못한다.
+- `KeyWebView`의 `mouseDown:`이 클릭을 기록하고 `mouseUp:`이 시각을 뗀 때로 옮긴다. 이 경로는 누름 알림(`note_press`)과 같다. 페이지 스크립트의 `dispatchEvent`·`click()`·`location.hash` 변경은 NSResponder를 거치지 않으므로 클릭을 만들지 못한다.
 - 클릭 뒤 1초 안에 탐색 결정에 들어온 main frame 탐색 하나만 `user_gesture`가 참이다. 1초는 WebKit이 사용자 제스처를 타이머로 넘겨주는 상한(`UserGestureToken::maximumIntervalForUserGestureForwarding`)과 같다. 클릭 처리기 안의 `location.hash` 변경(Markdown 폴더 버튼)이 여기에 해당한다.
 - 서브프레임 탐색은 참이 되지 않고 클릭을 소비하지도 않는다. 시간이 지난 클릭은 버린다.
 - macOS에서 키보드로 링크·버튼을 활성화한 탐색(Enter·Space)은 OS 클릭이 아니므로 참이 되지 않는다. Linux 엔진은 키 입력도 제스처로 보고하고, Windows의 같은 문서 이동은 아래의 키 증명을 쓴다. macOS에서 전체 키보드 접근 설정 없이 Tab이 버튼에 가는지는 측정하지 않았다.
@@ -198,21 +198,33 @@ Windows의 같은 문서 fragment 이동은 `NavigationStarting`으로 오지 �
 macOS와 Windows의 native keycode·문자·modifier 변환은 각 플랫폼의 `keyboard` 모듈에 둔다. native callback과 기존 키 전달 계약은 같은 변환 함수를 사용한다.
 
 native 자식 창의 키는 winit으로 자동 전달되지 않는다. 각 backend가 논리 키·PhysicalKey·modifier를
-WebViewKeySink에 보내고 공통 bridge가 소비 여부를 동기 반환한다. 소비한 키는 페이지로 보내지 않으며
-실제 host 액션은 다음 프레임에 큐를 비워 실행한다.
+WebViewKeySink에 보내고 공통 bridge가 소비 여부를 동기 반환한다. 소비한 키는 페이지로 보내지 않는다.
+편집 명령은 키를 받은 callback 안에서 그 WebView에 요청하고(아래 편집 액션), host가 가져간 조합은 bridge의
+native 입력 대기열에 넣어 호스트 루프 회차 끝에 처리한다(`webview_keys::consume_native_inputs`).
 
 | 메서드 | 역할 |
 |--------|------|
-| capture_key | 키 소비 여부를 반환한다 |
+| blocks_edit_key | 받은 surface가 키 쥘 곳이 아니거나 host 모달인 동안의 편집 키를 막는다(`WebViewKeyBridge::input_blocked`) |
 | edit_action | 사용자 편집 바인딩이면 실행할 편집 명령을 반환한다 |
-| note_focus | native 클릭·focus 획득을 알려 모델 focus를 맞춘다 |
+| forward_key | host가 가져갈 조합을 대기열에 넣고 그 일련번호를 반환한다 |
+| note_press | 그 WebView의 실제 버튼 누름을 알린다 |
+| note_focus | 누름 없는 포커스 획득을 알린다 |
 
-note_focus 출처는 플랫폼마다 누름 자리 하나와 포커스 획득이다.
-- Linux: WebView `button-press-event`.
-- macOS: `KeyWebView`의 `mouseDown:`과 `becomeFirstResponder`.
-- Windows: host 입력 경로 메시지 훅의 `WM_LBUTTONDOWN`·`WM_LBUTTONDBLCLK`(`click_gesture::note_webview_button`)와 controller `GotFocus`.
-  - `GotFocus`는 이미 포커스를 가진 것으로 보는 controller를 다시 누르면 오지 않았다(sub 측정). 그래서 누름 알림은 메시지 훅이 낸다.
+Windows key-down 판정 순서는 편집 키 차단 → 편집 명령 → host 가져감이다(`keys::route_key_down`, 메시지 훅과
+`AcceleratorKeyPressed`가 함께 쓴다). 자동 반복은 첫 누름의 결과를 따른다.
+
+누름 알림 출처는 플랫폼마다 누름 자리 하나와 포커스 획득이다.
+- Linux: WebView `button-press-event`(누름).
+- macOS: `KeyWebView`의 `mouseDown:`(누름)과 `becomeFirstResponder`(포커스 획득).
+- Windows: host 입력 경로 메시지 훅의 `WM_LBUTTONDOWN`·`WM_LBUTTONDBLCLK`(`click_gesture::note_webview_button`, 누름)와 controller `GotFocus`(포커스 획득).
+  - `GotFocus`는 이미 포커스를 가진 것으로 보는 controller를 다시 누르면 오지 않는다. 그래서 누름 알림은 메시지 훅이 낸다.
   - host 입력 경로를 쓰지 못한 view는 `GotFocus`만 쓴다.
+
+native 입력 순서: 누름 알림과 host가 가져간 조합은 bridge의 대기열 하나에 도착 순서대로 쌓이고, 호스트 루프가
+그 순서로 소비한다(`webview_keys::consume_native_inputs`). 누름 한 건마다 창 누름 전이를 적용한다. 실제 누름이면 주소 띠의
+키 포커스를 놓고 선택을 그 surface로 옮긴 뒤, 정규화한 키 쥘 곳을 bridge에 게시한다(`webview_keys::press_and_publish`).
+누름 없는 포커스 획득은 주소 띠를 놓지 않는다. host가 가져간 조합은 전달 키 처리(`forwarded_key_gate_open`)를 대기열 자리에서 받는다. Linux GTK 펌프는 이벤트 한 건마다
+대기열을 소비하고, halt 펌프는 키·포커스를 전달하지 않으므로 소비하지 않는다.
 
 backend는 Rc<dyn WebViewKeySink>만 받는다. 정책 교체와 큐 관리는 구체 bridge가 맡는다.
 callback은 main thread에서 실행하므로 Rc·RefCell을 사용한다.
@@ -225,7 +237,7 @@ find·copy·cut·paste·select_all·page_undo·page_redo는 host 액션 field에
 
 ### 편집 액션
 
-`copy`·`cut`·`paste`·`select_all`·`page_undo`·`page_redo`의 현재 바인딩은 `ShortcutSources::edit`로 들어간다. backend는 `capture_key`보다
+`copy`·`cut`·`paste`·`select_all`·`page_undo`·`page_redo`의 현재 바인딩은 `ShortcutSources::edit`로 들어간다. backend는 `forward_key`보다
 먼저 `edit_action`을 묻고, 편집 액션이면 키를 받은 그 WebView에 엔진 편집 명령을 callback 안에서 요청한 뒤
 페이지 전달을 막는다. host 큐를 거치지 않고 그 native WebView 객체에 바로 요청하므로 나중에 다른 WebView나 닫힌
 surface로 옮겨 가지 않는다. macOS는 요청이 callback 안에서 끝난다. Linux의 바인딩 키는 키를 WebKit 입력 큐에 넘기고,
@@ -351,11 +363,12 @@ host 모달이 열려 있거나 키를 받은 surface가 창의 키 쥘 곳(`key
 Ctrl/Shift+Insert, Shift+Delete, Ctrl+Z, Ctrl+Shift+Z, Ctrl+Y와 엔진 키 표의 Ctrl+Shift+V 서식 없는 붙여넣기,
 Windows의 Alt+Backspace·Alt+Shift+Backspace 실행 취소·다시 실행, Linux의 Ctrl+/ 전체 선택)를 실행하지도 페이지에
 보내지도 않는다(`WebViewKeySink::blocks_edit_key`). 이 추가 키는 막는 동안에만 쓰며 평소에는 엔진 처리에 그대로 둔다. macOS WKWebView는 Edit 메뉴 없이 Cmd 편집 키를 실행하지 않으므로 바인딩만 막는다.
-모달 상태는 모달을 열고 닫을 때(`set_active_modal`·`take_active_modal`), 키 쥘 곳은 프레임 동기화의 W2 판정 뒤에
-bridge에 알린다(`WebViewKeyBridge::set_key_holder`). 그래서 native 클릭 직후 다음 프레임 게시 전까지는 앞 게시값으로 판정한다. 편집이 아닌 키는 이 판정과 무관하다.
+모달 상태는 모달을 열고 닫을 때(`set_active_modal`·`take_active_modal`), 키 쥘 곳은 프레임 동기화의 W2 판정 뒤와 native 누름
+알림 한 건을 소비할 때마다 bridge에 알린다(`WebViewKeyBridge::set_key_holder`, `webview_keys::press_and_publish`). 편집 키는 받은
+자리에서 그때 게시된 값으로 판정한다. 편집이 아닌 키는 이 판정과 무관하다.
 
 같은 조합이 여러 곳에 묶였을 때의 순서는 두 경로가 같다: 포커스 WebView의 편집 바인딩 > plugin 명령 > 그 밖의
-host 액션. native 경로는 `edit_action`을 `capture_key`보다 먼저 묻고 페이지 예약 조합과 같은 plugin 조합을 정책에서
+host 액션. native 경로는 `edit_action`을 `forward_key`보다 먼저 묻고 페이지 예약 조합과 같은 plugin 조합을 정책에서
 뺀다. host 창 경로는 `dispatch_plugin_shortcut_key`가 `webview_edit_for_key`에 걸리는 키를 plugin에 넘기지 않는다.
 
 Windows의 DevTools 명령은 페이지에 키 정보가 없는 keydown을 한 번 보낸다. 그 keydown에서 페이지가
@@ -521,9 +534,10 @@ host는 실제 focus가 해당 자식 안에 있을 때만 부모 winit 창으�
 - 동기화마다: OS 키 포커스를 쥔 webview를 회수할지는 판정 하나(`webview_sync::key_release::release_webview_key_focus`,
   키 쥘 곳은 `key_focus::webview_key_holder_of`)가 정한다. 조건은 그 함수와 W2 시험(`popup::route::tests::webview_release`)이
   정본이다. 같은 구간에 다시 쥐거나 늦게 나타난 webview도 회수한다. 판정은 표시 술어 관측 뒤, 표시 적용 전이다.
-  판정 전에 아직 소비하지 않은 native 포커스 알림을 알림 소비와 같은 전이로 먼저 소비한다
+  판정 전에 대기열 앞의 아직 소비하지 않은 누름 알림을 알림 소비와 같은 전이로 먼저 소비한다
   (`key_release::release_after_native_focus_notices`). Windows는 winit이 누름 메시지와 다시 그리기를 한 회차 안에서
   차례로 처리하므로, 그러지 않으면 방금 누른 webview를 앞 포커스 노드로 판정해 회수하고 뒤따르는 글자 키를 잃는다.
+  전달 키 뒤에 입력이 남았으면 그 뒤 누름이 아직 적용되지 않았으므로 그 동기화는 회수하지 않는다.
 - 탭·workspace 전환으로 surface가 활성 탭에서 빠질 때: 그 surface만 전이마다 한 번 회수한다.
   숨기기 전에 회수한다. 숨긴 뒤에는 backend가 focus가 이미 자식 밖에 있다고 판정할 수 있다.
   창이 비활성이면 창이 활성이 될 때까지 미루고, 그 사이 다시 활성 탭에 들어오거나 닫힌 surface는 뺀다.
@@ -738,7 +752,7 @@ macOS·Windows는 투명 모드를 보고하지 않고 주 표면의 불투명 �
 입력·키보드·포커스·캡처 계약:
 
 - **포인터**: 대상 층이 보이는 동안 WebView 영역 전체의 클릭·휠은 호스트로 온다(`host_takes_pointer`). 입력 의미는 숨긴 상태와 같다. 페이지 클릭은 egui의 바깥 클릭으로 도착하고, 그 처리는 팝업 정의를 그대로 따른다. `close_on_outside_click`(plugin은 `dismiss_on_outside_click`)이 참이면 닫고, 거짓이면 닫지 않고 언포커스만 한다. `sticky_focus` 는 포커스 판정이 읽지 않는다([팝업 §포커스](popup.md#포커스), [§sticky_focus](popup.md#sticky_focus)). 어느 경우에도 그 클릭은 페이지로 가지 않는다. 대상 층이 사라지면 다음 프레임부터 포인터가 페이지로 간다.
-- **키보드·IME**: 페이지가 키를 받는지는 위 "포커스" 절의 회수 판정(`release_webview_key_focus`)이 정한다. 대상 층 팝업이 포커스 노드이면 그 페이지는 키 쥘 곳이 아니라 키와 IME가 가지 않고, 키는 그 팝업이 받는다. 포커스 노드가 그 페이지인 동안(포커스 없는 팝업만 떠 있을 때) 페이지는 키를 지킨다. Linux에서 포인터가 페이지 위에 있으면 X 서버가 키를 WebView로 보내므로, 포인터를 호스트로 돌리는 처리가 이 라우팅도 막아야 한다. WebView가 전달한 키는 받은 surface가 창의 키 쥘 곳일 때만 처리하고([키 경로](../../architecture/input-layer.md#plugin-명령과-webview-전달-키), `key_nodes::received_key_blocked`), 아니면 `webview_keys`에서 버린다. 닫을 때 native 자식 포커스를 자동 복원하지 않는다.
+- **키보드·IME**: 페이지가 OS 키 포커스를 지키는지는 위 "포커스" 절의 회수 판정(`release_webview_key_focus`, 조건은 그 함수와 W2 시험이 정본)이 정한다. 대상 층 팝업이 포커스 노드이면 키는 그 팝업이 받는다. Linux에서 포인터가 페이지 위에 있으면 X 서버가 키를 WebView로 보내므로, 포인터를 호스트로 돌리는 처리가 이 라우팅도 막아야 한다. WebView가 넘긴 host 조합은 전달 키 게이트(`webview_keys::forwarded_key_gate_open`, [키 경로](../../architecture/input-layer.md#plugin-명령과-webview-전달-키))가, 편집 키는 bridge 판정(`WebViewKeyBridge::input_blocked`)이 받은 surface와 키 쥘 곳으로 정한다. 닫을 때 native 자식 포커스를 자동 복원하지 않는다.
 - **포커스**: 새 OS 층(오버레이 창 등)은 OS 포커스나 창 활성화를 가져가지 않는다. 창이 비활성일 때 first responder·포커스를 바꾸지 않는 판정(`host_window_has_os_focus`)을 그대로 따른다.
 - **그리기**: 팝업은 주 표면에도 계속 그린다. 오버레이 창은 페이지 위 영역만 칠하므로 한 픽셀은 scrim과 정확히 한 번 합성된다(아래 GPU 분리).
 - **캡처**: `ui.screenshot`은 주 표면을 읽으므로 팝업은 지금처럼 캡처에 남고 WebView 픽셀은 지금처럼 없다. 페이지와 팝업이 함께 보이는지는 OS 화면 캡처로 확인한다. 원격 attach mesh 중계는 host 팝업 픽셀을 보내지 않아 영향이 없다.
