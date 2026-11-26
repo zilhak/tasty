@@ -62,13 +62,14 @@ impl KeyEventSteps<WindowEvent> for MainKeySteps<'_, '_> {
         self.view.edit_key_gate(self.engine, event)
     }
 
+    // 단계 7 은 Linux explorer IME 키 하나다. 다른 OS 에는 가로챌 사건이 없다.
+    #[cfg_attr(not(target_os = "linux"), allow(unused_variables))]
     fn intercepts_after_edit_judgment(&mut self, event: &WindowEvent) -> bool {
         #[cfg(target_os = "linux")]
         if self.view.consume_explorer_ime_key(self.engine, event) {
             return true;
         }
-        // 팝업·host 위젯의 키 입력만 egui에 전달하고 나머지는 중앙 디스패처로 보낸다.
-        self.view.route_tutorial_input(event)
+        false
     }
 
     fn feed_egui(&mut self, event: &WindowEvent, judged: Option<EditKey>) -> Option<(bool, bool)> {

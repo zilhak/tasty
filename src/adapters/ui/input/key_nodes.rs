@@ -9,8 +9,8 @@ use super::edit_key::EditBindings;
 use super::key_class::{KeyClass, KeyEventValue, classify_key};
 use super::key_level::{FieldLevel, KEYBINDING_LEVELS, KeyLevel, NumericAxis, numeric_axis_level};
 use super::key_route::{
-    AttachedPopup, KeyNode, KeyReceiver, PopupFold, PopupKeyNode, RouteKey, Routed, ScopeContent,
-    ScopeKeyNode, route_key, start_node_ends_key, text_edit_builtin,
+    AttachedNode, AttachedPopup, KeyNode, KeyReceiver, PopupFold, PopupKeyNode, RouteKey, Routed,
+    ScopeContent, ScopeKeyNode, route_key, start_node_ends_key, text_edit_builtin,
 };
 use crate::adapters::ui::popup::focus::PopupNode;
 use crate::adapters::ui::popup::{PopupEscape, PopupKeyboard};
@@ -375,10 +375,21 @@ fn attached_popups(
         .map(|(node, _, z, escape)| (z, node, escape))
         .collect::<Vec<_>>();
     found.sort_by_key(|(z, _, _)| std::cmp::Reverse(*z));
-    found
+    let mut attached: Vec<AttachedPopup> = found
         .into_iter()
-        .map(|(_, node, escape)| AttachedPopup { node, escape })
-        .collect()
+        .map(|(_, node, escape)| AttachedPopup {
+            node: AttachedNode::Popup(node),
+            escape,
+        })
+        .collect();
+    // 직전 패스에 그린 tutorial 말풍선은 Window 에 붙은 비덮음 노드다(목록 맨 끝). 쓰지 않은 Esc 는 튜토리얼을 끝낸다.
+    if level == KeyLevel::Window && state.tutorial.callout_drawn {
+        attached.push(AttachedPopup {
+            node: AttachedNode::Tutorial,
+            escape: PopupEscape::Close,
+        });
+    }
+    attached
 }
 
 /// 팝업 노드의 선언·표시 상태와 노드 키맵 수신 판정.
@@ -502,7 +513,7 @@ pub(crate) fn separate_window_attached(
     found
         .into_iter()
         .map(|(_, iid, escape)| AttachedPopup {
-            node: PopupNode::Host(iid),
+            node: AttachedNode::Popup(PopupNode::Host(iid)),
             escape,
         })
         .collect()

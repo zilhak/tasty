@@ -71,12 +71,10 @@ fn the_main_window_judges_before_egui_winit() {
         "메인 창의 단계 6이 편집 판정을 부르지 않는다."
     );
     let intercept = body(STEPS, "fn intercepts_after_edit_judgment(");
-    for call in ["consume_explorer_ime_key(", "route_tutorial_input("] {
-        assert!(
-            intercept.contains(call),
-            "메인 창의 단계 7에 `{call}` 가 없다."
-        );
-    }
+    assert!(
+        intercept.contains("consume_explorer_ime_key("),
+        "메인 창의 단계 7에 `consume_explorer_ime_key(` 가 없다."
+    );
     assert!(
         body(STEPS, "fn feed_egui(").contains(EGUI_WINIT),
         "메인 창의 egui-winit 호출이 단계 8 밖에 있다."

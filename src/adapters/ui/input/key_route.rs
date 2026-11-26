@@ -101,14 +101,30 @@ pub(crate) enum ScopeContent {
     Window,
 }
 
-/// 범위 노드에 붙은 비덮음 팝업. 노드의 하위에서 올라온 Esc만 받는다.
+/// 범위 노드에 붙은 비덮음 노드. 노드의 하위에서 올라온 Esc만 받는다.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct AttachedPopup {
-    pub(crate) node: PopupNode,
+    pub(crate) node: AttachedNode,
     pub(crate) escape: PopupEscape,
 }
 
-/// 범위 노드. `attached`는 z 최상단이 먼저다.
+/// 붙은 비덮음 노드의 종류: 팝업, 또는 Window 에 붙은 tutorial 말풍선(직전 패스에 그렸을 때만, 목록 맨 끝).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum AttachedNode {
+    Popup(PopupNode),
+    Tutorial,
+}
+
+impl AttachedNode {
+    fn receiver(self) -> KeyReceiver {
+        match self {
+            AttachedNode::Popup(node) => KeyReceiver::popup(node),
+            AttachedNode::Tutorial => KeyReceiver::Tutorial,
+        }
+    }
+}
+
+/// 범위 노드. `attached`는 z 최상단이 먼저이고 말풍선은 맨 끝이다.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct ScopeKeyNode {
     pub(crate) level: KeyLevel,
@@ -415,7 +431,7 @@ fn route_escape(
                         .iter()
                         .find(|a| a.escape != PopupEscape::Ignore)
                 {
-                    return KeyReceiver::popup(a.node);
+                    return a.node.receiver();
                 }
                 from_attached = false;
             }

@@ -62,6 +62,9 @@ pub struct TutorialRuntime {
     preparation: Option<std::sync::Arc<()>>,
     pub keyboard_focus: bool,
     pub callout_rect: Option<egui::Rect>,
+    /// 직전 패스에 말풍선을 실제로 그렸는지(`draw_tutorial_overlay` 가 첫머리에 거짓, 그린 뒤 참으로 적는다). 경로의 Window 붙은
+    /// 노드 생산자(`key_nodes::attached_popups`)가 이 값만 읽는다.
+    pub callout_drawn: bool,
     pub save_error: bool,
     pub setup_error: bool,
     pub catalog_loaded: bool,
@@ -83,6 +86,7 @@ impl Default for TutorialRuntime {
             preparation: None,
             keyboard_focus: false,
             callout_rect: None,
+            callout_drawn: false,
             save_error: false,
             setup_error: false,
             catalog_loaded: false,

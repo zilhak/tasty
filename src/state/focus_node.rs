@@ -209,6 +209,8 @@ impl super::MainViewState {
             }
             None => self.popups.focus_on_press(None),
         }
+        // 누름은 말풍선 키보드 포커스를 끈다. 말풍선을 누른 누름이면 그 패스의 그리기(`draw_tutorial_overlay`)가 다시 켠다.
+        self.tutorial.keyboard_focus = false;
         self.normalize_focus(core);
         snapshot
     }

@@ -84,8 +84,8 @@ impl super::MainViewState {
 
     /// Escape 결과. 사건 시점 수신자가 래치 노드면 설정 요청을 취소하고, 사건 시점 수신자가
     /// host 팝업이면 선언 `escape` 대로 포커스를 풀어 넘긴다(펼친 팝업은 풀지 않고 넘긴다). Ignore 팝업은 수신자가 되지
-    /// 않는다(`route_escape` 가 부모 경로로 올린다). plugin 팝업이면 그 렌더가 받도록 넘긴다. 그 밖의 수신자는 창이
-    /// 처리하지 않는다. 닫기는 팝업 층 중앙 단계가 정한다.
+    /// 않는다(`route_escape` 가 부모 경로로 올린다). plugin 팝업이면 그 렌더가 받도록 넘긴다. tutorial 말풍선(포커스 노드
+    /// 또는 Window 에 붙은 노드)이면 튜토리얼을 중단하고 목록을 다시 연다. 그 밖의 수신자는 창이 처리하지 않는다. 닫기는 팝업 층 중앙 단계가 정한다.
     fn escape_outcome(
         &mut self,
         decision: crate::adapters::ui::input::key_nodes::KeyDecision,
@@ -122,6 +122,12 @@ impl super::MainViewState {
                 }
                 EscapeOutcome::Consumed {
                     hand_to_owner: true,
+                }
+            }
+            KeyReceiver::Tutorial => {
+                crate::adapters::ui::tutorial::interrupt_and_reopen(self);
+                EscapeOutcome::Consumed {
+                    hand_to_owner: false,
                 }
             }
             _ => EscapeOutcome::Pass,

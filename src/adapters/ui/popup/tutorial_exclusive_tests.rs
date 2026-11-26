@@ -110,8 +110,8 @@ fn enter_does_not_press_the_tutorial_button_after_a_plugin_popup_takes_the_focus
 
 /// Given 튜토리얼 다음 단추가 egui 키 포커스를 가지고 R 에 plugin 팝업이 열려 있을 때, When 한 묶음에 [Enter, 그 plugin
 /// 팝업 누름]이 오면, Then Enter 는 누름 앞 몫(포커스 노드가 튜토리얼인 몫)으로 그려져 튜토리얼 단계를 넘긴다. 누름이
-/// 포커스 노드를 팝업으로 옮긴 뒤 온 Enter 는 단계를 넘기지 않는다. 창처럼 누름 앞에서 끊고, 누름을 처리하는
-/// 튜토리얼 입력(`route_tutorial_input`)이 키보드 몫을 놓는 것도 끊은 뒤다.
+/// 포커스 노드를 팝업으로 옮긴 뒤 온 Enter 는 단계를 넘기지 않는다. 창처럼 누름 앞에서 끊고, 말풍선 키보드 포커스를
+/// 끄는 누름 스냅샷(`MainViewState::take_press_snapshot`)도 끊은 뒤다.
 #[test]
 fn an_enter_before_a_popup_press_in_the_same_batch_advances_the_tutorial() {
     use crate::adapters::ui::popup::window_input_test_support::WindowInput;
@@ -145,7 +145,6 @@ fn an_enter_before_a_popup_press_in_the_same_batch_advances_the_tutorial() {
         );
     }
     input.press(&mut state, &engine.read(), placed.center());
-    state.tutorial.keyboard_focus = false;
     assert_eq!(
         state.focus_node(&engine.read()),
         FocusNode::Popup(PopupNode::Plugin(POPUP))

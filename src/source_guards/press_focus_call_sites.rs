@@ -28,8 +28,8 @@ fn at(body: &str, needle: &str, what: &str) -> usize {
     body.find(needle).unwrap_or_default()
 }
 
-/// 창의 누름·키: 사건을 처리하기 전에(튜토리얼 입력·egui 전달·누름 스냅샷보다 먼저) 입력 몫을 끊고, 누름 처리가
-/// 누름 스냅샷 함수로 포커스 노드를 옮겨 그 프레임에 남긴다. 수식키 없는 Esc 누름은 자기 몫을 갖고(조건 8), egui 에
+/// 창의 누름·키: 사건을 처리하기 전에(egui 전달·누름 스냅샷보다 먼저) 입력 몫을 끊고, 누름 처리가
+/// 누름 스냅샷 함수로 포커스 노드를 옮겨 그 프레임에 남긴다. 말풍선 키보드 포커스도 그 함수가 끈다. 수식키 없는 Esc 누름은 자기 몫을 갖고(조건 8), egui 에
 /// 실은 그 Esc 가 몫을 끝낸다는 표시는 egui 게이트를 지난 뒤에만 남긴다(뒤 경계).
 #[test]
 fn a_window_press_moves_the_focus_node_through_the_press_snapshot() {
@@ -82,7 +82,7 @@ fn a_window_press_moves_the_focus_node_through_the_press_snapshot() {
     let feed = at(&order, "steps.feed_egui(&event,judged)", "단계 8");
     assert!(
         settle < intercept && intercept < feed,
-        "E0 함수가 정규화·끊기 → 튜토리얼 → egui 전달 순서로 부르지 않는다"
+        "E0 함수가 정규화·끊기 → 단계 7 → egui 전달 순서로 부르지 않는다"
     );
     let steps = read("src/view/main/key_event_steps.rs");
     let step = |name: &str| squeeze(&fn_body(&steps, name).unwrap_or_else(|| panic!("{name}")));
@@ -110,10 +110,22 @@ fn a_window_press_moves_the_focus_node_through_the_press_snapshot() {
         "끊긴 몫의 수신자",
     );
     assert!(cut_at < decide, "끊기 → 수신자 순서가 아니다");
-    at(
-        &step("fn intercepts_after_edit_judgment("),
-        "self.view.route_tutorial_input(event)",
-        "튜토리얼 입력",
+    // 말풍선 포커스를 끄는 누름 처리는 누름이 포커스를 정하는 한 함수에 있다(단계 7 에 없다).
+    assert!(
+        !step("fn intercepts_after_edit_judgment(").contains("tutorial"),
+        "단계 7 이 튜토리얼 입력을 다시 가로챈다"
+    );
+    let focus = read("src/state/focus_node.rs");
+    let take = squeeze(&fn_body(&focus, "fn take_press_snapshot(").expect("take_press_snapshot"));
+    let off = at(
+        &take,
+        "self.tutorial.keyboard_focus=false;",
+        "누름의 말풍선 포커스 끄기",
+    );
+    let renormalize = at(&take, "self.normalize_focus(core);", "누름 뒤 정규화");
+    assert!(
+        off < renormalize,
+        "말풍선 포커스 끄기 → 정규화 순서가 아니다"
     );
     let feed = step("fn feed_egui(");
     let keys = at(&feed, ".feed_egui_keyboard(", "키의 egui 전달");

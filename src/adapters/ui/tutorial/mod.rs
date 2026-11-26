@@ -68,6 +68,7 @@ pub fn draw_tutorial_overlay(
     content: egui::Rect,
     theme: &Theme,
 ) {
+    state.tutorial.callout_drawn = false;
     state.tutorial.start_pending();
     let Some(a) = state.tutorial.active else {
         return;
@@ -187,6 +188,7 @@ pub fn draw_tutorial_overlay(
         },
     );
     state.tutorial.callout_rect = Some(click.rect);
+    state.tutorial.callout_drawn = true;
     if click.clicked
         || !matches!(
             click.action,

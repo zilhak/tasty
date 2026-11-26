@@ -45,7 +45,7 @@ fn scope(level: KeyLevel, content: ScopeContent, attached: Vec<AttachedPopup>) -
 
 fn attached(n: u64, escape: PopupEscape) -> AttachedPopup {
     AttachedPopup {
-        node: host(n),
+        node: AttachedNode::Popup(host(n)),
         escape,
     }
 }

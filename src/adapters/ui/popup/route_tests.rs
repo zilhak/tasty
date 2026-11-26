@@ -461,6 +461,10 @@ mod key_transition;
 mod tutorial_exclusive;
 
 #[cfg(feature = "gui")]
+#[path = "tutorial_escape_tests.rs"]
+mod tutorial_escape;
+
+#[cfg(feature = "gui")]
 #[path = "frame_key_owner_tests.rs"]
 mod frame_keys;
 

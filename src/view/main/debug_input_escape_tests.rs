@@ -163,3 +163,30 @@ fn a_debug_escape_runs_no_host_shortcut() {
         "그 누름은 egui 입력에 남는다"
     );
 }
+
+/// T-TUT-11: Given 튜토리얼 말풍선이 포커스 노드일 때, When debug 주입으로 수식키 없는 Esc 를 넣으면, Then 실제 키처럼
+/// 수신자가 말풍선이라 창의 Esc 적용이 튜토리얼을 중단하고 그 누름은 egui 입력에서 빠진다.
+#[test]
+fn a_debug_escape_on_the_callout_interrupts_the_tutorial() {
+    crate::i18n::init("en");
+    let (mut state, mut session) = crate::state::tests::test_state();
+    let engine = session.borrow_mut();
+    let read = engine.read();
+    state.tutorial.request_start(0);
+    state.tutorial.start_pending();
+    state.normalize_focus(&read);
+    assert_eq!(
+        state.focus_node(&read),
+        crate::state::focus_node::FocusNode::Tutorial
+    );
+    let mut input = WindowInput::default();
+    assert_eq!(
+        inject_key(&mut state, &read, &mut input, egui::Key::Escape, true, None),
+        PushedKey::Key
+    );
+    assert!(state.tutorial.active.is_none(), "튜토리얼이 중단된다");
+    assert!(
+        !input.queue_mut().iter().any(is_escape_press),
+        "창이 처리한 누름은 egui 입력에서 빠진다"
+    );
+}
