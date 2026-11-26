@@ -759,8 +759,35 @@ fn a_press_on_the_cover_of_a_separate_window_popup_keeps_that_popup_the_node() {
     let seen = h.drain(&mut w);
     assert_eq!(w.text("w"), "", "the covered widget gets no text");
     assert!(
-        seen.iter().flatten().all(|n| *n == "C"),
+        seen.iter().flatten().all(|n| *n == "C") && seen.iter().flatten().any(|n| *n == "C"),
         "only the covering popup sees the key: {seen:?}"
+    );
+}
+
+/// Given 창을 덮는 팝업 C 가 열렸다, When 덮음 막이(덮인 창 위젯 w 자리)를 누르면, Then 누름 직후 사건 시점 노드가
+/// C 이고 뒤의 키가 C 에 도착한다. 막이 위 누름을 C 로 보내는 것은 덮음 규칙 한 자리(`window_uncovered`)다.
+#[test]
+fn a_press_on_the_cover_makes_the_covering_popup_the_event_node() {
+    let (mut h, mut w) = covered_widget();
+    let field = w.center("w");
+    let c = w
+        .popups
+        .instances_of(crate::view::settings::ui::KEYBINDING_CONFLICT_POPUP_ID)
+        .next()
+        .expect("C")
+        .instance;
+    h.press(&mut w, field);
+    assert_eq!(
+        w.popups.window_key_node(&h.ctx).popup(),
+        Some(c),
+        "the event node right after the press is the covering popup"
+    );
+    h.release(field);
+    h.type_x(&mut w);
+    let seen = h.drain(&mut w);
+    assert!(
+        seen.iter().flatten().any(|n| *n == "C"),
+        "the key after the press reaches the covering popup: {seen:?}"
     );
 }
 

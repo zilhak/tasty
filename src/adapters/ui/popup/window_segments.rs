@@ -178,9 +178,9 @@ impl PopupManager {
         }
     }
 
-    /// 누름을 사건 시점에 적용한다. `pos` 의 레이어가 열린 인스턴스(등록 자식 포함)나 그 덮음 막이면 그 인스턴스로,
-    /// 아니면 창 위젯으로 포커스를 옮긴다(`focus_on_press`, 메인 창 포인터 대상 `popup_pointer_target` 이 덮는 사각형을
-    /// 보는 것과 같다). 그 누름을 그리기 전까지 노드는 그 값이고, 그 누름을 그리는 패스는 포커스를 다시 정하지 않는다
+    /// 누름을 사건 시점에 적용한다. `pos` 의 레이어가 열린 인스턴스(등록 자식 포함)면 그 인스턴스로, 아니면 창 위젯으로
+    /// 포커스를 옮긴다(`focus_on_press`). 덮음 막이 위 누름은 창 위젯 누름이 되고, 덮는 팝업으로 가는 것은 덮음 규칙
+    /// 한 자리(`window_uncovered`)가 정한다. 그 누름을 그리기 전까지 노드는 그 값이고, 그 누름을 그리는 패스는 포커스를 다시 정하지 않는다
     /// (`window_press_decided`).
     pub(crate) fn press_window_at(&mut self, ctx: &egui::Context, pos: egui::Pos2) {
         let hit = ctx.layer_id_at(pos).and_then(|layer| {
@@ -190,7 +190,6 @@ impl PopupManager {
                 .find(|p| {
                     let area = super::draw::area_id_of(p.id, p.instance);
                     area == layer.id
-                        || area.with(super::draw::COVER_BLOCK) == layer.id
                         || super::child_popup_ids::child_layer_ids(ctx, p.instance)
                             .contains(&layer.id)
                 })
