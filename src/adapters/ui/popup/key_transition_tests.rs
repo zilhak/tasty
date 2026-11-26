@@ -238,6 +238,31 @@ const PLUGIN: &str = "com.example.key-popup";
 fn declare_viewer(
     mgr: &mut crate::plugin::PluginManager,
 ) -> tasty_host_plugin::manager::CallerStub {
+    declare_viewer_spec(
+        mgr,
+        serde_json::json!({ "scope_kind": "window", "size": { "width": 200, "height": 100 } }),
+    )
+}
+
+/// [`declare_viewer`] 와 같되 범위를 덮지 않는(`covers_scope = false`) 팝업으로 선언한다.
+fn declare_plain_viewer(
+    mgr: &mut crate::plugin::PluginManager,
+) -> tasty_host_plugin::manager::CallerStub {
+    declare_viewer_spec(
+        mgr,
+        serde_json::json!({
+            "scope_kind": "window",
+            "size": { "width": 200, "height": 100 },
+            "covers_scope": false,
+        }),
+    )
+}
+
+/// `mgr` 에 `spec` 선언의 `viewer` 팝업을 가진 plugin 을 설치한다.
+fn declare_viewer_spec(
+    mgr: &mut crate::plugin::PluginManager,
+    spec: serde_json::Value,
+) -> tasty_host_plugin::manager::CallerStub {
     let manifest = toml::from_str(&format!(
         "manifest_version = 1\nid = \"{PLUGIN}\"\nname = \"Key popup\"\nversion = \"1.0.0\"\n\
          api_version = \"{}\"\n[entry]\ntype = \"process\"\ncommand = \"echo\"\n",
@@ -249,11 +274,9 @@ fn declare_viewer(
         manifest,
     }]);
     let stub = mgr.attach_caller_stub_for_test(PLUGIN);
-    let decl = serde_json::from_value::<tasty_plugin_protocol::PopupDeclSpec>(
-        serde_json::json!({ "scope_kind": "window", "size": { "width": 200, "height": 100 } }),
-    )
-    .expect("spec")
-    .to_decl();
+    let decl = serde_json::from_value::<tasty_plugin_protocol::PopupDeclSpec>(spec)
+        .expect("spec")
+        .to_decl();
     mgr.declare_popup(PLUGIN, "viewer", decl).expect("declare");
     stub
 }
@@ -528,4 +551,77 @@ fn a_plugin_popup_open_in_another_window_does_not_apply_early() {
         s.state.focus_node(&engine.read()),
         FocusNode::Surface(Some(SURFACE_R))
     );
+}
+
+/// OS 키 포커스를 쥔 시험용 WebView. 회수 수를 센다.
+#[derive(Default)]
+struct HoldingWebView {
+    holds: std::cell::Cell<bool>,
+    released: std::cell::Cell<u32>,
+}
+
+impl crate::app::webview_sync::key_release::KeyFocusWebView for HoldingWebView {
+    fn holds_keyboard_focus(&self) -> bool {
+        self.holds.get()
+    }
+
+    fn release_keyboard_focus(&self) {
+        self.released.set(self.released.get() + 1);
+        self.holds.set(false);
+    }
+}
+
+/// T-W2-3(생산 경로): Given R 터미널이 포커스 노드이고 그 WebView 가 OS 키 포커스를 쥐었을 때, When plugin 이 포커스가
+/// 아닌 L surface 의 이벤트로 스스로 창 범위 팝업을 열어(surface 이벤트 열기 `App::dispatch_pending_surface_popups` 와
+/// 같은 열기·결속·포커스 판정, 사용자 출처가 아니므로 passive) 그 팝업을 렌더한 뒤 동기화하면, Then 렌더가 plugin
+/// 팝업 열림을 세우고 포커스 노드는 R 에 남아 R WebView 는 키 포커스를 지킨다. 팝업은 범위를 덮지 않는다(덮는
+/// 팝업은 passive 여도 포커스 노드가 된다, `normalize_focus`).
+#[test]
+fn a_passive_plugin_popup_opened_by_the_plugin_keeps_the_focused_webview() {
+    let mut s = open_scene(|_| {});
+    let _stub = declare_plain_viewer(&mut s.mgr);
+    let mut input = WindowInput::default();
+    let point = terminal_point_r(&s);
+    focus_terminal(&mut s, &mut input, PANE_R, point);
+    let was_open = crate::plugin_bridge::popup_scope::is_open(&s.mgr, PLUGIN, "viewer");
+    let iid = s
+        .mgr
+        .open_popup_instance(PLUGIN, "viewer", serde_json::Value::Null)
+        .expect("plugin 이 연다");
+    crate::plugin_bridge::popup_scope::bind_window_popup(&mut s.state, &s.mgr, iid, was_open);
+    let opener = crate::plugin_bridge::popup_scope::PopupOpener::Plugin {
+        plugin_id: PLUGIN,
+        event_surface: Some(SURFACE_L),
+        focused_surface: Some(SURFACE_R),
+        focused_surface_owner: None,
+    };
+    assert!(
+        !crate::plugin_bridge::popup_scope::opened_by_user(opener),
+        "포커스가 아닌 surface 의 이벤트로 연 팝업은 passive 다"
+    );
+    crate::plugin_bridge::popup_scope::focus_opened_popup(&mut s.state, &s.mgr, iid, opener);
+    assert!(!s.state.plugin_popup_open, "렌더 전이다");
+    pass(&mut s, &mut input);
+    assert!(
+        s.state.plugin_popup_open,
+        "렌더가 plugin 팝업 열림을 세웠다"
+    );
+    assert!(s.state.plugin_popup_covers.is_empty(), "덮지 않는 팝업이다");
+    let r = HoldingWebView::default();
+    r.holds.set(true);
+    let engine = s.session.borrow_mut();
+    assert_eq!(
+        s.state.focus_node(&engine.read()),
+        FocusNode::Surface(Some(SURFACE_R))
+    );
+    let overlay_open = s.state.has_egui_overlay_open();
+    crate::app::webview_sync::key_release::release_webview_key_focus(
+        &mut s.state,
+        &engine.read(),
+        crate::state::webview_overlay::OverlayMode::Opaque,
+        overlay_open,
+        &[(SURFACE_R, &r)],
+    );
+    assert_eq!(r.released.get(), 0);
+    assert!(r.holds.get());
 }

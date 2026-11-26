@@ -1219,6 +1219,32 @@ mod toast_cover_tests {
         assert!(!covered_by_any(&webview, &[rect(700.0, 20.0, 200.0, 40.0)]));
     }
 
+    /// T-W2-6b: Given 키를 쥔 페이지 L 과 겹치는 passive 덮개가 포커스 노드가 됐다, When 동기화가 표시 술어를 회수
+    /// 전에 관측하고(`hidden_under_toast`, 순서는 `source_guards::webview_key_release_order`) 그 뒤 W2 가 L 을 회수하면,
+    /// Then 그 프레임의 표시는 관측한 값이라 L 이 보인다. 회수로 키를 놓은 L 은 다음 프레임 관측에서 숨는다.
+    #[test]
+    fn a_passive_cover_overlapping_the_page_keeps_this_frame_display() {
+        let page = rect(600.0, 60.0, 680.0, 640.0);
+        let cover = [rect(800.0, 200.0, 300.0, 200.0)];
+        let holds = std::cell::Cell::new(true);
+        let observed = hidden_under_toast(Some(&page), &cover, || holds.get());
+        // W2 회수(`release_webview_key_focus`)가 이 관측 뒤에 L 의 OS 키 포커스를 놓는다.
+        holds.set(false);
+        assert!(crate::state::webview_overlay::reveal_wanted(
+            OverlayMode::Opaque,
+            true,
+            true,
+            observed
+        ));
+        let next = hidden_under_toast(Some(&page), &cover, || holds.get());
+        assert!(!crate::state::webview_overlay::reveal_wanted(
+            OverlayMode::Opaque,
+            true,
+            true,
+            next
+        ));
+    }
+
     #[test]
     fn a_focused_webview_under_a_card_stays_visible() {
         let webview = rect(600.0, 60.0, 680.0, 640.0);
