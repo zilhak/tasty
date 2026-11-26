@@ -342,9 +342,29 @@ fn glyphs(shapes: &[egui::epaint::ClippedShape]) -> Vec<(egui::Rect, egui::Color
 fn a_lost_session_draws_the_up_button_disabled() {
     let mut f = open_remote(None);
     f.data().current_dir = "/srv/app".into();
-    let alive = glyphs(&f.shape_passes().pop().expect("pass"));
+    // 세션 소실은 본문(연결 끊김 안내)도 바꾸므로 경로 막대 줄(crumb `srv` 와 같은 높이)의 글리프만 비교한다.
+    let bar_glyphs = |shapes: &[egui::epaint::ClippedShape]| {
+        let y = shapes
+            .iter()
+            .find_map(|c| match &c.shape {
+                egui::Shape::Text(t) if t.galley.text() == "srv" => {
+                    Some(t.pos.y + t.galley.size().y * 0.5)
+                }
+                _ => None,
+            })
+            .expect("crumb srv");
+        glyphs(shapes)
+            .into_iter()
+            .filter(|(r, _)| (r.center().y - y).abs() < 2.0)
+            .collect::<Vec<_>>()
+    };
+    let alive = bar_glyphs(&f.shape_passes().pop().expect("pass"));
     f.data().mirror_ws_id = Some(f.ws + 1000);
-    let lost = glyphs(&f.shape_passes().pop().expect("pass"));
+    let lost = bar_glyphs(&f.shape_passes().pop().expect("pass"));
+    assert!(
+        alive.len() >= 2,
+        "경로 막대 글리프(Up · Refresh): {alive:?}"
+    );
     assert_eq!(alive.len(), lost.len());
     let changed: Vec<_> = alive
         .iter()

@@ -217,7 +217,12 @@ fn the_row_focus_ring_is_an_inset_line_inked_by_the_row_ground() {
                 "{case}: 선 굵기"
             );
             assert_eq!(radius, th.corner_radius_sm.value(), "{case}: 모서리");
-            assert_eq!(rect.height(), row_h, "{case}: 행 높이 그대로");
+            // 행 사각형은 픽셀 격자에 맞춰 반올림돼 계산값과 1px 안에서 다르다.
+            assert!(
+                (rect.height() - row_h).abs() < 0.5,
+                "{case}: 행 높이 그대로 {} vs {row_h}",
+                rect.height()
+            );
             assert!(
                 i > name_index(&shapes, FOLDER),
                 "{case}: 행 내용 뒤에 그린다"
@@ -277,7 +282,7 @@ fn the_selection_bar_is_on_active_over_the_row_ground() {
             let shapes = paint(&th, FOLDER, pointer);
             let text = name_rect(&shapes, FOLDER);
             let on_row = |r: &egui::Rect| {
-                (r.height() - row_h).abs() < 0.01 && r.y_range().contains(text.center().y)
+                (r.height() - row_h).abs() < 0.5 && r.y_range().contains(text.center().y)
             };
             let bars: Vec<(usize, egui::Color32)> = shapes
                 .iter()
