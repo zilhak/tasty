@@ -464,7 +464,7 @@ fn seg_toggle_width(theme: &Theme) -> f32 {
 }
 
 /// grid/list/detail 아이콘 토글 (design `SegToggle`): 컨테이너 surface-raised +
-/// border-default 1px + radius, active 세그먼트 = segtoggle-on-bg 채움 + segtoggle-on-fg,
+/// border-strong 1px + radius, active 세그먼트 = segtoggle-on-bg 채움 + segtoggle-on-fg,
 /// inactive = text-muted. tooltip 은 i18n 라벨(텍스트 라벨 제거 대신 aria/tooltip 유지).
 fn seg_toggle(
     ui: &mut egui::Ui,
@@ -484,7 +484,7 @@ fn seg_toggle(
         rect,
         theme.corner_radius.value(),
         theme.surface_raised().to_egui(),
-        egui::Stroke::new(theme.border_width.value(), theme.border_default().to_egui()),
+        egui::Stroke::new(theme.border_width.value(), theme.border_strong().to_egui()),
         egui::StrokeKind::Inside,
     );
     let segs = [
@@ -1603,6 +1603,9 @@ fn tool_icon(ui: &mut egui::Ui, theme: &Theme, icon: Icon, enabled: bool, tip: &
 
 #[cfg(test)]
 mod virtual_tests;
+
+#[cfg(test)]
+mod seg_toggle_tests;
 
 #[cfg(test)]
 mod tests {
