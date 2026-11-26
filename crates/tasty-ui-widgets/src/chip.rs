@@ -310,8 +310,7 @@ fn tag_disabled_colors(theme: &Theme, ground: Ground) -> TagColors {
 }
 
 pub(crate) fn tag_colors(theme: &Theme, variant: TagVariant) -> TagColors {
-    // 상태 variant 테두리의 color-mix 비율. 대응 토큰이 없다.
-    const TAG_BORDER_OPACITY: f32 = 0.4;
+    // 상태 variant 테두리는 정본 tag-*-border(tint-border-alpha)다.
     match variant {
         TagVariant::Default => (
             theme.tag_bg().to_egui(),
@@ -330,52 +329,27 @@ pub(crate) fn tag_colors(theme: &Theme, variant: TagVariant) -> TagColors {
         ),
         TagVariant::Info => (
             theme.tag_bg().to_egui(),
-            Some(
-                theme
-                    .accent_info()
-                    .to_egui()
-                    .gamma_multiply(TAG_BORDER_OPACITY),
-            ),
+            Some(theme.tag_info_border().to_egui()),
             theme.tag_info_fg().to_egui(),
         ),
         TagVariant::Success => (
             theme.tag_bg().to_egui(),
-            Some(
-                theme
-                    .accent_success()
-                    .to_egui()
-                    .gamma_multiply(TAG_BORDER_OPACITY),
-            ),
+            Some(theme.tag_success_border().to_egui()),
             theme.tag_success_fg().to_egui(),
         ),
         TagVariant::Warning => (
             theme.tag_bg().to_egui(),
-            Some(
-                theme
-                    .accent_warning()
-                    .to_egui()
-                    .gamma_multiply(TAG_BORDER_OPACITY),
-            ),
+            Some(theme.tag_warning_border().to_egui()),
             theme.tag_warning_fg().to_egui(),
         ),
         TagVariant::Danger => (
             theme.tag_bg().to_egui(),
-            Some(
-                theme
-                    .accent_danger()
-                    .to_egui()
-                    .gamma_multiply(TAG_BORDER_OPACITY),
-            ),
+            Some(theme.tag_danger_border().to_egui()),
             theme.tag_danger_fg().to_egui(),
         ),
         TagVariant::Attached => (
             theme.tag_bg().to_egui(),
-            Some(
-                theme
-                    .border_attached()
-                    .to_egui()
-                    .gamma_multiply(TAG_BORDER_OPACITY),
-            ),
+            Some(theme.tag_attached_border().to_egui()),
             theme.tag_attached_fg().to_egui(),
         ),
     }
@@ -941,6 +915,47 @@ mod tests {
                 assert_eq!(fill, theme.tag_bg().to_egui());
                 assert_eq!(fg, ink.to_egui());
                 assert!(border.is_some(), "status tag keeps its accent edge");
+            }
+        }
+    }
+
+    /// 상태 Tag를 하나 그려 그 상자에 그린 테두리 색을 읽는다.
+    fn painted_tag_border(theme: &Theme, variant: TagVariant) -> egui::Color32 {
+        let ctx = egui::Context::default();
+        let output = ctx.run(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                tag(ui, theme, "state", variant, false);
+            });
+        });
+        let strokes: Vec<egui::Color32> = output
+            .shapes
+            .iter()
+            .filter_map(|c| match &c.shape {
+                egui::Shape::Rect(r) if r.stroke.width > 0.0 => Some(r.stroke.color),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(strokes.len(), 1, "one tag border is painted");
+        strokes[0]
+    }
+
+    /// 상태 Tag 테두리는 정본 tag-*-border(tint-border-alpha)다.
+    #[test]
+    fn status_tag_borders_read_the_tag_border_tokens() {
+        let file = tasty_themes::ThemeFile::parse(tasty_themes::LATTE_TOML_TEXT).unwrap();
+        let (partial, is_light) = file.to_partial();
+        let mut colors = tasty_themes::mocha_fallback_colors();
+        colors.apply_partial(&partial);
+        let latte = Theme::with_colors(colors, is_light.unwrap_or(true));
+        for theme in [tasty_themes::mocha_fallback(), latte] {
+            for (variant, edge) in [
+                (TagVariant::Info, theme.tag_info_border()),
+                (TagVariant::Success, theme.tag_success_border()),
+                (TagVariant::Warning, theme.tag_warning_border()),
+                (TagVariant::Danger, theme.tag_danger_border()),
+                (TagVariant::Attached, theme.tag_attached_border()),
+            ] {
+                assert_eq!(painted_tag_border(&theme, variant), edge.to_egui());
             }
         }
     }

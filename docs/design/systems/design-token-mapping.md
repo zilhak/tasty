@@ -81,7 +81,7 @@
 
 Notification 행의 `notification_item_fg_selected()`·`notification_item_unread_dot_selected()`와 `button_ghost_active_fg()`는 접근자만 있다. 앱의 Notification 행에는 선택 상태가 없고, 활성 행 위에 놓이는 ghost 버튼도 없다.
 
-Tag는 모든 상태 variant가 `tag_bg()` 위에 그리고 테두리는 accent 40%를 유지한다. 글자는 `tag_success_fg()`·`tag_warning_fg()`·`tag_danger_fg()`·`tag_info_fg()`·`tag_attached_fg()`이고 상태 점과 앞 글리프도 같은 색이다. 자체 채움이 있어 선택 행에서도 바뀌지 않는다. 원격 미러 Tag는 `info`, remote attach의 점유 표시는 `attached`, inactive 표시는 `warning` variant다. `tag_attention_fg()`는 대응 variant가 앱에 없어 읽는 곳이 없다.
+Tag는 모든 상태 variant가 `tag_bg()` 위에 그리고 테두리는 `tag_info_border()` 등 `tag-*-border`(= `tint-*-border`)다. 글자는 `tag_success_fg()`·`tag_warning_fg()`·`tag_danger_fg()`·`tag_info_fg()`·`tag_attached_fg()`이고 상태 점과 앞 글리프도 같은 색이다. 자체 채움이 있어 선택 행에서도 바뀌지 않는다. 원격 미러 Tag는 `info`, remote attach의 점유 표시는 `attached`, inactive 표시는 `warning` variant다. `tag_attention_fg()`는 대응 variant가 앱에 없어 읽는 곳이 없다.
 
 ## 불투명도
 

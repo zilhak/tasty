@@ -154,7 +154,7 @@ D2Coding 11px, 배율 1에서 확인한 예(`crates/tasty-gallery/tests/mono_met
 - **폰트 weight**(medium/semibold/bold): egui 는 별도 bold family 없이는 굵기 재현 불가. 워크스페이스 행의 running 개수(medium)도 크기와 색으로만 근사한다.
   크기+색(또는 `.strong()` 색 보정)만 따른다 — 디자인 weight 차이는 시각상 미세 손실.
 - **radius-pill**(완전 둥금): egui CornerRadius 로 `height/2` 사용.
-- **`color-mix(accent 40%, transparent)`**(Tag 상태 보더): `accent.gamma_multiply(0.4)`.
+- **`color-mix(accent × tint-border-alpha, transparent)`**(Tag 상태 보더 `tag-*-border`): `Theme::tag_*_border()`가 accent에 그 알파를 얹는다.
 - **`::after` 오버레이 틴트**(Button/IconButton hover/active): pseudo-element 없음 →
   `rect_filled(overlay_*.to_egui_premultiplied())` 수동.
 - **focus ring**: 모양의 정본은 디자인 소스 vendor/README.md "States via overlays"다. box-shadow·outline 이 없으므로
@@ -352,8 +352,8 @@ State 셀은 `status_dot`(점 `status_dot_size` 8 + `space-xs` 4 + caption 11px 
   `color-mix(in srgb, C 11%, transparent)`(알파 감소)를 쓴다. egui 엔 color-mix 가 없다.
 - **처방**: 두 케이스를 분리. 불투명 블렌드 = srgb 바이트 선형보간 `mix_srgb(a, ratio, b)`
   (비율이 가운데 인자다 — `a` 를 `ratio` 만큼 `b` 에 섞고, 결과 알파는 배경 `b` 의 것을 따른다).
-  transparent 믹스 = 색은 그대로 두고 알파만 얹는다(= C 를 알파 t 로). 후자는 Tag 위젯의
-  `gamma_multiply(0.4)`(=border 40% transparent) 와 같은 의도.
+  transparent 믹스 = 색은 그대로 두고 알파만 얹는다(= C 를 알파 t 로). 후자는 Tag 상태 테두리
+  `tint-*-border`(= accent × tint-border-alpha, transparent) 와 같은 의도.
 - **근거**: 두 케이스가 각각 구현돼 있다. 불투명 블렌드는
   `crates/tasty-type-appearance/src/theme.rs` 의 `mix_srgb(a, ratio, b)` — 그 파일의 wash
   접근자들이 유일한 호출자다. 알파 감소는 `HexColor::with_alpha`(`crates/tasty-type-appearance/src/color.rs`)
@@ -361,8 +361,8 @@ State 셀은 `status_dot`(점 `status_dot_size` 8 + `space-xs` 4 + caption 11px 
   곱해 premultiplied 색을 만든다. egui 렌더러가 sRGB 바이트 공간에서 합성하므로 CSS
   `color-mix(in srgb …, transparent)` 를 배경에 올린 값과 같다. 선형 공간에서 곱하는
   `Color32::from_rgba_unmultiplied` 는 어두운 배경에서 진하게 나온다(accent 12% 가 (43,48,70) 대신
-  (75,93,136)). Tag 의 `gamma_multiply(0.4)` 는
-  `crates/tasty-ui-widgets/src/chip.rs` 의 `TagVariant::Info` 보더에 살아 있다.
+  (75,93,136)). Tag 상태 보더의 알파 감소는
+  `crates/tasty-type-appearance/src/state_ink.rs` 의 `tint_*_border()` 가 accent 자신의 알파에 곱해 얹는다.
 
 ---
 
