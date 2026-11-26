@@ -27,7 +27,7 @@ fn the_webview_key_release_sits_between_the_display_observation_and_the_reveal()
     let order = [
         "settle_overlay(",
         "hidden_under_toast(",
-        "key_release::release_webview_key_focus(",
+        "key_release::release_after_native_focus_notices(",
         "apply_reveal(",
     ];
     for pair in order.windows(2) {

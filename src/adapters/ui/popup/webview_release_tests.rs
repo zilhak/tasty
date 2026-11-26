@@ -393,3 +393,35 @@ fn the_record_clears_for_the_holder_and_for_a_gone_surface() {
         [SURFACE_R]
     );
 }
+
+/// T-W2-14: Given L 이 포커스 노드이고 사용자가 R 페이지를 막 눌러 R WebView 가 OS 키 포커스를 쥐었으며 그 누름
+/// 알림이 아직 소비되지 않았을 때(Windows 는 누름 메시지와 다시 그리기가 한 회차 안에 차례로 온다), When 프레임
+/// 동기화가 회수를 판정하면, Then 알림을 먼저 소비해 R 이 포커스 노드가 되고 R WebView 는 키 포커스를 지킨다. 대조:
+/// 알림이 없으면 같은 동기화가 R 에서 회수한다.
+#[test]
+fn a_frame_sync_consumes_a_pending_press_notice_before_it_releases_the_pressed_webview() {
+    use crate::app::webview_sync::key_release::release_after_native_focus_notices;
+    for (notice, released, holder) in [(true, 0, Some(SURFACE_R)), (false, 1, Some(SURFACE_L))] {
+        let (mut state, mut session) = defs_scene();
+        let bridge = crate::webview::WebViewKeyBridge::default();
+        bridge.set_key_holder(Some(SURFACE_L));
+        if notice {
+            crate::host_api::webview::keys::WebViewKeySink::note_focus(&bridge, SURFACE_R);
+        }
+        let r = holding();
+        let engine = session.borrow_mut();
+        let overlay_open = state.has_egui_overlay_open();
+        let (got, moved) = release_after_native_focus_notices(
+            &mut state,
+            &engine.read(),
+            &bridge,
+            OverlayMode::Opaque,
+            overlay_open,
+            &[(SURFACE_R, &r)],
+        );
+        assert_eq!(r.released.get(), released, "notice={notice}");
+        assert_eq!(got, holder, "notice={notice}");
+        assert_eq!(moved, notice, "notice={notice}");
+        assert!(!bridge.has_focus_requests(), "알림은 소비됐다");
+    }
+}

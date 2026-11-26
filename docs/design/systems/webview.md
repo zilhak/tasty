@@ -521,6 +521,9 @@ host는 실제 focus가 해당 자식 안에 있을 때만 부모 winit 창으�
 - 동기화마다: OS 키 포커스를 쥔 webview를 회수할지는 판정 하나(`webview_sync::key_release::release_webview_key_focus`,
   키 쥘 곳은 `key_focus::webview_key_holder_of`)가 정한다. 조건은 그 함수와 W2 시험(`popup::route::tests::webview_release`)이
   정본이다. 같은 구간에 다시 쥐거나 늦게 나타난 webview도 회수한다. 판정은 표시 술어 관측 뒤, 표시 적용 전이다.
+  판정 전에 아직 소비하지 않은 native 포커스 알림을 알림 소비와 같은 전이로 먼저 소비한다
+  (`key_release::release_after_native_focus_notices`). Windows는 winit이 누름 메시지와 다시 그리기를 한 회차 안에서
+  차례로 처리하므로, 그러지 않으면 방금 누른 webview를 앞 포커스 노드로 판정해 회수하고 뒤따르는 글자 키를 잃는다.
 - 탭·workspace 전환으로 surface가 활성 탭에서 빠질 때: 그 surface만 전이마다 한 번 회수한다.
   숨기기 전에 회수한다. 숨긴 뒤에는 backend가 focus가 이미 자식 밖에 있다고 판정할 수 있다.
   창이 비활성이면 창이 활성이 될 때까지 미루고, 그 사이 다시 활성 탭에 들어오거나 닫힌 surface는 뺀다.
