@@ -67,7 +67,8 @@ struct Credit {
     definition: String,
     lucide: String,
     kind: Kind,
-    texts: BTreeSet<String>,
+    /// 주석에 적은 순서와 상관없이 비교하도록 정렬한 고지 경로. 중복도 그대로 남긴다.
+    texts: Vec<String>,
 }
 
 /// `stroke_icon!(NAME, …` 또는 `stroke_icon!(` 다음 줄의 `NAME,`에서 정의 이름을 읽는다.
@@ -121,25 +122,20 @@ fn read_credits(src: &str) -> (Vec<Credit>, Vec<String>) {
             ));
             continue;
         };
-        // 고지 경로는 주석 끝 괄호 안에 쉼표로 나눠 적는다. 경로 전체를 읽어야 다른 폴더의
-        // 같은 이름(`docs/LICENSES/…`)을 본문으로 잘못 세지 않는다.
-        let Some(texts) = rest
-            .rfind('(')
-            .and_then(|open| {
-                rest[open + 1..]
-                    .find(')')
-                    .map(|close| &rest[open + 1..open + 1 + close])
-            })
-            .map(|inside| {
-                inside
-                    .split(',')
-                    .map(|t| t.trim().to_string())
-                    .collect::<BTreeSet<String>>()
-            })
+        // 고지 경로는 주석 끝의 `(…).` 안에 쉼표로 나눠 적는다. 경로 전체를 읽어야 다른 폴더의
+        // 같은 이름(`docs/LICENSES/…`)을 본문으로 잘못 세지 않고, 괄호가 주석 끝이어야 괄호 밖에
+        // 덧붙인 경로를 놓치지 않는다.
+        let Some(inside) = rest
+            .strip_suffix(").")
+            .and_then(|body| body.rfind('(').map(|open| &body[open + 1..]))
         else {
-            problems.push(format!("{n}행: 고지 경로 괄호가 없다: {line}"));
+            problems.push(format!(
+                "{n}행: 주석이 고지 경로 괄호 `(…).`로 끝나지 않는다: {line}"
+            ));
             continue;
         };
+        let mut texts: Vec<String> = inside.split(',').map(|t| t.trim().to_string()).collect();
+        texts.sort();
         let Some(definition) = definition_name(&lines, i + 1) else {
             let next = lines.get(i + 1).map(|l| l.trim_start()).unwrap_or("");
             problems.push(format!(
@@ -166,7 +162,8 @@ fn every_lucide_credit_names_shipped_license_texts() {
     let inventory = std::fs::read_to_string(root.join(INVENTORY))
         .unwrap_or_else(|e| panic!("{INVENTORY} 을 읽지 못했다: {e}"));
     let (credits, mut problems) = read_credits(&src);
-    let required: BTreeSet<String> = REQUIRED_TEXTS.iter().map(|t| t.to_string()).collect();
+    let mut required: Vec<String> = REQUIRED_TEXTS.iter().map(|t| t.to_string()).collect();
+    required.sort();
     for c in &credits {
         if c.texts != required {
             problems.push(format!(
@@ -229,7 +226,8 @@ fn credit_reader_takes_the_definition_kind_and_texts() {
                \n\
                stroke_icon!(Y, \"y\", r#\"\"#);\n\
                // Lucide 원본을 본뜸\n\
-               // 출처: Lucide \"z\", 비슷한 도형.\n";
+               // 출처: Lucide \"z\", 비슷한 도형.\n\
+               // 출처: Lucide \"w\", 같은 도형. v(LICENSES/a.txt), LICENSES/c.txt.\n";
     let (credits, problems) = read_credits(src);
     assert_eq!(
         credits,
@@ -239,19 +237,20 @@ fn credit_reader_takes_the_definition_kind_and_texts() {
                 definition: "CLOSE".into(),
                 lucide: "x".into(),
                 kind: Kind::Same,
-                texts: BTreeSet::from(["LICENSES/a.txt".to_string(), "LICENSES/b.txt".to_string()]),
+                texts: vec!["LICENSES/a.txt".to_string(), "LICENSES/b.txt".to_string()],
             },
             Credit {
                 line: 3,
                 definition: "STAR_FILL".into(),
                 lucide: "star".into(),
                 kind: Kind::Adapted,
-                texts: BTreeSet::from(["docs/LICENSES/a.txt".to_string()]),
+                texts: vec!["docs/LICENSES/a.txt".to_string()],
             },
         ]
     );
-    assert_eq!(problems.len(), 3, "{problems:?}");
+    assert_eq!(problems.len(), 4, "{problems:?}");
     assert!(problems[0].starts_with("6행:"), "{problems:?}");
     assert!(problems[1].starts_with("9행:"), "{problems:?}");
     assert!(problems[2].starts_with("10행:"), "{problems:?}");
+    assert!(problems[3].starts_with("11행:"), "{problems:?}");
 }
