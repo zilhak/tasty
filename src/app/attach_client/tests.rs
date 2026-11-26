@@ -131,6 +131,7 @@ pub(crate) fn test_session_with_frames(
             agent_requests: Default::default(),
             next_delta_focus: None,
             resize_sync: Default::default(),
+            markdown_requests: Default::default(),
             remote_label: "127.0.0.1:0".to_string(),
             notification_sounds: 0,
             profile: None,

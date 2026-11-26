@@ -215,6 +215,7 @@ impl App {
                 agent_requests: Default::default(),
                 next_delta_focus: None,
                 resize_sync: ResizeSync::for_connection(resize_acks),
+                markdown_requests: Default::default(),
                 remote_label: format!("127.0.0.1:{port}"),
                 notification_sounds: 0,
                 profile: target.profile.clone(),

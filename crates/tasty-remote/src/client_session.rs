@@ -307,7 +307,7 @@ pub enum PendingOpFocus {
     },
 }
 
-/// 회신을 기다리는 에이전트 요청 ID. 회신이나 재연결 때 제거한다.
+/// 회신을 기다리는 에이전트 요청 ID. 회신·원문 요청 만료·재연결 때 제거한다.
 #[derive(Debug, Default)]
 pub struct AgentRequests {
     /// forward 한 구조 op 의 op_id(`PendingStructuralForward::silent_failure`).
@@ -429,6 +429,8 @@ pub struct ClientSessionState {
     pub next_delta_focus: Option<PendingOpFocus>,
     /// 원격 surface별 크기 요청의 중복 전송 방지·응답 대기·실패 목록. 재연결 때 비운다.
     pub resize_sync: crate::resize_sync::ResizeSync,
+    /// 회신을 기다리는 markdown 원문 요청과 그 마감. 재연결 때 비운다.
+    pub markdown_requests: crate::markdown_requests::MarkdownRequests,
     /// 이 연결의 loopback 엔드포인트(`127.0.0.1:<로컬 포트>`). 호스트 표시에는 쓰지 않는다([`Self::host_text`]).
     pub remote_label: String,
     /// 이번 회차에 받아 아직 재생하지 않은 알림음 수. App이 출력 회차 끝에 꺼내 재생한다.

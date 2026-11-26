@@ -48,6 +48,9 @@ pub mod pending_connection;
 /// mirror 크기 요청의 응답 대기·재시도·실패 목록.
 pub mod resize_sync;
 
+/// 보낸 markdown 원문 요청의 회신 마감.
+pub mod markdown_requests;
+
 pub mod refusal;
 
 pub mod self_instance;
