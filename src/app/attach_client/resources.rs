@@ -64,7 +64,7 @@ pub(super) fn push_markdown_content_result(
     super::documents::emit_to_owner(plugin_manager, local, event, payload);
 }
 
-/// 요청을 보낼 수 없거나 연결이 끊기면 실패를 합성한다. request_id=0은 대기 요청 취소다.
+/// 요청을 보낼 수 없거나 회신 마감이 지나거나 연결이 끊기면 실패를 합성한다. request_id=0은 대기 요청 취소다.
 pub(super) fn markdown_content_failure(
     local_surface_id: u32,
     request_id: u64,

@@ -13,6 +13,7 @@ mod home_probe;
 mod html;
 pub(crate) mod into_gui;
 mod location;
+mod markdown_deadline;
 mod mirror_visibility;
 mod navigation;
 mod notification_sounds;

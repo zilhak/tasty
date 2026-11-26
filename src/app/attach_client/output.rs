@@ -683,6 +683,7 @@ fn apply_markdown_content_result_event(
     reason: Option<String>,
 ) {
     let agent_origin = sess.state.agent_requests.take_markdown(request_id);
+    sess.state.markdown_requests.answer(request_id);
     let Some(local) = markdown_mirror_local(sess, remote_surface_id) else {
         return;
     };

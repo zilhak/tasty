@@ -2,6 +2,9 @@
 
 #[cfg(test)]
 mod tests;
+// X11 이벤트 루프로 App 을 만드는 시험이라 Linux 에서만 컴파일한다.
+#[cfg(all(test, target_os = "linux"))]
+mod markdown_deadline_tests;
 
 use super::deliver_git_query_result;
 use super::navigation::pending_op_focus_for;
@@ -101,6 +104,7 @@ impl App {
     }
 
     /// 원격 원문 요청을 보낼 수 없으면 플러그인에 즉시 실패 결과를 전달한다.
+    /// 보낸 뒤 회신 없이 마감을 지난 요청도 이 회차에 실패로 끝낸다.
     pub(crate) fn dispatch_pending_markdown_content_forwards(&mut self) {
         let mut pending: Vec<crate::core::PendingMarkdownContentForward> = Vec::new();
         for engine in self.engines_mut().windows_and_pending() {
@@ -128,6 +132,7 @@ impl App {
                 );
             }
         }
+        self.expire_markdown_content_requests(std::time::Instant::now());
     }
 
     /// 요청한 plugin에 조회 실패를 알리고 그 plugin의 열린 popup을 다시 그린다.
@@ -669,6 +674,9 @@ impl App {
         sess.state
             .agent_requests
             .note_markdown(req.agent_origin, request_id);
+        sess.state
+            .markdown_requests
+            .note(request_id, local_surface_id, std::time::Instant::now());
         Ok(())
     }
 }
