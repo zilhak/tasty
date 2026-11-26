@@ -29,6 +29,8 @@ mod closing_drain;
 #[cfg(test)]
 mod closing_drain_tests;
 mod first_line;
+#[cfg(all(test, windows))]
+mod inherit_tests;
 mod response_wait;
 mod stream_writer;
 
@@ -272,11 +274,18 @@ impl TcpIpcServer {
                     match listener.accept() {
                         Ok((stream, _)) => {
                             connections.record_accept_wait(clock.bound(std::time::Instant::now()));
+                            // 거절 응답을 쓰는 연결도 자식에게 넘어가지 않게 분기 전에 끈다. 끄지 못한
+                            // 연결은 자리를 받은 뒤 닫아 accept 대기 = 받음 + 거절 집계를 지킨다.
+                            let kept_out = Self::keep_out_of_children(&stream);
                             let Some(slot) = ConnectionSlot::try_acquire(&connections, &saturated)
                             else {
                                 Self::refuse_saturated_connection(stream);
                                 continue;
                             };
+                            if !kept_out {
+                                drop(slot);
+                                continue;
+                            }
                             let queue = CommandQueue {
                                 tx: accept_tx.clone(),
                                 admission: accept_admission.clone(),
@@ -448,6 +457,18 @@ impl TcpIpcServer {
         tracing::debug!("IPC client disconnected from {:?}", peer);
     }
 
+    /// accept한 소켓을 std `Command`로 뜨는 자식(플러그인·ssh 등)이 물려받지 않게 한다(Windows).
+    /// 끄지 못하면 경고를 남기고 false를 돌려준다. 호출자는 그 연결만 닫고 다음 accept로 간다.
+    fn keep_out_of_children(stream: &std::net::TcpStream) -> bool {
+        match tasty_utils::socket_inherit::disable_inherit(stream) {
+            Ok(()) => true,
+            Err(error) => {
+                tracing::warn!(%error, "IPC connection closed: its socket could not be kept out of child processes");
+                false
+            }
+        }
+    }
+
     /// blocking 모드로 바꾸고 reader/writer 소켓 사본을 만든다. 실패하면 로그 후 종료한다.
     fn prepare_stream(
         stream: std::net::TcpStream,
@@ -462,11 +483,16 @@ impl TcpIpcServer {
         if !Self::configure_socket(&stream) {
             return None;
         }
-
-        let reader = BufReader::new(match stream.try_clone() {
-            Ok(s) => s,
-            Err(_) => return None,
-        });
+        // reader 복제도 자식 프로세스가 물려받지 않게 한다(Windows). 원본은 accept 루프가 끈다.
+        let reader = BufReader::new(
+            match tasty_utils::socket_inherit::try_clone_uninherited(&stream) {
+                Ok(s) => s,
+                Err(error) => {
+                    tracing::warn!(%error, "IPC connection closed: its reader socket could not be cloned");
+                    return None;
+                }
+            },
+        );
         let writer = stream;
         Some((reader, writer, peer))
     }
