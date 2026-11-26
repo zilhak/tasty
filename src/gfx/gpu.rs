@@ -7,6 +7,8 @@ mod egui_bridge;
 mod egui_mesh_prepare;
 mod fonts;
 mod frame_timing;
+#[cfg(any(not(windows), test))]
+mod ime_permission;
 pub(crate) mod input_pass;
 pub(crate) mod loading;
 mod overlay_paint;
@@ -817,8 +819,12 @@ impl GpuState {
         #[cfg(not(windows))]
         {
             // plugin 팝업 입력은 host 위젯 포커스에 나타나지 않아 이 IME 비활성 조건에 포함하지 않는다.
-            let disable_ime = state.popups.has_focused() && !ime_widget_focused;
-            window.set_ime_allowed(!disable_ime);
+            let target = if state.popups.has_focused() {
+                ime_permission::ImeTarget::HostPopup
+            } else {
+                ime_permission::ImeTarget::Other
+            };
+            window.set_ime_allowed(ime_permission::ime_allowed(target, ime_widget_focused));
         }
         #[cfg(windows)]
         {
