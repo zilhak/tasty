@@ -249,8 +249,8 @@ pub mod capture {
 pub mod caret {
     use tasty_type_geometry::length::LogicalPx;
 
-    /// `component.caret-specimen-field-width` → `{primitive.size-260}` = 260px
-    pub const SPECIMEN_FIELD_WIDTH: LogicalPx = crate::generated::primitive::SIZE_260;
+    /// `component.caret-specimen-field-width` → `{semantic.field-width-lg}` = 200px
+    pub const SPECIMEN_FIELD_WIDTH: LogicalPx = crate::generated::semantic::FIELD_WIDTH_LG;
 }
 
 pub mod center {
@@ -561,6 +561,12 @@ pub mod explorer {
     /// `component.explorer-full-specimen-width` → `{primitive.size-760}` = 760px
     pub const FULL_SPECIMEN_WIDTH: LogicalPx = crate::generated::primitive::SIZE_760;
 
+    /// `component.explorer-grid-cell-width` → `{primitive.size-80}` = 80px
+    pub const GRID_CELL_WIDTH: LogicalPx = crate::generated::primitive::SIZE_80;
+
+    /// `component.explorer-grid-label-line-height` → `{primitive.size-14}` = 14px
+    pub const GRID_LABEL_LINE_HEIGHT: LogicalPx = crate::generated::primitive::SIZE_14;
+
     /// `component.explorer-grid-thumb-size` → `{primitive.size-40}` = 40px
     pub const GRID_THUMB_SIZE: LogicalPx = crate::generated::primitive::SIZE_40;
 
@@ -725,6 +731,9 @@ pub mod fp {
     /// `component.fp-crumb-current-min-width` → `{primitive.size-96}` = 96px
     pub const CRUMB_CURRENT_MIN_WIDTH: LogicalPx = crate::generated::primitive::SIZE_96;
 
+    /// `component.fp-crumb-glyph-size` → `{primitive.size-13}` = 13px
+    pub const CRUMB_GLYPH_SIZE: LogicalPx = crate::generated::primitive::SIZE_13;
+
     /// `component.fp-crumb-max-width` → `{primitive.size-180}` = 180px
     pub const CRUMB_MAX_WIDTH: LogicalPx = crate::generated::primitive::SIZE_180;
 
@@ -745,6 +754,9 @@ pub mod fp {
 
     /// `component.fp-footer-label-width` → `{primitive.size-64}` = 64px
     pub const FOOTER_LABEL_WIDTH: LogicalPx = crate::generated::primitive::SIZE_64;
+
+    /// `component.fp-footer-line-glyph-size` → `{component.fp-crumb-glyph-size}` = 13px
+    pub const FOOTER_LINE_GLYPH_SIZE: LogicalPx = super::fp::CRUMB_GLYPH_SIZE;
 
     /// `component.fp-footer-pad-y` → `{semantic.space-sm}` = 8px
     pub const FOOTER_PAD_Y: LogicalPx = crate::generated::semantic::SPACE_SM;
@@ -776,17 +788,32 @@ pub mod fp {
     /// `component.fp-list-head-pad-y` → `{semantic.space-xs}` = 4px
     pub const LIST_HEAD_PAD_Y: LogicalPx = crate::generated::semantic::SPACE_XS;
 
+    /// `component.fp-modified-col-width` → `{primitive.size-108}` = 108px
+    pub const MODIFIED_COL_WIDTH: LogicalPx = crate::generated::primitive::SIZE_108;
+
     /// `component.fp-path-pad-y` → `{semantic.space-xs}` = 4px
     pub const PATH_PAD_Y: LogicalPx = crate::generated::semantic::SPACE_XS;
 
     /// `component.fp-popup-min-width` → `{primitive.size-320}` = 320px
     pub const POPUP_MIN_WIDTH: LogicalPx = crate::generated::primitive::SIZE_320;
 
+    /// `component.fp-remote-strip-height` → `{semantic.selection-edge-width}` = 2px
+    pub const REMOTE_STRIP_HEIGHT: LogicalPx = crate::generated::semantic::SELECTION_EDGE_WIDTH;
+
+    /// `component.fp-row-focus-ring-width` → `{semantic.border-width}` = 1px
+    pub const ROW_FOCUS_RING_WIDTH: LogicalPx = crate::generated::semantic::BORDER_WIDTH;
+
     /// `component.fp-row-pad-y` → `{semantic.space-xs}` = 4px
     pub const ROW_PAD_Y: LogicalPx = crate::generated::semantic::SPACE_XS;
 
     /// `component.fp-section-gap` → `{semantic.space-sm}` = 8px
     pub const SECTION_GAP: LogicalPx = crate::generated::semantic::SPACE_SM;
+
+    /// `component.fp-size-col-width` → `{primitive.size-68}` = 68px
+    pub const SIZE_COL_WIDTH: LogicalPx = crate::generated::primitive::SIZE_68;
+
+    /// `component.fp-specimen-row-tooltip-left` → `{primitive.size-96}` = 96px
+    pub const SPECIMEN_ROW_TOOLTIP_LEFT: LogicalPx = crate::generated::primitive::SIZE_96;
 
     /// `component.fp-specimen-view-height` → `{primitive.size-300}` = 300px
     pub const SPECIMEN_VIEW_HEIGHT: LogicalPx = crate::generated::primitive::SIZE_300;

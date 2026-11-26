@@ -325,6 +325,10 @@
       "$type": "dimension",
       "$value": "12px"
     },
+    "size-13": {
+      "$type": "dimension",
+      "$value": "13px"
+    },
     "size-14": {
       "$type": "dimension",
       "$value": "14px"
@@ -701,6 +705,10 @@
       "$type": "dimension",
       "$value": "64px"
     },
+    "size-68": {
+      "$type": "dimension",
+      "$value": "68px"
+    },
     "size-76": {
       "$type": "dimension",
       "$value": "76px"
@@ -716,6 +724,10 @@
     "size-96": {
       "$type": "dimension",
       "$value": "96px"
+    },
+    "size-108": {
+      "$type": "dimension",
+      "$value": "108px"
     },
     "font-size-30": {
       "$type": "dimension",
@@ -2595,7 +2607,7 @@
     },
     "caret-specimen-field-width": {
       "$type": "dimension",
-      "$value": "{primitive.size-260}"
+      "$value": "{semantic.field-width-lg}"
     },
     "caret-specimen-height": {
       "$type": "dimension",
@@ -4916,9 +4928,29 @@
       "$type": "dimension",
       "$value": "{primitive.size-8}"
     },
+    "fp-crumb-glyph-size": {
+      "$type": "dimension",
+      "$value": "{primitive.size-13}"
+    },
+    "fp-footer-line-glyph-size": {
+      "$type": "dimension",
+      "$value": "{component.fp-crumb-glyph-size}"
+    },
     "fp-popup-min-width": {
       "$type": "dimension",
       "$value": "{primitive.size-320}"
+    },
+    "fp-size-col-width": {
+      "$type": "dimension",
+      "$value": "{primitive.size-68}"
+    },
+    "fp-modified-col-width": {
+      "$type": "dimension",
+      "$value": "{primitive.size-108}"
+    },
+    "fp-remote-strip-height": {
+      "$type": "dimension",
+      "$value": "{semantic.selection-edge-width}"
     },
     "fp-inset-start": {
       "$type": "dimension",
@@ -5003,6 +5035,10 @@
     "fp-specimen-view-height": {
       "$type": "dimension",
       "$value": "{primitive.size-300}"
+    },
+    "fp-specimen-row-tooltip-left": {
+      "$type": "dimension",
+      "$value": "{primitive.size-96}"
     },
     "popup-title-btn-size": {
       "$type": "dimension",
@@ -6544,6 +6580,14 @@
       "$value": "{primitive.size-40}",
       "$description": "Grid cell icon slot (all cells) — image thumbnails fit here"
     },
+    "explorer-grid-cell-width": {
+      "$type": "dimension",
+      "$value": "{primitive.size-80}"
+    },
+    "explorer-grid-label-line-height": {
+      "$type": "dimension",
+      "$value": "{primitive.size-14}"
+    },
     "explorer-delete-list-max-height": {
       "$type": "dimension",
       "$value": "{primitive.size-160}",
@@ -7195,6 +7239,30 @@
       "$type": "color",
       "$value": "{semantic.text-muted}",
       "$description": "folder mode — footer hint line"
+    },
+    "fp-row-focus-ring": {
+      "$type": "color",
+      "$value": "{semantic.border-focus}"
+    },
+    "fp-row-focus-ring-selected": {
+      "$type": "color",
+      "$value": "{semantic.accent-primary-raised}"
+    },
+    "fp-row-focus-ring-selected-hover": {
+      "$type": "color",
+      "$value": "{semantic.accent-primary-on-active}"
+    },
+    "fp-row-focus-ring-width": {
+      "$type": "dimension",
+      "$value": "{semantic.border-width}"
+    },
+    "fp-row-glyph-fg-hover": {
+      "$type": "color",
+      "$value": "{semantic.text-secondary}"
+    },
+    "fp-row-meta-fg-hover": {
+      "$type": "color",
+      "$value": "{semantic.text-muted}"
     },
     "file-handler-form-info-fg": {
       "$type": "color",
