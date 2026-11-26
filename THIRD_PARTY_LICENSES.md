@@ -15,7 +15,7 @@ BSD-3-Clause 또는 ISC 라이선스가 적용됩니다.
 | egui 기본 폰트: Noto Emoji Regular | epaint_default_fonts 0.31.1 | OFL 1.1 | 본체 바이너리, egui를 링크하는 plugin 바이너리 | [`LICENSES/NotoEmoji-OFL-1.1.txt`](LICENSES/NotoEmoji-OFL-1.1.txt) |
 | egui 기본 폰트: Ubuntu Light | epaint_default_fonts 0.31.1 | Ubuntu Font Licence 1.0 | 본체 바이너리, egui를 링크하는 plugin 바이너리 | [`LICENSES/Ubuntu-Ubuntu-font-1.0.txt`](LICENSES/Ubuntu-Ubuntu-font-1.0.txt) |
 | egui 기본 폰트: emoji-icon-font | epaint_default_fonts 0.31.1 | MIT | 본체 바이너리, egui를 링크하는 plugin 바이너리 | [`LICENSES/emoji-icon-font-MIT.txt`](LICENSES/emoji-icon-font-MIT.txt) |
-| Lucide (Feather 유래 부분 포함) | lucide-static 0.460.0 | ISC, MIT(Feather) | 본체 바이너리 (`tasty-icons` 아이콘) | [`LICENSES/Lucide-ISC.txt`](LICENSES/Lucide-ISC.txt), [`LICENSES/Feather-MIT.txt`](LICENSES/Feather-MIT.txt) |
+| Lucide (Feather 유래 부분 포함) | lucide-static 0.460.0 | ISC, MIT(Feather) | 본체 바이너리, 디자인 갤러리 바이너리 (`tasty-icons` 아이콘, 각자 쓰는 것) | [`LICENSES/Lucide-ISC.txt`](LICENSES/Lucide-ISC.txt), [`LICENSES/Feather-MIT.txt`](LICENSES/Feather-MIT.txt) |
 
 `LICENSES/`의 파일은 각 프로젝트의 원문을 수정 없이 복사했습니다. mermaid, highlight.js,
 KaTeX는 번들 버전의 태그에 있는 `LICENSE`를 사용합니다. egui 기본 폰트 네 개의 본문은
@@ -73,10 +73,11 @@ OFL 1.1과 Ubuntu Font Licence 1.0은 폰트를 재배포할 때 저작권 고�
 - 출처: Lucide Contributors — https://github.com/lucide-icons/lucide (npm `lucide-static`).
   Lucide의 일부는 Feather(https://github.com/feathericons/feather, Cole Bemis)에서 왔습니다.
 - 버전: lucide-static 0.460.0
-- 적용 범위: `crates/tasty-icons/src/lib.rs`의 아이콘 정의 중 Lucide 아이콘과 도형이 같거나 Lucide 아이콘에서
-  고쳐 온 것. 해당 정의마다 바로 위 주석에 Lucide 아이콘 이름과 "같은 도형" 또는 "고쳐 온 도형"을 적었습니다.
-  `tasty-icons`는 본체와 디자인 갤러리가 함께 쓰는 아이콘 크레이트이고, 본체와 갤러리는 이 정의 중
-  필요한 것을 각자 참조합니다.
+- 적용 범위: `tasty-icons` 크레이트(`crates/tasty-icons/src/lib.rs`)의 아이콘 정의 중 Lucide(Feather 유래 부분
+  포함) 아이콘과 도형이 같거나 그 아이콘에서 고쳐 온 것 전부. 그중 디자인 아이콘 세트의 기준표(tasty-page 커밋
+  `13d99aa`의 `vendor/icons.json` `source` 필드)에 Lucide 출처가 실린 정의는 바로 위 주석에 Lucide 아이콘 이름과
+  "같은 도형" 또는 "고쳐 온 도형"을 적었습니다. `tasty-icons`는 본체와 디자인 갤러리가 함께 쓰는 아이콘
+  크레이트이고, 본체와 갤러리는 이 정의 중 필요한 것을 각자 참조합니다.
 - 라이선스: ISC — Lucide 부분, MIT — Feather 부분
 - 라이선스 본문:
   - [`LICENSES/Lucide-ISC.txt`](LICENSES/Lucide-ISC.txt) — npm `lucide-static` 0.460.0 패키지의 `LICENSE`와 바이트 동일
@@ -88,7 +89,10 @@ OFL 1.1과 Ubuntu Font Licence 1.0은 폰트를 재배포할 때 저작권 고�
     부분의 저작권 줄만 적고 MIT 허가 문구는 싣지 않으므로 Feather의 본문을 따로 넣습니다.
 - 저작권: 위 두 파일 머리의 저작권 줄을 그대로 따릅니다.
 
-ISC와 MIT는 저작권 고지와 허가 문구를 모든 사본에 함께 넣도록 요구합니다.
+두 라이선스의 고지 조건은 문구가 다릅니다. ISC(`LICENSES/Lucide-ISC.txt`)는 "the above copyright notice and
+this permission notice appear in all copies"를, MIT(`LICENSES/Feather-MIT.txt`)는 "The above copyright notice
+and this permission notice shall be included in all copies or substantial portions of the Software."를 조건으로
+둡니다.
 
 ## markdown plugin 의 렌더링 엔진
 
