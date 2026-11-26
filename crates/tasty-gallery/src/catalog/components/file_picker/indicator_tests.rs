@@ -25,10 +25,11 @@ fn shapes_of(
 }
 
 /// C안 프레임 위 띠는 `fp-remote-strip-height`(selection-edge-width 2) 높이로 칠하고 그 높이를 돌려준다.
+/// selection-edge-width 는 UI 배율을 받지 않는 선 굵기라 배율 1.5 에서도 2 다.
 #[test]
 fn the_border_indicator_strip_is_the_remote_strip_height() {
     let v = Variant::open(FpState::Loaded, true, false).indicated(Indicator::Border);
-    for (zoom, want) in [(1.0, 2.0), (1.5, 3.0)] {
+    for (zoom, want) in [(1.0, 2.0), (1.5, 2.0)] {
         let theme = zoomed(zoom);
         let info: egui::Color32 = theme.accent_info().to_egui();
         let returned = std::cell::Cell::new(0.0);
