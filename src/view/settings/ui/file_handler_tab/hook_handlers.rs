@@ -876,7 +876,7 @@ fn draw_add_card(
         .fill(th.surface_raised().to_egui())
         .stroke(egui::Stroke::new(
             th.border_width.value(),
-            th.border_default().to_egui(),
+            th.border_strong().to_egui(),
         ))
         .corner_radius(th.corner_radius.value())
         .inner_margin(egui::Margin::same(th.spacing_md.value() as i8))
@@ -994,6 +994,21 @@ fn commit_add(hh: &mut HookHandlerEditDraft, handlers: &[HookHandler]) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Hook Handlers 추가 카드는 raised 카드라 외곽이 border-strong이다.
+    #[test]
+    fn the_add_card_edges_with_border_strong() {
+        let head = t("settings.file_handler.hook_handlers.new_head").to_uppercase();
+        for th in crate::painted_test_support::themes() {
+            let strong = th.border_strong().to_egui();
+            assert_ne!(strong, th.border_default().to_egui());
+            let p = crate::painted_test_support::paint(|ui| {
+                let mut hh = HookHandlerEditDraft::default();
+                draw_add_card(ui, &th, &mut hh, &[]);
+            });
+            assert_eq!(p.edge_around(p.text_rect(&head)), strong);
+        }
+    }
 
     fn shell_add_draft(short: &str, cmd: &str, priority: i32) -> HookHandlerEditDraft {
         HookHandlerEditDraft {
