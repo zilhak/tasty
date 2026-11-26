@@ -197,7 +197,10 @@ fn the_row_focus_ring_is_an_inset_line_inked_by_the_row_ground() {
             th.fp_row_focus_ring_selected().to_egui(),
             th.fp_row_focus_ring_selected_hover().to_egui(),
         );
-        assert!(rest != selected && selected != selected_hover && rest != selected_hover);
+        // Latte 는 세 칸이 모두 갈린다. Mocha 는 일부 칸이 같은 값이라 칸마다의 색 단정만 한다.
+        if th.is_light {
+            assert!(rest != selected && selected != selected_hover && rest != selected_hover);
+        }
         let at = name_rect(&paint(&th, "", None), FOLDER).center();
         let row_h = row_height(&th).value();
         for (case, selection, pointer, ink) in [
