@@ -615,7 +615,16 @@ fn fh_fallback_strip(ui: &mut egui::Ui, theme: &Theme) {
                 );
             });
         });
-    kit::hsep(ui, theme);
+    // raised 띠 아래선이라 공용 hsep(separator) 대신 border-strong으로 긋는다.
+    let (rule, _) = ui.allocate_exact_size(
+        egui::vec2(ui.available_width(), theme.border_width.value()),
+        egui::Sense::hover(),
+    );
+    ui.painter().hline(
+        rule.x_range(),
+        rule.center().y,
+        egui::Stroke::new(theme.border_width.value(), theme.border_strong().to_egui()),
+    );
 }
 
 /// 등록된 핸들러가 없을 때 설정 화면으로 안내한다.
@@ -939,6 +948,26 @@ fn paint_bottom_fade(ui: &egui::Ui, theme: &Theme, rect: egui::Rect) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// fallback 안내 띠는 raised라 아래선이 border-strong이다.
+    #[test]
+    fn the_fallback_strip_rule_is_border_strong() {
+        for theme in [
+            tasty_themes::mocha_fallback(),
+            crate::host_shell::latte_theme(),
+        ] {
+            let strong = theme.border_strong().to_egui();
+            assert_ne!(strong, theme.separator.to_egui_premultiplied());
+            let p = crate::catalog::components::painted::paint(|ui| fh_fallback_strip(ui, &theme));
+            let rules: Vec<_> = p
+                .segments()
+                .into_iter()
+                .filter(|(a, b, _)| a.y == b.y && a.x != b.x)
+                .collect();
+            assert_eq!(rules.len(), 1, "아래선 하나: {rules:?}");
+            assert_eq!(rules[0].2, strong);
+        }
+    }
 
     #[test]
     fn the_name_falls_back_to_the_id_segment_after_the_last_slash() {
