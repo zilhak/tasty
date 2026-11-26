@@ -30,6 +30,8 @@ mod closing_drain;
 mod closing_drain_tests;
 mod first_line;
 #[cfg(all(test, windows))]
+mod inherit_seam;
+#[cfg(all(test, windows))]
 mod inherit_tests;
 mod response_wait;
 mod stream_writer;
@@ -276,6 +278,8 @@ impl TcpIpcServer {
                             connections.record_accept_wait(clock.bound(std::time::Instant::now()));
                             // 거절 응답을 쓰는 연결도 자식에게 넘어가지 않게 분기 전에 끈다. 끄지 못한
                             // 연결은 자리를 받은 뒤 닫아 accept 대기 = 받음 + 거절 집계를 지킨다.
+                            #[cfg(all(test, windows))]
+                            inherit_seam::after_accept(&stream);
                             let kept_out = Self::keep_out_of_children(&stream);
                             let Some(slot) = ConnectionSlot::try_acquire(&connections, &saturated)
                             else {
@@ -421,6 +425,8 @@ impl TcpIpcServer {
         let Some((mut reader, mut writer, peer)) = Self::prepare_stream(stream) else {
             return;
         };
+        #[cfg(all(test, windows))]
+        inherit_seam::served(reader.get_ref(), &writer);
 
         // Read the first line manually so the BufReader retains any bytes
         // buffered after it. On a streaming-channel upgrade those buffered bytes
@@ -460,7 +466,10 @@ impl TcpIpcServer {
     /// accept한 소켓을 std `Command`로 뜨는 자식(플러그인·ssh 등)이 물려받지 않게 한다(Windows).
     /// 끄지 못하면 경고를 남기고 false를 돌려준다. 호출자는 그 연결만 닫고 다음 accept로 간다.
     fn keep_out_of_children(stream: &std::net::TcpStream) -> bool {
-        match tasty_utils::socket_inherit::disable_inherit(stream) {
+        let cleared = tasty_utils::socket_inherit::disable_inherit(stream);
+        #[cfg(all(test, windows))]
+        let cleared = cleared.and(inherit_seam::injected_failure(stream));
+        match cleared {
             Ok(()) => true,
             Err(error) => {
                 tracing::warn!(%error, "IPC connection closed: its socket could not be kept out of child processes");
@@ -882,6 +891,8 @@ impl TcpIpcServer {
     /// 업그레이드 판별 전이므로 스트림 클라이언트는 이 JSON을 프레임 오류로 읽을 수 있다(docs/architecture/ipc-server.md).
     /// 포화 진입의 warn은 슬롯 검사에서 이미 남기므로 여기서는 debug로 기록한다.
     fn refuse_saturated_connection(stream: std::net::TcpStream) {
+        #[cfg(all(test, windows))]
+        inherit_seam::refused(&stream);
         if let Err(e) = stream.set_nonblocking(true) {
             tracing::debug!("IPC saturation refusal could not go non-blocking: {e}");
             return;
