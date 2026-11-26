@@ -580,87 +580,28 @@ fn a_bound_key_owner_is_the_start_node() {
     );
 }
 
-/// T-12b-7: 전달 키 분류. 보통 단축키 키, bare Esc, 편집 바인딩 키, 클립보드 조합 모두 경로 키다. 수식키
-/// 단독 누름만 지금 경로다.
+/// 전달 키 게이트: 받은 surface 가 키 쥘 곳(`webview_key_holder_of`)일 때만 열린다. 다른 surface, 다른 곳(Window 범위)의
+/// 덮지 않는 팝업 포커스(bare Esc 를 포함해 키 종류와 관계없다), 받은 surface 를 덮는 팝업 포커스는 모두 막는다.
 #[test]
-fn forwarded_keys_are_classified_like_window_keys() {
-    let class = |key: Key, mods| forwarded_key_class(&key, mods);
-    assert_eq!(class(Key::Character("b".into()), CTRL), ForwardedKey::Path);
-    assert_eq!(class(f_key(6).0, CTRL), ForwardedKey::Path);
-    assert_eq!(class(escape().0, NONE), ForwardedKey::Path);
-    assert_eq!(class(escape().0, ModifiersState::SHIFT), ForwardedKey::Path);
-    assert_eq!(
-        class(f_key(9).0, CTRL),
-        ForwardedKey::Path,
-        "편집 바인딩 키"
-    );
-    let command = if cfg!(target_os = "macos") {
-        ModifiersState::SUPER
-    } else {
-        CTRL
-    };
-    assert_eq!(
-        class(Key::Character("c".into()), command),
-        ForwardedKey::Path,
-        "클립보드 조합"
-    );
-    assert_eq!(
-        class(Key::Named(winit::keyboard::NamedKey::Shift), NONE),
-        ForwardedKey::Current,
-        "수식키 단독 누름"
-    );
-}
-
-/// T-12b-7: 받은 surface 경로. 다른 곳(Window 범위)에 덮지 않는 팝업이 포커스여도 받은 surface 의 경로 키는 막히지
-/// 않는다(지금 게이트는 막는다). 받은 surface 를 덮는 팝업이 있으면 막힌다. 지금 경로로 남는 키는 지금 게이트다.
-#[test]
-fn a_forwarded_path_key_is_blocked_only_when_its_surface_is_covered() {
+fn a_forwarded_key_is_blocked_unless_its_surface_is_the_key_holder() {
     let (mut state, mut session) = scene();
     let engine = session.borrow_mut();
     let read = engine.read();
     let sid = state.focused_surface_id(&read).expect("surface");
-    assert!(!received_key_blocked(
-        &state,
-        &read,
-        ForwardedKey::Path,
-        sid
-    ));
+    state.normalize_focus(&read);
+    assert!(!received_key_blocked(&state, &read, sid));
+    assert!(received_key_blocked(&state, &read, sid + 1), "다른 surface");
     open_focused(&mut state, "notifications");
-    assert!(state.window_keys_to_overlay(), "지금 게이트는 막는다");
-    assert!(!received_key_blocked(
-        &state,
-        &read,
-        ForwardedKey::Path,
-        sid
-    ));
-    assert!(received_key_blocked(
-        &state,
-        &read,
-        ForwardedKey::Current,
-        sid
-    ));
+    state.normalize_focus(&read);
+    assert!(
+        received_key_blocked(&state, &read, sid),
+        "덮지 않는 팝업이 포커스 노드"
+    );
     state.popups.close("notifications");
     let palette = open_focused(&mut state, "command_palette");
     assert!(state.popups.instance(palette).unwrap().covers());
-    assert!(received_key_blocked(&state, &read, ForwardedKey::Path, sid));
-}
-
-/// Given Window 범위에 덮지 않는 알림 목록이 포커스일 때, When 받은 surface 가 bare Esc 를 넘기면, Then 그
-/// Esc 는 경로 키로 분류되고(지금 게이트를 쓰지 않는다) 받은 surface 가 덮이지 않았으므로 막히지 않는다.
-#[test]
-fn a_forwarded_escape_under_a_focused_notification_reaches_the_received_surface() {
-    let (mut state, mut session) = scene();
-    let engine = session.borrow_mut();
-    let read = engine.read();
-    let sid = state.focused_surface_id(&read).expect("surface");
-    open_focused(&mut state, "notifications");
-    assert!(state.window_keys_to_overlay(), "지금 게이트는 막는다");
-    let class = forwarded_key_class(&escape().0, NONE);
-    assert_eq!(class, ForwardedKey::Path);
-    assert!(
-        !received_key_blocked(&state, &read, class, sid),
-        "받은 surface 의 Esc 는 막히지 않는다"
-    );
+    state.normalize_focus(&read);
+    assert!(received_key_blocked(&state, &read, sid), "덮는 팝업");
 }
 
 /// T-12b-6 (라) 진입 직후: 팝업에 키를 묶은 몫에서 무대를 열면 무대가 출발 노드다. 그 몫을 그리기 전 무대 종료 키는

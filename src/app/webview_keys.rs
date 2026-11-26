@@ -294,9 +294,7 @@ fn forwarded_gate_and_plugin_steps(
     has_webview: impl Fn(u32) -> bool,
     ev: &crate::webview::WebViewKeyEvent,
 ) -> Option<ForwardedKeyOutcome> {
-    // 경로 분류는 여기서 한 번 정해 두 게이트에 같은 값으로 넘긴다.
-    let class = crate::adapters::ui::input::key_nodes::forwarded_key_class(&ev.key, ev.mods);
-    if !forwarded_key_gate_open(state, engine, modal_active, class, ev.surface_id) {
+    if !forwarded_key_gate_open(state, engine, modal_active, ev.surface_id) {
         return Some(ForwardedKeyOutcome::Gated);
     }
     if crate::app::plugin_glue::shortcut::plugin_shortcut_in_window(
@@ -306,7 +304,7 @@ fn forwarded_gate_and_plugin_steps(
         has_webview,
         &ev.key,
         ev.mods,
-        crate::app::plugin_glue::shortcut::PluginKeyGate::Forwarded(class, ev.surface_id),
+        crate::app::plugin_glue::shortcut::PluginKeyGate::Forwarded(ev.surface_id),
     ) {
         return Some(ForwardedKeyOutcome::Handled);
     }
@@ -314,22 +312,19 @@ fn forwarded_gate_and_plugin_steps(
 }
 
 /// 한 창에서 native WebView 가 넘긴 키를 처리해도 되는지. 포커스 노드를 정규화한 뒤 창 전체 차단(`modal_active`(modal
-/// 창), 전체화면 무대, 설정 열기 요청)과 받은 surface 경로(`class`가 경로 키면 받은 surface 를 덮는 팝업, 아니면 그 창의
-/// keyboard overlay)를 본다.
+/// 창), 전체화면 무대, 설정 열기 요청)과 받은 surface(`key_nodes::received_key_blocked`)를 본다.
 fn forwarded_key_gate_open(
     state: &mut crate::state::MainViewState,
     engine: &crate::runtime::engine_access::EngineMut<'_>,
     modal_active: bool,
-    class: crate::adapters::ui::input::key_nodes::ForwardedKey,
     received: u32,
 ) -> bool {
     state.normalize_focus(engine);
-    // 창 전체 차단(modal·전체화면 무대·설정 열기 요청)을 먼저 보고, 그 뒤 받은 surface 경로를 본다.
+    // 창 전체 차단(modal·전체화면 무대·설정 열기 요청)을 먼저 보고, 그 뒤 받은 surface 를 본다.
     let blocked = state.has_settings_open_request()
         || crate::adapters::ui::input::key_nodes::received_key_blocked(
             state,
             &engine.read(),
-            class,
             received,
         );
     forwarded_key_may_dispatch(modal_active, blocked, state.fullscreen_stage_active())

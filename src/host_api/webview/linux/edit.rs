@@ -12,7 +12,7 @@ use webkit2gtk::{UserMessage, WebView, WebViewExt};
 use super::selection::{self, ArmKey, QueryError, ViewMessage};
 use crate::webview::WebViewEditAction;
 
-/// 응답 시점에 host 모달·overlay가 그 키를 막는지 답한다.
+/// 응답 시점에 host 모달이나 키 쥘 곳 게시값이 그 키를 막는지 답한다.
 pub(super) type Blocked = Box<dyn Fn() -> bool>;
 
 /// 비동기 응답이 아직 유효한지 판정한다.
@@ -296,7 +296,10 @@ pub(super) fn on_view_message(
             {
                 note(command, "dropped (focus, pointer or document changed)");
             } else if (armed.blocked)() {
-                note(command, "dropped (host modal or overlay open)");
+                note(
+                    command,
+                    "dropped (host modal open or surface not the key holder)",
+                );
             } else if copy_like && !range {
                 // 확장이 이 키를 막지 않아 엔진 기본 동작과 페이지 keydown으로 갔다.
                 note(

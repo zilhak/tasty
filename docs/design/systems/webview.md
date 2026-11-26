@@ -309,7 +309,7 @@ WebKitGTK의 기본 Copy는 선택이 없어도 빈 내용으로 클립보드를
   알림이 오지 않으므로 Copy·Cut은 동작하지 않는다. 본문을 그대로 복사하는 대체 경로는 없다.
 - 무효화(`EditGuard`): 응답 page가 다르거나, 무장 뒤 그 WebView에 클릭·포커스 이탈·숨김·호스트의 로드·재로드·뒤로·앞으로·
   문서 로드 시작·commit이 있었거나 WebView를 버렸으면 실행하지 않는다. 뒤의 키는 무효로 하지 않는다(큐가 정렬한다). 응답
-  시점에 같은 키로 `blocks_edit_key`를 다시 물어 host 모달·overlay가 열렸으면 실행하지 않는다. 소유한 키는 확장이 기본
+  시점에 같은 키로 `blocks_edit_key`를 다시 물어 host 모달이 열렸거나 그 surface가 키 쥘 곳이 아니게 되었으면 실행하지 않는다. 소유한 키는 확장이 기본
   동작을 막아 처리된 키가 되므로 WebKit이 UI로 다시 보내지 않는다. 같은 X 시각에 연달아 누른 키도 각각 무장한다.
 - host가 키 없이 요청한 Copy·Cut(팔레트·IPC)은 포커스 frame의 선택을 직접 묻는다. nonce·page id가 맞고, 그 사이 새 키나
   위 무효화가 없을 때만 실행한다. 확장이 없거나(`Unavailable`) 1초 안에 답하지 않으면 실행하지 않고 warn 로그를 남긴다.
@@ -339,13 +339,13 @@ surface의 WebView에 같은 명령을 실행한다(`run_webview_edit`). 터미�
 포커스 surface에 WebView가 없으면 `copy`·`cut`·`paste`·`select_all`은 host 동작을 실행하고, `page_undo`·`page_redo`는 대상이 없어
 아무것도 실행하지 않는다.
 
-host 모달이 열려 있거나 키보드를 가져가는 host overlay(popup·dialog)나 전체화면 무대가 열린 동안에는 native 자식이 OS 포커스를
+host 모달이 열려 있거나 키를 받은 surface가 창의 키 쥘 곳(`key_focus::webview_key_holder_of`)이 아닌 동안에는 native 자식이 OS 포커스를
 가졌어도 편집 바인딩 키와, 바인딩에 없더라도 엔진이 스스로 편집으로 처리하는 키(Windows·Linux의 Ctrl+C/X/V/A,
 Ctrl/Shift+Insert, Shift+Delete, Ctrl+Z, Ctrl+Shift+Z, Ctrl+Y와 엔진 키 표의 Ctrl+Shift+V 서식 없는 붙여넣기,
 Windows의 Alt+Backspace·Alt+Shift+Backspace 실행 취소·다시 실행, Linux의 Ctrl+/ 전체 선택)를 실행하지도 페이지에
 보내지도 않는다(`WebViewKeySink::blocks_edit_key`). 이 추가 키는 막는 동안에만 쓰며 평소에는 엔진 처리에 그대로 둔다. macOS WKWebView는 Edit 메뉴 없이 Cmd 편집 키를 실행하지 않으므로 바인딩만 막는다.
-모달 상태는 모달을 열고 닫을 때(`set_active_modal`·`take_active_modal`), overlay 상태는 프레임 동기화에서
-bridge에 알린다. 편집이 아닌 키는 이 판정과 무관하다.
+모달 상태는 모달을 열고 닫을 때(`set_active_modal`·`take_active_modal`), 키 쥘 곳은 프레임 동기화의 W2 판정 뒤에
+bridge에 알린다(`WebViewKeyBridge::set_key_holder`). 그래서 native 클릭 직후 다음 프레임 게시 전까지는 앞 게시값으로 판정한다. 편집이 아닌 키는 이 판정과 무관하다.
 
 같은 조합이 여러 곳에 묶였을 때의 순서는 두 경로가 같다: 포커스 WebView의 편집 바인딩 > plugin 명령 > 그 밖의
 host 액션. native 경로는 `edit_action`을 `capture_key`보다 먼저 묻고 페이지 예약 조합과 같은 plugin 조합을 정책에서
@@ -388,7 +388,7 @@ native 콜백은 가져갈지를 동기로 정하고 실행은 나중에 host �
   시각 0 키는 무장할 때 표지를 남기고, 확장이 범위가 있어 그 키를 처리했다고 답하면 지운다. 표지는 범위 선택이 없어 키가
   엔진·페이지로 갔을 때만 남아, 같은 키의 반송을 2초 동안 한 번 판정한 키로 보아 다시 무장하지 않는다. 확장이 늘 처리하는
   Paste·SelectAll 같은 동작은 반송이 없으므로 표지를 남기지 않는다. 다시 넣는 시점은 host 큐를 처리할 때이므로, 같은
-  폴링 사이에 뒤이어 누른 키보다 늦게 페이지에 도착할 수 있다. 입력 게이트(모달·전체화면 무대·설정 열기 요청, 받은 surface를 덮는 팝업, 경로 키가 아니면 overlay)로 처리하지 않은 키와
+  폴링 사이에 뒤이어 누른 키보다 늦게 페이지에 도착할 수 있다. 입력 게이트(모달·전체화면 무대·설정 열기 요청, 받은 surface가 키 쥘 곳이 아님)로 처리하지 않은 키와
   WebView가 사라진 키는 다시 넣지 않는다.
 - Windows는 가져간 key-down의 원래 이벤트를 같은 일련번호로 붙잡았다가(`windows/key_replay.rs`, 상한 64, 넘치면 가장
   오래된 것을 버림) 동작하지 않았다는 결과가 오면 다시 넘긴다. 누름·반복·key-up은 VK가 아니라 물리 키(scan code와
@@ -727,7 +727,7 @@ macOS·Windows는 투명 모드를 보고하지 않고 주 표면의 불투명 �
 입력·키보드·포커스·캡처 계약:
 
 - **포인터**: 대상 층이 보이는 동안 WebView 영역 전체의 클릭·휠은 호스트로 온다(`host_takes_pointer`). 입력 의미는 숨긴 상태와 같다. 페이지 클릭은 egui의 바깥 클릭으로 도착하고, 그 처리는 팝업 정의를 그대로 따른다. `close_on_outside_click`(plugin은 `dismiss_on_outside_click`)이 참이면 닫고, 거짓이면 닫지 않고 언포커스만 한다. `sticky_focus` 는 포커스 판정이 읽지 않는다([팝업 §포커스](popup.md#포커스), [§sticky_focus](popup.md#sticky_focus)). 어느 경우에도 그 클릭은 페이지로 가지 않는다. 대상 층이 사라지면 다음 프레임부터 포인터가 페이지로 간다.
-- **키보드·IME**: 대상 층이 보이는 동안 키와 IME는 페이지로 가지 않는다. 키는 지금처럼 포커스된 팝업이 받고, 포커스된 팝업이 없으면 호스트의 기존 규칙(터미널 등)을 따른다. 포커스 회수는 위 "포커스" 절의 키 쥘 곳을 따른다. Linux에서 포인터가 페이지 위에 있으면 X 서버가 키를 WebView로 보내므로, 포인터를 호스트로 돌리는 처리가 이 라우팅도 막아야 한다. 오버레이 중 WebView가 전달한 키는 받은 surface에서 시작한 [키 경로](../../architecture/input-layer.md#plugin-명령과-webview-전달-키)로 판정한다. 받은 surface를 덮는 팝업이 있거나, 경로 키가 아니고 창의 키 게이트(`window_keys_to_overlay`)가 닫혀 있으면 `webview_keys`에서 버린다. 닫을 때 native 자식 포커스를 자동 복원하지 않는다.
+- **키보드·IME**: 대상 층이 보이는 동안 키와 IME는 페이지로 가지 않는다. 키는 지금처럼 포커스된 팝업이 받고, 포커스된 팝업이 없으면 호스트의 기존 규칙(터미널 등)을 따른다. 포커스 회수는 위 "포커스" 절의 키 쥘 곳을 따른다. Linux에서 포인터가 페이지 위에 있으면 X 서버가 키를 WebView로 보내므로, 포인터를 호스트로 돌리는 처리가 이 라우팅도 막아야 한다. WebView가 전달한 키는 받은 surface가 창의 키 쥘 곳일 때만 처리하고([키 경로](../../architecture/input-layer.md#plugin-명령과-webview-전달-키), `key_nodes::received_key_blocked`), 아니면 `webview_keys`에서 버린다. 닫을 때 native 자식 포커스를 자동 복원하지 않는다.
 - **포커스**: 새 OS 층(오버레이 창 등)은 OS 포커스나 창 활성화를 가져가지 않는다. 창이 비활성일 때 first responder·포커스를 바꾸지 않는 판정(`host_window_has_os_focus`)을 그대로 따른다.
 - **그리기**: 팝업은 주 표면에도 계속 그린다. 오버레이 창은 페이지 위 영역만 칠하므로 한 픽셀은 scrim과 정확히 한 번 합성된다(아래 GPU 분리).
 - **캡처**: `ui.screenshot`은 주 표면을 읽으므로 팝업은 지금처럼 캡처에 남고 WebView 픽셀은 지금처럼 없다. 페이지와 팝업이 함께 보이는지는 OS 화면 캡처로 확인한다. 원격 attach mesh 중계는 host 팝업 픽셀을 보내지 않아 영향이 없다.

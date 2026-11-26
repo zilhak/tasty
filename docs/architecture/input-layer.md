@@ -267,7 +267,7 @@ plugin이 아래일 때 plugin 레이어 일부만 오르는 패스는 다음 �
 |---|------|--------|------|
 | 1 | `window_keys_to_overlay` 정의(`src/state.rs`) | 정의에 포함 | 아래 3의 지점이 모두 이 함수를 부른다 |
 | 2 | `src/state/popup_key_owner.rs` `window_holds_terminal_keys`(경로 키가 아닌 사건의 터미널 포워딩 게이트). 호출부는 같은 파일의 `window_key_holds_terminal` 이고, 그 함수를 `handle_keyboard_input`(`src/view/main/keyboard.rs`)이 부른다 | **없음** | 호출부 함수 **앞**의 0단계 게이트(`try_consume_fullscreen_stage_key`)가 무대 사건을 먼저 처리하고, 그 게이트가 넘기는 키는 그 함수가 정본이다. 그 게이트가 사라지면 이 식도 무대 항이 필요해진다 |
-| 3 | 정면 함수를 부르는 곳: `window_feeds_egui`(egui feed 게이트, `src/state/popup_key_owner.rs`), IME(`src/view/main/ime.rs`), 경로 키가 아닌 사건의 plugin 명령 게이트(winit·native webview 포워딩 키 모두, `src/adapters/ui/input/key_nodes.rs`), `ui.state` 의 `keyboard_shortcuts_gated`(`src/adapters/ipc/handler/debug_state.rs`), 외부 끌어내기(`src/view/main/file_drag.rs` `poll_outbound_drag`), native 편집 키 차단 상태(`src/app/webview_sync.rs`), 편집 키 판정(`src/view/main/edit_keys.rs`), 플러그인 surface 편집 키(`src/view/main/plugin_surface_keys.rs`) | 정면 함수 | egui feed 는 방향이 반대다(무대 콘텐츠는 egui 위젯이라 키가 egui 로 가야 한다). IME 는 무대만 떠 있으면 조합 Commit 이 터미널로 샌다. plugin 단축키·webview 키·native 편집 키는 `dispatch_window_event_to_view` 이전이나 밖에서 돌아 0단계 게이트를 거치지 않는다([WebView 호스트 계약](../design/systems/webview.md)). 편집 키·플러그인 surface 편집 키는 무대에 들어간 키가 뒤쪽 화면에서 다시 쓰이지 않게 한다. 끌어내기는 OS 드래그라 렌더한 오버레이로 덮을 수 없어 취소한다. 보고 값은 무대 중에 "막히지 않았다"고 보고하지 않게 한다 |
+| 3 | 정면 함수를 부르는 곳: `window_feeds_egui`(egui feed 게이트, `src/state/popup_key_owner.rs`), IME(`src/view/main/ime.rs`), 경로 키가 아닌 사건의 plugin 명령 게이트(winit·native webview 포워딩 키 모두, `src/adapters/ui/input/key_nodes.rs`), `ui.state` 의 `keyboard_shortcuts_gated`(`src/adapters/ipc/handler/debug_state.rs`), 외부 끌어내기(`src/view/main/file_drag.rs` `poll_outbound_drag`), 편집 키 판정(`src/view/main/edit_keys.rs`), 플러그인 surface 편집 키(`src/view/main/plugin_surface_keys.rs`) | 정면 함수 | egui feed 는 방향이 반대다(무대 콘텐츠는 egui 위젯이라 키가 egui 로 가야 한다). IME 는 무대만 떠 있으면 조합 Commit 이 터미널로 샌다. plugin 단축키·webview 키·native 편집 키는 `dispatch_window_event_to_view` 이전이나 밖에서 돌아 0단계 게이트를 거치지 않는다([WebView 호스트 계약](../design/systems/webview.md)). 편집 키·플러그인 surface 편집 키는 무대에 들어간 키가 뒤쪽 화면에서 다시 쓰이지 않게 한다. 끌어내기는 OS 드래그라 렌더한 오버레이로 덮을 수 없어 취소한다. 보고 값은 무대 중에 "막히지 않았다"고 보고하지 않게 한다 |
 | 4 | `mouse_overlay_open()` 정의 | 정의에 포함 | 마우스 다섯 호출부 전부가 이 하나를 본다 |
 | 5 | `has_egui_overlay_open()` 정의 | 정의에 포함 | WebView 가 무대 위로 뚫고 나오지 못하게 |
 
@@ -460,8 +460,8 @@ bare Esc 는 `key_route::route_escape`가 노드마다 내용 → 그 level 단�
 plugin 명령 판정은 지금처럼 App 입구에서 view보다 먼저다. 게이트(`PluginKeyGate`)만 키 경로를 쓴다.
 
 winit 키는 포커스 노드에서, native WebView가 넘긴 키는 그 키를 받은 surface에서 시작한 경로로 판정한다. 넘긴 편집 키의
-WebView 편집 우선순위도 받은 surface 로 정한다(`shortcuts::webview_edit_for_surface_key`). 그래서
-WebView 키도 창 전체 차단과 경로 키가 아닌 분류(`key_nodes::forwarded_key_class`)의 지금 게이트를 먼저 거친다. 조건의
+WebView 편집 우선순위도 받은 surface 로 정한다(`shortcuts::webview_edit_for_surface_key`). 넘긴 키는 창 전체 차단을 먼저
+거치고, 받은 surface 가 창의 키 쥘 곳(`key_focus::webview_key_holder_of`)이 아니면 키 종류와 관계없이 처리하지 않는다. 조건의
 정본은 `key_nodes::settle_key`, `key_nodes::received_key_blocked`, `app::webview_keys`의
 `forwarded_key_gate_open`이고, 장면별 기대는 `app/plugin_glue/shortcut_state_tests.rs`와
 `app/webview_keys_state_tests.rs`가 정본이다.

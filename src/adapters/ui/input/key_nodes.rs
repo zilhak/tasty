@@ -237,44 +237,18 @@ pub(crate) fn focused_surface_takes_egui(state: &MainViewState, engine: &EngineR
         .kind_capability(engine, |d| d.consumes_egui_input)
 }
 
-/// native WebView 가 넘긴 키의 분류. 전달 키는 조회 키와 수식키만 가지므로 그 조회 키를 논리 키로 넣어 winit 입구와
-/// 같은 판정(`classify_key`)을 한다. 경로 키가 아닌 것(수식키 단독 누름)은 지금 게이트를 쓴다. 클립보드 조합과
-/// 편집 바인딩 키는 경로 키다. bare Esc 는 경로 키라 받은 surface 덮임 게이트를 쓴다. 설정 열기 요청 래치는 창 전체 차단이 먼저 본다.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum ForwardedKey {
-    Path,
-    Current,
-}
-
-/// 전달 키 하나를 한 번 분류한다. 바깥 게이트와 plugin 게이트가 이 값을 함께 쓴다.
-pub(crate) fn forwarded_key_class(key: &Key, mods: ModifiersState) -> ForwardedKey {
-    let value = KeyEventValue {
-        logical: key,
-        physical: winit::keyboard::PhysicalKey::Unidentified(
-            winit::keyboard::NativeKeyCode::Unidentified,
-        ),
-        pressed: true,
-        mods,
-    };
-    match classify_key(&value) {
-        KeyClass::Path(_) => ForwardedKey::Path,
-        KeyClass::Current(_) => ForwardedKey::Current,
-    }
-}
-
-/// 받은 surface 에서 시작한 경로가 그 키를 막는지(창 전체 차단은 빼고). 경로 키는 받은 surface 를 덮는 팝업이 있을
-/// 때만 막힌다(다른 곳의 덮지 않는 팝업 포커스는 경로에 없다). 지금 경로로 남는 키는 지금 게이트
-/// (`window_keys_to_overlay`)다.
+/// native WebView 가 넘긴 키를 받은 surface 가 막는지(창 전체 차단은 빼고). 키는 포커스 노드 하나에서 시작하므로 받은
+/// surface 가 창의 키 쥘 곳(`key_focus::webview_key_holder_of`)이 아니면 막는다. 덮인 surface 는 포커스 노드가 될 수
+/// 없으므로 덮음도 이 비교 안에 든다. 호출자는 포커스를 정규화한 뒤 부른다(`webview_keys::forwarded_key_gate_open`).
 pub(crate) fn received_key_blocked(
     state: &MainViewState,
     core: &crate::core::CoreState,
-    class: ForwardedKey,
     sid: u32,
 ) -> bool {
-    match class {
-        ForwardedKey::Path => state.surface_is_covered(core, sid),
-        ForwardedKey::Current => state.window_keys_to_overlay(),
-    }
+    crate::state::key_focus::webview_key_holder_of(
+        state.focus_node(core),
+        crate::adapters::ui::restore_notice::has_keyboard_focus(&state.popups),
+    ) != Some(sid)
 }
 
 /// 경로 키면 그 키와 노드 목록, 단축키 조회 키.

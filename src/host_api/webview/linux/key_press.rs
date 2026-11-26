@@ -38,15 +38,15 @@ pub(super) fn connect(
         };
         let physical = x11_keycode_to_physical(ev.hardware_keycode());
         let mods = gdk_state_to_winit_mods(ev.state());
-        if bridge.blocks_edit_key(&key, &physical, mods) {
+        if bridge.blocks_edit_key(surface_id, &key, &physical, mods) {
             return gtk::glib::Propagation::Stop;
         }
         // 사용자 편집 바인딩은 키를 받은 이 WebView에서 입력 순서대로 엔진 명령으로 실행한다.
-        if let Some(action) = bridge.edit_action(&key, &physical, mods) {
-            // 응답 전에 host 모달·overlay가 열리면 실행하지 않도록 같은 키로 다시 묻는다.
+        if let Some(action) = bridge.edit_action(surface_id, &key, &physical, mods) {
+            // 응답 전에 host 모달이 열리거나 이 surface 가 키 쥘 곳이 아니게 되면 실행하지 않도록 같은 키로 다시 묻는다.
             let gate = bridge.clone();
             let blocked: edit::Blocked =
-                Box::new(move || gate.blocks_edit_key(&key, &physical, mods));
+                Box::new(move || gate.blocks_edit_key(surface_id, &key, &physical, mods));
             let arm_key = selection::ArmKey::from_gdk(ev.keyval(), ev.state());
             let (propagation, echo_arm) =
                 edit::run_key_action(wv, action, arm_key, &edit_guard, blocked);

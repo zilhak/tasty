@@ -221,12 +221,11 @@ impl App {
 }
 
 /// plugin 명령 게이트가 볼 키 값. winit 키는 창이 그 사건의 출발 노드를 정할 때 단계 4 와 함께 정한 값
-/// (`key_nodes::settle_key`)이고, native WebView 가 넘긴 키는 그 입구가 한 번 정한 분류(`key_nodes::forwarded_key_class`)와
-/// 그 키를 받은 surface 다.
+/// (`key_nodes::settle_key`)이고, native WebView 가 넘긴 키는 그 키를 받은 surface 다.
 #[derive(Clone, Copy)]
 pub(crate) enum PluginKeyGate {
     Settled(crate::adapters::ui::input::key_nodes::PluginKeyStep),
-    Forwarded(crate::adapters::ui::input::key_nodes::ForwardedKey, u32),
+    Forwarded(u32),
 }
 
 /// 한 창에서 plugin 명령 단축키를 판정하고 실행한다. `has_webview` 는 surface 에 native WebView 가 있는지다. 처리했으면
@@ -242,16 +241,15 @@ pub(crate) fn plugin_shortcut_in_window(
 ) -> bool {
     // 일반 창 키 처리보다 먼저 실행되므로 popup·overlay·전체화면 무대의 키를 여기서 보호한다. winit 키는 창이 그
     // 사건의 출발 노드를 정할 때 함께 정한 게이트와 경로 level 을 읽는다(`MainView::settle_key_event`). native WebView
-    // 가 넘긴 키는 `forwarded_key_gate_open` 의 정규화 뒤 받은 surface 에서 시작한 경로가 덮였으면 닫는다. 지금 경로로
-    // 남는 사건은 어느 입구든 지금 게이트다. native WebView 가 넘긴 키는 그 키를 받은 surface 가 입력 시점 대상이고 키
+    // 가 넘긴 키는 `forwarded_key_gate_open` 의 정규화 뒤 받은 surface 가 키 쥘 곳이 아니면 닫는다
+    // (`key_nodes::received_key_blocked`). native WebView 가 넘긴 키는 그 키를 받은 surface 가 입력 시점 대상이고 키
     // 경로는 그 surface 에서 시작한다. winit 키는 지금의 대상이고 경로는 포커스 노드에서 시작한다.
     let (gate_open, received_by, path) = match gate {
         PluginKeyGate::Settled(step) => (step.gate_open, None, step.levels),
-        PluginKeyGate::Forwarded(class, sid) => (
+        PluginKeyGate::Forwarded(sid) => (
             !crate::adapters::ui::input::key_nodes::received_key_blocked(
                 state,
                 &engine.read(),
-                class,
                 sid,
             ),
             Some(sid),

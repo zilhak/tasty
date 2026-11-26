@@ -27,14 +27,15 @@ impl KeyFocusWebView for crate::webview::PlatformWebView {
 /// WebView 가 있으면 이 창이 OS 포커스를 가진 것이라(`host_window_has_os_focus`) 다른 앱의 포커스를 바꾸지 않는다.
 /// 기록은 재회수를 막지 않는다(매 동기화의 `holds_keyboard_focus` 관측이 정한다). 기록은 그 surface 가 키 쥘 곳이
 /// 되거나 사라지거나 native 포커스 알림이 오면(`note_native_webview_focus`) 지운다. 입구에서 포커스를 정규화해 그
-/// 패스의 닫기와 plugin 덮음 갱신까지 반영한, 다음 입력이 볼 포커스 노드를 읽는다.
+/// 패스의 닫기와 plugin 덮음 갱신까지 반영한, 다음 입력이 볼 포커스 노드를 읽는다. 돌려준 키 쥘 곳을 동기화가
+/// native 편집 키 다리에 게시한다(`WebViewKeyBridge::set_key_holder`).
 pub(crate) fn release_webview_key_focus<W: KeyFocusWebView>(
     state: &mut MainViewState,
     core: &crate::core::CoreState,
     overlay_mode: OverlayMode,
     overlay_open: bool,
     webviews: &[(u32, &W)],
-) {
+) -> Option<u32> {
     state.normalize_focus(core);
     let holder = webview_key_holder_of(
         state.focus_node(core),
@@ -50,6 +51,7 @@ pub(crate) fn release_webview_key_focus<W: KeyFocusWebView>(
             state.webview_key_released.insert(sid);
         }
     }
+    holder
 }
 
 /// native 포커스 알림(사용자가 그 native 페이지를 누름)이 그 surface 의 회수 기록을 지운다. 누름이 포커스 노드를 그

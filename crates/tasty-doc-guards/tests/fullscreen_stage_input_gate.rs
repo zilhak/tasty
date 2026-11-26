@@ -278,7 +278,8 @@ fn ime_overlay_gate_knows_the_stage() {
 
 /// 플러그인 단축키는 일반 키보드 처리 전에 실행되므로 따로 막는다. winit 경로 키는 포커스 노드(무대 중에는 무대
 /// 노드)에서 시작한 경로로 판정하고(창이 출발 노드를 정할 때 함께 정한 `key_nodes::settle_key` 의 게이트, 무대가 쓰는
-/// 키와 종료 키는 닫힘), 나머지 키는 winit·WebView 입구 모두 무대를 아는 정면 함수(`window_keys_to_overlay`)로 막는다.
+/// 키와 종료 키는 닫힘), winit 의 나머지 키는 무대를 아는 정면 함수(`window_keys_to_overlay`)로 막는다. WebView 가 넘긴
+/// 키는 받은 surface 가 키 쥘 곳일 때만 열리고, 키 쥘 곳은 surface 노드에만 있어 무대 노드에서는 없다.
 #[test]
 fn plugin_shortcut_gate_knows_the_stage() {
     let src = read("src/app/plugin_glue/shortcut.rs");
@@ -289,15 +290,22 @@ fn plugin_shortcut_gate_knows_the_stage() {
          별도로 막아야 한다."
     );
     let nodes = read("src/adapters/ui/input/key_nodes.rs");
-    for expected in [
-        "        return settled(KeyDecision::Current, !state.window_keys_to_overlay());",
-        "        ForwardedKey::Current => state.window_keys_to_overlay(),",
-    ] {
-        assert!(
-            nodes.contains(expected),
-            "경로 키가 아닌 키의 plugin 게이트가 무대를 아는 정면 함수를 쓰지 않는다(`{expected}`)"
-        );
-    }
+    let expected = "        return settled(KeyDecision::Current, !state.window_keys_to_overlay());";
+    assert!(
+        nodes.contains(expected),
+        "경로 키가 아닌 키의 plugin 게이트가 무대를 아는 정면 함수를 쓰지 않는다(`{expected}`)"
+    );
+    assert!(
+        nodes.contains("    crate::state::key_focus::webview_key_holder_of("),
+        "WebView 가 넘긴 키의 게이트가 키 쥘 곳을 읽지 않는다"
+    );
+    let holder = read("src/state/key_focus.rs");
+    assert!(
+        holder.contains(
+            "        FocusNode::Surface(surface) if !notice => surface,\n        _ => None,"
+        ),
+        "키 쥘 곳이 surface 노드 밖(무대 노드 포함)에서도 생긴다"
+    );
     assert!(
         nodes.contains("(FocusNode::Stage, _) => KeyNode::Stage {"),
         "경로 키 게이트의 무대 출발 노드가 없다"
@@ -373,7 +381,6 @@ fn every_overlay_open_composite_is_stage_aware() {
         vec![
             "src/adapters/ipc/handler/debug_state.rs".to_string(),
             "src/adapters/ui/input/key_nodes.rs".to_string(),
-            "src/app/webview_sync.rs".to_string(),
             "src/state/popup_key_owner.rs".to_string(),
             "src/view/main/edit_keys.rs".to_string(),
             "src/view/main/file_drag.rs".to_string(),

@@ -12,7 +12,6 @@ use winit::keyboard::{Key, KeyCode, ModifiersState, NamedKey, PhysicalKey};
 
 use super::{PluginKeyGate, plugin_shortcut_in_window};
 use crate::adapters::ui::input::key_class::KeyEventValue;
-use crate::adapters::ui::input::key_nodes::ForwardedKey;
 use crate::adapters::ui::popup::PopupScope;
 use crate::adapters::ui::popup::command_palette::COMMAND_PALETTE_POPUP_ID;
 use crate::adapters::ui::search_bar::SEARCH_BAR_POPUP_ID;
@@ -193,7 +192,7 @@ fn run_plugin_step(
     )
 }
 
-/// `sid` 가 넘긴 키 하나를 그 입구의 분류 `class` 로 App plugin 단축키 단계에 넣는다. 처리했으면 참이다. 입구처럼
+/// `sid` 가 넘긴 키 하나를 App plugin 단축키 단계에 넣는다. 처리했으면 참이다. 입구처럼
 /// 포커스를 먼저 정규화한다(`forwarded_key_gate_open`).
 fn forwarded_key(
     state: &mut MainViewState,
@@ -201,7 +200,6 @@ fn forwarded_key(
     mgr: &mut PluginManager,
     (logical, _): (Key, KeyCode),
     mods: ModifiersState,
-    class: ForwardedKey,
     sid: u32,
 ) -> bool {
     let engine = session.borrow_mut();
@@ -213,7 +211,7 @@ fn forwarded_key(
         |_| false,
         &logical,
         mods,
-        PluginKeyGate::Forwarded(class, sid),
+        PluginKeyGate::Forwarded(sid),
     )
 }
 
@@ -497,22 +495,21 @@ fn a_terminal_focus_lets_a_plugin_escape_command_run() {
     assert_eq!(names(&mut state), ["esc"]);
 }
 
-/// T-12b-18: 오버레이 없음, 모델 포커스 B. plugin surface A 가 넘긴 A 의 Surface 범위 명령은 A 에서 돈다.
+/// T-FWD-1(plugin 쪽): 오버레이 없음, 모델 포커스 B. 포커스 노드가 아닌 plugin surface A 가 넘긴 명령은 처리하지 않는다.
 #[test]
-fn a_forwarded_surface_command_runs_on_the_receiving_surface() {
+fn a_forwarded_surface_command_from_a_surface_that_is_not_the_focus_node_is_gated() {
     let (mut state, mut session) = scene(B);
     let mut mgr = manager();
     let key = f_key(11);
-    assert!(forwarded_key(
+    assert!(!forwarded_key(
         &mut state,
         &mut session,
         &mut mgr,
         key,
         CTRL,
-        ForwardedKey::Path,
         A
     ));
-    assert_eq!(ran(&mut state), [("surf_only".to_string(), Some(A))]);
+    assert!(ran(&mut state).is_empty());
 }
 
 /// T-12b-18 대조: 모델 포커스도 A 면 같은 명령이 A 에서 돈다.
@@ -526,46 +523,43 @@ fn a_forwarded_surface_command_runs_when_the_focus_is_the_receiving_surface() {
         &mut mgr,
         f_key(11),
         CTRL,
-        ForwardedKey::Path,
         A
     ));
     assert_eq!(ran(&mut state), [("surf_only".to_string(), Some(A))]);
 }
 
-/// T-12b-18 (C12b-2): 다른 곳(B)의 검색 띠가 포커스여도 A 가 넘긴 경로 키의 명령은 A 에서 돈다.
+/// 다른 곳(B)의 검색 띠가 포커스 노드면 A 가 넘긴 키의 명령은 처리하지 않는다(키 종류와 관계없다).
 #[test]
-fn a_search_bar_elsewhere_lets_a_forwarded_command_run() {
+fn a_search_bar_elsewhere_gates_a_forwarded_command() {
     let (mut state, mut session) = scene(B);
     let mut mgr = manager();
     open_search(&mut state, &session, B);
-    assert!(forwarded_key(
+    assert!(!forwarded_key(
         &mut state,
         &mut session,
         &mut mgr,
         f_key(11),
         CTRL,
-        ForwardedKey::Path,
         A
     ));
-    assert_eq!(ran(&mut state), [("surf_only".to_string(), Some(A))]);
+    assert!(ran(&mut state).is_empty());
 }
 
-/// T-12b-18 (C12b-2): 덮음은 받은 surface 에서 본다. 모델 포커스 B 만 덮는 팝업은 A 가 넘긴 명령을 막지 않는다.
+/// 모델 포커스 B 를 덮는 팝업이 포커스 노드면 A 가 넘긴 명령도 처리하지 않는다.
 #[test]
-fn a_cover_over_another_surface_lets_a_forwarded_command_run() {
+fn a_cover_over_another_surface_gates_a_forwarded_command() {
     let (mut state, mut session) = scene(B);
     let mut mgr = manager();
     open_palette(&mut state, &session, PopupScope::Surface(B));
-    assert!(forwarded_key(
+    assert!(!forwarded_key(
         &mut state,
         &mut session,
         &mut mgr,
         f_key(11),
         CTRL,
-        ForwardedKey::Path,
         A
     ));
-    assert_eq!(ran(&mut state), [("surf_only".to_string(), Some(A))]);
+    assert!(ran(&mut state).is_empty());
 }
 
 /// T-12b-18 대조: A 를 덮는 팝업은 A 가 넘긴 명령을 막는다.
@@ -580,26 +574,6 @@ fn a_cover_over_the_receiving_surface_gates_a_forwarded_command() {
         &mut mgr,
         f_key(11),
         CTRL,
-        ForwardedKey::Path,
-        A
-    ));
-    assert!(ran(&mut state).is_empty());
-}
-
-/// T-12b-7 w3 직접 호출: 지금 경로로 남는 분류(클립보드 조합 등)는 지금 게이트라 다른 곳의 덮지 않는 팝업
-/// 포커스에서 닫힌다. 같은 상태의 경로 키 분류는 `a_search_bar_elsewhere_lets_a_forwarded_command_run`이 본다.
-#[test]
-fn a_forwarded_current_key_keeps_the_window_gate() {
-    let (mut state, mut session) = scene(B);
-    let mut mgr = manager();
-    open_search(&mut state, &session, B);
-    assert!(!forwarded_key(
-        &mut state,
-        &mut session,
-        &mut mgr,
-        f_key(11),
-        CTRL,
-        ForwardedKey::Current,
         A
     ));
     assert!(ran(&mut state).is_empty());
@@ -622,17 +596,17 @@ fn webview_forwarded_f10(focus: u32, copy: Option<&str>) -> Vec<String> {
         |sid| sid == A,
         &Key::Named(NamedKey::F10),
         ModifiersState::CONTROL,
-        PluginKeyGate::Forwarded(ForwardedKey::Path, A),
+        PluginKeyGate::Forwarded(A),
     );
     names(&mut state)
 }
 
-/// Given 복사를 Ctrl+F10 에 묶었고 모델 포커스는 WebView 가 없는 터미널 B, When WebView 를 가진 A 가 Ctrl+F10 을 넘기면,
+/// Given 복사를 Ctrl+F10 에 묶었고 모델 포커스는 WebView 를 가진 A, When A 가 Ctrl+F10 을 넘기면,
 /// Then 받은 A 의 WebView 편집이 plugin 명령보다 먼저라 명령은 실행하지 않는다.
 #[test]
 fn a_forwarded_edit_key_yields_to_the_receiving_webview() {
     assert_eq!(
-        webview_forwarded_f10(B, Some("ctrl+f10")),
+        webview_forwarded_f10(A, Some("ctrl+f10")),
         Vec::<String>::new()
     );
 }
@@ -640,5 +614,5 @@ fn a_forwarded_edit_key_yields_to_the_receiving_webview() {
 /// Given 같은 장면에서 Ctrl+F10 이 편집 바인딩이 아니다, When A 가 넘기면, Then plugin 명령이 실행된다.
 #[test]
 fn a_forwarded_plain_key_from_a_webview_runs_the_plugin_command() {
-    assert_eq!(webview_forwarded_f10(B, None), ["glob_only"]);
+    assert_eq!(webview_forwarded_f10(A, None), ["glob_only"]);
 }

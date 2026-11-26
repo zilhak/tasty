@@ -45,7 +45,7 @@ struct Window {
     core: crate::app::services::AppServices,
     mgr: Option<PluginManager>,
     proxy: winit::event_loop::EventLoopProxy<crate::AppEvent>,
-    /// 키를 받은 WebView 의 surface. 창의 포커스 surface 다.
+    /// 키를 받은 WebView 의 surface. 시험이 따로 정하지 않으면 창의 포커스 surface 다.
     received: u32,
     /// 결과 알림에 건넨 (키 ID, 결과).
     finished: Vec<(u64, ForwardedKeyOutcome)>,
@@ -350,14 +350,14 @@ fn plugin_manager() -> (PluginManager, tasty_host_plugin::manager::CallerStub) {
 }
 
 /// plugin 갈래. Given plugin 전역 명령이 창 범위 팝업(덮지 않음)을 여는 창, When [그 명령의 조합, Ctrl+B] 가 들면,
-/// Then 첫 키는 plugin 단축키로 처리되고 그 자리에서 plugin 팝업이 열려 포커스 노드가 된다. 둘째 키는 받은 surface 에서
-/// 시작한 경로가 덮이지 않았으므로 그 surface 의 단축키(sidebar 접기)로 처리된다. 그 조합은 WebView 가 호스트로 넘기는
-/// plugin 전역 조합에 든다(`webview_command_bindings`).
+/// Then 첫 키는 plugin 단축키로 처리되고 그 자리에서 plugin 팝업이 열려 포커스 노드가 된다. 둘째 키는 받은 surface 가
+/// 더는 키 쥘 곳이 아니므로 막혀(`Gated`) sidebar 가 그대로다. 그 조합은 WebView 가 호스트로 넘기는 plugin 전역 조합에
+/// 든다(`webview_command_bindings`).
 #[test]
-fn a_plugin_popup_opened_by_a_forwarded_key_leaves_the_next_key_to_the_received_surface() {
+fn a_plugin_popup_opened_by_a_forwarded_key_gates_the_next_key() {
     if crate::test_support::rerun_alone(
         module_path!(),
-        "a_plugin_popup_opened_by_a_forwarded_key_leaves_the_next_key_to_the_received_surface",
+        "a_plugin_popup_opened_by_a_forwarded_key_gates_the_next_key",
     ) {
         return;
     }
@@ -385,11 +385,11 @@ fn a_plugin_popup_opened_by_a_forwarded_key_leaves_the_next_key_to_the_received_
     let outcomes = w.consume(batch);
     assert_eq!(
         outcomes,
-        [ForwardedKeyOutcome::Handled, ForwardedKeyOutcome::Handled]
+        [ForwardedKeyOutcome::Handled, ForwardedKeyOutcome::Gated]
     );
-    assert_ne!(
+    assert_eq!(
         w.state.sidebar_collapsed, collapsed,
-        "둘째 키가 sidebar 를 바꾸지 않았다"
+        "둘째 키가 sidebar 를 바꿨다"
     );
     assert_eq!(w.resent(), [(1, false), (2, false)]);
     let opened: Vec<u64> = w
@@ -428,12 +428,13 @@ fn a_settings_open_request_gates_a_forwarded_shortcut() {
     assert_eq!(w.resent(), [(1, false)], "Gated 를 페이지로 다시 넣었다");
 }
 
-/// T-12b-7 래치 대조. Given 래치·모달·무대가 없는 같은 창, When 같은 Ctrl+B 가 들면, Then 처리되어 sidebar 가 바뀐다.
+/// T-FWD-2(래치 대조). Given 래치·모달·무대가 없고 받은 surface 가 포커스 노드인 같은 창, When 같은 Ctrl+B 가 들면,
+/// Then 처리되어 sidebar 가 바뀐다.
 #[test]
-fn a_forwarded_shortcut_without_a_window_block_runs() {
+fn a_shortcut_forwarded_by_the_focus_node_webview_is_handled() {
     if crate::test_support::rerun_alone(
         module_path!(),
-        "a_forwarded_shortcut_without_a_window_block_runs",
+        "a_shortcut_forwarded_by_the_focus_node_webview_is_handled",
     ) {
         return;
     }
@@ -464,18 +465,16 @@ fn clipboard_combo_window(w: &mut Window) {
             crate::model::popup_kind::PopupScope::Window,
         )
         .expect("알림 목록이 열린다");
-    let engine = w.session.borrow_mut();
-    w.state.normalize_focus(&engine);
-    assert!(!w.state.surface_is_covered(&engine, w.received));
+    assert!(matches!(w.focus_node(), FocusNode::Popup(_)));
 }
 
-/// T-12b-7 클립보드 조합 갈래. Given 위 설정과 다른 곳의 덮지 않는 팝업 포커스, When 받은 WebView 가 Ctrl+Shift+C 를
-/// 넘기면, Then 클립보드 조합도 경로 키라 받은 surface 경로가 덮이지 않아 처리되고(`Handled`) sidebar 가 바뀐다.
+/// 클립보드 조합 갈래. Given 위 설정과 다른 곳의 덮지 않는 팝업 포커스, When 받은 WebView 가 Ctrl+Shift+C 를 넘기면,
+/// Then 받은 surface 가 키 쥘 곳이 아니라 막히고(`Gated`) sidebar 가 그대로이며 페이지로 다시 넣지 않는다.
 #[test]
-fn a_forwarded_clipboard_combo_takes_the_received_surface_path() {
+fn a_forwarded_clipboard_combo_from_a_webview_that_is_not_the_focus_node_is_gated() {
     if crate::test_support::rerun_alone(
         module_path!(),
-        "a_forwarded_clipboard_combo_takes_the_received_surface_path",
+        "a_forwarded_clipboard_combo_from_a_webview_that_is_not_the_focus_node_is_gated",
     ) {
         return;
     }
@@ -485,21 +484,18 @@ fn a_forwarded_clipboard_combo_takes_the_received_surface_path() {
     clipboard_combo_window(&mut w);
     let collapsed = w.state.sidebar_collapsed;
     let batch = vec![w.key(1, "C", ctrl_shift())];
-    assert_eq!(w.consume(batch), [ForwardedKeyOutcome::Handled]);
-    assert_eq!(
-        w.state.sidebar_collapsed, !collapsed,
-        "단축키가 돌지 않았다"
-    );
+    assert_eq!(w.consume(batch), [ForwardedKeyOutcome::Gated]);
+    assert_eq!(w.state.sidebar_collapsed, collapsed, "단축키가 돌았다");
     assert_eq!(w.resent(), [(1, false)]);
 }
 
-/// T-12b-7 클립보드 조합 대조. Given 같은 창, When 받은 WebView 가 클립보드 조합이 아닌 Ctrl+B 를 넘기면, Then 받은
-/// surface 경로가 덮이지 않아 처리되고 sidebar 가 바뀐다.
+/// T-FWD-1. Given 같은 창(다른 곳의 덮지 않는 팝업이 포커스 노드), When 받은 WebView 가 브리지가 넘기는 host 조합
+/// Ctrl+B 를 넘기면, Then 받은 surface 가 포커스 노드가 아니라 처리도 재주입도 하지 않는다.
 #[test]
-fn a_forwarded_path_key_runs_past_an_uncovering_popup_elsewhere() {
+fn a_shortcut_forwarded_by_a_webview_that_is_not_the_focus_node_is_gated() {
     if crate::test_support::rerun_alone(
         module_path!(),
-        "a_forwarded_path_key_runs_past_an_uncovering_popup_elsewhere",
+        "a_shortcut_forwarded_by_a_webview_that_is_not_the_focus_node_is_gated",
     ) {
         return;
     }
@@ -514,7 +510,29 @@ fn a_forwarded_path_key_runs_past_an_uncovering_popup_elsewhere() {
     }
     let collapsed = w.state.sidebar_collapsed;
     let batch = vec![w.key(1, "b", ModifiersState::CONTROL)];
-    assert_eq!(w.consume(batch), [ForwardedKeyOutcome::Handled]);
-    assert_eq!(w.state.sidebar_collapsed, !collapsed);
+    assert_eq!(w.consume(batch), [ForwardedKeyOutcome::Gated]);
+    assert_eq!(w.state.sidebar_collapsed, collapsed);
+    assert_eq!(w.resent(), [(1, false)]);
+}
+
+/// T-FWD-4. Given 팝업 없이 포커스 노드가 창의 선택 surface 일 때, When 선택되지 않은 다른 surface 의 WebView(시험 id)가
+/// 경로 키 Ctrl+B 를 넘기면, Then 그 surface 가 키 쥘 곳이 아니라 처리도 재주입도 하지 않는다.
+#[test]
+fn a_path_key_from_a_visible_webview_that_is_not_selected_is_gated() {
+    if crate::test_support::rerun_alone(
+        module_path!(),
+        "a_path_key_from_a_visible_webview_that_is_not_selected_is_gated",
+    ) {
+        return;
+    }
+    let _home = crate::test_support::IsolatedHome::new();
+    let event_loop = event_loop();
+    let mut w = Window::new(event_loop.create_proxy());
+    assert_default_bindings(&mut w);
+    let collapsed = w.state.sidebar_collapsed;
+    w.received += 1;
+    let batch = vec![w.key(1, "b", ModifiersState::CONTROL)];
+    assert_eq!(w.consume(batch), [ForwardedKeyOutcome::Gated]);
+    assert_eq!(w.state.sidebar_collapsed, collapsed);
     assert_eq!(w.resent(), [(1, false)]);
 }

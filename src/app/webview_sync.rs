@@ -706,9 +706,6 @@ fn sync_webviews(
     // hide all WebViews so they don't cover the overlay.
     // Native views are always above the wgpu render surface in OS z-order.
     let overlay_open = view.state.has_egui_overlay_open();
-    // native 편집 키는 host 큐보다 먼저 실행되므로 키보드를 가져가는 overlay·전체화면 무대 상태를 bridge에 알린다.
-    view.webview_key_bridge
-        .set_overlay_open(view.state.window_keys_to_overlay());
 
     // 호스트 키 설정 또는 plugin 명령·override의 revision이 바뀔 때만
     // native 콜백이 사용할 단축키 스냅샷을 다시 만든다.
@@ -886,13 +883,14 @@ fn sync_webviews(
         planned.extend(reveal.then_some(*sid));
     }
     let webviews: Vec<_> = view.webviews.iter().map(|(sid, wv)| (*sid, wv)).collect();
-    key_release::release_webview_key_focus(
+    let holder = key_release::release_webview_key_focus(
         &mut view.state,
         engine.core,
         overlay_mode,
         overlay_open,
         &webviews,
     );
+    view.webview_key_bridge.set_key_holder(holder);
     // 대상 팝업 아래 페이지는 오버레이 창에 같은 모드·페이지의 그림이 올라간 프레임에만 드러난다.
     let revealed = apply_reveal(
         view,

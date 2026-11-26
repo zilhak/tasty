@@ -156,12 +156,18 @@ impl KeyWebView {
                 }
             };
         }
-        if ivars.key_bridge.blocks_edit_key(&key, &physical, mods) {
+        if ivars
+            .key_bridge
+            .blocks_edit_key(ivars.surface_id, &key, &physical, mods)
+        {
             ivars.replay.decide(code, false);
             return true;
         }
         // Edit 메뉴가 없어 Cmd 편집 키(실행 취소 포함)도 사용자 바인딩으로 이 WebView의 편집 명령을 실행한다.
-        if let Some(action) = ivars.key_bridge.edit_action(&key, &physical, mods) {
+        if let Some(action) = ivars
+            .key_bridge
+            .edit_action(ivars.surface_id, &key, &physical, mods)
+        {
             ivars.replay.decide(code, false);
             run_editing_command(self, action);
             return true;

@@ -284,19 +284,26 @@ pub trait WebViewKeySink {
     /// 사용자 편집 바인딩이면 그 액션을 돌려준다. backend는 키를 받은 WebView에 즉시 실행하고
     /// 페이지 전달을 막는다. 큐를 거치지 않으므로 닫히거나 교체된 WebView에는 실행되지 않는다.
     /// Windows 명령은 같은 WebView에 비동기로 전달된다. Linux는 키를 WebKit 입력 큐에 넘기고 web process 확장이
-    /// 그 키를 입력 순서대로 받았다고 알린 뒤 실행한다. 그 사이 포커스·문서가 바뀌었거나 host 모달·overlay가
-    /// 열렸거나 WebView를 버렸으면 실행하지 않는다. Copy·Cut은 그 시점에 범위 선택이 없으면 실행하지 않고 키를
+    /// 그 키를 입력 순서대로 받았다고 알린 뒤 실행한다. 그 사이 포커스·문서가 바뀌었거나 host 모달이 열렸거나
+    /// 그 surface 가 키 쥘 곳이 아니게 되었거나 WebView를 버렸으면 실행하지 않는다. Copy·Cut은 그 시점에 범위 선택이 없으면 실행하지 않고 키를
     /// 막지 않으므로, 그 키는 엔진 기본 동작과 페이지 keydown으로 간다.
     fn edit_action(
         &self,
+        surface_id: u32,
         key: &Key,
         physical: &PhysicalKey,
         mods: ModifiersState,
     ) -> Option<WebViewEditAction>;
 
-    /// host 모달이나 키보드를 가져가는 overlay가 열린 동안 페이지에 보내지도 실행하지도 않을 편집 키인지.
-    /// true이면 backend는 아무것도 실행하지 않고 페이지 전달을 막는다. [`Self::edit_action`]보다 먼저 묻는다.
-    fn blocks_edit_key(&self, key: &Key, physical: &PhysicalKey, mods: ModifiersState) -> bool;
+    /// host 모달이 열렸거나 키를 받은 surface 가 창의 키 쥘 곳이 아닌 동안 페이지에 보내지도 실행하지도 않을 편집
+    /// 키인지. true이면 backend는 아무것도 실행하지 않고 페이지 전달을 막는다. [`Self::edit_action`]보다 먼저 묻는다.
+    fn blocks_edit_key(
+        &self,
+        surface_id: u32,
+        key: &Key,
+        physical: &PhysicalKey,
+        mods: ModifiersState,
+    ) -> bool;
 
     /// 자동 반복 key-down을 페이지·엔진에 보내지 않을지. 첫 누름이 막혔거나(입력 차단), 편집 명령으로
     /// 실행됐거나, host가 가져갔을 조합이면 true다. 반복에서는 아무것도 실행하거나 큐에 넣지 않는다.
@@ -330,8 +337,8 @@ pub struct WebViewKeyBridge {
     focus_requests: RefCell<Vec<u32>>,
     /// host 모달이 열려 있다. 모달을 열고 닫을 때 바로 바꾼다.
     modal_open: std::cell::Cell<bool>,
-    /// 키보드를 가져가는 host overlay(popup·dialog)가 열려 있다. 프레임 동기화에서 바꾼다.
-    overlay_open: std::cell::Cell<bool>,
+    /// 창의 키 쥘 곳(`key_focus::webview_key_holder_of`). 프레임 동기화에서 바꾼다.
+    key_holder: std::cell::Cell<Option<u32>>,
 }
 
 impl WebViewKeyBridge {
@@ -365,12 +372,13 @@ impl WebViewKeyBridge {
         self.modal_open.set(open);
     }
 
-    pub fn set_overlay_open(&self, open: bool) {
-        self.overlay_open.set(open);
+    pub fn set_key_holder(&self, holder: Option<u32>) {
+        self.key_holder.set(holder);
     }
 
-    fn input_blocked(&self) -> bool {
-        self.modal_open.get() || self.overlay_open.get()
+    /// OS 모달은 바로 막고, 그 밖에는 키를 받은 surface 가 프레임에 게시된 키 쥘 곳일 때만 연다.
+    fn input_blocked(&self, surface_id: u32) -> bool {
+        self.modal_open.get() || self.key_holder.get() != Some(surface_id)
     }
 
     /// host가 가져갈 조합인지만 판정한다. 큐는 바꾸지 않는다.
@@ -425,10 +433,10 @@ pub(crate) fn route_key_down(
             KeyDownRoute::Pass
         };
     }
-    if sink.blocks_edit_key(&key, &physical, mods) {
+    if sink.blocks_edit_key(surface_id, &key, &physical, mods) {
         return KeyDownRoute::Consumed;
     }
-    if let Some(action) = sink.edit_action(&key, &physical, mods) {
+    if let Some(action) = sink.edit_action(surface_id, &key, &physical, mods) {
         run_edit(action);
         return KeyDownRoute::Consumed;
     }
@@ -464,19 +472,26 @@ impl WebViewKeySink for WebViewKeyBridge {
 
     fn edit_action(
         &self,
+        surface_id: u32,
         key: &Key,
         physical: &PhysicalKey,
         mods: ModifiersState,
     ) -> Option<WebViewEditAction> {
-        if self.input_blocked() {
+        if self.input_blocked(surface_id) {
             return None;
         }
         let key = shortcut_lookup_key(key.clone(), physical, mods);
         self.policy.borrow().edit_action(&key, mods)
     }
 
-    fn blocks_edit_key(&self, key: &Key, physical: &PhysicalKey, mods: ModifiersState) -> bool {
-        if !self.input_blocked() {
+    fn blocks_edit_key(
+        &self,
+        surface_id: u32,
+        key: &Key,
+        physical: &PhysicalKey,
+        mods: ModifiersState,
+    ) -> bool {
+        if !self.input_blocked(surface_id) {
             return false;
         }
         let key = shortcut_lookup_key(key.clone(), physical, mods);
@@ -495,8 +510,8 @@ impl WebViewKeySink for WebViewKeyBridge {
         physical: &PhysicalKey,
         mods: ModifiersState,
     ) -> bool {
-        if self.blocks_edit_key(key, physical, mods)
-            || self.edit_action(key, physical, mods).is_some()
+        if self.blocks_edit_key(surface_id, key, physical, mods)
+            || self.edit_action(surface_id, key, physical, mods).is_some()
         {
             return true;
         }
@@ -780,9 +795,10 @@ mod tests {
         let p = edit_policy(&[(WebViewEditAction::Paste, &[])]);
         assert_eq!(p.edit_action(&ch("v"), alt_mod()), None);
         let bridge = WebViewKeyBridge::new();
+        bridge.set_key_holder(Some(1));
         bridge.set_policy(edit_policy(&[(WebViewEditAction::Cut, &["alt+x"])]));
         assert_eq!(
-            bridge.edit_action(&ch("x"), &unknown_physical(), alt_mod()),
+            bridge.edit_action(1, &ch("x"), &unknown_physical(), alt_mod()),
             Some(WebViewEditAction::Cut)
         );
         assert!(
@@ -791,38 +807,40 @@ mod tests {
         );
         bridge.set_policy(edit_policy(&[(WebViewEditAction::Cut, &[])]));
         assert_eq!(
-            bridge.edit_action(&ch("x"), &unknown_physical(), alt_mod()),
+            bridge.edit_action(1, &ch("x"), &unknown_physical(), alt_mod()),
             None,
             "바인딩 변경이 즉시 반영된다"
         );
     }
 
-    /// 모달이나 overlay가 열린 동안 편집 키는 엔진 기본 키까지 실행·전달 없이 소비되고, 닫히면 돌아온다.
+    /// 모달이 열렸거나 키를 받은 surface 가 키 쥘 곳이 아닌 동안(키 쥘 곳 없음 또는 다른 surface) 편집 키는 엔진 기본
+    /// 키까지 실행·전달 없이 소비되고, 풀리면 돌아온다.
     #[test]
     fn edit_keys_are_swallowed_while_host_input_is_blocked() {
         let bridge = WebViewKeyBridge::new();
+        bridge.set_key_holder(Some(1));
         bridge.set_policy(edit_policy(&[(
             WebViewEditAction::Paste,
             &["ctrl+v", "alt+v"],
         )]));
         let phys = unknown_physical();
         let ctrl = ModifiersState::CONTROL;
-        assert!(!bridge.blocks_edit_key(&ch("v"), &phys, alt_mod()));
+        assert!(!bridge.blocks_edit_key(1, &ch("v"), &phys, alt_mod()));
         assert_eq!(
-            bridge.edit_action(&ch("v"), &phys, alt_mod()),
+            bridge.edit_action(1, &ch("v"), &phys, alt_mod()),
             Some(WebViewEditAction::Paste)
         );
-        for (modal, overlay) in [(true, false), (false, true)] {
+        for (modal, holder) in [(true, Some(1)), (false, None), (false, Some(2))] {
             bridge.set_modal_open(modal);
-            bridge.set_overlay_open(overlay);
-            assert!(bridge.blocks_edit_key(&ch("v"), &phys, alt_mod()));
+            bridge.set_key_holder(holder);
+            assert!(bridge.blocks_edit_key(1, &ch("v"), &phys, alt_mod()));
             assert!(
-                bridge.blocks_edit_key(&ch("v"), &phys, ctrl),
+                bridge.blocks_edit_key(1, &ch("v"), &phys, ctrl),
                 "엔진 기본 키도 막는다"
             );
-            assert_eq!(bridge.edit_action(&ch("v"), &phys, alt_mod()), None);
+            assert_eq!(bridge.edit_action(1, &ch("v"), &phys, alt_mod()), None);
             assert!(
-                !bridge.blocks_edit_key(&ch("q"), &phys, alt_mod()),
+                !bridge.blocks_edit_key(1, &ch("q"), &phys, alt_mod()),
                 "편집이 아닌 키는 기존 판정으로 간다"
             );
             let extra: &[(Key, ModifiersState, bool)] = &[
@@ -845,29 +863,29 @@ mod tests {
             ];
             for (key, mods, held) in extra {
                 assert_eq!(
-                    bridge.blocks_edit_key(key, &phys, *mods),
+                    bridge.blocks_edit_key(1, key, &phys, *mods),
                     *held,
                     "엔진 키 표의 편집 키 {key:?} {mods:?}"
                 );
             }
             let shift_insert = Key::Named(winit::keyboard::NamedKey::Insert);
             assert_eq!(
-                bridge.blocks_edit_key(&shift_insert, &phys, ModifiersState::SHIFT),
+                bridge.blocks_edit_key(1, &shift_insert, &phys, ModifiersState::SHIFT),
                 !cfg!(target_os = "macos"),
                 "바인딩에 없는 엔진 편집 키도 막는다"
             );
         }
         bridge.set_modal_open(false);
-        bridge.set_overlay_open(false);
-        assert!(!bridge.blocks_edit_key(&ch("v"), &phys, ctrl));
+        bridge.set_key_holder(Some(1));
+        assert!(!bridge.blocks_edit_key(1, &ch("v"), &phys, ctrl));
         let ctrl_shift = ModifiersState::CONTROL | ModifiersState::SHIFT;
         assert!(
-            !bridge.blocks_edit_key(&ch("v"), &phys, ctrl_shift),
+            !bridge.blocks_edit_key(1, &ch("v"), &phys, ctrl_shift),
             "막지 않는 동안에는 바인딩에 없는 엔진 키를 엔진에 그대로 둔다"
         );
-        assert_eq!(bridge.edit_action(&ch("v"), &phys, ctrl_shift), None);
+        assert_eq!(bridge.edit_action(1, &ch("v"), &phys, ctrl_shift), None);
         assert_eq!(
-            bridge.edit_action(&ch("v"), &phys, alt_mod()),
+            bridge.edit_action(1, &ch("v"), &phys, alt_mod()),
             Some(WebViewEditAction::Paste)
         );
     }
@@ -889,6 +907,7 @@ mod tests {
             (WebViewEditAction::Paste, vec!["ctrl+v".into()]),
         ];
         bridge.set_policy(HostShortcutPolicy::new(policy_sources));
+        bridge.set_key_holder(Some(1));
         let phys = unknown_physical();
         let ctrl = ModifiersState::CONTROL;
         assert!(
@@ -916,6 +935,53 @@ mod tests {
             "입력을 막은 동안에는 바인딩에 없는 엔진 키 반복도 막는다"
         );
         assert!(!bridge.consumes_repeat(1, &ch("q"), &phys, alt_mod()));
+        bridge.set_modal_open(false);
+        assert!(!bridge.consumes_repeat(1, &ch("z"), &phys, ctrl));
+        assert_eq!(
+            bridge.consumes_repeat(2, &ch("z"), &phys, ctrl),
+            !cfg!(target_os = "macos"),
+            "첫 누름 기록이 없는 반복은 surface 별로 판정한다: 키 쥘 곳이 아닌 surface 는 막는다"
+        );
+    }
+
+    /// T-FWD-3: 키 쥘 곳이 아닌 surface 의 WebView 편집 키는 실행하지 않고 페이지로도 보내지 않는다.
+    #[test]
+    fn the_edit_bridge_blocks_a_webview_that_is_not_the_holder() {
+        let bridge = WebViewKeyBridge::new();
+        bridge.set_policy(edit_policy(&[(WebViewEditAction::Paste, &["alt+v"])]));
+        bridge.set_key_holder(Some(1));
+        let phys = unknown_physical();
+        assert!(bridge.blocks_edit_key(2, &ch("v"), &phys, alt_mod()));
+        assert_eq!(bridge.edit_action(2, &ch("v"), &phys, alt_mod()), None);
+    }
+
+    /// T-FWD-9: 키 쥘 곳 surface 의 WebView 편집 키는 그 WebView 에서 실행한다(T-FWD-3 의 대조).
+    #[test]
+    fn the_edit_bridge_allows_the_holder_webview() {
+        let bridge = WebViewKeyBridge::new();
+        bridge.set_policy(edit_policy(&[(WebViewEditAction::Paste, &["alt+v"])]));
+        bridge.set_key_holder(Some(1));
+        let phys = unknown_physical();
+        assert!(!bridge.blocks_edit_key(1, &ch("v"), &phys, alt_mod()));
+        assert_eq!(
+            bridge.edit_action(1, &ch("v"), &phys, alt_mod()),
+            Some(WebViewEditAction::Paste)
+        );
+    }
+
+    /// T-FWD-8: A 가 키 쥘 곳으로 게시된 뒤 B 의 native 클릭 알림이 와도 다음 프레임 게시 전까지는 게시값을 쓴다. B 편집
+    /// 키는 막히고 A 는 허용된다. 알림 소비와 같은 전이를 다리에 차례로 적용하면 이 기대가 바뀐다.
+    #[test]
+    fn right_after_a_native_click_the_bridge_keeps_the_frame_value() {
+        let bridge = WebViewKeyBridge::new();
+        bridge.set_policy(edit_policy(&[(WebViewEditAction::Paste, &["alt+v"])]));
+        bridge.set_key_holder(Some(1));
+        bridge.note_focus(2);
+        let phys = unknown_physical();
+        assert!(bridge.blocks_edit_key(2, &ch("v"), &phys, alt_mod()));
+        assert!(!bridge.blocks_edit_key(1, &ch("v"), &phys, alt_mod()));
+        bridge.set_key_holder(Some(2));
+        assert!(!bridge.blocks_edit_key(2, &ch("v"), &phys, alt_mod()));
     }
 
     #[test]
@@ -954,6 +1020,7 @@ mod tests {
             edit: vec![(WebViewEditAction::SelectAll, strings(&["q"]))],
             ..Default::default()
         }));
+        bridge.set_key_holder(Some(7));
         let phys = unknown_physical();
         let ctrl = ModifiersState::CONTROL;
         let mut edits = Vec::new();
