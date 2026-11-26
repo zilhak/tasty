@@ -245,10 +245,9 @@ fn consume_forwarded_keys(
     }
 }
 
-/// 한 창의 native 포커스 알림(사용자가 그 native 페이지를 누름)을 알림 순서대로 소비한다. 알림마다 회수 기록을
-/// 지우고(`note_native_webview_focus`) 그 surface 로 포커스를 옮긴다. 소비한 알림이 있으면 그 전이 끝에 다음 입력이
-/// 볼 키 쥘 곳(`key_release::webview_key_holder`)을 다리에 게시한다. 그래서 누른 직후의 편집 키는 다음 프레임 게시를
-/// 기다리지 않고 누른 페이지에서 처리된다. 포커스가 바뀌었으면 참이다.
+/// 한 창의 native 누름 알림을 도착 순서대로 소비한다. 알림마다 누름 전이(`apply_native_press`)를 적용하고 그 전이
+/// 뒤의 키 쥘 곳(`key_release::webview_key_holder`)을 다리에 게시한다. 그래서 누른 직후의 편집 키는 다음 프레임 게시를
+/// 기다리지 않고 누른 페이지에서 처리되고, 연속 알림도 알림마다 같은 전이를 받는다. 포커스가 바뀌었으면 참이다.
 pub(crate) fn consume_native_focus_requests(
     state: &mut crate::state::MainViewState,
     core: &crate::core::CoreState,
@@ -259,14 +258,32 @@ pub(crate) fn consume_native_focus_requests(
         return false;
     }
     let mut changed = false;
-    for crate::webview::NativeInput::Press { surface_id, .. } in inputs {
-        crate::app::webview_sync::key_release::note_native_webview_focus(state, surface_id);
-        changed |= state.focus_surface_by_id(core, surface_id);
+    for crate::webview::NativeInput::Press { surface_id, kind } in inputs {
+        changed |= apply_native_press(state, core, surface_id, kind);
+        bridge.set_key_holder(crate::app::webview_sync::key_release::webview_key_holder(
+            state, core,
+        ));
     }
-    bridge.set_key_holder(crate::app::webview_sync::key_release::webview_key_holder(
-        state, core,
-    ));
     changed
+}
+
+/// native 누름 알림 한 건의 전이. 그 surface 의 회수 기록을 지우고(`note_native_webview_focus`), 실제 버튼 누름이면
+/// 주소 띠의 키 포커스를 놓은 뒤(native 페이지 누름은 egui 가 보지 않아 주소 띠 입력칸이 스스로 놓지 않는다) 그
+/// surface 로 선택을 옮긴다. 누름 없는 포커스 획득은 주소 띠를 놓지 않는다. 덮음과 경로 밖 팝업은 뒤따르는 게시의
+/// 정규화(`webview_key_holder`)가 정한다. 선택이 바뀌었으면 참이다.
+fn apply_native_press(
+    state: &mut crate::state::MainViewState,
+    core: &crate::core::CoreState,
+    surface_id: u32,
+    kind: crate::webview::PressKind,
+) -> bool {
+    crate::app::webview_sync::key_release::note_native_webview_focus(state, surface_id);
+    let released =
+        kind == crate::webview::PressKind::Click && state.html_address.has_keyboard_focus();
+    if released {
+        state.html_address.release_focus();
+    }
+    state.focus_surface_by_id(core, surface_id) || released
 }
 
 /// native WebView가 넘긴 키의 처리 결과.

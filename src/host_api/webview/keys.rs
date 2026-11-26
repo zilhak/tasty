@@ -1083,6 +1083,111 @@ mod tests {
         assert!(bridge.blocks_edit_key(11, &ch("v"), &phys, alt_mod()));
     }
 
+    /// 결정 r3 연속 알림: Given A(11) 범위에 붙은 검색 바가 포커스를 가진다, When 한 번의 소비에 [B(12) 누름, A(11)
+    /// 누름]이 함께 들면, Then 알림마다 전이를 적용해 B 누름에서 경로 밖이 된 검색 바의 포커스가 풀리고 마지막 노드는
+    /// A 본문이다. 대조: A 누름 하나만이면 검색 바 포커스는 남는다.
+    #[test]
+    fn consecutive_native_presses_apply_the_press_transition_one_by_one() {
+        use crate::adapters::ui::popup::PopupScope;
+        use crate::adapters::ui::search_bar::SEARCH_BAR_POPUP_ID;
+        use crate::state::focus_node::FocusNode;
+        let presses = |order: &[u32]| {
+            let (mut state, mut session) = two_surfaces();
+            let engine = session.borrow_mut();
+            let bar = state
+                .popups
+                .open_request(
+                    &crate::intent::OpenRequest::new(SEARCH_BAR_POPUP_ID, PopupScope::Surface(11))
+                        .focused(),
+                    true,
+                )
+                .expect("검색 바가 열린다");
+            state.normalize_focus(engine.core);
+            assert_eq!(
+                state.focus_node(engine.core),
+                FocusNode::Popup(crate::adapters::ui::popup::focus::PopupNode::Host(bar))
+            );
+            let bridge = paste_bridge(11);
+            for &sid in order {
+                bridge.note_press(sid);
+            }
+            crate::app::webview_keys::consume_native_focus_requests(
+                &mut state,
+                engine.core,
+                &bridge,
+            );
+            (state.popups.focus(), state.focus_node(engine.core))
+        };
+        let (kept, _) = presses(&[11]);
+        assert!(
+            kept.is_some(),
+            "대조: 같은 surface 누름은 검색 바 포커스를 지킨다"
+        );
+        let (focus, node) = presses(&[12, 11]);
+        assert_eq!(focus, None, "B 누름이 경로 밖 검색 바의 포커스를 푼다");
+        assert_eq!(node, FocusNode::Surface(Some(11)));
+    }
+
+    /// X5: Given A(11) 주소 띠가 키보드 포커스를 가진다, When B(12) 본문의 native 버튼 누름을 소비하면, Then 주소 띠
+    /// 소유를 놓고 노드는 B 이며 B 가 키 쥘 곳으로 게시돼 B 편집 키가 열린다. 대조: 누름 없는 포커스 획득(GotFocus·
+    /// becomeFirstResponder)은 주소 띠를 놓지 않는다.
+    #[test]
+    fn a_native_page_press_releases_the_address_band_of_another_page() {
+        use crate::state::focus_node::FocusNode;
+        let (mut state, mut session) = two_surfaces();
+        let engine = session.borrow_mut();
+        state.html_address.set_focused_for_test(11);
+        assert_eq!(state.focus_node(engine.core), FocusNode::HtmlAddress(11));
+        let bridge = paste_bridge(11);
+        bridge.note_focus(12);
+        crate::app::webview_keys::consume_native_focus_requests(&mut state, engine.core, &bridge);
+        assert_eq!(
+            state.focus_node(engine.core),
+            FocusNode::HtmlAddress(11),
+            "대조: 포커스 획득은 주소 띠를 놓지 않는다"
+        );
+        bridge.note_press(12);
+        crate::app::webview_keys::consume_native_focus_requests(&mut state, engine.core, &bridge);
+        assert_eq!(state.focus_node(engine.core), FocusNode::Surface(Some(12)));
+        assert_eq!(state.html_address.focused_surface(), None);
+        let phys = unknown_physical();
+        assert!(!bridge.blocks_edit_key(12, &ch("v"), &phys, alt_mod()));
+        assert!(bridge.blocks_edit_key(11, &ch("v"), &phys, alt_mod()));
+    }
+
+    /// 덮음이 이긴다: Given A(11) 주소 띠 편집 중 B(12) 범위를 덮는 host 팝업이 열려 있다, When B 본문 누름을 소비하면,
+    /// Then 정규화가 덮개를 포커스 노드로 둬 B 는 키 쥘 곳이 아니고 B 편집 키는 막힌다.
+    #[test]
+    fn a_cover_over_the_pressed_page_wins_the_press_transition() {
+        use crate::adapters::ui::popup::{PopupScope, PopupState};
+        use crate::state::focus_node::FocusNode;
+        const COVER: crate::adapters::ui::popup::PopupId = "native_press_cover";
+        let (mut state, mut session) = two_surfaces();
+        let engine = session.borrow_mut();
+        state.popups.register(PopupState::new(
+            COVER,
+            "cover".to_string(),
+            egui::vec2(120.0, 60.0),
+            PopupScope::Surface(12),
+        ));
+        let mut request = crate::intent::OpenRequest::new(COVER, PopupScope::Surface(12));
+        request.covers_scope = Some(true);
+        let cover = state
+            .popups
+            .open_request(&request, false)
+            .expect("덮개가 열린다");
+        state.html_address.set_focused_for_test(11);
+        let bridge = paste_bridge(11);
+        bridge.note_press(12);
+        crate::app::webview_keys::consume_native_focus_requests(&mut state, engine.core, &bridge);
+        assert_eq!(
+            state.focus_node(engine.core),
+            FocusNode::Popup(crate::adapters::ui::popup::focus::PopupNode::Host(cover))
+        );
+        let phys = unknown_physical();
+        assert!(bridge.blocks_edit_key(12, &ch("v"), &phys, alt_mod()));
+    }
+
     /// GTK 대기열 대역의 사건: native 페이지 누름(`connect_button_press_event` 의 알림)과 편집 키(키 신호의 다리 판정).
     #[derive(Clone, Copy)]
     enum NativeEvent {

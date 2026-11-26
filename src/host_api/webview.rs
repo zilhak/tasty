@@ -90,8 +90,8 @@ impl WebViewCreateError {
 pub use crate::model::NavState;
 
 pub use keys::{
-    HostShortcutPolicy, NativeInput, ShortcutSources, WebViewEditAction, WebViewKeyBridge,
-    WebViewKeyEvent,
+    HostShortcutPolicy, NativeInput, PressKind, ShortcutSources, WebViewEditAction,
+    WebViewKeyBridge, WebViewKeyEvent,
 };
 
 /// backend가 기록한 탐색 시도. user_gesture는 Linux·Windows 엔진의 보고값이고, macOS는 WebView가 받은 OS 클릭으로 정한다.
