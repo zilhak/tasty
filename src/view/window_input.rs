@@ -37,6 +37,10 @@ impl<T: WindowPopups> InputPassState for WindowPass<'_, T> {
         self.state.window_popups().begin_key_pass(escape_held);
     }
 
+    fn release_closed_focus(&mut self, ctx: &egui::Context) {
+        self.state.window_popups().release_closed_focus(ctx);
+    }
+
     fn find_fields(&self) -> &[u64] {
         &[]
     }

@@ -1683,7 +1683,14 @@ fn chooser_pass(
                 return false;
             }
             owned |= owns_keys;
-            chooser.draw(ui, &th, &mut cx.keys).done
+            // 제품(`settings::ui`)과 같이 숨은 경로 메뉴를 선택기 인스턴스의 자식 팝업으로 보고한다.
+            let drawn = chooser.draw(ui, &th, &mut cx.keys);
+            crate::adapters::ui::popup::file_picker::report_hidden_crumbs_menu(
+                ui,
+                cx.instance,
+                drawn.child_menu,
+            );
+            drawn.done
         });
         assert!(closed.is_empty(), "the chooser stays open: {closed:?}");
     });
@@ -1779,3 +1786,85 @@ fn alt_up_in_the_separate_folder_chooser_goes_to_the_parent() {
 
 #[path = "covered_focus_tests.rs"]
 mod covered_focus;
+
+/// X4 실제 선택기: Given 설정 창 선택기의 숨은 경로 메뉴(선택기 인스턴스의 등록 자식) 행에 egui 포커스가 있다, When
+/// 그리기 전에 선택기를 닫고 선행 빈 패스 없이 Tab 을 보내면, Then 그 패스의 위젯(창 위젯 입력칸)을 그리는 때 이미
+/// 닫힌 행의 포커스가 없다. 그 패스에서 Tab 이 창 위젯으로 가지 않는 것은 닫힌 선택기가 지난 패스에 등록한 창 하한
+/// 때문이고, 하한은 그 패스 뒤에 풀린다.
+#[test]
+fn closing_the_chooser_before_drawing_releases_the_focus_in_its_hidden_crumbs_menu() {
+    use crate::adapters::ui::popup::window_input_test_support::{
+        click_widget_at, painted_at, painted_texts,
+    };
+    let root = tempfile::tempdir().expect("임시 폴더");
+    let mut deep = root.path().to_path_buf();
+    for i in 0..40 {
+        deep.push(format!("d{i:02}"));
+    }
+    std::fs::create_dir_all(&deep).expect("깊은 폴더");
+    let mut st = SettingsUiState::new();
+    st.open_file_chooser_at(
+        CONSUMER,
+        file_chooser::FileChooserMode::Folder,
+        Vec::new(),
+        None,
+        Some(deep),
+    );
+    st.file_chooser.read_empty_for_test();
+    let mut h = crate::view::window_input::tests::Harness::new();
+    let ctx = h.ctx.clone();
+    let outside_id = egui::Id::new("x4-outside");
+    let mut outside = outside_edit(outside_id);
+    drop(chooser_pass(&mut h, &mut st, &mut outside));
+    let (_, shown) = chooser_pass(&mut h, &mut st, &mut outside);
+    let before: Vec<String> = painted_texts(&shown).into_iter().map(|(s, _)| s).collect();
+    let crumbs = text_rect_in(&shown, "…").center();
+    h.click(&mut st, crumbs);
+    let mut menu = shown;
+    for _ in 0..3 {
+        menu = chooser_pass(&mut h, &mut st, &mut outside).1;
+    }
+    assert!(ctx.memory(|m| m.any_popup_open()), "경로 메뉴가 열렸다");
+    let texts = painted_texts(&menu);
+    let row_label = (0..40)
+        .map(|i| format!("d{i:02}"))
+        .find(|l| !before.contains(l) && painted_at(&texts, l).is_some())
+        .expect("메뉴에만 있는 숨은 경로 행");
+    let row = click_widget_at(&ctx, painted_at(&texts, &row_label).expect("행").center())
+        .expect("메뉴 행 위젯");
+    ctx.memory_mut(|m| m.request_focus(row));
+    drop(chooser_pass(&mut h, &mut st, &mut outside));
+    assert_eq!(focused(&ctx), Some(row), "메뉴 행이 포커스를 가진다");
+
+    st.popups.close_instance(
+        chooser_instance(&st),
+        crate::adapters::ui::popup::PopupCloseReason::Command,
+    );
+    h.key(&mut st, egui::Key::Tab, None);
+    let mut at_widgets = Vec::new();
+    drop(h.run_pass(&mut st, |ctx, pass| {
+        at_widgets.push(ctx.memory(|m| m.focused()));
+        let st = &mut *pass.state;
+        st.popups.window_widget_takes_keys(ctx);
+        egui::CentralPanel::default().show(ctx, |ui| outside(ui));
+        drop(st.popups.draw_view_local(ctx, &mut |_, _, _| false));
+    }));
+    assert!(!at_widgets.is_empty(), "패스를 그렸다");
+    assert!(
+        at_widgets.iter().all(Option::is_none),
+        "닫힌 메뉴 행의 포커스가 위젯 탐색 전에 풀린다: {at_widgets:?} (행 {row:?})"
+    );
+    // 하한이 풀린 다음 패스의 Tab 은 창 위젯 입력칸으로 간다.
+    h.key(&mut st, egui::Key::Tab, None);
+    drop(h.run_pass(&mut st, |ctx, pass| {
+        let st = &mut *pass.state;
+        st.popups.window_widget_takes_keys(ctx);
+        egui::CentralPanel::default().show(ctx, |ui| outside(ui));
+        drop(st.popups.draw_view_local(ctx, &mut |_, _, _| false));
+    }));
+    assert_eq!(
+        focused(&ctx),
+        Some(outside_id),
+        "다음 Tab 은 창 위젯으로 간다"
+    );
+}

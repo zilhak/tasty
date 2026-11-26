@@ -1002,6 +1002,19 @@ impl PopupManager {
             .iter()
             .filter_map(|(iid, _)| self.instance(*iid).map(|p| p.id))
             .collect();
+        // 본문이 이번 패스에 등록한 자식까지 담아, 그리기 밖의 닫기도 닫힘 기록에 그 순간의 자식 레이어를 남긴다.
+        self.child_layers = self
+            .popups
+            .iter()
+            .filter(|p| p.open)
+            .map(|p| {
+                (
+                    p.instance,
+                    super::child_popup_ids::child_layer_ids(ctx, p.instance),
+                )
+            })
+            .filter(|(_, ids)| !ids.is_empty())
+            .collect();
         for (iid, reason) in closed {
             self.close_instance(iid, reason);
         }

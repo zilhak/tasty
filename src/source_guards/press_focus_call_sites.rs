@@ -395,7 +395,11 @@ fn the_window_picks_the_stage_pass_by_the_live_stage_and_drops_input_without_its
         "state.drop_input_without_its_node(host.egui_ctx(),&mutraw_input.events);",
         "노드 없는 입력 빼기",
     );
-    let run = at(&pass, "host.run(raw_input,state,ui);", "egui 패스");
+    let run = at(
+        &pass,
+        "host.run(raw_input,state,|ctx,state|{state.release_closed_focus(ctx);ui(ctx,state);});",
+        "egui 패스",
+    );
     assert!(
         take < drop && drop < run,
         "입력 꺼내기 → 빼기 → 패스 순서가 아니다"
@@ -433,7 +437,10 @@ fn the_input_pass_order_is_shared_by_the_product_and_the_harness() {
         ),
         ("adjust(&mutraw_input);", "입력 조정"),
         ("letdrawn=state.fullscreen_stage_id();", "그린 화면"),
-        ("letoutput=host.run(raw_input,state,ui);", "패스"),
+        (
+            "letoutput=host.run(raw_input,state,|ctx,state|{state.release_closed_focus(ctx);ui(ctx,state);});",
+            "패스(위젯 전에 닫힌 레이어 포커스 놓기)",
+        ),
         ("state.close_input_pass(host.egui_ctx());", "몫 닫기"),
         (
             "state.seal_after_drawing_transition(drawn,cuts,raw_left);",

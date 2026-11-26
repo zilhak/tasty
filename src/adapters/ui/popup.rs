@@ -934,8 +934,13 @@ pub struct PopupManager {
     focus: Option<focus::PopupNode>,
     /// 별도 창의 몫별 노드와 패스 뒤 egui 포커스 기록(`window_segments.rs`). 메인 창은 쓰지 않는다.
     window: window_segments::WindowSegments,
-    /// 이번 패스에 닫힌 인스턴스. 패스 끝(`finish_pass_focus`)이 그 레이어의 egui 포커스를 놓고 비운다.
-    closed_this_pass: Vec<(PopupId, PopupInstanceId)>,
+    /// 닫힌 인스턴스와 닫힌 순간의 등록 자식 레이어 id. 다음 egui 패스의 시작(`release_closed_focus`)과 패스 끝
+    /// (`finish_pass_focus`)이 그 레이어들의 egui 포커스를 놓고, 패스 끝이 비운다.
+    closed_this_pass: Vec<(PopupId, PopupInstanceId, Vec<egui::Id>)>,
+    /// 열린 인스턴스의 등록 자식 레이어 id(`child_popup_ids::child_layer_ids`). 그리기가 본문을 그린 뒤 적는다. 그리기
+    /// 밖에서 닫혀도 닫힘 기록(`close_at`)이 그 순간의 값을 보존한다. 다음 그리기 첫머리는 닫힌 인스턴스의 등록을
+    /// 지운다.
+    child_layers: std::collections::HashMap<PopupInstanceId, Vec<egui::Id>>,
 }
 
 impl PopupManager {
@@ -951,6 +956,7 @@ impl PopupManager {
             focus: None,
             window: Default::default(),
             closed_this_pass: Vec::new(),
+            child_layers: Default::default(),
         }
     }
 
@@ -1216,7 +1222,8 @@ impl PopupManager {
         p.reset_closed();
         let id = closed.id;
         let iid = closed.instance;
-        self.closed_this_pass.push((id, iid));
+        let child_layers = self.child_layers.remove(&iid).unwrap_or_default();
+        self.closed_this_pass.push((id, iid, child_layers));
         if record {
             self.closed_queue.push(closed);
         }
@@ -1548,6 +1555,7 @@ mod tests {
             focus,
             window: Default::default(),
             closed_this_pass: Vec::new(),
+            child_layers: Default::default(),
         }
     }
 

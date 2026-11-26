@@ -27,6 +27,8 @@ struct TestWindow {
     open_while_drawing: Option<PopupId>,
     /// 참이면 팝업 A 가 상자 밖 `CHILD_MENU_POS` 에 등록 자식 메뉴(egui Foreground Area)를 그린다.
     child_menu: bool,
+    /// 참이면 자식 메뉴에 포커스를 받는 행을 위아래로 둘 그린다(역방향 탐색이 메뉴 안에서 옮겨지는 장면).
+    child_rows: bool,
 }
 
 impl WindowPopups for TestWindow {
@@ -53,6 +55,7 @@ impl TestWindow {
             saw_x: Vec::new(),
             open_while_drawing: None,
             child_menu: false,
+            child_rows: false,
         }
     }
 
@@ -105,7 +108,12 @@ const CHILD_MENU_POS: egui::Pos2 = egui::pos2(40.0, 420.0);
 
 /// `open` 이면 상자 밖으로 나오는 자식 메뉴(파일 선택기 숨은 경로 메뉴처럼)를 egui 팝업으로 열어 그리고 `instance` 의
 /// 자식 팝업 id 로 보고한다. 아니면 그 보고를 지운다.
-fn child_menu(ui: &egui::Ui, instance: crate::adapters::ui::popup::PopupInstanceId, open: bool) {
+fn child_menu(
+    ui: &egui::Ui,
+    instance: crate::adapters::ui::popup::PopupInstanceId,
+    open: bool,
+    rows: bool,
+) {
     let id = egui::Id::new("window_input_child_menu");
     if open {
         ui.ctx().memory_mut(|m| {
@@ -118,6 +126,9 @@ fn child_menu(ui: &egui::Ui, instance: crate::adapters::ui::popup::PopupInstance
             .fixed_pos(CHILD_MENU_POS)
             .show(ui.ctx(), |ui| {
                 ui.allocate_exact_size(egui::vec2(120.0, 40.0), egui::Sense::click());
+                if rows {
+                    ui.allocate_exact_size(egui::vec2(120.0, 40.0), egui::Sense::click());
+                }
             });
     }
     crate::adapters::ui::popup::report_child_popup_id(
@@ -143,7 +154,7 @@ fn draw(ctx: &egui::Context, pass: &mut WindowPass<'_, TestWindow>) {
     if let Some(id) = window.open_while_drawing.take() {
         window.open(id, egui::pos2(300.0, 300.0));
     }
-    let child = window.child_menu;
+    let (child, rows) = (window.child_menu, window.child_rows);
     let (text, rects, saw) = (&mut window.text, &mut window.rects, &mut window.saw_x);
     window.popups.draw_view_local(ctx, &mut |cx, ui, _| {
         if sees_x(ui) {
@@ -156,7 +167,7 @@ fn draw(ctx: &egui::Context, pass: &mut WindowPass<'_, TestWindow>) {
         if cx.id == A {
             field(ui, "a1", text, rects);
             field(ui, "a2", text, rects);
-            child_menu(ui, cx.instance, child);
+            child_menu(ui, cx.instance, child, rows);
         } else if cx.id == B {
             field(ui, "b", text, rects);
         }
@@ -1263,4 +1274,77 @@ fn a_replayed_press_moves_the_node_and_the_keys_behind_it_reach_its_popup() {
     );
     assert_eq!(seen, vec!["B"], "debug X 는 B 가 본다");
     assert_eq!((w.text("a1"), w.text("b")), ("kq", "y"));
+}
+
+/// 자식 메뉴를 연 장면에서 메뉴 행 하나(`at`)에 egui 포커스를 주고 패스를 모두 그린다. 그 행의 id 를 돌려준다.
+fn focus_child_row(h: &mut Harness, w: &mut TestWindow, at: egui::Pos2) -> egui::Id {
+    let row = crate::adapters::ui::popup::window_input_test_support::click_widget_at(&h.ctx, at)
+        .expect("menu row");
+    h.ctx.memory_mut(|m| m.request_focus(row));
+    h.drain(w);
+    assert_eq!(
+        h.ctx.memory(|m| m.focused()),
+        Some(row),
+        "the menu row has the focus"
+    );
+    row
+}
+
+/// X4: Given 팝업 A 의 등록 자식 메뉴 행에 egui 포커스가 있다, When 그리기 전에(명령·`close_orphans` 처럼) A 를 닫고
+/// 선행 빈 패스 없이 첫 Tab 을 치면, Then 닫힌 자식 레이어의 포커스가 그 Tab 의 출발값으로 남지 않아 포커스가 창
+/// 위젯 w 로 간다.
+#[test]
+fn closing_a_parent_before_drawing_releases_the_focus_in_its_registered_child() {
+    let (mut h, mut w, a) = child_menu_open();
+    focus_child_row(&mut h, &mut w, CHILD_MENU_POS + egui::vec2(20.0, 20.0));
+    w.popups
+        .close_instance(a, crate::adapters::ui::popup::PopupCloseReason::CloseButton);
+    h.key(&mut w, egui::Key::Tab, None);
+    h.drain(&mut w);
+    assert_eq!(
+        h.ctx.memory(|m| m.focused()),
+        Some(egui::Id::new("w")),
+        "the first Tab after the close moves to the window widget"
+    );
+}
+
+/// X4 역방향: Given 자식 메뉴 아래 행에 포커스가 있다, When Shift+Tab 을 친 패스(egui 는 위 행으로 옮기는 일을 다음
+/// 패스 시작으로 미룬다) 바로 뒤, 그리기 전에 A 를 닫고 첫 Tab 을 치면, Then 그 패스 시작에 옮겨진 닫힌 행의 포커스도
+/// 위젯 탐색 전에 풀려 Tab 이 창 위젯 w 로 간다. 대조: 닫지 않으면 Shift+Tab 은 위 행으로 간다.
+#[test]
+fn closing_a_parent_right_after_a_shift_tab_into_its_child_releases_that_focus() {
+    let shifted = |close: bool| {
+        let (mut h, mut w) = two_popups();
+        focus_field(&mut h, &mut w, "a1");
+        w.child_menu = true;
+        w.child_rows = true;
+        h.drain(&mut w);
+        h.drain(&mut w);
+        let a = w.popups.instances_of(A).next().expect("A").instance;
+        let upper = crate::adapters::ui::popup::window_input_test_support::click_widget_at(
+            &h.ctx,
+            CHILD_MENU_POS + egui::vec2(20.0, 20.0),
+        )
+        .expect("upper row");
+        focus_child_row(&mut h, &mut w, CHILD_MENU_POS + egui::vec2(20.0, 60.0));
+        h.key_with(&mut w, egui::Key::Tab, egui::Modifiers::SHIFT, None);
+        h.drain(&mut w);
+        if close {
+            w.popups
+                .close_instance(a, crate::adapters::ui::popup::PopupCloseReason::CloseButton);
+            h.key(&mut w, egui::Key::Tab, None);
+            h.drain(&mut w);
+        } else {
+            h.drain(&mut w);
+        }
+        (h.ctx.memory(|m| m.focused()), upper)
+    };
+    let (kept, upper) = shifted(false);
+    assert_eq!(kept, Some(upper), "Shift+Tab moves to the upper row");
+    let (closed, _) = shifted(true);
+    assert_eq!(
+        closed,
+        Some(egui::Id::new("w")),
+        "the first Tab after the close moves to the window widget"
+    );
 }

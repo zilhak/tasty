@@ -197,31 +197,52 @@ impl PopupManager {
             })
     }
 
-    /// 창마다 패스 끝 한 곳(그 패스의 닫기를 모두 적용한 뒤, `end_pass` 전)에서 부른다. 이번 패스에 닫힌 인스턴스
-    /// (Area와 등록 자식)의 레이어에 egui 포커스가 있으면 놓고, 창 하한(`window_cover_floor`)이 있으면 egui에
-    /// 등록한다. egui는 등록한 다음 패스부터 하한을 적용하고, 등록이 없는 패스 뒤에는 하한을 비운다. 포커스 위젯의
-    /// 레이어는 위젯 기록에서 읽는다. `Context::read_response`는 그 패스에 다른 곳을 누른 포커스 위젯의 포커스를 놓으므로
-    /// 쓰지 않는다.
+    /// egui 패스마다 위젯을 그리기 전(`run_input_pass`가 패스 콜백 첫머리에서) 부른다. 닫힘 기록(그리기 밖의 명령·
+    /// `close_orphans` 닫기)의 레이어에 egui 포커스가 있으면 놓는다. egui 는 패스 시작에서 Tab 방향을 정하고, 포커스
+    /// 위젯이 그 패스에 그려지지 않으면 Tab 이 어느 위젯에도 가지 않는다. 그래서 닫힌 레이어의 포커스를 위젯 탐색 전에
+    /// 놓아, 닫은 뒤 첫 Tab 이 포커스 없음에서 출발하게 한다. 역방향 탐색이 예약해 이 패스 시작에 옮겨진 포커스도 같다.
+    /// 기록은 지우지 않는다(패스 끝이 지운다).
+    pub(crate) fn release_closed_focus(&self, ctx: &egui::Context) {
+        if let Some(focused) = self.closed_layer_focus(ctx, &self.closed_this_pass) {
+            ctx.memory_mut(|m| m.surrender_focus(focused));
+        }
+    }
+
+    /// 창마다 패스 끝 한 곳(그 패스의 닫기를 모두 적용한 뒤, `end_pass` 전)에서 부른다. 닫힘 기록의 레이어에 egui
+    /// 포커스가 있으면 놓고(그리기 중 닫힘), 기록을 비운다. 창 하한(`window_cover_floor`)이 있으면 egui에 등록한다.
+    /// egui는 등록한 다음 패스부터 하한을 적용하고, 등록이 없는 패스 뒤에는 하한을 비운다.
     pub(crate) fn finish_pass_focus(&mut self, ctx: &egui::Context) {
         let closed = std::mem::take(&mut self.closed_this_pass);
-        if let Some(focused) = ctx.memory(|m| m.focused())
-            && let Some(layer) = ctx.viewport(|v| {
-                v.this_pass
-                    .widgets
-                    .get(focused)
-                    .or_else(|| v.prev_pass.widgets.get(focused))
-                    .map(|w| w.layer_id.id)
-            })
-            && closed.iter().any(|(id, iid)| {
-                super::draw::area_id_of(id, *iid) == layer
-                    || super::child_popup_ids::child_layer_ids(ctx, *iid).contains(&layer)
-            })
-        {
+        if let Some(focused) = self.closed_layer_focus(ctx, &closed) {
             ctx.memory_mut(|m| m.surrender_focus(focused));
         }
         if let Some(floor) = self.window_cover_floor() {
             ctx.memory_mut(|m| m.set_modal_layer(floor));
         }
+    }
+
+    /// egui 포커스 위젯이 `closed` 기록의 레이어(Area와 닫힌 순간의 등록 자식)에 있으면 그 id. 포커스 위젯의 레이어는
+    /// 위젯 기록에서 읽는다. `Context::read_response`는 그 패스에 다른 곳을 누른 포커스 위젯의 포커스를 놓으므로 쓰지
+    /// 않는다.
+    fn closed_layer_focus(
+        &self,
+        ctx: &egui::Context,
+        closed: &[(PopupId, PopupInstanceId, Vec<egui::Id>)],
+    ) -> Option<egui::Id> {
+        let focused = ctx.memory(|m| m.focused())?;
+        let layer = ctx.viewport(|v| {
+            v.this_pass
+                .widgets
+                .get(focused)
+                .or_else(|| v.prev_pass.widgets.get(focused))
+                .map(|w| w.layer_id.id)
+        })?;
+        closed
+            .iter()
+            .any(|(id, iid, children)| {
+                super::draw::area_id_of(id, *iid) == layer || children.contains(&layer)
+            })
+            .then_some(focused)
     }
 
     /// 범위를 덮지 않는 보이는 host 인스턴스와 그 배치 범위·순번·Esc 선언. 범위 노드에 붙는 팝업의 원천이다

@@ -12,6 +12,8 @@ use crate::state::MainViewState;
 pub(crate) trait InputPassState {
     /// 이번 패스 몫을 연다(`PopupManager::begin_key_pass`).
     fn begin_key_pass(&mut self, escape_held: bool);
+    /// 패스 콜백 첫머리, 위젯을 그리기 전. 닫힌 팝업 레이어의 egui 포커스를 놓는다(`PopupManager::release_closed_focus`).
+    fn release_closed_focus(&mut self, ctx: &egui::Context);
     /// 직전 일반 패스가 그린 Find 입력칸 id.
     fn find_fields(&self) -> &[u64];
     /// 그 몫의 노드가 지금 그리는 화면에 없으면 입력을 뺀다. 뺐으면 참이다.
@@ -42,6 +44,10 @@ impl InputPassState for MainViewState {
         self.tutorial.callout_drawn = false;
         self.closed_segment_focus = None;
         self.popups.begin_key_pass(escape_held);
+    }
+
+    fn release_closed_focus(&mut self, ctx: &egui::Context) {
+        self.popups.release_closed_focus(ctx);
     }
 
     fn find_fields(&self) -> &[u64] {
@@ -110,7 +116,7 @@ pub(crate) fn run_input_pass<S: InputPassState>(
     host: &mut impl InputPassHost<S>,
     state: &mut S,
     adjust: impl FnOnce(&mut egui::RawInput),
-    ui: impl FnMut(&egui::Context, &mut S),
+    mut ui: impl FnMut(&egui::Context, &mut S),
 ) -> egui::FullOutput {
     state.begin_key_pass(host.escape_held());
     host.held_pastes().set_find_fields(state.find_fields());
@@ -128,7 +134,11 @@ pub(crate) fn run_input_pass<S: InputPassState>(
         .extend(found.into_iter().map(egui::Event::Paste));
     adjust(&mut raw_input);
     let drawn = state.fullscreen_stage_id();
-    let output = host.run(raw_input, state, ui);
+    // egui 가 패스를 다시 돌려도(최대 두 번) 매 패스 위젯보다 먼저 닫힌 레이어의 포커스를 놓는다.
+    let output = host.run(raw_input, state, |ctx, state| {
+        state.release_closed_focus(ctx);
+        ui(ctx, state);
+    });
     state.close_input_pass(host.egui_ctx());
     let (cuts, raw_left) = host.cuts_and_raw_left();
     state.seal_after_drawing_transition(drawn, cuts, raw_left);
