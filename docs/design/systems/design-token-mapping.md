@@ -13,7 +13,7 @@
 | `surface-raised` | `surface0` | `#313244` | 카드·입력·메뉴·command_palette 본문, secondary 버튼 fill |
 | `border-default` | `surface0` | `#313244` | |
 | `border-strong` | `surface1` | `#45475a` | 팝업 외곽선·강한 구분 |
-| `separator` | 흰색 8% 알파 | — | **구역 bg 위 블렌드.** premultiplied `Theme.separator`를 `to_egui_premultiplied()`로 그린다. 예: bg-panel(base) 위 (48,48,62), 대비 1.264:1. 카드 안 구획선 전용이며 팝업 바깥 경계는 `border-strong`이다 |
+| `separator` | 흰색 8% 알파 | — | **구역 bg 위 블렌드.** premultiplied `Theme.separator`를 `to_egui_premultiplied()`로 그린다. 예: bg-panel(base) 위 (48,48,62), 대비 1.264:1. crust·mantle·base 위 구획선 전용이며(surface-raised 띠 위 선은 `border-strong`) 팝업 바깥 경계는 `border-strong`이다 |
 | `text-primary` | `text` | `#cdd6f4` | 터미널 일반 찾기 매치 안의 기본 글자 셀도 이 값을 쓴다 |
 | `text-secondary` | `subtext1` | `#bac2de` | |
 | `text-muted` | `subtext0` | `#a6adc8` | |
@@ -262,7 +262,7 @@ semantic 필드를 그대로 재사용한다(신규 필드 없음). 정본 소�
 
 | 디자인 토큰 | 디자인 체인 | Theme 접근자 | 쓰는 곳 |
 |---|---|---|---|
-| `--tasty-menu-separator` | → `border-strong` → neutral-400 | `menu_separator()` (생성) | 모든 메뉴의 구분선: 공용 `menu_separator`(Tools 메뉴 · 컨텍스트 메뉴 견본 · 레일 카테고리 메뉴 갤러리 견본), 본체 레일 카테고리 메뉴, SearchableSelect 검색칸·고정 행 아래, 배너 ⋯ 메뉴 이름 미상 형태. 메뉴 구분선은 팝업 안의 구획이라 `border-strong` 이고, 카드·탭 스트립·표·목록 안의 hairline 인 `separator` 와 구분한다. MultiSelect 일괄 토글 아래 선은 별도 `multiselect-separator`(→ separator)다 |
+| `--tasty-menu-separator` | → `border-strong` → neutral-400 | `menu_separator()` (생성) | 모든 메뉴의 구분선: 공용 `menu_separator`(Tools 메뉴 · 컨텍스트 메뉴 견본 · 레일 카테고리 메뉴 갤러리 견본), 본체 레일 카테고리 메뉴, SearchableSelect 검색칸·고정 행 아래, 배너 ⋯ 메뉴 이름 미상 형태. 메뉴 구분선은 팝업 안의 구획이라 `border-strong` 이고, crust·mantle·base 위 카드·탭 스트립·표·목록 안의 hairline 인 `separator` 와 구분한다(surface-raised 띠 위 선은 `border-strong`). MultiSelect 일괄 토글 아래 선은 별도 `multiselect-separator`(→ separator)다 |
 
 ## modifier-hint 오버레이 (modifier-hint-03 specimen + 본체)
 
