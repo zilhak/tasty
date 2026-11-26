@@ -1,12 +1,14 @@
-//! 회신이 마감까지 오지 않은 markdown 원문 요청을 실패로 끝낸다. 마감 상태는
-//! `tasty_remote::markdown_requests`가 갖고, 여기서는 대기 표시를 내리고 plugin에 실패를 보낸다.
+//! 회신이 마감까지 오지 않거나 연결이 바뀌어 회신이 오지 않을 markdown 원문 요청을 실패로 끝낸다.
+//! 마감 상태는 `tasty_remote::markdown_requests`가 갖고, 여기서는 대기 표시를 내리고 plugin에 실패를 보낸다.
 
-use super::resources::{markdown_content_failure, push_markdown_content_result};
+use super::resources::{
+    markdown_content_failure, push_markdown_changed, push_markdown_content_result,
+};
 use crate::app::App;
 use crate::state::attach_pending::AttachPending;
 use serde_json::Value;
 use std::time::Instant;
-use tasty_remote::client_session::{AttachClientSession, SessionState};
+use tasty_remote::client_session::{AttachClientSession, ClientSessionState, SessionState};
 use tasty_remote::connection::ConnectionEpoch;
 use tasty_remote::markdown_requests::MARKDOWN_CONTENT_REPLY_TIMEOUT;
 
@@ -51,6 +53,22 @@ pub(super) fn settle_expired<'a>(
         }
     }
     expired.iter().map(Expired::failure).collect()
+}
+
+/// 교체된 연결로 보낸 원문 요청을 같은 request_id 실패로 끝낸 뒤 문서마다 변경 신호를 보낸다.
+/// 옛 연결의 회신은 오지 않고, 그 id를 기다리는 plugin은 변경 신호를 받아도 다시 요청하지 않으므로
+/// 실패가 먼저 가야 한다. 원문은 바로 다시 받지 않고 plugin이 재요청이나 stale 표시를 고른다.
+pub(super) fn end_replaced_connection_requests(
+    plugin_manager: &mut Option<crate::plugin::PluginManager>,
+    state: &mut ClientSessionState,
+) {
+    for (request_id, local) in state.markdown_requests.take_all() {
+        let failure = markdown_content_failure(local, request_id, "mirror workspace disconnected");
+        push_markdown_content_result(plugin_manager, &failure);
+    }
+    for &local in &state.markdown_locals {
+        push_markdown_changed(plugin_manager, local);
+    }
 }
 
 impl Expired {
