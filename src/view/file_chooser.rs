@@ -518,6 +518,7 @@ fn draw_view(
         selected: &s.selected,
         focus_row: None,
         ring: false,
+        up_enabled: true,
         mode,
         title_label: s.title(),
         name_field_label: t(if s.is_folder() {

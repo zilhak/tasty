@@ -67,7 +67,8 @@ pub(super) fn keyboard(
     let mut consume =
         |(modifiers, key): (egui::Modifiers, egui::Key)| keys.consume_keymap_key(modifiers, key);
     if consume(FOLDER_UP) {
-        return Some(FilePickerAction::NavigateUp);
+        // Up 이 비활성이면(세션 소실) 키는 먹고 아무것도 하지 않는다.
+        return p.up_enabled.then_some(FilePickerAction::NavigateUp);
     }
     if !matches!(p.state, FpViewState::Loaded | FpViewState::Empty) {
         return None;

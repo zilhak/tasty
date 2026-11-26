@@ -124,6 +124,22 @@ impl Fixture {
 
     /// 피커를 두 번 그리고(첫 pass 에서 글꼴이 준비된다) pass 마다 칠한 글자들을 돌려준다.
     fn painted_passes(&mut self) -> Vec<Vec<String>> {
+        self.shape_passes()
+            .into_iter()
+            .map(|shapes| {
+                shapes
+                    .iter()
+                    .filter_map(|clipped| match &clipped.shape {
+                        egui::Shape::Text(text) => Some(text.galley.text().to_owned()),
+                        _ => None,
+                    })
+                    .collect()
+            })
+            .collect()
+    }
+
+    /// 피커를 두 번 그리고 pass 마다 칠한 도형을 돌려준다.
+    fn shape_passes(&mut self) -> Vec<Vec<egui::epaint::ClippedShape>> {
         let ctx = egui::Context::default();
         egui_extras::install_image_loaders(&ctx);
         let raw = egui::RawInput {
@@ -156,15 +172,7 @@ impl Fixture {
                     let _action = file_picker::draw_file_picker(ui, state, &read, &mut cx);
                 });
             });
-            out.push(
-                full.shapes
-                    .iter()
-                    .filter_map(|clipped| match &clipped.shape {
-                        egui::Shape::Text(text) => Some(text.galley.text().to_owned()),
-                        _ => None,
-                    })
-                    .collect(),
-            );
+            out.push(full.shapes);
         }
         drop(read);
         out
@@ -316,4 +324,68 @@ fn the_host_badge_stays_when_the_first_listing_fails_or_times_out() {
             "timed_out={timed_out}: {texts:?}"
         );
     }
+}
+
+/// 글리프 이미지(텍스처 사각형)의 (사각형, tint).
+fn glyphs(shapes: &[egui::epaint::ClippedShape]) -> Vec<(egui::Rect, egui::Color32)> {
+    shapes
+        .iter()
+        .filter_map(|c| match &c.shape {
+            egui::Shape::Rect(r) if r.brush.is_some() => Some((r.rect, r.fill)),
+            _ => None,
+        })
+        .collect()
+}
+
+/// 세션 소실(출처 mirror 워크스페이스 없음)이면 경로 막대 Up 버튼만 비활성 잉크로 그린다. Up 은 Refresh 바로 왼쪽이다.
+#[test]
+fn a_lost_session_draws_the_up_button_disabled() {
+    let mut f = open_remote(None);
+    f.data().current_dir = "/srv/app".into();
+    let alive = glyphs(&f.shape_passes().pop().expect("pass"));
+    f.data().mirror_ws_id = Some(f.ws + 1000);
+    let lost = glyphs(&f.shape_passes().pop().expect("pass"));
+    assert_eq!(alive.len(), lost.len());
+    let changed: Vec<_> = alive
+        .iter()
+        .zip(&lost)
+        .filter(|(a, l)| a.1 != l.1)
+        .map(|(_, l)| *l)
+        .collect();
+    let disabled = crate::theme::theme().state_disabled_fg().to_egui();
+    assert_eq!(changed.len(), 1, "글리프 하나만 바뀐다: {changed:?}");
+    let (up, ink) = changed[0];
+    assert_eq!(ink, disabled);
+    let right_of_up: Vec<_> = lost
+        .iter()
+        .filter(|(r, _)| (r.center().y - up.center().y).abs() < 1.0 && r.left() > up.right())
+        .collect();
+    assert_eq!(
+        right_of_up.len(),
+        1,
+        "Up 오른쪽에는 Refresh 하나: {right_of_up:?}"
+    );
+    assert_ne!(right_of_up[0].1, disabled, "Refresh 는 활성이다");
+}
+
+/// 세션 소실이면 상위 폴더 이동(Up·Alt+↑가 내는 NavigateUp)이 아무것도 하지 않는다. 세션이 있으면 상위로 간다.
+#[test]
+fn a_lost_session_ignores_navigate_up() {
+    let mut f = open_remote(None);
+    f.data().current_dir = "/srv/app".into();
+    let engine = f.session.borrow_mut();
+    let read = engine.read();
+    let d = file_picker::instances::picker_of_mut(&mut f.payload).expect("picker payload");
+    d.mirror_ws_id = Some(f.ws + 1000);
+    assert!(matches!(
+        super::apply_action(d, &mut f.state, &read, super::FilePickerAction::NavigateUp),
+        crate::adapters::ui::popup::PopupAction::None
+    ));
+    assert_eq!(d.current_dir, "/srv/app", "세션 소실: 그대로");
+    d.mirror_ws_id = Some(f.ws);
+    assert!(matches!(
+        super::apply_action(d, &mut f.state, &read, super::FilePickerAction::NavigateUp),
+        crate::adapters::ui::popup::PopupAction::None
+    ));
+    assert_eq!(d.current_dir, "/srv", "세션 있음: 상위로");
 }

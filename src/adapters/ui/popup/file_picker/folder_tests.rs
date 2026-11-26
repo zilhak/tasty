@@ -150,6 +150,17 @@ fn folder_key(
     key: egui::Key,
     modifiers: egui::Modifiers,
 ) -> Option<FilePickerAction> {
+    folder_key_up(mode, dropdown, key, modifiers, true)
+}
+
+/// [`folder_key`] 에서 Up 활성(`up_enabled`)을 정한다.
+fn folder_key_up(
+    mode: FilePickerMode<'_>,
+    dropdown: bool,
+    key: egui::Key,
+    modifiers: egui::Modifiers,
+    up_enabled: bool,
+) -> Option<FilePickerAction> {
     let th = crate::theme::theme();
     let entries = entries();
     let selected: Vec<String> = Vec::new();
@@ -162,6 +173,7 @@ fn folder_key(
         selected: &selected,
         focus_row: None,
         ring: false,
+        up_enabled,
         mode,
         title_label: "",
         name_field_label: "",
@@ -368,5 +380,20 @@ fn a_window_alt_up_on_the_folder_picker_goes_to_the_parent_folder() {
     assert_eq!(
         std::path::Path::new(&after).canonicalize().unwrap(),
         dir.path().canonicalize().unwrap()
+    );
+}
+
+/// Up 이 비활성(세션 소실)이면 Alt+↑ 는 아무것도 하지 않는다.
+#[test]
+fn alt_up_does_nothing_while_up_is_disabled() {
+    assert_eq!(
+        folder_key_up(
+            folder_mode(),
+            false,
+            egui::Key::ArrowUp,
+            egui::Modifiers::ALT,
+            false
+        ),
+        None
     );
 }

@@ -41,6 +41,7 @@ pub(super) fn path_bar(
     if IconButton::new()
         .variant(IconButtonVariant::Ghost)
         .size(ControlSize::Sm)
+        .enabled(props.up_enabled)
         .show(&mut buttons, th, &|ui, rect, c| {
             icons::CHEVRON_UP.image(rect.height(), c).paint_at(ui, rect)
         })

@@ -188,6 +188,7 @@ pub(super) fn painted_frames_tweaked(
         selected: &selected,
         focus_row: None,
         ring: false,
+        up_enabled: true,
         mode,
         title_label: "title",
         name_field_label: "File name",

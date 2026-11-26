@@ -138,6 +138,8 @@ pub struct FilePickerProps<'a> {
     pub focus_row: Option<&'a str>,
     /// 행 포커스 링을 그린다. 키 포커스가 없는 인스턴스면 호출처가 `false`로 넘긴다.
     pub ring: bool,
+    /// 상위 폴더로 갈 수 있다. Up 버튼과 상위 폴더 키가 이 값 하나를 읽는다([`up_enabled`]).
+    pub up_enabled: bool,
     pub mode: FilePickerMode<'a>,
 
     // i18n — 호출처가 t() 로 미리 해상해서 전달(file_handler_picker.rs 관례).
@@ -644,6 +646,16 @@ pub fn on_close_file_picker(
     instances::finish(state, closed);
 }
 
+/// 상위 폴더로 갈 수 있는지. 원격 피커의 출처 mirror 워크스페이스가 사라지면(세션 소실) 갈 수 없다.
+/// Up 버튼(props `up_enabled`), Alt+↑, 적용 단계의 `NavigateUp`이 이 판정 하나를 읽는다.
+pub(super) fn up_enabled(
+    d: &crate::state::FilePickerData,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
+) -> bool {
+    d.mirror_ws_id
+        .is_none_or(|id| engine.find_workspace_index_for_id(id).is_some())
+}
+
 /// 상태에서 화면 입력을 만들고 사용자 동작을 반영한다.
 pub fn draw_file_picker(
     ui: &mut egui::Ui,
@@ -773,6 +785,7 @@ pub fn draw_file_picker(
         selected: &data.selected,
         focus_row: None,
         ring: false,
+        up_enabled: up_enabled(data, engine),
         mode: match &data.save_name {
             _ if data.folder => FilePickerMode::Folder {
                 path: &folder_target,
@@ -892,6 +905,7 @@ fn apply_action(
             }
             PopupAction::None
         }
+        FilePickerAction::NavigateUp if !up_enabled(d, engine) => PopupAction::None,
         FilePickerAction::NavigateUp => {
             let is_remote = d.mirror_ws_id.is_some();
             let targets = path_ancestors(is_remote, &d.current_dir);
