@@ -364,6 +364,11 @@ impl WebViewKeyBridge {
         std::mem::take(&mut *self.pending.borrow_mut())
     }
 
+    /// 소비하지 않은 native 포커스 알림이 있는지.
+    pub fn has_focus_requests(&self) -> bool {
+        !self.focus_requests.borrow().is_empty()
+    }
+
     pub fn take_focus_requests(&self) -> Vec<u32> {
         std::mem::take(&mut *self.focus_requests.borrow_mut())
     }
@@ -1040,6 +1045,87 @@ mod tests {
         let phys = unknown_physical();
         assert!(!bridge.blocks_edit_key(12, &ch("v"), &phys, alt_mod()));
         assert!(bridge.blocks_edit_key(11, &ch("v"), &phys, alt_mod()));
+    }
+
+    /// GTK 대기열 대역의 사건: native 페이지 누름(`connect_button_press_event` 의 알림)과 편집 키(키 신호의 다리 판정).
+    #[derive(Clone, Copy)]
+    enum NativeEvent {
+        Click(u32),
+        EditKey(u32),
+    }
+
+    /// 호스트 루프의 GTK 펌프(`App::pump_gtk_events`)와 같은 순서(`system_tray::pump_events_each`, 이벤트마다 알림 소비
+    /// `consume_native_focus_requests`)로 대역 대기열을 비운다. 편집 키마다 (surface, 막힘)을 돌려준다.
+    fn pump(
+        state: &mut crate::state::MainViewState,
+        core: &crate::core::CoreState,
+        bridge: &WebViewKeyBridge,
+        events: &[NativeEvent],
+    ) -> Vec<(u32, bool)> {
+        let queue = std::cell::RefCell::new(std::collections::VecDeque::from(events.to_vec()));
+        let mut judged = Vec::new();
+        let phys = unknown_physical();
+        crate::system_tray::pump_events_each(
+            || !queue.borrow().is_empty(),
+            || match queue.borrow_mut().pop_front() {
+                Some(NativeEvent::Click(sid)) => bridge.note_focus(sid),
+                Some(NativeEvent::EditKey(sid)) => {
+                    judged.push((sid, bridge.blocks_edit_key(sid, &ch("v"), &phys, alt_mod())));
+                }
+                None => {}
+            },
+            || {
+                crate::app::webview_keys::consume_native_focus_requests(state, core, bridge);
+            },
+        );
+        judged
+    }
+
+    fn paste_bridge(holder: u32) -> WebViewKeyBridge {
+        let bridge = WebViewKeyBridge::new();
+        bridge.set_policy(edit_policy(&[(WebViewEditAction::Paste, &["alt+v"])]));
+        bridge.set_key_holder(Some(holder));
+        bridge
+    }
+
+    /// T-FWD-8c: Given A(11)가 키 쥘 곳이다, When 한 번의 GTK 펌프(트레이 메뉴 펌프·halt 펌프·WebView 펌프가 같은
+    /// 함수다)에 [B(12) 누름, B 편집 키, A 편집 키]가 함께 들면, Then 누름 알림이 이벤트 사이에 소비돼 B 편집 키는 B 에서
+    /// 처리되고 A 편집 키는 막히며 포커스는 B 로 옮겨 있다.
+    #[test]
+    fn one_pump_with_a_click_and_an_edit_key_hands_the_key_to_the_clicked_page() {
+        let (mut state, mut session) = two_surfaces();
+        let engine = session.borrow_mut();
+        let bridge = paste_bridge(11);
+        let judged = pump(
+            &mut state,
+            engine.core,
+            &bridge,
+            &[
+                NativeEvent::Click(12),
+                NativeEvent::EditKey(12),
+                NativeEvent::EditKey(11),
+            ],
+        );
+        assert_eq!(judged, [(12, false), (11, true)]);
+        assert_eq!(state.focused_surface_id(&engine.read()), Some(12));
+        assert!(!bridge.has_focus_requests(), "알림을 모두 소비했다");
+    }
+
+    /// 대조(이전과 같은 처리): 누름 없는 펌프는 키 쥘 곳을 바꾸지 않아 A 편집 키는 A 에서 처리되고 B 편집 키는 막히며,
+    /// 포커스는 A 에 남는다.
+    #[test]
+    fn a_pump_without_a_click_keeps_the_published_holder() {
+        let (mut state, mut session) = two_surfaces();
+        let engine = session.borrow_mut();
+        let bridge = paste_bridge(11);
+        let judged = pump(
+            &mut state,
+            engine.core,
+            &bridge,
+            &[NativeEvent::EditKey(11), NativeEvent::EditKey(12)],
+        );
+        assert_eq!(judged, [(11, false), (12, true)]);
+        assert_eq!(state.focused_surface_id(&engine.read()), Some(11));
     }
 
     #[test]

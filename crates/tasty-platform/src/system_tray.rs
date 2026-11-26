@@ -340,10 +340,34 @@ pub fn poll_menu_event() -> Option<String> {
 /// 새 이벤트를 기다리지는 않지만 개별 GTK 콜백의 실행 시간은 제한하지 않는다.
 #[cfg(target_os = "linux")]
 pub fn pump_gtk_events() {
+    pump_gtk_events_each(|| {});
+}
+
+/// [`pump_gtk_events`]와 같이 대기 중 이벤트를 처리하되 이벤트 하나를 처리할 때마다 `after_each`를 부른다.
+/// 호출자는 앞 이벤트의 콜백이 남긴 일을 다음 이벤트의 콜백 전에 반영할 수 있다.
+#[cfg(target_os = "linux")]
+pub fn pump_gtk_events_each(after_each: impl FnMut()) {
     if gtk::is_initialized() {
-        while gtk::events_pending() {
-            gtk::main_iteration_do(false);
-        }
+        pump_events_each(
+            gtk::events_pending,
+            || {
+                gtk::main_iteration_do(false);
+            },
+            after_each,
+        );
+    }
+}
+
+/// 대기 이벤트가 있는 동안(`pending`) 이벤트 하나를 처리하고(`dispatch`) 그때마다 `after_each`를 부른다.
+/// [`pump_gtk_events_each`]의 순서이고, 시험은 GTK 대신 대역 대기열로 같은 순서를 돈다.
+pub fn pump_events_each(
+    mut pending: impl FnMut() -> bool,
+    mut dispatch: impl FnMut(),
+    mut after_each: impl FnMut(),
+) {
+    while pending() {
+        dispatch();
+        after_each();
     }
 }
 

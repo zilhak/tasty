@@ -35,7 +35,7 @@ impl App {
         }
 
         #[cfg(target_os = "linux")]
-        crate::system_tray::pump_gtk_events();
+        self.pump_gtk_events();
 
         // 클릭으로 옮긴 포커스를 먼저 반영해야 단축키가 그 surface에 적용된다.
         self.consume_webview_focus_requests();
@@ -59,8 +59,24 @@ impl App {
         needs_poll
     }
 
+    /// GTK 대기 이벤트를 하나씩 처리하고, 이벤트마다 native 포커스 알림을 소비한다(`consume_webview_focus_requests`).
+    /// 한 번의 처리에 [WebView B 누름, B 편집 키]가 함께 들어도 누름 알림이 키 쥘 곳을 게시한 뒤 키 신호가 판정한다.
+    /// GTK 이벤트를 처리하는 호스트 루프 세 자리(`pump_webview_key_events`, `poll_tray_menu_events`,
+    /// `halted_webview_paint_deadline`)가 모두 이 함수를 부른다.
+    #[cfg(target_os = "linux")]
+    pub(crate) fn pump_gtk_events(&mut self) {
+        crate::system_tray::pump_gtk_events_each(|| self.consume_webview_focus_requests());
+    }
+
     /// 창마다 native 포커스 알림을 소비한다(`consume_native_focus_requests`). 알림으로 포커스가 바뀐 창은 다시 그린다.
     pub(crate) fn consume_webview_focus_requests(&mut self) {
+        let pending = self.view.views.values().any(|w| {
+            w.as_main()
+                .is_some_and(|main| main.webview_key_bridge.has_focus_requests())
+        });
+        if !pending {
+            return;
+        }
         let ids: Vec<winit::window::WindowId> = self
             .view
             .views

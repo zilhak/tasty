@@ -75,7 +75,7 @@ impl App {
             return None;
         }
         #[cfg(target_os = "linux")]
-        crate::system_tray::pump_gtk_events();
+        self.pump_gtk_events();
         Some(std::time::Instant::now() + crate::app::timers::WEBVIEW_KEY_POLL_INTERVAL)
     }
 

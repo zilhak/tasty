@@ -826,7 +826,7 @@ impl App {
         // 트레이가 없어도 열린 GTK 메뉴는 redraw 사이에 계속 이벤트를 처리해야 한다.
         #[cfg(target_os = "linux")]
         if self.tray_icon.is_some() || self.any_pending_native_menu() {
-            crate::system_tray::pump_gtk_events();
+            self.pump_gtk_events();
         }
 
         #[cfg(all(
