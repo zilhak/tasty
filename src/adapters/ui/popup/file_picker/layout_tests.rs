@@ -222,6 +222,8 @@ pub(super) fn painted_frames_tweaked(
     tweak: &dyn Fn(&mut FilePickerProps<'_>),
 ) -> (egui::Rect, Vec<egui::epaint::ClippedShape>) {
     let ctx = egui::Context::default();
+    // 행 글리프는 SVG 이미지다. 로더가 없으면 텍스처 사각형이 그려지지 않는다.
+    egui_extras::install_image_loaders(&ctx);
     let content = popup.content_rect();
     let selected = vec![selection.to_string()];
     let mut props = FilePickerProps {

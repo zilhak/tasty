@@ -134,9 +134,10 @@ fn the_folder_glyph_reads_the_primary_glyph_cell_of_each_row_state() {
 }
 
 /// 파일 글리프: 쉼·선택 text-muted, hover `fp-row-glyph-fg-hover`(text-secondary), 선택+hover text-on-active.
+/// Latte 는 text-muted 와 text-secondary 가 같은 subtext1 이라 세 잉크가 갈리는 Mocha 로 잰다.
 #[test]
 fn the_file_glyph_reads_the_kit_ink_of_each_row_state() {
-    let th = latte();
+    let th = Theme::with_colors(tasty_themes::mocha_fallback_colors(), false);
     let (muted, hover, on_active) = (
         th.text_muted().to_egui(),
         th.fp_row_glyph_fg_hover().to_egui(),
@@ -144,7 +145,7 @@ fn the_file_glyph_reads_the_kit_ink_of_each_row_state() {
     );
     assert!(
         muted != hover && muted != on_active && hover != on_active,
-        "Latte 에서 세 잉크가 갈려야 시험이 뜻을 갖는다"
+        "Mocha 에서 세 잉크가 갈려야 시험이 뜻을 갖는다"
     );
     assert_eq!(
         four_states(&th, FILE),
