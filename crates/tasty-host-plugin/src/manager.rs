@@ -591,6 +591,7 @@ pub use copied_text::{PluginCopiedText, PluginCopyTarget};
 mod edit_outcome;
 pub use edit_outcome::{PluginEditOutcome, PluginEditRequest, PluginEditResult};
 mod events;
+pub use events::HostEventDelivery;
 mod ipc_dispatch;
 mod lifecycle;
 mod popup;
@@ -678,6 +679,10 @@ mod tests_retire;
 
 #[cfg(test)]
 mod tests_connect;
+
+// 호스트 unicast 이벤트가 plugin 송신 큐에 들어갔는지 호출자가 아는가.
+#[cfg(test)]
+mod tests_host_event_delivery;
 
 #[cfg(test)]
 mod tests {

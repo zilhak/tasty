@@ -5,6 +5,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::json;
 
+use crate::process::RequestSendError;
 use crate::protocol;
 use tasty_plugin_manifest::EventHookDecl;
 
@@ -131,17 +132,29 @@ impl PluginManager {
         payload: &P,
         scope: tasty_plugin_protocol::EventScope,
     ) {
+        self.try_emit_host_event_to_plugin(plugin_id, key, payload, scope);
+    }
+
+    /// [`Self::emit_host_event_to_plugin`] 과 같이 보내고, 이벤트가 plugin 송신 큐에 들어갔는지 돌려준다.
+    /// 큐가 차서 버린 이벤트를 다시 보내야 하는 호출자가 쓴다.
+    pub fn try_emit_host_event_to_plugin<P: serde::Serialize>(
+        &mut self,
+        plugin_id: &str,
+        key: &str,
+        payload: &P,
+        scope: tasty_plugin_protocol::EventScope,
+    ) -> HostEventDelivery {
         if !self.processes.contains_key(plugin_id) {
             tracing::trace!(
                 "emit_host_event_to_plugin: plugin '{}' not running, dropping '{}'",
                 plugin_id,
                 key
             );
-            return;
+            return HostEventDelivery::Unreachable;
         }
         let envelope = self.build_host_envelope(key, payload, scope);
         let dispatch = self.event_bus.unicast_to_plugin(plugin_id, envelope);
-        self.send_event_dispatches(vec![dispatch]);
+        self.send_event_dispatch(dispatch)
     }
 
     /// plugin 이벤트를 검사하고 pre-event hook이 있으면 그 결과에 따라 전달한다.
@@ -462,24 +475,48 @@ impl PluginManager {
         dispatches: Vec<crate::event_bus::PluginDispatch>,
     ) {
         for d in dispatches {
-            let mut req = crate::event_bus::EventBus::build_dispatch_request(&d);
-            req.id = self.next_request_id.fetch_add(1, Ordering::Relaxed);
-            let request_id = req.id;
-            let Some(proc) = self.processes.get(&d.plugin_id) else {
-                continue;
-            };
-            match proc.try_send_request(req) {
-                // 응답 전 발행에 hop 하한을 적용할 수 있도록 보낸 dispatch를 기록한다.
-                Ok(()) => {
-                    self.event_bus
-                        .note_dispatch_sent(&d.plugin_id, request_id, d.envelope.meta.hop)
-                }
-                Err(e) => {
-                    tracing::warn!("plugin '{}' event.dispatch send failed: {}", d.plugin_id, e)
+            self.send_event_dispatch(d);
+        }
+    }
+
+    fn send_event_dispatch(&mut self, d: crate::event_bus::PluginDispatch) -> HostEventDelivery {
+        let mut req = crate::event_bus::EventBus::build_dispatch_request(&d);
+        req.id = self.next_request_id.fetch_add(1, Ordering::Relaxed);
+        let request_id = req.id;
+        let Some(proc) = self.processes.get(&d.plugin_id) else {
+            return HostEventDelivery::Unreachable;
+        };
+        match proc.try_send_request(req) {
+            // 응답 전 발행에 hop 하한을 적용할 수 있도록 보낸 dispatch를 기록한다.
+            Ok(()) => {
+                self.event_bus
+                    .note_dispatch_sent(&d.plugin_id, request_id, d.envelope.meta.hop);
+                HostEventDelivery::Queued
+            }
+            Err(e) => {
+                tracing::warn!("plugin '{}' event.dispatch send failed: {}", d.plugin_id, e);
+                match e {
+                    RequestSendError::Full | RequestSendError::OverBytes(_) => {
+                        HostEventDelivery::Refused
+                    }
+                    RequestSendError::Disconnected | RequestSendError::Encode => {
+                        HostEventDelivery::Unreachable
+                    }
                 }
             }
         }
     }
+}
+
+/// 호스트 이벤트 하나가 plugin 송신 큐에 들어갔는지.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HostEventDelivery {
+    /// 큐에 들어갔다.
+    Queued,
+    /// 큐가 가득 찼거나 바이트 상한을 넘어 버렸다. 큐가 비면 다시 보낼 수 있다.
+    Refused,
+    /// 받을 plugin 프로세스가 없거나 끊겼거나 이벤트를 직렬화하지 못했다. 다시 보내도 받지 않는다.
+    Unreachable,
 }
 
 /// surface 이벤트의 대상. 프로토콜 규약대로 `EventScope::Surface` 이벤트의 payload
