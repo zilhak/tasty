@@ -273,6 +273,8 @@ impl RequestContext {
             #[cfg(feature = "gui")]
             segment_focus: None,
             #[cfg(feature = "gui")]
+            closed_segment_focus: None,
+            #[cfg(feature = "gui")]
             segment_notice: None,
             #[cfg(feature = "gui")]
             segment_screen: None,

@@ -148,7 +148,7 @@ plugin의 egui-mesh 팝업은 포커스 노드일 때 키보드 입력을 차단
 
 경로 키는 키 경로의 수신자 하나(`MainView::key_decision`)가 egui에 실을지와 터미널로 보내지 않을지를 함께 정한다(`window_feeds_key`·`window_key_holds_terminal`). 경로 키가 아닌 사건(`key_class::classify_key`)과 IME는 `MainViewState::keyboard_overlay_open()`이 두 판정을 함께 정한다. 서로 다른 조건을 쓰면 양쪽이 모두 처리하거나 모두 버릴 수 있다. IME 라우팅도 같은 조건을 쓴다.
 
-`set_ime_allowed`만은 plugin 팝업을 차단 조건에서 제외한다. 이 팝업에는 호스트 egui 위젯이 없으므로 IME를 끄면 조합 입력을 할 수 없다. `collect_mesh_popup_input`이 이미 호스트 egui에 들어온 이벤트를 plugin에 보내고, 후보창 위치는 plugin이 반환한 값으로 정한다([egui-mesh 채널](../../dev-guide/egui-mesh-channel.md)).
+IME 허용(`set_ime_allowed`)은 창의 포커스 노드가 정한다(`ime_permission::window_ime_allowed`). plugin 팝업은 host egui 위젯이 없으므로 선언 `keyboard` 로 정한다. `collect_mesh_popup_input`이 이미 호스트 egui에 들어온 이벤트를 plugin에 보내고, 후보창 위치는 plugin이 반환한 값으로 정한다([egui-mesh 채널](../../dev-guide/egui-mesh-channel.md)).
 
 plugin 팝업의 범위 보임과 이 캐시는 렌더 프레임에 갱신되므로 popup 이 열린 **직후 최대 1 프레임** 늦게 반영된다 — 짧은 지연이므로, 이 값을 읽는 입력 경로에서는 열린 직후의 프레임 차이를 고려한다. 사용자가 연 plugin 팝업은 열 때 포커스 칸에 바로 들어간다.
 

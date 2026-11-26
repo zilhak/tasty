@@ -533,7 +533,7 @@ impl GpuState {
         // 터미널 IME가 egui의 비입력 프레임 때문에 꺼지지 않도록 처리한다.
         // 실제 허용 여부는 apply_platform_output에서 결정한다.
         let t0 = std::time::Instant::now();
-        self.apply_platform_output(window, state, full_output.platform_output);
+        self.apply_platform_output(window, state, engine, full_output.platform_output);
         timing.platform_output_ms = t0.elapsed().as_secs_f64() * 1000.0;
 
         let t0 = std::time::Instant::now();
@@ -772,7 +772,7 @@ impl GpuState {
                 crate::adapters::ui::draw_fullscreen_stage(ctx, state, engine);
             },
         );
-        self.apply_platform_output(window, state, platform_output);
+        self.apply_platform_output(window, state, engine, platform_output);
 
         let paint_jobs = self.egui_ctx.tessellate(shapes, pixels_per_point);
         let screen_descriptor = egui_wgpu::ScreenDescriptor {
@@ -801,12 +801,13 @@ impl GpuState {
         Ok(())
     }
 
-    /// host 팝업이 포커스를 갖고 텍스트 입력이 아니면 IME를 끈다.
+    /// 다음 입력의 IME 허용은 창의 지금 포커스 노드로 정한다(`ime_permission::window_ime_allowed`).
     /// Windows는 한/영 전환 문제를 피하기 위해 항상 허용한다.
     fn apply_platform_output(
         &mut self,
         window: &Window,
         state: &MainViewState,
+        engine: &crate::runtime::engine_read::EngineRead<'_>,
         platform_output: egui::PlatformOutput,
     ) {
         self.egui_state.set_allow_ime(false);
@@ -818,18 +819,19 @@ impl GpuState {
 
         #[cfg(not(windows))]
         {
-            // plugin 팝업 입력은 host 위젯 포커스에 나타나지 않아 이 IME 비활성 조건에 포함하지 않는다.
-            let target = if state.popups.has_focused() {
-                ime_permission::ImeTarget::HostPopup
-            } else {
-                ime_permission::ImeTarget::Other
-            };
-            window.set_ime_allowed(ime_permission::ime_allowed(target, ime_widget_focused));
+            // 허용 대상은 다음 입력의 출발 노드(지금 포커스 노드)다. 그린 몫 위젯의 IME 출력은 그 몫이 같은 host
+            // 인스턴스일 때만 근거가 된다.
+            window.set_ime_allowed(ime_permission::window_ime_allowed(
+                state,
+                engine,
+                state.closed_segment_focus,
+                ime_widget_focused,
+            ));
         }
         #[cfg(windows)]
         {
-            // Windows는 팝업 포커스와 무관하게 IME를 허용하므로 state를 읽지 않는다.
-            let _ = state;
+            // Windows는 팝업 포커스와 무관하게 IME를 허용하므로 포커스 노드를 판정하지 않는다.
+            let _ = (state.closed_segment_focus, engine);
             window.set_ime_allowed(true);
         }
     }
