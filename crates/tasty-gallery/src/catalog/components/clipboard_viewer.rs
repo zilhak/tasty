@@ -466,13 +466,31 @@ fn image_body_row(ui: &mut egui::Ui, theme: &Theme) {
     );
     y += meta_h + theme.spacing_xs.value();
 
-    ui.painter().text(
+    absent_note(
+        ui.painter(),
         egui::pos2(well.center().x, y),
         egui::Align2::CENTER_TOP,
         "No inline image preview",
         egui::FontId::proportional(theme.font_size_caption.value()),
         theme.text_disabled().to_egui(),
     );
+}
+
+/// 빈 내용을 대신하는 줄(안 보여 주는 미리보기·줄). 정본 `font-style-absent`(italic)를 읽는다.
+/// 생성기가 fontStyle 을 상수로 만들지 않아 공용 `italicize_name` 으로 이탤릭을 건다.
+fn absent_note(
+    p: &egui::Painter,
+    pos: egui::Pos2,
+    anchor: egui::Align2,
+    text: impl ToString,
+    font: egui::FontId,
+    color: egui::Color32,
+) {
+    let mut job = egui::text::LayoutJob::simple_singleline(text.to_string(), font, color);
+    tasty_ui_widgets::italicize_name(&mut job);
+    let galley = p.layout_job(job);
+    let rect = anchor.anchor_size(pos, galley.size());
+    p.galley(rect.min, galley, color);
 }
 
 fn other_popup(ui: &mut egui::Ui, theme: &Theme) {
@@ -599,7 +617,8 @@ fn other_body_row(ui: &mut egui::Ui, theme: &Theme) {
             ty += line_h;
         }
         if let Some(n) = sample.more_lines {
-            p.text(
+            absent_note(
+                p,
                 egui::pos2(tx, ty),
                 egui::Align2::LEFT_TOP,
                 format!("+{n} more lines"),
@@ -976,4 +995,70 @@ fn hline(ui: &mut egui::Ui, theme: &Theme, y: f32) {
             theme.separator.to_egui_premultiplied(),
         ),
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{IMAGE_META, OTHER_SAMPLES, image_popup, other_popup};
+    use crate::catalog::components::painted::{mocha_latte, paint};
+
+    /// 그려진 글자 중 `text` 와 같은 줄의 섹션별 italic 여부.
+    fn italics_of(shapes: &[egui::Shape], text: &str) -> Vec<Vec<bool>> {
+        shapes
+            .iter()
+            .filter_map(|s| match s {
+                egui::Shape::Text(t) if t.galley.job.text == text => Some(
+                    t.galley
+                        .job
+                        .sections
+                        .iter()
+                        .map(|sec| sec.format.italics)
+                        .collect(),
+                ),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// 빈 내용을 대신하는 줄(안 보여 주는 이미지 미리보기, 생략한 줄 수)은 정본 `font-style-absent`
+    /// 대로 italic 이고, 같은 표본의 내용 줄은 아니다.
+    #[test]
+    fn absent_content_notes_are_italic() {
+        for (name, th) in mocha_latte() {
+            let image = paint(|ui| image_popup(ui, &th));
+            let note = italics_of(&image.shapes, "No inline image preview");
+            assert_eq!(note.len(), 1, "{name}: the image note is drawn once");
+            assert!(
+                note[0].iter().all(|i| *i),
+                "{name}: image note italic {note:?}"
+            );
+            let meta = italics_of(&image.shapes, IMAGE_META);
+            assert!(!meta.is_empty(), "{name}: the image meta is drawn");
+            assert!(
+                meta.iter().flatten().all(|i| !*i),
+                "{name}: image meta stays upright"
+            );
+
+            let other = paint(|ui| other_popup(ui, &th));
+            let mut checked = 0;
+            for sample in OTHER_SAMPLES {
+                let names = italics_of(&other.shapes, sample.name);
+                assert_eq!(names.len(), 1, "{name}: {} drawn once", sample.name);
+                assert!(
+                    names[0].iter().all(|i| !*i),
+                    "{name}: format name stays upright"
+                );
+                if let Some(n) = sample.more_lines {
+                    let more = italics_of(&other.shapes, &format!("+{n} more lines"));
+                    assert_eq!(more.len(), 1, "{name}: +{n} more lines drawn once");
+                    assert!(
+                        more[0].iter().all(|i| *i),
+                        "{name}: more-lines note italic {more:?}"
+                    );
+                    checked += 1;
+                }
+            }
+            assert!(checked > 0, "{name}: a sample carries a more-lines note");
+        }
+    }
 }

@@ -468,6 +468,19 @@ fn cut_pending_font_style_is_the_italic_the_app_applies() {
     }
 }
 
+/// 빈 내용을 대신하는 줄도 같은 이유로 앱이 이탤릭을 직접 건다(`tasty_ui_widgets::italicize_name`).
+#[test]
+fn font_style_absent_is_the_italic_the_app_applies() {
+    let set = dtcg::parse(DTCG_JSON).expect("vendor json must parse");
+    for mode in [ThemeMode::Mocha, ThemeMode::Latte] {
+        assert_eq!(
+            set.resolve("semantic.font-style-absent", mode)
+                .expect("token must resolve"),
+            "italic"
+        );
+    }
+}
+
 /// 선택 위 매치의 새 역할. 키가 없는 바탕은 사용자 테마의 현재 매치 바탕을 따른다.
 #[test]
 fn selected_match_roles_match_the_design_values() {

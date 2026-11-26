@@ -139,8 +139,9 @@ pub fn tree_row_cut(
     draw(ui, theme, row, icon, label, query)
 }
 
-/// 이름을 `cut-pending-font-style`(italic)로 바꾼다. 생성기가 이 토큰을 상수로 만들지 않아
-/// 값은 여기 고정하며, `tasty-design-tokens` 시험이 토큰과 대조한다.
+/// 글자를 italic 으로 바꾼다. 잘라낸 항목 이름(`cut-pending-font-style`)과 빈 내용을 대신하는 줄
+/// (`font-style-absent`)이 쓴다. 생성기가 fontStyle 토큰을 상수로 만들지 않아 값은 여기 고정하며,
+/// `tasty-design-tokens` 시험이 두 토큰과 대조한다.
 pub fn italicize_name(job: &mut egui::text::LayoutJob) {
     for section in &mut job.sections {
         section.format.italics = true;
