@@ -29,7 +29,7 @@ Toast는 “복사됨”, “저장됨”처럼 사용자 조작의 결과를 �
 | 원격 연결 팝업의 연결 버튼이 접수된 뒤 연결·핸드셰이크·mirror 설치 실패 | 시작한 창에 실패 토스트(Error, `attach.toast.mirror_connect_failed`) 1건, 사유는 가운데를 줄여 붙임. 그 창이 닫혔거나 View가 바뀌었으면 표시하지 않음. IPC·자동 attach·재연결 실패는 이 토스트를 내지 않음 |
 | 사용자 구조 변경의 원격 적용 실패 | 실패 토스트 표시 |
 | agent origin 또는 직접 IPC 구조 요청의 원격 실패 | op_id로 origin을 기억해 토스트를 띄우지 않는다. 원격 실패 사유는 run을 가진 intent(mirror 대상 `file_handler.dispatch`·`markdown.navigate`)에만 `failed`로 전달된다([file-handler](../../features/file-handler/index.md#접수-뒤-최종-결과)). 직접 IPC 구조 요청(`split`·`tab.create` 등)은 `forwarded` 접수 응답 뒤 원격 실패가 로그로만 남으며 이는 현행 미충족이다 |
-| 원격 markdown 잘림 | 최초 열기·실패 후 변경 재조회·사용자 새로고침에는 알려진 예외로 표시. markdown.reload IPC 재조회에는 로그만 기록 |
+| 원격 markdown 잘림 | 최초 열기·실패 후 변경 재조회·사용자 새로고침에는 알려진 예외로 표시. markdown.reload IPC 재조회에는 로그만 기록. 회신 마감으로 실패 처리한 뒤 온 회신은 버리므로 표시하지 않는다 |
 | 사용자 단축키·변경 확인 승인으로 실행한 Lua 스크립트의 실패 | 그 단축키를 누른 창에 실패 토스트(Error, `Window`) 1건. 성공에는 표시하지 않음. 창이 닫힌 뒤 도착한 결과는 버림. 자동실행 실패는 토스트가 아니라 경고 알림([Lua 실행 결과 전달](../../features/lua-hooks/index.md#실행-결과-전달)) |
 | 사용자 설정 저장에서 저장된 글꼴 값이 거절됨(`App::report_rejected_fonts`) | 값마다 Warning 카드 1장, 버튼 없음, 본문에 값. 설정 창은 Save로 닫히므로 메인 창에 띄운다. 같은 값을 다시 저장해도 늘지 않고, 통과한 뒤 다시 거절되면 또 띄운다. 입력 중에는 띄우지 않는다. 사용자 출처 적용에서 글꼴 값이 그대로면 파일을 다시 읽지 않지만 설정 창 Save는 값이 같아도 판정한다. 에이전트의 `settings.apply` 등 그 밖의 출처는 경고 로그만 남긴다 |
 | 부팅 때 저장된 글꼴 값이 거절됨 | 언어팩 글꼴 경고와 같이 사용자 조작 없이 표시하는 알려진 예외. 값마다 Warning 카드 1장. 부팅 카드의 수명도 저장된 Toast duration을 따른다 |
