@@ -122,7 +122,7 @@ fn raised_card(ui: &mut egui::Ui, theme: &Theme) {
         .fill(theme.toast_bg().to_egui())
         .stroke(egui::Stroke::new(
             theme.border_width.value(),
-            theme.border_default().to_egui(),
+            theme.toast_border().to_egui(),
         ))
         .corner_radius(theme.corner_radius.value())
         .inner_margin(tasty_ui_widgets::margin_sym(
@@ -205,4 +205,30 @@ pub fn draw_followups(ui: &mut egui::Ui, theme: &Theme) {
             TokenChip::new("ui-code-bg", "→ surface-raised", UiCodeTokens::of(theme).bg),
         ],
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::catalog::components::painted::paint;
+
+    /// 토스트 코드 예시 틀은 토스트 카드와 같은 toast-bg 채움과 toast-border 테두리다.
+    #[test]
+    fn the_toast_sample_card_edges_with_toast_border() {
+        for theme in [
+            tasty_themes::mocha_fallback(),
+            crate::host_shell::latte_theme(),
+        ] {
+            let edge = theme.toast_border().to_egui();
+            assert_ne!(edge, theme.border_default().to_egui());
+            let p = paint(|ui| raised_card(ui, &theme));
+            let cards: Vec<_> = p
+                .stroked_rects()
+                .into_iter()
+                .filter(|(_, fill, _)| *fill == theme.toast_bg().to_egui())
+                .collect();
+            assert_eq!(cards.len(), 1, "틀 하나: {cards:?}");
+            assert_eq!(cards[0].2, edge);
+        }
+    }
 }
