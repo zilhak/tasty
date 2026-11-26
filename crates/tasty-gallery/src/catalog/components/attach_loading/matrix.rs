@@ -317,13 +317,11 @@ fn overflow_strip(ui: &mut egui::Ui, th: &Theme, loading: &[usize]) {
         TabScrollArrowInk::Enabled,
         false,
     );
+    // raised 띠 아래선이라 border-strong이다.
     ui.painter().hline(
         rect.x_range(),
         rect.max.y - th.border_width.value() * 0.5,
-        egui::Stroke::new(
-            th.border_width.value(),
-            th.separator.to_egui_premultiplied(),
-        ),
+        egui::Stroke::new(th.border_width.value(), th.border_strong().to_egui()),
     );
 }
 
@@ -649,4 +647,30 @@ pub(super) fn labels(ui: &mut egui::Ui, theme: &Theme) {
         "Don't write the loading label into the tab title or workspace name, and don't add a \
          slot beside the title for it.",
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::catalog::components::painted::paint;
+
+    /// 넘친 탭 띠(raised)의 아래선은 border-strong이다.
+    #[test]
+    fn the_overflow_strip_rule_is_border_strong() {
+        for th in [
+            tasty_themes::mocha_fallback(),
+            crate::host_shell::latte_theme(),
+        ] {
+            let strong = th.border_strong().to_egui();
+            assert_ne!(strong, th.separator.to_egui_premultiplied());
+            let p = paint(|ui| overflow_strip(ui, &th, &[1]));
+            let rules: Vec<_> = p
+                .segments()
+                .into_iter()
+                .filter(|(a, b, _)| a.y == b.y && (b.x - a.x).abs() == OVERFLOW_W.value())
+                .collect();
+            assert_eq!(rules.len(), 1, "아래선 하나: {rules:?}");
+            assert_eq!(rules[0].2, strong);
+        }
+    }
 }
