@@ -807,7 +807,9 @@ popup`). git-viewer 팝업은 UiNode tree 가 아니라 **egui-mesh** 로 그린
 | `ChRow`(status pill + dir/file) | `ch_row` | `ch_row` |
 | `CmRow`(oid + refs + summary + author + time) | `cm_row` | `cm_row` |
 | `DiffLine`(거터 + 부호 + ± tint / hunk band) | `diff_line`(+`draw_diff` well) | `diff_line`(+`diff_pane`) |
-| oid·refs·`main` = sky | `accent_info` (Tag `Info` 톤) | 동일 |
+| refs·`main` = sky | Tag `Info` 톤 | 동일 |
+| `CmRow`·미선택 `WtRow` oid 글자 = sky | `accent_info_raised`(킷 `CmRow`·`WtRow`도 `accent-info-raised`) | `accent_info`. Latte에서 plugin과 값이 다르다 |
+| 선택된 `WtRow` oid 글자 | `state.meta(theme, RowParent::Mantle)`: 선택 쉬는 상태 `text_on_active`, 선택 hover·press `text_on_active_hover`(`row_ink.rs`). 킷은 늘 `text-on-active` | 늘 `text_on_active()`. 선택 쉬는 상태는 셋이 같고, 선택 hover·press에서는 plugin만 `text_on_active_hover`다 |
 | current·added / locked·modified / invalid·deleted | `accent_success`/`-warning`/`-danger` | 동일 |
 | diff 줄 채움 | hunk·추가·삭제 줄 `git-diff-hunk-bg`·`-add-bg`·`-del-bg`(= `tint-*-bg`). 맥락 줄은 채우지 않는다 | 동일 |
 | diff 줄 번호 | 추가·삭제 줄 `text_muted_raised`, 맥락 줄 `text_muted`. hunk 줄은 번호 칸이 비어 있다 | 동일 |
