@@ -816,7 +816,7 @@ pub(crate) fn themed_card(ui: &mut egui::Ui, theme: &Theme, add: impl FnOnce(&mu
 /// 탭 스트립 툴팁 예제 창 하나. 툴팁은 본체와 같은 규칙으로 WebView 자리를 피한다.
 /// `stacked`가 거짓이면 제목 영역 → 탭 스트립 → WebView 자리라 버블이 위로 뜬다.
 /// 참이면 위 pane의 WebView → 탭 스트립 → 자기 WebView라 위·아래가 막혀 버블이 스트립 안에 뜬다.
-/// 이때 스트립 아래 separator는 없고 자기 WebView가 스트립 바로 아래에서 시작한다(앱 기하).
+/// 이때 스트립 아래 선은 없고 자기 WebView가 스트립 바로 아래에서 시작한다(앱 기하).
 fn strip_tooltip_window(ui: &mut egui::Ui, theme: &Theme, id: &str, stacked: bool) {
     let bw = theme.border_width.value();
     let strip_h = theme.tab_height().value();
@@ -892,12 +892,13 @@ fn strip_tooltip_window(ui: &mut egui::Ui, theme: &Theme, id: &str, stacked: boo
     );
     let second = egui::Rect::from_min_max(egui::pos2(cell.right(), strip.top()), strip.max);
     tab(ui, theme, second, "shell", icons::TERMINAL, false, None);
-    // 쌓인 예제는 앱 기하를 따른다. 자기 WebView가 스트립 바로 아래에서 시작한다(간격 0, separator 없음).
+    // 쌓인 예제는 앱 기하를 따른다. 자기 WebView가 스트립 바로 아래에서 시작한다(간격 0, 스트립 아래 선 없음).
     if !stacked {
+        // raised 띠 아래선이라 border-strong이다.
         painter.hline(
             strip.x_range(),
             strip.bottom() + bw / 2.0,
-            egui::Stroke::new(bw, theme.separator.to_egui_premultiplied()),
+            egui::Stroke::new(bw, theme.border_strong().to_egui()),
         );
     }
 
@@ -1052,5 +1053,32 @@ mod tests {
             assert!(!text.is_empty(), "{key}");
         }
         assert_eq!(t(TITLE), crate::i18n::t("banner.html_script.title"));
+    }
+
+    /// 툴팁 창 표본: 홀로 선 예제의 raised 탭 띠 아래선은 border-strong이다. 쌓인 예제는 띠 아래선이 없고,
+    /// 위 pane(bg-panel) 아래 선은 separator로 남는다.
+    #[test]
+    fn the_tooltip_window_strip_rule_is_border_strong() {
+        for theme in [
+            tasty_themes::mocha_fallback(),
+            crate::host_shell::latte_theme(),
+        ] {
+            let strong = theme.border_strong().to_egui();
+            let sep = theme.separator.to_egui_premultiplied();
+            assert_ne!(strong, sep);
+            let inner_w = STRIP_TOOLTIP_W.value() - theme.border_width.value() * 2.0;
+            for (stacked, want) in [(false, strong), (true, sep)] {
+                let p = crate::catalog::components::painted::paint(|ui| {
+                    strip_tooltip_window(ui, &theme, "strip-tip-test", stacked)
+                });
+                let rules: Vec<_> = p
+                    .segments()
+                    .into_iter()
+                    .filter(|(a, b, _)| a.y == b.y && (b.x - a.x).abs() == inner_w)
+                    .collect();
+                assert_eq!(rules.len(), 1, "stacked={stacked}: {rules:?}");
+                assert_eq!(rules[0].2, want, "stacked={stacked}");
+            }
+        }
     }
 }
