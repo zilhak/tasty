@@ -65,9 +65,11 @@ fn painted_grid(zoom: f32) -> (Theme, Vec<(String, egui::Rect)>) {
             .shapes
             .iter()
             .filter_map(|c| match &c.shape {
-                egui::Shape::Text(t) if t.galley.text().ends_with(".txt") => {
-                    Some((t.galley.text().to_owned(), t.visual_bounding_rect()))
-                }
+                // 가운데 정렬 galley 의 논리 사각형이다. 글자 모양마다 다른 visual 경계는 쓰지 않는다.
+                egui::Shape::Text(t) if t.galley.text().ends_with(".txt") => Some((
+                    t.galley.text().to_owned(),
+                    t.galley.rect.translate(t.pos.to_vec2()),
+                )),
                 _ => None,
             })
             .collect();
