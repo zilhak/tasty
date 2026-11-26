@@ -170,9 +170,10 @@ mod tests {
     use crate::stream::{self, StreamTag};
     use std::io::{BufRead, BufReader};
     use std::net::{TcpListener, TcpStream};
-    use tasty_utils::socket_inherit::is_inheritable;
+    use tasty_utils::socket_inherit::{is_inheritable, make_inheritable};
 
-    /// 연결의 reader·writer와 꺼낸 writer 복제는 자식 프로세스가 물려받지 않는다.
+    /// 연결의 reader·writer와 꺼낸 writer 복제는 자식 프로세스가 물려받지 않는다. 넘기는 소켓의 상속을
+    /// 일부러 켜서, open이 끄는 호출이 빠지면 std가 돌려준 값과 상관없이 실패하게 한다.
     #[test]
     fn stream_connection_sockets_are_not_inheritable() {
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
@@ -193,6 +194,7 @@ mod tests {
             socket
         });
         let socket = TcpStream::connect(("127.0.0.1", port)).expect("connect");
+        make_inheritable(&socket).expect("make inheritable");
         let (conn, _) = StreamConnection::open(socket, 1).expect("open");
         let _server_socket = server.join().expect("server");
         let writer_clone = conn.try_clone_writer().expect("writer clone");
