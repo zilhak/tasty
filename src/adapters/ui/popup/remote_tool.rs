@@ -1995,25 +1995,29 @@ fn form_row(ui: &mut egui::Ui, th: &Theme, label: &str, add_input: impl FnOnce(&
     });
 }
 
-/// 입력 행. placeholder는 host·port·경로 등의 기술 예시이며 번역하지 않는다.
 /// inline passkey 값 칸. code_area와 같은 방식으로 Input 칸 모양을 칠한다: input-bg 채움, input-border
-/// 테두리, 포커스면 input-border-focus 테두리와 바깥 링. 칸 크기와 안쪽 여백은 TextEdit의 것이다.
+/// 테두리, 포커스면 input-border-focus 테두리와 바깥 링. 글자는 상자 안쪽 spacing-sm에서 시작한다.
 fn passkey_value_area(ui: &mut egui::Ui, th: &Theme, value: &mut String) -> bool {
     let bed = ui.painter().add(egui::Shape::Noop);
+    // 갤러리 secret_area처럼 글자는 채움 상자 안쪽 spacing-sm에서 시작한다.
+    let margin = egui::Margin::same(th.spacing_sm.value() as i8);
     let resp = ui.add(
         egui::TextEdit::multiline(value)
-            .id_salt(PASSKEY_VALUE_ID)
+            .id(ui.make_persistent_id(PASSKEY_VALUE_ID))
             .frame(false)
+            .margin(margin)
             .desired_rows(3)
             .hint_text(tasty_egui_theme::hint_text(
                 th,
                 t("remote_tool.value_inline_hint"),
             )),
     );
+    // TextEdit은 여백을 뺀 글자 칸을 응답 rect로 돌려준다. 칸 모양은 여백까지 품은 바깥 상자에 그린다.
+    let field = resp.rect + margin;
     let radius = th.corner_radius.value();
     ui.painter().set(
         bed,
-        egui::epaint::RectShape::filled(resp.rect, radius, th.input_bg().to_egui()),
+        egui::epaint::RectShape::filled(field, radius, th.input_bg().to_egui()),
     );
     let focused = resp.has_focus();
     let edge = if focused {
@@ -2022,7 +2026,7 @@ fn passkey_value_area(ui: &mut egui::Ui, th: &Theme, value: &mut String) -> bool
         th.input_border()
     };
     ui.painter().rect_stroke(
-        resp.rect,
+        field,
         radius,
         egui::Stroke::new(th.border_width.value(), edge.to_egui()),
         egui::StrokeKind::Inside,
@@ -2031,7 +2035,7 @@ fn passkey_value_area(ui: &mut egui::Ui, th: &Theme, value: &mut String) -> bool
         tasty_ui_widgets::paint_field_ring(
             ui.painter(),
             th,
-            resp.rect,
+            field,
             radius,
             th.input_border_focus().to_egui(),
         );
@@ -2042,6 +2046,7 @@ fn passkey_value_area(ui: &mut egui::Ui, th: &Theme, value: &mut String) -> bool
 /// inline passkey 값 칸의 TextEdit id 소금.
 const PASSKEY_VALUE_ID: &str = "remote_tool_passkey_value";
 
+/// 입력 행. placeholder는 host·port·경로 등의 기술 예시이며 번역하지 않는다.
 fn text_row(
     ui: &mut egui::Ui,
     th: &Theme,
@@ -2183,6 +2188,32 @@ mod tests {
                     "focus={focus}: {edges:?}"
                 );
             }
+        }
+    }
+
+    /// 값 칸의 글자는 채움 상자 안쪽 spacing-sm에서 시작한다(갤러리 secret_area와 같은 들임).
+    #[test]
+    fn the_inline_passkey_value_text_is_inset_by_spacing_sm() {
+        for th in crate::painted_test_support::themes() {
+            let inset = th.spacing_sm.value();
+            assert!(inset > 1.0);
+            let p = crate::painted_test_support::paint(|ui| {
+                let mut value = String::new();
+                passkey_value_area(ui, &th, &mut value);
+            });
+            let bed = p
+                .shapes
+                .iter()
+                .find_map(|s| match s {
+                    egui::Shape::Rect(r) if r.fill == th.input_bg().to_egui() => Some(r.rect),
+                    _ => None,
+                })
+                .expect("input-bg 채움");
+            let hint = p.text_rect(t("remote_tool.value_inline_hint"));
+            assert!(
+                hint.left() >= bed.left() + inset - 0.5 && hint.top() >= bed.top() + inset - 0.5,
+                "hint {hint:?} bed {bed:?} inset {inset}"
+            );
         }
     }
 
