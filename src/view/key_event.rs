@@ -18,7 +18,7 @@ pub(crate) trait KeyEventSteps<E> {
     /// 단계 6(편집 판정). `None`이면 판정이 사건을 가져갔다. 값은 판정이 넘긴 편집이다.
     fn judge_edit_key(&mut self, event: &E) -> Option<Option<EditKey>>;
 
-    /// 단계 7(explorer IME·튜토리얼 가로채기). 참이면 사건이 여기서 끝난다.
+    /// 단계 7(explorer IME 가로채기). 참이면 사건이 여기서 끝난다.
     fn intercepts_after_edit_judgment(&mut self, _event: &E) -> bool {
         false
     }

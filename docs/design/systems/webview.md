@@ -511,15 +511,16 @@ macOS의 performKeyEquivalent도 실제 first responder가 자기 뷰 안에 있
 
 host는 실제 focus가 해당 자식 안에 있을 때만 부모 winit 창으로 회수한다. 회수하는 경로는 두 가지다.
 
-- 키 쥘 곳(`key_focus::webview_key_holder_of`)이 아니거나 이번 프레임에 숨는 webview가 OS 키 포커스를 쥘 때:
-  동기화마다 그 webview를 회수한다(`webview_sync::key_release::release_webview_key_focus`). 같은 구간에 다시 쥐거나
-  늦게 나타난 webview도 회수한다. 판정은 표시 술어 관측 뒤, 표시 적용 전이다.
+- 동기화마다: OS 키 포커스를 쥔 webview를 회수할지는 판정 하나(`webview_sync::key_release::release_webview_key_focus`,
+  키 쥘 곳은 `key_focus::webview_key_holder_of`)가 정한다. 조건은 그 함수와 W2 시험(`popup::route::tests::webview_release`)이
+  정본이다. 같은 구간에 다시 쥐거나 늦게 나타난 webview도 회수한다. 판정은 표시 술어 관측 뒤, 표시 적용 전이다.
 - 탭·workspace 전환으로 surface가 활성 탭에서 빠질 때: 그 surface만 전이마다 한 번 회수한다.
   숨기기 전에 회수한다. 숨긴 뒤에는 backend가 focus가 이미 자식 밖에 있다고 판정할 수 있다.
   창이 비활성이면 창이 활성이 될 때까지 미루고, 그 사이 다시 활성 탭에 들어오거나 닫힌 surface는 뺀다.
 
-overlay 판정(`has_egui_overlay_open`)은 [passive 팝업](popup.md#passive-팝업)을 세지 않는다.
-passive 팝업은 토스트 카드와 같이 겹치는 webview만 숨긴다.
+overlay 판정(`has_egui_overlay_open`)은 host [passive 팝업](popup.md#passive-팝업)을 세지 않는다. 열린 plugin 팝업은
+passive여도 overlay 항이다(`MainViewState::has_egui_overlay_open`). host passive 팝업은 토스트 카드와 같이 겹치는
+webview만 숨긴다.
 포커스를 받지 않는다고 선언한 팝업(`keyboard: None`)은 제외한다. 이 팝업은 webview를 숨기지 않고 그 사각형을 webview에서 구멍으로 뺀다([passive 팝업](popup.md#passive-팝업)). 이 규칙은 host 팝업에 한한다. plugin 팝업은 `keyboard: none`을 선언해도 아직 기존 WebView 오버레이 규칙을 따른다.
 
 탐색이 끝나지 않아 활성 탭의 webview를 숨기는 경우, 토스트 카드나 passive 팝업(포커스를 받지 않는다고 선언한 팝업(`keyboard: None`)은 제외한다, [passive 팝업](popup.md#passive-팝업))과 겹쳐 그 webview만 숨기는 경우([토스트](toast.md#native-webview-위의-토스트), 키를 받는 webview는 숨기지 않는다), surface를 닫는 경우는 회수하지 않는다.
@@ -727,7 +728,7 @@ macOS·Windows는 투명 모드를 보고하지 않고 주 표면의 불투명 �
 입력·키보드·포커스·캡처 계약:
 
 - **포인터**: 대상 층이 보이는 동안 WebView 영역 전체의 클릭·휠은 호스트로 온다(`host_takes_pointer`). 입력 의미는 숨긴 상태와 같다. 페이지 클릭은 egui의 바깥 클릭으로 도착하고, 그 처리는 팝업 정의를 그대로 따른다. `close_on_outside_click`(plugin은 `dismiss_on_outside_click`)이 참이면 닫고, 거짓이면 닫지 않고 언포커스만 한다. `sticky_focus` 는 포커스 판정이 읽지 않는다([팝업 §포커스](popup.md#포커스), [§sticky_focus](popup.md#sticky_focus)). 어느 경우에도 그 클릭은 페이지로 가지 않는다. 대상 층이 사라지면 다음 프레임부터 포인터가 페이지로 간다.
-- **키보드·IME**: 대상 층이 보이는 동안 키와 IME는 페이지로 가지 않는다. 키는 지금처럼 포커스된 팝업이 받고, 포커스된 팝업이 없으면 호스트의 기존 규칙(터미널 등)을 따른다. 포커스 회수는 위 "포커스" 절의 키 쥘 곳을 따른다. Linux에서 포인터가 페이지 위에 있으면 X 서버가 키를 WebView로 보내므로, 포인터를 호스트로 돌리는 처리가 이 라우팅도 막아야 한다. WebView가 전달한 키는 받은 surface가 창의 키 쥘 곳일 때만 처리하고([키 경로](../../architecture/input-layer.md#plugin-명령과-webview-전달-키), `key_nodes::received_key_blocked`), 아니면 `webview_keys`에서 버린다. 닫을 때 native 자식 포커스를 자동 복원하지 않는다.
+- **키보드·IME**: 페이지가 키를 받는지는 위 "포커스" 절의 회수 판정(`release_webview_key_focus`)이 정한다. 대상 층 팝업이 포커스 노드이면 그 페이지는 키 쥘 곳이 아니라 키와 IME가 가지 않고, 키는 그 팝업이 받는다. 포커스 노드가 그 페이지인 동안(포커스 없는 팝업만 떠 있을 때) 페이지는 키를 지킨다. Linux에서 포인터가 페이지 위에 있으면 X 서버가 키를 WebView로 보내므로, 포인터를 호스트로 돌리는 처리가 이 라우팅도 막아야 한다. WebView가 전달한 키는 받은 surface가 창의 키 쥘 곳일 때만 처리하고([키 경로](../../architecture/input-layer.md#plugin-명령과-webview-전달-키), `key_nodes::received_key_blocked`), 아니면 `webview_keys`에서 버린다. 닫을 때 native 자식 포커스를 자동 복원하지 않는다.
 - **포커스**: 새 OS 층(오버레이 창 등)은 OS 포커스나 창 활성화를 가져가지 않는다. 창이 비활성일 때 first responder·포커스를 바꾸지 않는 판정(`host_window_has_os_focus`)을 그대로 따른다.
 - **그리기**: 팝업은 주 표면에도 계속 그린다. 오버레이 창은 페이지 위 영역만 칠하므로 한 픽셀은 scrim과 정확히 한 번 합성된다(아래 GPU 분리).
 - **캡처**: `ui.screenshot`은 주 표면을 읽으므로 팝업은 지금처럼 캡처에 남고 WebView 픽셀은 지금처럼 없다. 페이지와 팝업이 함께 보이는지는 OS 화면 캡처로 확인한다. 원격 attach mesh 중계는 host 팝업 픽셀을 보내지 않아 영향이 없다.
