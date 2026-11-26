@@ -28,6 +28,11 @@ pub enum RemoteRowPopupKind {
     GaveUp,
     /// 사용자가 연결을 끊었다.
     User,
+    /// 원격 Tasty 가 이 행을 강제로 끊었다. 제목은 사용자 끊음과 같고 본문이 누가 끊었는지 말한다.
+    Server,
+    /// 같은 원격 workspace 의 강제 끊김 표지로 막혔고 이 행이 끊긴 것은 아니다. 마지막 화면 위에서는
+    /// 연결을 잃었으므로 제목이 사용자 끊음과 같다.
+    Held,
     /// 이번 실행에서 원격 workspace 가 없다고 확인됐다(연결된 동안 다른 곳에서 닫혔거나 첫 연결이
     /// workspace_not_found 로 끝났다). 같은 workspace 로 다시 붙을 수 없어 버튼은 숨기지 않고 끈다.
     Closed,
@@ -116,6 +121,18 @@ pub fn remote_row_popup_copy(
             B::Seconds("remote.row.popup.gave_up_body"),
         ),
         K::User => (Some("remote.row.popup.user_title"), B::Plain(user_body)),
+        K::Server => (
+            Some("remote.row.popup.user_title"),
+            B::Plain("remote.row.popup.server_body"),
+        ),
+        K::Held => (
+            Some(if shape {
+                "remote.row.popup.user_title"
+            } else {
+                "remote.row.popup.idle_title"
+            }),
+            B::Plain("remote.row.popup.held_body"),
+        ),
         K::Closed => (Some("remote.row.popup.closed_title"), B::Reason),
     };
     let trying = matches!(kind, K::Connecting | K::Reconnecting);
@@ -382,6 +399,8 @@ mod tests {
             (K::Failed, true),
             (K::GaveUp, true),
             (K::User, true),
+            (K::Server, true),
+            (K::Held, true),
         ] {
             let copy = remote_row_popup_copy(kind, true, REMOTE_ROW_USER_BODY_STAY);
             assert_eq!(copy.enabled, enabled, "{kind:?}");
@@ -405,5 +424,36 @@ mod tests {
         let warn = |kind| remote_row_popup_copy(kind, true, REMOTE_ROW_USER_BODY_STAY).warn;
         assert!(warn(K::Failed) && warn(K::GaveUp) && warn(K::Closed));
         assert!(!warn(K::User) && !warn(K::Reconnecting) && !warn(K::Idle));
+        assert!(!warn(K::Server) && !warn(K::Held));
+    }
+
+    /// 원격이 끊은 행은 어디서나 Disconnected 제목과 server_body 다. 보류된 행은 마지막 화면 위에서만
+    /// Disconnected 이고 빈 workspace 에서는 Not connected 이며 본문은 held_body 다.
+    #[test]
+    fn a_remote_disconnect_and_a_hold_pick_their_own_bodies() {
+        let copy = |kind, shape| {
+            let copy = remote_row_popup_copy(kind, shape, REMOTE_ROW_USER_BODY_STAY);
+            (copy.title, copy.body)
+        };
+        let server = RemoteRowPopupBody::Plain("remote.row.popup.server_body");
+        let held = RemoteRowPopupBody::Plain("remote.row.popup.held_body");
+        for shape in [false, true] {
+            assert_eq!(
+                copy(K::Server, shape),
+                (Some("remote.row.popup.user_title"), server)
+            );
+        }
+        assert_eq!(
+            copy(K::Held, true),
+            (Some("remote.row.popup.user_title"), held)
+        );
+        assert_eq!(
+            copy(K::Held, false),
+            (Some("remote.row.popup.idle_title"), held)
+        );
+        let button =
+            |kind, shape| remote_row_popup_copy(kind, shape, REMOTE_ROW_USER_BODY_STAY).button;
+        assert_eq!(button(K::Server, false), REMOTE_ROW_CONNECT_KEY);
+        assert_eq!(button(K::Held, true), REMOTE_ROW_RECONNECT_KEY);
     }
 }
