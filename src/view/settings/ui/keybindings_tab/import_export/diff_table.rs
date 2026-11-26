@@ -242,10 +242,7 @@ fn group_header(
     ui.painter().hline(
         rect.x_range(),
         rect.bottom() - th.border_width.value() * 0.5,
-        egui::Stroke::new(
-            th.border_width.value(),
-            th.separator.to_egui_premultiplied(),
-        ),
+        egui::Stroke::new(th.border_width.value(), th.border_strong().to_egui()),
     );
 }
 
@@ -330,4 +327,75 @@ fn value_cell(
     let g = truncated(ui, text, font, fg, max_w);
     let pos = egui::pos2(rect.left() + x, rect.center().y - g.rect.height() * 0.5);
     ui.painter().galley(pos, g, egui::Color32::PLACEHOLDER);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::painted_test_support::{paint, themes};
+
+    fn row(name: &'static str, changed: bool) -> RowView {
+        RowView {
+            key: RowKey::General(name),
+            action: name.to_owned(),
+            sub: None,
+            cur: "Ctrl+A".to_owned(),
+            next: if changed { "Ctrl+B" } else { "Ctrl+A" }.to_owned(),
+            changed,
+        }
+    }
+
+    /// 그룹 머리(raised) 아래선은 border-strong, base 위의 열 머리·행 선은 separator다.
+    #[test]
+    fn the_group_header_rule_is_border_strong_and_cell_rules_stay_separator() {
+        for th in themes() {
+            let strong = th.border_strong().to_egui();
+            let sep = th.separator.to_egui_premultiplied();
+            assert_ne!(strong, sep);
+            let vm = ViewModel {
+                groups: vec![
+                    GroupView {
+                        group: Group::General,
+                        rows: vec![row("copy", true), row("paste", false)],
+                    },
+                    GroupView {
+                        group: Group::Scripts,
+                        rows: vec![row("run", true)],
+                    },
+                ],
+                total: 3,
+                picked: 2,
+                intro: String::new(),
+                dropped: None,
+                notices: Vec::new(),
+            };
+            let p = paint(|ui| {
+                let (mut collapsed, mut deselected) = (BTreeSet::new(), BTreeSet::new());
+                diff_table(ui, &th, &vm, false, &mut collapsed, &mut deselected);
+            });
+            let raised = th.surface_raised().to_egui();
+            let beds: Vec<egui::Rect> = p
+                .shapes
+                .iter()
+                .filter_map(|s| match s {
+                    egui::Shape::Rect(r) if r.fill == raised && r.stroke.width == 0.0 => {
+                        Some(r.rect)
+                    }
+                    _ => None,
+                })
+                .collect();
+            assert_eq!(beds.len(), 2, "그룹 머리마다 raised 바탕");
+            let bw = th.border_width.value();
+            let rules: Vec<_> = p
+                .segments()
+                .into_iter()
+                .filter(|(a, b, _)| a.y == b.y && a.x != b.x)
+                .collect();
+            assert_eq!(rules.len(), 1 + 2 + 3, "열 머리·그룹 머리·행 선: {rules:?}");
+            for (a, _, color) in rules {
+                let under_bed = beds.iter().any(|r| a.y == r.bottom() - bw * 0.5);
+                assert_eq!(color, if under_bed { strong } else { sep }, "y={}", a.y);
+            }
+        }
+    }
 }
