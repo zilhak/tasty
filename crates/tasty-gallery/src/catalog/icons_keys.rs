@@ -153,8 +153,14 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ),
             TokenChip::new(
                 "surface-raised",
-                "cap / trigger fill",
+                "cap fill",
                 theme.surface_raised().to_egui(),
+            ),
+            TokenChip::new("select-bg", "trigger fill", theme.select_bg().to_egui()),
+            TokenChip::new(
+                "select-border",
+                "trigger border",
+                theme.select_border().to_egui(),
             ),
             TokenChip::new(
                 "border-strong",
@@ -224,11 +230,12 @@ fn trigger(ui: &mut egui::Ui, theme: &Theme, glyph: MockGlyph) {
         theme.item_height_interactive.value(),
     );
     let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
+    // 닫힌 드롭다운 트리거는 Select의 rest 모양이다.
     ui.painter().rect(
         rect,
         theme.corner_radius.value(),
-        theme.surface_raised().to_egui(),
-        egui::Stroke::new(theme.border_width.value(), theme.border_default().to_egui()),
+        theme.select_bg().to_egui(),
+        egui::Stroke::new(theme.border_width.value(), theme.select_border().to_egui()),
         egui::StrokeKind::Inside,
     );
     let ink = theme.text_primary().to_egui();
@@ -322,5 +329,27 @@ fn option_row(
             egui::vec2(ch, ch),
         );
         CHECK.image(ch, ink).paint_at(ui, r);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::catalog::components::painted::paint;
+
+    /// 닫힌 아이콘 드롭다운 트리거는 Select rest 토큰(select-bg 채움, select-border 테두리)으로 그린다.
+    #[test]
+    fn the_closed_trigger_reads_the_select_rest_tokens() {
+        for theme in [
+            tasty_themes::mocha_fallback(),
+            crate::host_shell::latte_theme(),
+        ] {
+            assert_ne!(theme.select_border(), theme.border_default());
+            let p = paint(|ui| trigger(ui, &theme, CMD_KEY));
+            let frames = p.stroked_rects();
+            assert_eq!(frames.len(), 1, "트리거 틀 하나: {frames:?}");
+            assert_eq!(frames[0].1, theme.select_bg().to_egui(), "채움");
+            assert_eq!(frames[0].2, theme.select_border().to_egui(), "테두리");
+        }
     }
 }
