@@ -52,12 +52,12 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         &[
             TokenChip::new(
                 "accent-info",
-                "oid · refs · main · hunk",
+                "oid · refs · main",
                 theme.accent_info().to_egui(),
             ),
             TokenChip::new(
                 "accent-success",
-                "current · added · +",
+                "current · added",
                 theme.accent_success().to_egui(),
             ),
             TokenChip::new(
@@ -67,8 +67,13 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ),
             TokenChip::new(
                 "accent-danger",
-                "invalid · deleted · -",
+                "invalid · deleted",
                 theme.accent_danger().to_egui(),
+            ),
+            TokenChip::new(
+                "git-diff-add-bg",
+                "diff + row fill · ink accent-*-raised",
+                theme.git_diff_add_bg().to_egui(),
             ),
         ],
     );
