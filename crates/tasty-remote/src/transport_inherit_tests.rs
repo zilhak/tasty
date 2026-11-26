@@ -1,5 +1,6 @@
 //! 원격 연결의 원본 소켓, control 소켓과 시도 취소용 복제는 자식 프로세스가 물려받지 않는다(Windows).
-//! 원본은 stream open이 다시 끄기 전, 등록 직후 자리(`attempt_seam`)에서 본다.
+//! 원본은 연결 직후 자리(`attempt_seam`)에서 상속을 일부러 켜고, stream open이 다시 끄기 전인 등록 직후
+//! 자리에서 본다. 그래서 연결 직후의 끄는 호출이 빠지면 std가 돌려준 값과 상관없이 실패한다.
 //! reader·writer 핸들은 `StreamConnection`이 만들고 tasty-ipc 시험이 본다.
 
 use crate::attempt_seam::{self, Stage};
@@ -9,7 +10,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Duration;
 use tasty_ipc::stream::{self, StreamTag};
-use tasty_utils::socket_inherit::is_inheritable;
+use tasty_utils::socket_inherit::{is_inheritable, make_inheritable};
 
 #[test]
 fn the_attach_sockets_are_not_inheritable() {
@@ -38,7 +39,10 @@ fn the_attach_sockets_are_not_inheritable() {
     let token = remote.begin_attempt(None, None).expect("attempt");
     let original = Rc::new(Cell::new(None));
     let seen = original.clone();
-    attempt_seam::arm(Stage::AfterRegister, move |socket| {
+    attempt_seam::arm(Stage::AfterConnect, |socket| {
+        make_inheritable(socket).expect("make the original inheritable");
+    });
+    attempt_seam::arm_also(Stage::AfterRegister, move |socket| {
         seen.set(Some(is_inheritable(socket).expect("original")));
     });
     let prepared = crate::transport::PreparedConnection::connect(
@@ -52,6 +56,7 @@ fn the_attach_sockets_are_not_inheritable() {
     )
     .expect("connect");
     let _peer_socket = peer.join().expect("peer");
+    assert!(attempt_seam::reached(Stage::AfterConnect));
     let control = prepared
         .transport
         .workers

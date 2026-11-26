@@ -30,6 +30,8 @@ pub fn attach_handshake(
     }
     let address = std::net::SocketAddr::from(([127, 0, 0, 1], port));
     let sock = TcpStream::connect_timeout(&address, std::time::Duration::from_millis(250))?;
+    #[cfg(any(test, feature = "test-support"))]
+    super::attempt_seam::at(super::attempt_seam::Stage::AfterConnect, &sock);
     // 이 연결과 그 복제는 자식 프로세스가 물려받지 않게 한다(Windows).
     tasty_utils::socket_inherit::disable_inherit(&sock)?;
     cancel.register_socket(&sock)?;
