@@ -20,6 +20,14 @@ pub(super) struct ToolbarEditingOutcome {
     pub(super) done_clicked: bool,
 }
 
+/// 프리셋 이름·이름 바꾸기 칸. 공용 Input이라 input-bg 채움, input-border 테두리, Input 포커스 모양이다.
+fn name_field(ui: &mut egui::Ui, theme: &Theme, buf: &mut String, id: egui::Id) -> egui::Response {
+    tasty_ui_widgets::Input::new()
+        .id(id)
+        .width(RENAME_W.value())
+        .show(ui, theme, buf)
+}
+
 /// 편집 상태 툴바: name/subtitle 인라인 입력 + Done 버튼.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn draw_toolbar_editing(
@@ -43,10 +51,11 @@ pub(super) fn draw_toolbar_editing(
             subtitle: workspace_subtitle_field(store, kind, name),
         });
 
-    let name_resp = ui.add(
-        egui::TextEdit::singleline(&mut meta.name)
-            .desired_width(RENAME_W.value())
-            .id(egui::Id::new(("preset_edit_name", kind.as_str()))),
+    let name_resp = name_field(
+        ui,
+        theme,
+        &mut meta.name,
+        egui::Id::new(("preset_edit_name", kind.as_str())),
     );
     if name_resp.lost_focus() {
         commit_editing_name(store, kind, name, &mut meta, selected, toasts);
@@ -179,10 +188,11 @@ pub(super) fn draw_toolbar_view(
         .is_some_and(|r| r.kind == kind && r.original == name);
     if renaming {
         let r = rename.as_mut().unwrap();
-        let resp = ui.add(
-            egui::TextEdit::singleline(&mut r.buffer)
-                .desired_width(RENAME_W.value())
-                .id(egui::Id::new(("preset_rename_input", kind.as_str()))),
+        let resp = name_field(
+            ui,
+            theme,
+            &mut r.buffer,
+            egui::Id::new(("preset_rename_input", kind.as_str())),
         );
         if r.request_focus {
             resp.request_focus();
@@ -329,6 +339,63 @@ pub(super) fn apply_toolbar_actions(
                 ctx.request_repaint();
             }
             Err(e) => tracing::warn!("preset delete failed: {e}"),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::painted_test_support::{paint_ctx, themes};
+
+    /// 이름 칸 상자의 채움·테두리 색. 칸 폭이 RENAME_W인 테두리 사각형을 읽는다.
+    fn field_look(theme: &Theme, focus: bool) -> (egui::Color32, egui::Color32) {
+        let ctx = egui::Context::default();
+        let id = egui::Id::new("preset_name_field_test");
+        if focus {
+            ctx.memory_mut(|m| m.request_focus(id));
+        }
+        let p = paint_ctx(&ctx, |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                let mut buf = "Dev".to_owned();
+                name_field(ui, theme, &mut buf, id);
+            });
+        });
+        let w = RENAME_W.value();
+        let edge = p
+            .stroked_rects()
+            .into_iter()
+            .find(|(r, _, _)| r.width() == w)
+            .expect("칸 테두리");
+        let fill = p
+            .shapes
+            .iter()
+            .find_map(|s| match s {
+                egui::Shape::Rect(r)
+                    if r.rect == edge.0 && r.fill != egui::Color32::TRANSPARENT =>
+                {
+                    Some(r.fill)
+                }
+                _ => None,
+            })
+            .unwrap_or(edge.1);
+        (fill, edge.2)
+    }
+
+    /// 프리셋 이름 칸은 Input 칸 모양이다: 쉴 때 input-bg 채움과 input-border 테두리, 포커스면 input-border-focus.
+    #[test]
+    fn the_name_field_takes_the_input_field_look() {
+        for theme in themes() {
+            assert_ne!(theme.input_border(), theme.input_border_focus());
+            let (fill, edge) = field_look(&theme, false);
+            assert_eq!(fill, theme.input_bg().to_egui(), "채움");
+            assert_eq!(edge, theme.input_border().to_egui(), "테두리");
+            let (_, focused) = field_look(&theme, true);
+            assert_eq!(
+                focused,
+                theme.input_border_focus().to_egui(),
+                "포커스 테두리"
+            );
         }
     }
 }
