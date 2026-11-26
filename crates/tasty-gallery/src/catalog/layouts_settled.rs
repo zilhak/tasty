@@ -138,14 +138,11 @@ pub(crate) fn terminal_pane(
                     );
                 });
                 ui.horizontal(|ui| {
+                    // 터미널 내용이라 사용자·agent 패인 모두 프로그램이 고른 ANSI magenta 다.
                     ui.label(
                         egui::RichText::new("❯")
                             .font(font.clone())
-                            .color(ec(if agent {
-                                theme.accent_agent_raised()
-                            } else {
-                                theme.accent_agent()
-                            })),
+                            .color(ec(theme.ansi_magenta)),
                     );
                     if focused {
                         let (cur, _) = ui.allocate_exact_size(
@@ -520,4 +517,31 @@ pub fn draw_attention_scale(ui: &mut egui::Ui, theme: &Theme) {
         theme,
         "NeedsInput outranks everything because it is the only kind that is a request — work has stopped until the human answers. Completion is an FYI and clears on focus. No attention kind mints a new hue; a kind that can't honestly borrow an existing accent role is a sign the role list is missing something.",
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::terminal_pane;
+    use crate::catalog::components::painted::{mocha_latte, paint};
+
+    /// 시안 `fakePane` 의 프롬프트는 터미널 내용이라 사용자·agent 패인 모두 `ansi-magenta` 다.
+    #[test]
+    fn pane_prompt_is_ansi_magenta_for_user_and_agent() {
+        for (name, th) in mocha_latte() {
+            for agent in [false, true] {
+                let p = paint(|ui| {
+                    let rect =
+                        egui::Rect::from_min_size(ui.max_rect().min, egui::vec2(320.0, 160.0));
+                    terminal_pane(ui, &th, rect, "pane", true, agent);
+                });
+                let prompts: Vec<_> = p.texts.iter().filter(|t| t.text == "❯").collect();
+                assert_eq!(prompts.len(), 1, "{name} agent={agent}: one prompt");
+                assert_eq!(
+                    prompts[0].color,
+                    th.ansi_magenta.to_egui(),
+                    "{name} agent={agent}: prompt ink"
+                );
+            }
+        }
+    }
 }
