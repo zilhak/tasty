@@ -463,3 +463,36 @@ fn edge_fades_cover_the_stage(
         );
     }
 }
+
+/// 표본 말풍선의 버튼 글자가 본체 [tutorial] lang 값이고, Topics ghost가 raised 잉크인지 그린 글자로 본다.
+#[test]
+fn callout_buttons_read_the_app_tutorial_keys_and_the_raised_ghost_ink() {
+    use crate::catalog::components::painted::{mocha_latte, paint};
+    use crate::i18n::t;
+    let (skip, back, next, done) = (
+        t("tutorial.btn_skip"),
+        t("tutorial.btn_back"),
+        t("tutorial.btn_next"),
+        t("tutorial.btn_done"),
+    );
+    for (name, th) in mocha_latte() {
+        // (단계, 전체, 첫 단계): 가운데 · 첫 단계 · 마지막 단계.
+        for (step, total, first) in [(2, 5, false), (1, 5, true), (5, 5, false)] {
+            let painted = paint(|ui| {
+                super::callout(ui, &th, super::Tail::Up, step, total, "T", "B", first);
+            });
+            let count = |s: &str| painted.texts.iter().filter(|p| p.text == s).count();
+            let case = format!("{name} {step}/{total}");
+            assert_eq!(count(back), usize::from(!first), "{case} {back}");
+            assert_eq!(count(next), usize::from(step != total), "{case} {next}");
+            assert_eq!(count(done), usize::from(step == total), "{case} {done}");
+            let topics: Vec<_> = painted.texts.iter().filter(|p| p.text == skip).collect();
+            assert_eq!(topics.len(), 1, "{case} {skip}");
+            assert_eq!(
+                topics[0].color,
+                th.button_ghost_raised_fg().to_egui(),
+                "{case} {skip}"
+            );
+        }
+    }
+}

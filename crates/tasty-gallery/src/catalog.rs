@@ -2039,7 +2039,7 @@ pub fn pages() -> Vec<Page> {
                             "tutorial-callout",
                             "Callout bubble — guidance pinned to a marker",
                             Some(
-                                "244px fixed · step/total + dot rail · Skip·Back·Next · 4-way tail · edge-avoidance",
+                                "244px fixed · step/total + dot rail · Topics·Back·Next · 4-way tail · edge-avoidance",
                             ),
                             widgets::tutorial::draw_callout,
                         ),

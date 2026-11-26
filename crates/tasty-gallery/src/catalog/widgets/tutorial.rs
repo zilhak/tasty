@@ -6,9 +6,10 @@
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::tokens::{STRUCT_GAP_2, TUTORIAL_STEP_GAP_X};
-use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, margin_all, vspace};
+use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, Ground, margin_all, vspace};
 
 use crate::catalog::spec::{self, StageVariant, TokenChip};
+use crate::i18n::t;
 const CALLOUT_W: LogicalPx = LogicalPx(244.0);
 const POPUP_W: LogicalPx = LogicalPx(360.0);
 /// 중앙 topic 팝업 주위의 scrim을 보여 주는 데모 무대 높이. marker 링 크기가 아니다.
@@ -72,7 +73,7 @@ pub(crate) const COMPOSITE_NOTE: &str = "Popup closed: marker (glow ring) + spot
      callout only. Step 1 wraps the whole content area (tabs + surface + status, sidebar \
      excluded); later steps move the marker pane → tab → surface: it shrinks to the pane, then \
      sits on the pane's tab header, then moves to the surface below the tab bar. The last step (summary) shows the callout alone, with no marker and no dim. Next → step 2 · \
-     Back → prev · Skip/Esc → topic popup · last-step Next → reopen popup. Marker + dim are \
+     Back → prev · Topics/Esc → topic popup · last-step Done → reopen popup. Marker + dim are \
      pointer-events:none.";
 
 /// 합성 표본 무대 왼쪽 위에서 첫 단계 말풍선까지의 거리. tasty-page 합성 표본의 말풍선 위치(left 150, top 120)다.
@@ -296,22 +297,29 @@ fn callout(
                     let (r, _) = ui.allocate_exact_size(egui::vec2(5.0, 5.0), egui::Sense::hover());
                     ui.painter().circle_filled(r.center(), 2.5, c);
                 }
+                // 본체 callout.rs와 같은 lang 키·변형이다. 마지막 단계의 주 버튼은 btn_done이다.
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    Button::new("Next")
+                    let next = if step == total {
+                        t("tutorial.btn_done")
+                    } else {
+                        t("tutorial.btn_next")
+                    };
+                    Button::new(next)
                         .variant(ButtonVariant::Primary)
                         .size(ControlSize::Sm)
                         .show(ui, theme);
                     if !first {
-                        Button::new("Back")
+                        Button::new(t("tutorial.btn_back"))
                             .variant(ButtonVariant::Secondary)
                             .size(ControlSize::Sm)
                             .show(ui, theme);
                     }
-                    ui.label(
-                        egui::RichText::new("Skip")
-                            .size(theme.font_size_caption.value())
-                            .color(theme.text_muted_raised().to_egui()),
-                    );
+                    // 말풍선은 raised 바탕이라 ghost 글자도 raised 잉크로 그린다.
+                    Button::new(t("tutorial.btn_skip"))
+                        .variant(ButtonVariant::Ghost)
+                        .size(ControlSize::Sm)
+                        .ground(Ground::Raised)
+                        .show(ui, theme);
                 });
             });
         });
@@ -726,9 +734,12 @@ pub fn draw_callout(ui: &mut egui::Ui, theme: &Theme) {
             ("width", "244px fixed"),
             ("tail", "up · down · left · right (12px)"),
             ("progress", "2/5 label + dot rail"),
-            ("buttons", "Skip (link) · Back (secondary) · Next (primary)"),
+            (
+                "buttons",
+                "tutorial.btn_skip (ghost) · btn_back (secondary) · btn_next (primary)",
+            ),
             ("first step", "Back hidden"),
-            ("last step", "Next reopens topic popup"),
+            ("last step", "btn_next → btn_done, reopens topic popup"),
             (
                 "placement",
                 "below → above → right → left; flip + clamp 8px",
@@ -757,8 +768,9 @@ pub fn draw_callout(ui: &mut egui::Ui, theme: &Theme) {
     spec::do_(
         ui,
         theme,
-        "Reuse the DS Button (primary Next / secondary Back) and keep Skip a low-emphasis \
-         link — the callout is guidance, not a decision surface.",
+        "Reuse the DS Button for all three actions (primary btn_next / secondary btn_back / \
+         ghost btn_skip), with btn_skip returning to the topic list popup — the callout is \
+         guidance only.",
     );
 }
 

@@ -726,7 +726,4 @@ src/catalog/widgets/toast.rs	Copied (OSC 52)	toast.copied_osc52
 src/catalog/widgets/toast.rs	Ctrl	settings.terminal.link_modifier_ctrl
 src/catalog/widgets/toast.rs	Path copied	toast.copied_path
 src/catalog/widgets/toast.rs	Shift	settings.general.shift_display_style_shift
-src/catalog/widgets/tutorial.rs	Back	explorer.nav.back,html_address.back,settings.keybindings.preset_back,tutorial.btn_back
-src/catalog/widgets/tutorial.rs	Next	tutorial.btn_next
-src/catalog/widgets/tutorial.rs	Skip	explorer.conflict.skip
 src/host_shell.rs	Theme	settings.appearance.subtab.theme
