@@ -246,26 +246,37 @@ fn the_row_focus_ring_is_an_inset_line_inked_by_the_row_ground() {
     }
 }
 
-/// hover 행의 크기·날짜는 `fp-row-meta-fg-hover` 잉크다.
+/// hover 행의 크기·날짜는 `fp-row-meta-fg-hover` 잉크다. Latte 는 text-muted 와 text-secondary 가 같은 값이라
+/// 두 잉크가 갈리는 Mocha 에서도 잰다.
 #[test]
 fn the_hovered_row_meta_reads_the_hover_meta_token() {
-    let th = latte();
-    let at = name_rect(&paint(&th, "", None), FILE).center();
-    let shapes = paint(&th, "", Some(at));
-    let text = name_rect(&shapes, FILE);
-    let inks: Vec<egui::Color32> = shapes
-        .iter()
-        .filter_map(|c| match &c.shape {
-            egui::Shape::Text(t)
-                if t.galley.text() == "1 KB"
-                    && (t.pos.y + t.galley.size().y * 0.5 - text.center().y).abs() < 1.0 =>
-            {
-                Some(t.fallback_color)
-            }
-            _ => None,
-        })
-        .collect();
-    assert_eq!(inks, vec![th.fp_row_meta_fg_hover().to_egui()]);
+    for th in [
+        latte(),
+        Theme::with_colors(tasty_themes::mocha_fallback_colors(), false),
+    ] {
+        let at = name_rect(&paint(&th, "", None), FILE).center();
+        let shapes = paint(&th, "", Some(at));
+        let text = name_rect(&shapes, FILE);
+        let inks: Vec<egui::Color32> = shapes
+            .iter()
+            .filter_map(|c| match &c.shape {
+                egui::Shape::Text(t)
+                    if t.galley.text() == "1 KB"
+                        && (t.pos.y + t.galley.size().y * 0.5 - text.center().y).abs() < 1.0 =>
+                {
+                    Some(t.fallback_color)
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(inks, vec![th.fp_row_meta_fg_hover().to_egui()]);
+    }
+    let mocha = Theme::with_colors(tasty_themes::mocha_fallback_colors(), false);
+    assert_ne!(
+        mocha.fp_row_meta_fg_hover().to_egui(),
+        mocha.text_secondary().to_egui(),
+        "Mocha 에서 hover 메타와 text-secondary 가 갈린다"
+    );
 }
 
 /// 선택 막대: 선택 행마다 `accent-primary-on-active`, 폭 `selection-edge-width`, 행 높이 그대로, 행 바탕(선택 · 선택+hover)
