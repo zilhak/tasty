@@ -439,19 +439,14 @@ fn content(ui: &mut egui::Ui, theme: &Theme, h: f32) {
     let cw = (inner.available_width() - CARD_GAP.value()) * 0.5;
     inner.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = CARD_GAP.value();
+        // 카드마다 페이지 테마와 관계없이 그 프리셋 테마의 역할 색을 보인다.
         theme_swatch(
             ui,
             theme,
             cw,
             "Catppuccin Mocha",
             true,
-            &[
-                theme.crust,
-                theme.base,
-                theme.blue,
-                theme.mauve,
-                theme.green,
-            ],
+            &preset_swatches(&tasty_themes::mocha_fallback()),
         );
         theme_swatch(
             ui,
@@ -459,13 +454,7 @@ fn content(ui: &mut egui::Ui, theme: &Theme, h: f32) {
             cw,
             "Catppuccin Latte",
             false,
-            &[
-                theme.surface2,
-                theme.subtext0,
-                theme.sky,
-                theme.lavender,
-                theme.teal,
-            ],
+            &preset_swatches(&crate::host_shell::latte_theme()),
         );
     });
     note(
@@ -622,6 +611,17 @@ fn override_row(ui: &mut egui::Ui, theme: &Theme, field: &str, value: &str, defa
 }
 
 /// 시안 테마 카드 — 상단 색 띠(높이 34) + 하단 라벨 바(bg-panel). active 시 accent border + ring.
+/// 프리셋 카드 색 띠: 그 프리셋의 앱 바탕·패널·primary·agent·success 역할.
+fn preset_swatches(preset: &Theme) -> [tasty_type_appearance::color::HexColor; 5] {
+    [
+        preset.bg_app(),
+        preset.bg_panel(),
+        preset.accent_primary(),
+        preset.accent_agent(),
+        preset.accent_success(),
+    ]
+}
+
 fn theme_swatch(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -739,4 +739,39 @@ fn note(ui: &mut egui::Ui, theme: &Theme, text: &str) {
             .size(theme.font_size_caption.value())
             .color(theme.text_muted().to_egui()),
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::catalog::components::painted::{mocha_latte, paint};
+
+    /// 두 프리셋 카드의 색 띠가 페이지 테마와 관계없이 각 프리셋 테마의 역할 색인지 칠한 사각형으로 본다.
+    #[test]
+    fn preset_cards_paint_each_preset_roles_under_either_page_theme() {
+        let presets = [
+            preset_swatches(&tasty_themes::mocha_fallback()),
+            preset_swatches(&crate::host_shell::latte_theme()),
+        ];
+        // 두 프리셋의 띠가 달라야 카드가 자기 프리셋을 읽는지 가를 수 있다.
+        assert_ne!(presets[0], presets[1]);
+        for (name, page) in mocha_latte() {
+            let painted = paint(|ui| content(ui, &page, 300.0));
+            let fills: Vec<egui::Color32> = painted
+                .shapes
+                .iter()
+                .filter_map(|s| match s {
+                    egui::Shape::Rect(r) => Some(r.fill),
+                    _ => None,
+                })
+                .collect();
+            for strip in &presets {
+                let want: Vec<egui::Color32> = strip.iter().map(|c| c.to_egui()).collect();
+                assert!(
+                    fills.windows(want.len()).any(|w| w == want.as_slice()),
+                    "{name}: {want:?} in {fills:?}"
+                );
+            }
+        }
+    }
 }
