@@ -146,8 +146,8 @@ fn segment_tab(
         p.rect(
             rect,
             theme.corner_radius.value(),
-            theme.surface_active().to_egui(),
-            egui::Stroke::new(theme.border_width.value(), theme.border_default().to_egui()),
+            theme.surface_raised().to_egui(),
+            egui::Stroke::new(theme.border_width.value(), theme.border_strong().to_egui()),
             egui::StrokeKind::Inside,
         );
     }
@@ -709,8 +709,18 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ),
             TokenChip::new(
                 "surface-active",
-                "selected row · tab",
+                "selected row",
                 theme.surface_active().to_egui(),
+            ),
+            TokenChip::new(
+                "surface-raised",
+                "selected tab",
+                theme.surface_raised().to_egui(),
+            ),
+            TokenChip::new(
+                "border-strong",
+                "selected tab edge",
+                theme.border_strong().to_egui(),
             ),
             TokenChip::new("bg-sidebar", "header · list", theme.bg_sidebar().to_egui()),
             TokenChip::without_color("tint-fill-alpha", "box fill"),

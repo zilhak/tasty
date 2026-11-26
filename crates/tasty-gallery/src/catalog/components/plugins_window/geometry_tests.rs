@@ -25,13 +25,13 @@ fn installed_window(th: &Theme) -> (Painted, egui::Rect) {
     )
 }
 
-/// 헤더 안 선택 세그먼트(surface-active 채움) 사각형.
+/// 헤더 안 선택 세그먼트(surface-raised 채움) 사각형.
 fn selected_segment(th: &Theme, painted: &Painted, frame: egui::Rect) -> egui::Rect {
     let header = egui::Rect::from_min_size(
         frame.min,
         egui::vec2(frame.width(), th.plugins_header_height().value()),
     );
-    let active = th.surface_active().to_egui();
+    let active = th.surface_raised().to_egui();
     painted
         .shapes
         .iter()
@@ -112,7 +112,7 @@ fn the_header_band_is_plugins_header_height_tall() {
     );
 }
 
-/// 선택된 세그먼트 탭(surface-active 채움)의 높이는 `plugins_tab_height` 이고 헤더 밴드 가운데에 있다.
+/// 선택된 세그먼트 탭(surface-raised 채움)의 높이는 `plugins_tab_height` 이고 헤더 밴드 가운데에 있다.
 #[test]
 fn the_segment_tab_is_plugins_tab_height_tall() {
     let th = theme();
@@ -121,7 +121,7 @@ fn the_segment_tab_is_plugins_tab_height_tall() {
         frame.min,
         egui::vec2(frame.width(), th.plugins_header_height().value()),
     );
-    let active = th.surface_active().to_egui();
+    let active = th.surface_raised().to_egui();
     let tab = painted
         .shapes
         .iter()
@@ -397,5 +397,23 @@ fn the_add_tab_body_ends_space_xl_inside_a_narrow_window() {
             "Add(verified {verified}): Verify 버튼 상자 오른쪽 끝이 창 오른쪽에서 {inset} 떨어져 있다. spacing_xl {} 이 아니다",
             th.spacing_xl.value()
         );
+    }
+}
+
+/// 선택된 헤더 탭은 surface-raised 채움에 border-strong 테두리다(헤더 mantle 위 raised 탭의 외곽).
+#[test]
+fn the_selected_header_tab_is_raised_with_a_border_strong_edge() {
+    for th in [theme(), crate::host_shell::latte_theme()] {
+        assert_ne!(th.border_strong(), th.border_default());
+        let (painted, frame) = installed_window(&th);
+        let tab = selected_segment(&th, &painted, frame);
+        let edges: Vec<_> = painted
+            .stroked_rects()
+            .into_iter()
+            .filter(|(r, _, _)| *r == tab)
+            .collect();
+        assert_eq!(edges.len(), 1, "선택 탭 {tab:?}: {edges:?}");
+        assert_eq!(edges[0].1, th.surface_raised().to_egui(), "채움");
+        assert_eq!(edges[0].2, th.border_strong().to_egui(), "테두리");
     }
 }
