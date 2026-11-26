@@ -301,10 +301,7 @@ fn draw_divider(ui: &mut egui::Ui, theme: &Theme) {
     ui.painter().vline(
         rect.center().x,
         rect.y_range(),
-        egui::Stroke::new(
-            theme.border_width.value(),
-            theme.separator.to_egui_premultiplied(),
-        ),
+        egui::Stroke::new(theme.border_width.value(), theme.border_strong().to_egui()),
     );
 }
 

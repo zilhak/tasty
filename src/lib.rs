@@ -38,6 +38,8 @@ mod intent;
 mod model;
 #[cfg(test)]
 mod namespace_table_for_tests;
+#[cfg(all(test, feature = "gui"))]
+mod painted_test_support;
 mod perf_stats;
 mod plugin_bridge;
 mod ports;

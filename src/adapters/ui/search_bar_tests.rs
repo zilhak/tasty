@@ -865,3 +865,16 @@ fn the_find_keymap_receives_what_the_body_consumes() {
     }
     assert_eq!(hits, 3);
 }
+
+/// 토글과 닫기 사이 세로 구분선은 raised 바 위 선이라 border-strong으로 그린다.
+#[test]
+fn the_divider_before_close_is_border_strong() {
+    for theme in crate::painted_test_support::themes() {
+        let strong = theme.border_strong().to_egui();
+        assert_ne!(strong, theme.separator.to_egui_premultiplied());
+        let p = crate::painted_test_support::paint(|ui| draw_divider(ui, &theme));
+        let lines = p.segments();
+        assert_eq!(lines.len(), 1, "{lines:?}");
+        assert_eq!(lines[0].2, strong);
+    }
+}
