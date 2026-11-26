@@ -610,7 +610,7 @@ fn draw_changed_badge(ui: &mut egui::Ui, th: &tasty_type_appearance::theme::Them
     ui.painter().galley(pos, galley, ink);
 }
 
-/// Add card — 인라인 카드(surface-raised + border-default + radius). File(경로 +
+/// Add card — 인라인 카드(surface-raised + border-strong + radius). File(경로 +
 /// Browse…) / Display name / Cancel·Add script.
 fn draw_add_card(
     ui: &mut egui::Ui,
@@ -622,7 +622,7 @@ fn draw_add_card(
         .fill(th.surface_raised().to_egui())
         .stroke(egui::Stroke::new(
             th.border_width.value(),
-            th.border_default().to_egui(),
+            th.border_strong().to_egui(),
         ))
         .corner_radius(th.corner_radius.value())
         .inner_margin(egui::Margin::same(th.spacing_md.value() as i8))
@@ -767,6 +767,22 @@ mod tests {
 
     fn test_theme() -> tasty_type_appearance::theme::Theme {
         tasty_themes::mocha_fallback()
+    }
+
+    /// Scripts 추가 카드는 raised 카드라 외곽이 border-strong이다.
+    #[test]
+    fn the_add_card_edges_with_border_strong() {
+        let head = t("settings.scripts.new_card").to_uppercase();
+        for th in crate::painted_test_support::themes() {
+            let strong = th.border_strong().to_egui();
+            assert_ne!(strong, th.border_default().to_egui());
+            let p = crate::painted_test_support::paint(|ui| {
+                let mut settings = Settings::default();
+                let mut st = ScriptsUiState::default();
+                draw_add_card(ui, &th, &mut settings, &mut st);
+            });
+            assert_eq!(p.edge_around(p.text_rect(&head)), strong);
+        }
     }
 
     fn seeded_settings(count: usize) -> Settings {
