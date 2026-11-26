@@ -56,7 +56,9 @@ impl App {
 
     /// halt 중에도 보이는 native 페이지의 그림이 반영되도록 일반 webview 폴링과 같은 간격으로 GTK
     /// 대기열만 비운다. 먼저 모든 페이지의 입력을 막으므로 키·포인터는 페이지와 host 어느 쪽에도
-    /// 전달되지 않는다. 키·포커스 전달, 탐색 결정 반영, 설정 적용은 하지 않는다. 다음 마감을 돌려준다.
+    /// 전달되지 않는다. 키·포커스 전달, 탐색 결정 반영, 설정 적용은 하지 않는다. 그래서 native 입력 대기열
+    /// (누름 알림·미룬 키)을 소비하지 않는 펌프를 쓰고, 쌓인 입력은 halt 가 끝난 뒤 호스트 루프 펌프가 도착 순서대로
+    /// 소비한다. 다음 마감을 돌려준다.
     pub(crate) fn halted_webview_paint_deadline(&mut self) -> Option<std::time::Instant> {
         if !cfg!(target_os = "linux") {
             return None;
@@ -75,7 +77,7 @@ impl App {
             return None;
         }
         #[cfg(target_os = "linux")]
-        self.pump_gtk_events();
+        crate::system_tray::pump_gtk_events();
         Some(std::time::Instant::now() + crate::app::timers::WEBVIEW_KEY_POLL_INTERVAL)
     }
 

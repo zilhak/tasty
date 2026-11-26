@@ -40,10 +40,11 @@ fn the_webview_key_release_sits_between_the_display_observation_and_the_reveal()
     }
 }
 
-/// T-FWD-8d: 호스트 루프에서 GTK 이벤트를 처리하는 세 자리(WebView 펌프 `pump_webview_key_events`, 트레이 메뉴 펌프
-/// `poll_tray_menu_events`, halt 펌프 `halted_webview_paint_deadline`)는 모두 이벤트마다 native 포커스 알림을 소비하는
-/// `App::pump_gtk_events` 를 부르고, 알림을 소비하지 않는 `system_tray::pump_gtk_events` 를 직접 부르지 않는다. 그
-/// 펌프의 순서는 `host_api::webview::keys` 의 T-FWD-8c 시험이 본다.
+/// T-FWD-8d: 호스트 루프에서 GTK 이벤트를 처리하는 두 자리(WebView 펌프 `pump_webview_key_events`, 트레이 메뉴 펌프
+/// `poll_tray_menu_events`)는 이벤트마다 native 입력을 소비하는 `App::pump_gtk_events` 를 부르고, 소비하지 않는
+/// `system_tray::pump_gtk_events` 를 직접 부르지 않는다. halt 펌프(`halted_webview_paint_deadline`)는 키·포커스를
+/// 전달하지 않으므로 반대로 소비하지 않는 펌프만 부른다. 그 펌프의 순서는 `host_api::webview::keys` 의 T-FWD-8c
+/// 시험이 본다.
 #[test]
 fn every_host_gtk_pump_consumes_the_focus_notices_per_event() {
     let read = |rel: &str| {
@@ -67,10 +68,6 @@ fn every_host_gtk_pump_consumes_the_focus_notices_per_event() {
             "pub(crate) fn pump_webview_key_events(",
         ),
         ("src/app/event_handler.rs", "fn poll_tray_menu_events("),
-        (
-            "src/app/halt_frame.rs",
-            "pub(crate) fn halted_webview_paint_deadline(",
-        ),
     ] {
         let src = read(rel);
         let body = strip_comments(
@@ -86,4 +83,16 @@ fn every_host_gtk_pump_consumes_the_focus_notices_per_event() {
             "{rel} `{func}` 가 알림을 소비하지 않는 펌프를 직접 부른다"
         );
     }
+    let halt = strip_comments(
+        &fn_body(
+            &read("src/app/halt_frame.rs"),
+            "pub(crate) fn halted_webview_paint_deadline(",
+        )
+        .expect("halted_webview_paint_deadline"),
+    );
+    assert!(
+        halt.contains("crate::system_tray::pump_gtk_events();")
+            && !halt.contains("self.pump_gtk_events()"),
+        "halt 펌프가 native 입력을 소비한다"
+    );
 }

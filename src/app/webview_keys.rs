@@ -44,8 +44,8 @@ impl App {
 
     /// GTK 대기 이벤트를 하나씩 처리하고, 이벤트마다 native 포커스 알림을 소비한다(`consume_webview_focus_requests`).
     /// 한 번의 처리에 [WebView B 누름, B 편집 키]가 함께 들어도 누름 알림이 키 쥘 곳을 게시한 뒤 키 신호가 판정한다.
-    /// GTK 이벤트를 처리하는 호스트 루프 세 자리(`pump_webview_key_events`, `poll_tray_menu_events`,
-    /// `halted_webview_paint_deadline`)가 모두 이 함수를 부른다.
+    /// 키·포커스를 전달하는 호스트 루프 두 자리(`pump_webview_key_events`, `poll_tray_menu_events`)가 이 함수를
+    /// 부른다. halt 펌프(`halted_webview_paint_deadline`)는 입력을 전달하지 않으므로 소비하지 않는 펌프를 쓴다.
     #[cfg(target_os = "linux")]
     pub(crate) fn pump_gtk_events(&mut self) {
         crate::system_tray::pump_gtk_events_each(|| self.consume_webview_focus_requests());
