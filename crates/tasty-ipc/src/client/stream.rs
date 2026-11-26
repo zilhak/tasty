@@ -86,6 +86,8 @@ impl StreamConnection {
         bulk_workspace: Option<u32>,
         timeout: Duration,
     ) -> Result<(Self, u32)> {
+        // 받은 소켓을 자식 프로세스가 물려받지 않게 가장 먼저 끈다(Windows). 복제는 아래에서 끈다.
+        tasty_utils::socket_inherit::disable_inherit(&stream)?;
         // 조용한 네트워크 단절 감지용 read timeout. writer/reader 는 이 소켓의 clone이라
         // 옵션이 공유되므로 여기서 한 번만 걸면 이후 모든 `recv()`(핸드셰이크 ack 대기
         // 포함)에 적용된다.
@@ -94,7 +96,7 @@ impl StreamConnection {
         if let Err(e) = stream.set_nodelay(true) {
             tracing::warn!("attach stream: TCP_NODELAY 설정 실패(지연 증가 가능): {e}");
         }
-        let writer = stream.try_clone()?;
+        let writer = tasty_utils::socket_inherit::try_clone_uninherited(&stream)?;
         let mut reader = BufReader::new(stream);
         let mut writer = writer;
 
@@ -139,7 +141,9 @@ impl StreamConnection {
     /// Clone the writer half of the socket so input can be sent from one thread
     /// while another blocks reading frames (mirror-dump / raw bridge).
     pub fn try_clone_writer(&self) -> Result<TcpStream> {
-        Ok(self.writer.try_clone()?)
+        Ok(tasty_utils::socket_inherit::try_clone_uninherited(
+            &self.writer,
+        )?)
     }
 
     /// Write one frame to the server.
@@ -157,5 +161,52 @@ impl StreamConnection {
     pub fn detach(&mut self) -> Result<()> {
         stream::write_frame(&mut self.writer, StreamTag::Detach, &[])?;
         Ok(())
+    }
+}
+
+#[cfg(all(test, windows))]
+mod tests {
+    use super::StreamConnection;
+    use crate::stream::{self, StreamTag};
+    use std::io::{BufRead, BufReader};
+    use std::net::{TcpListener, TcpStream};
+    use tasty_utils::socket_inherit::is_inheritable;
+
+    /// 연결의 reader·writer와 꺼낸 writer 복제는 자식 프로세스가 물려받지 않는다.
+    #[test]
+    fn stream_connection_sockets_are_not_inheritable() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let port = listener.local_addr().expect("addr").port();
+        let server = std::thread::spawn(move || {
+            let (mut socket, _) = listener.accept().expect("accept");
+            let mut request = String::new();
+            BufReader::new(socket.try_clone().expect("clone"))
+                .read_line(&mut request)
+                .expect("request");
+            let ack = serde_json::json!({"ok": true, "proto": 1, "client_id": 7});
+            stream::write_frame(
+                &mut socket,
+                StreamTag::Control,
+                &serde_json::to_vec(&ack).expect("ack"),
+            )
+            .expect("write ack");
+            socket
+        });
+        let socket = TcpStream::connect(("127.0.0.1", port)).expect("connect");
+        let (conn, _) = StreamConnection::open(socket, 1).expect("open");
+        let _server_socket = server.join().expect("server");
+        let writer_clone = conn.try_clone_writer().expect("writer clone");
+        let flags: Vec<(&str, bool)> = [
+            ("reader", conn.reader.get_ref()),
+            ("writer", &conn.writer),
+            ("writer clone", &writer_clone),
+        ]
+        .into_iter()
+        .map(|(name, socket)| (name, is_inheritable(socket).expect(name)))
+        .collect();
+        assert!(
+            flags.iter().all(|(_, inheritable)| !inheritable),
+            "inheritable handles remain: {flags:?}"
+        );
     }
 }
