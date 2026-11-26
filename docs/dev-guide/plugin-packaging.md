@@ -27,7 +27,7 @@
 - 새 공식 플러그인은 `BUILTINS`와 별도로 이 목록에 한 줄을 넣는다. 위 시험들과 목록 길이 단언(`every_official_id_is_admitted`)을 함께 고친다.
 - 번들 설치·갱신은 번들 폴더 매니페스트의 `id`가 폴더 이름(`BuiltinSpec::id`)과 같은지 복사 전에 확인한다. 다르면 복사 없이 실패로 남긴다.
 
-배포 패키지의 plugin 폴더(`plugins/<id>/`)에는 받은 산출물 폴더가 통째로 들어가고, non-debug 패키징이 `tasty-plugin.toml.sig`(서명 sidecar)를 더한다: `<bin>`(Windows `.exe`) · `tasty-plugin.toml`(매니페스트) · `lang/*.toml` · 고지 파일(`LICENSE` 등, 릴리스마다 다를 수 있다) · `tasty-plugin.toml.sig`.
+배포 패키지의 plugin 폴더(`plugins/<id>/`)에는 받은 산출물 폴더가 통째로 들어가고, non-debug 패키징이 `tasty-plugin.toml.sig`(서명 sidecar)를 더한다: `<bin>`(Windows `.exe`) · Windows는 그 exe와 짝인 `.pdb` · `tasty-plugin.toml`(매니페스트) · `lang/*.toml` · 고지 파일(`LICENSE` 등, 릴리스마다 다를 수 있다) · `tasty-plugin.toml.sig`.
 
 ### 배포 제외 플래그 (`bundle = false`)
 
@@ -52,7 +52,7 @@
 | `[[plugin]]` | `id` · `version` · `bundle` | 플러그인. `bundle = false`(agent-stream)는 배포 패키지에 넣지 않고 개발 경로만 받는다 |
 | `[[plugin.artifact]]` | `platform` · `file` · `url` · `sha256` | 플랫폼별 산출물. 플랫폼은 `macos-arm64`, `windows-x64`, `windows-arm64`, `linux-x64`, `linux-arm64` 다섯이다(`release.yml`의 다섯 빌드 잡) |
 
-산출물은 다섯 플랫폼 모두 `<id>-<version>-<platform>.tar.gz`이고 URL은 `https://github.com/<repository>/releases/download/<tag>/<file>`이다. 아카이브 최상위는 `<id>/` 하나이고 그 아래 실행 파일 `tasty-plugin-<id의 com.tasty. 뒤>`(Windows는 `.exe`), `tasty-plugin.toml`, `lang/`이 있다. 서명(`.sig`)은 없다. 패키징이 받은 뒤 `sign-bundle.sh --dir`로 서명한다. 그 밖의 파일(라이선스·고지)은 릴리스마다 달라질 수 있어 도구가 목록을 고정하지 않는다.
+산출물은 다섯 플랫폼 모두 `<id>-<version>-<platform>.tar.gz`이고 URL은 `https://github.com/<repository>/releases/download/<tag>/<file>`이다. 아카이브 최상위는 `<id>/` 하나이고 그 아래 실행 파일 `tasty-plugin-<id의 com.tasty. 뒤>`(Windows는 `.exe`), `tasty-plugin.toml`, `lang/`이 있다. Windows 아카이브에는 exe가 기록한 이름의 PDB도 같은 폴더에 있다. 이름은 exe와 달리 밑줄로 이어진다(`tasty-plugin-claude.exe` 옆 `tasty_plugin_claude.pdb`). 서명(`.sig`)은 없다. 패키징이 받은 뒤 `sign-bundle.sh --dir`로 서명한다. 그 밖의 파일(라이선스·고지)은 릴리스마다 달라질 수 있어 도구가 목록을 고정하지 않는다.
 
 ### 읽기 도구
 

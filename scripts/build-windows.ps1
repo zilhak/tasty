@@ -266,6 +266,7 @@ function Test-BundledPluginTree([string]$Root, [string]$Label) {
         }
     }
     Write-Host "  plugins $Label :: $($want.Count) files match $BundledPluginsDir"
+    Test-PluginPdbPairs $Root $Label
 }
 
 # WiX는 파일을 하나씩 적어야 하므로 받은 폴더에서 플러그인 fragment를 만든다. main.wxs의 PluginsDir 아래에
@@ -508,6 +509,50 @@ function Test-PdbPair([string]$Dir, [string]$Label) {
     }
     Write-Host "  pdb $Label :: $($want.Guid)/$($want.Age)"
 }
+
+# 번들 plugin 폴더(<id>\)마다 tasty-plugin-*.exe 옆에 그 exe가 기록한 이름의 pdb가 있고 GUID·Age가 짝인지 확인한다.
+# pdb 이름은 받은 산출물이 정한다(exe 이름과 달리 밑줄일 수 있다). 짝이 없으면 plugin 프레임의 함수 이름을 믿을 수 없다.
+function Test-PluginPdbPairs([string]$Root, [string]$Label) {
+    $dirs = @(Get-ChildItem -Path $Root -Directory)
+    if ($dirs.Count -eq 0) {
+        Write-Error "$Label has no plugin folders ($Root)"
+        exit 1
+    }
+    foreach ($dir in $dirs) {
+        $exes = @(Get-ChildItem -Path $dir.FullName -File -Filter "tasty-plugin-*.exe")
+        if ($exes.Count -ne 1) {
+            Write-Error "$($dir.Name) in $Label has $($exes.Count) tasty-plugin-*.exe files, expected 1"
+            exit 1
+        }
+        $want = Get-PeCodeViewId $exes[0].FullName
+        if ($null -eq $want) {
+            Write-Error "$($dir.Name)\$($exes[0].Name) in $Label has no CodeView debug entry"
+            exit 1
+        }
+        if ($want.Name -match '[\\/]' -or $want.Name -notlike "*.pdb") {
+            Write-Error "$($dir.Name)\$($exes[0].Name) in $Label names its PDB '$($want.Name)', expected a bare .pdb file name"
+            exit 1
+        }
+        $pdb = Join-Path $dir.FullName $want.Name
+        if (-not (Test-Path $pdb)) {
+            Write-Error "$($want.Name) missing next to $($dir.Name)\$($exes[0].Name) in $Label"
+            exit 1
+        }
+        $got = Get-PdbId $pdb
+        if ($null -eq $got) {
+            Write-Error "$($dir.Name)\$($want.Name) in $Label is not an MSF 7.00 PDB"
+            exit 1
+        }
+        if ($got.Guid -ne $want.Guid -or $got.Age -ne $want.Age) {
+            Write-Error "$($dir.Name)\$($want.Name) in $Label is $($got.Guid)/$($got.Age), but $($exes[0].Name) expects $($want.Guid)/$($want.Age)"
+            exit 1
+        }
+    }
+    Write-Host "  plugin pdb $Label :: $($dirs.Count) pairs"
+}
+
+# 받은 산출물에서 먼저 확인한다. 패키지 트리는 Test-BundledPluginTree가 이 폴더와 바이트로 대조한 뒤 다시 확인한다.
+Test-PluginPdbPairs $BundledPluginsDir $BundledPluginsDir
 
 Write-Host "==> Assembling archive..."
 if (Test-Path $StageDir) { Remove-Item -Recurse -Force $StageDir }

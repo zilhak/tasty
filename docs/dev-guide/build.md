@@ -413,7 +413,7 @@ cargo install cargo-wix; winget install WiXToolset.WiXToolset   # 1회
 
 산출물: `tasty-{v}-windows-{x64|arm64}.{zip,msi}` · 헤드리스 `tasty-headless-{v}-windows-{x64|arm64}.zip` + `SHA256SUMS-windows.txt`(x64) / `SHA256SUMS-windows-arm64.txt`(ARM64). Windows x64 개발 환경과 태그 없는 CI에서 두 아키텍처의 생성·패키지 추출·PE·고지·체크섬 검사를 확인했다.
 
-패키지 안의 본체·번들 plugin `.exe`의 PE 머신 타입을 검사한다. 호스트와 같은 아키텍처는 `tasty.exe --version`을 실행하고 MSI를 `msiexec /a`로 풀며, 다른 아키텍처는 실행 검사 대신 PE 검사와 `dark.exe` 추출을 사용한다. GUI ZIP·MSI·헤드리스 ZIP의 고지 세트는 저장소 사본과 바이트 대조한다. `Test-PdbPair`는 스테이징 폴더, 풀어 낸 ZIP·헤드리스 ZIP, MSI(같은 아키텍처는 관리 설치, 다른 아키텍처는 `dark.exe` 추출 트리)에서 `tasty.exe` 옆에 `tasty.pdb`가 있고 exe가 기록한 GUID·Age와 짝이 맞는지 확인한다. PDB가 없거나 짝이 다르면 빌드가 실패한다([배포본의 심볼](crash-diagnostics.md#배포본의-심볼)). 관리 추출은 실제 설치가 아니며 Windows ARM 기기의 설치·실행·제거는 미측정이다. 태그 없는 패키징 검증을 실제 Release 게시로 보지 않는다.
+패키지 안의 본체·번들 plugin `.exe`의 PE 머신 타입을 검사한다. 호스트와 같은 아키텍처는 `tasty.exe --version`을 실행하고 MSI를 `msiexec /a`로 풀며, 다른 아키텍처는 실행 검사 대신 PE 검사와 `dark.exe` 추출을 사용한다. GUI ZIP·MSI·헤드리스 ZIP의 고지 세트는 저장소 사본과 바이트 대조한다. `Test-PdbPair`는 스테이징 폴더, 풀어 낸 ZIP·헤드리스 ZIP, MSI(같은 아키텍처는 관리 설치, 다른 아키텍처는 `dark.exe` 추출 트리)에서 `tasty.exe` 옆에 `tasty.pdb`가 있고 exe가 기록한 GUID·Age와 짝이 맞는지 확인한다. `Test-PluginPdbPairs`는 받은 plugin 폴더와 같은 패키지 트리의 `plugins\<id>\`마다 `tasty-plugin-*.exe`가 기록한 PDB가 그 옆에 있고 짝인지 본다. PDB가 없거나 짝이 다르면 빌드가 실패한다([배포본의 심볼](crash-diagnostics.md#배포본의-심볼)). 관리 추출은 실제 설치가 아니며 Windows ARM 기기의 설치·실행·제거는 미측정이다. 태그 없는 패키징 검증을 실제 Release 게시로 보지 않는다.
 
 `build-windows.ps1`은 MSI 단계에서 `$env:WIX\bin`을 PATH 앞에 붙인다. `wix/main.wxs`는 파일마다 이름을 적어야 하므로, MSI 빌드 전에 `LICENSES/`의 각 파일에 대응하는 `Source`가 있는지 검사한다. 검증 포인트: MSI UpgradeCode 유지(`wix/main.wxs`), 설치→시작 메뉴→제거.
 

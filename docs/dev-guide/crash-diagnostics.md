@@ -150,7 +150,7 @@ release·dist 프로필은 `strip = "debuginfo"` 다(dist 는 release 를 상속
 
 - **macOS·Linux**: 실행 파일 안의 함수 이름 표만 쓰고 별도 심볼 파일은 배포하지 않는다. 패키지 도구가 다시 strip 하지 않도록 `scripts/build-linux.sh` 가 `cargo deb --no-strip` 과 linuxdeploy 의 `NO_STRIP=1` 을 쓴다. cargo-generate-rpm 에는 strip 단계가 없다. 같은 스크립트의 검증 단계가 GUI·헤드리스 tar.gz, deb, rpm, AppImage 의 입력 AppDir 에서 실행 파일에 `.symtab` 이 있고 `.debug_info` 가 없는지 확인한다. `scripts/build-macos-dmg.sh` 는 실행 파일을 복사해 서명만 하며 strip 하지 않는다.
 - **Windows**: MSVC 링커는 strip 설정과 관계없이 PDB 를 만들고 exe 에는 PDB 파일 이름만 기록한다(`/PDBALTPATH:%_PDB%`). `scripts/build-windows.ps1` 이 GUI ZIP·헤드리스 ZIP·MSI 의 `tasty.exe` 옆에 `tasty.pdb` 를 둔다. 헤드리스 ZIP 에는 헤드리스 target 의 PDB 를 넣는다. 스테이징 폴더와 풀어 낸 패키지(ZIP, 같은 아키텍처 MSI 의 관리 설치, 다른 아키텍처 MSI 의 dark 추출)에서 exe 의 CodeView 항목(GUID·Age·PDB 이름)과 PDB 정보 스트림의 GUID·Age 가 같은지 확인하고, PDB 가 없거나 짝이 다르면 실패한다. PDB 는 Release 자산으로 따로 올리지 않는다. exe 옆에 짝인 PDB 가 없으면 backtrace 의 프레임이 이름 없이 나오지 않고, 가장 가까운 export 심볼(번들한 C 라이브러리 함수 등)의 이름으로 잘못 풀린다. 그런 보고서의 함수 이름은 믿지 않는다. PDB 가 있으면 std·CRT 프레임에는 파일·줄 번호도 나오고 tasty 프레임에는 이름만 나온다. 일부 프레임은 실제와 다른 함수 이름으로 보일 수 있다.
-- **번들 plugin**: 공식 plugin 은 이 저장소에서 빌드하지 않고 잠금 파일의 릴리스 산출물을 받으므로 이 프로필을 따르지 않는다. plugin 바이너리의 심볼은 공식 plugin 저장소의 빌드 설정을 따른다.
+- **번들 plugin**: 공식 plugin 은 이 저장소에서 빌드하지 않고 잠금 파일의 릴리스 산출물을 받으므로 이 프로필을 따르지 않는다. plugin 바이너리의 심볼은 공식 plugin 저장소의 빌드 설정을 따른다. 받은 바이너리도 디버그 정보 없이 함수 이름 표를 담고, Windows 산출물은 plugin exe 옆에 그 exe가 기록한 이름의 짝 PDB 를 담는다(`tasty-plugin-<이름>.exe` 옆 `tasty_plugin_<이름>.pdb`). `scripts/build-windows.ps1` 은 받은 폴더와 풀어 낸 패키지(ZIP, 헤드리스 ZIP, MSI 트리)에서 번들 plugin 마다 exe 의 CodeView 항목과 PDB 의 GUID·Age 를 대조하고, PDB 가 없거나 짝이 다르면 실패한다.
 - **크기**(0.14.0 dist, `strip = true` 와 비교한 실측): Linux 실행 파일은 x64 GUI 83.1→92.3 MB(+11%), 헤드리스 +10%, arm64 GUI +18%, 헤드리스 +16% 커진다. 패키지는 압축 뒤라 tar.gz +3~5%, deb +3~4%, rpm +4~5%, AppImage +2% 커진다. Windows 는 exe 크기가 거의 같고 ZIP·MSI 가 들어간 PDB 의 압축 크기(x64 GUI 3.2 MB, 헤드리스 2.6 MB)만큼 6% 안팎 커진다. macOS 는 아직 재지 않았다.
 - 외부 도구로 뜬 스택 표본(아래 hang 절)도 같은 함수 이름 표를 쓴다. Windows 덤프는 같은 빌드의 `tasty.pdb` 가 있어야 이름을 푼다.
 
@@ -254,7 +254,7 @@ strace -p <PID> -f -e trace=write,read 2>/tmp/tasty-strace.log
 
 - [CLI 크레이트 내부 구조 — 세 갈래 대칭](cli-structure.md) — 파일 로그를 host 프로세스로 한정한 결정
 - [build.md](build.md) — release(`strip = "debuginfo"`) / dev / dist 프로필
-- [release.md](release.md#릴리스-자산) — Release 자산과 Windows 패키지 안의 `tasty.pdb`
+- [release.md](release.md#릴리스-자산) — Release 자산과 Windows 패키지 안의 `tasty.pdb`·plugin PDB
 - [error-handling.md](error-handling.md) — `Result` 처리·로그 레벨 정책 (애초에 crash 를 줄이는 쪽)
 - [self-verification.md](self-verification.md) · [e2e-tests.md](e2e-tests.md) — 재현·검증
 - [gpu-rendering.md](gpu-rendering.md#렌더-스레드를-나누지-않는-이유) — 이벤트 루프 stall 워치독의 결정 근거와 렌더 구조
