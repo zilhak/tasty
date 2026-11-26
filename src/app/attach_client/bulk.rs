@@ -121,6 +121,8 @@ fn open_bulk_connection_bound(
         heartbeat_timeout,
     } = endpoint;
     let sock = TcpStream::connect(("127.0.0.1", port))?;
+    #[cfg(test)]
+    tasty_remote::attempt_seam::at(tasty_remote::attempt_seam::Stage::AfterConnect, &sock);
     // 이 연결을 자식 프로세스가 물려받지 않게 한다(Windows).
     tasty_utils::socket_inherit::disable_inherit(&sock)?;
     if let Some(attempt) = attempt {

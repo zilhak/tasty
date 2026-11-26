@@ -282,6 +282,7 @@ mod retired_attempt {
     }
 
     /// Windows: bulk 연결의 원본 소켓은 등록 직후(stream open이 다시 끄기 전)에 이미 상속되지 않는다.
+    /// 연결 직후 상속을 일부러 켜서, 연결 직후의 끄는 호출이 빠지면 std가 돌려준 값과 상관없이 실패한다.
     #[cfg(windows)]
     #[test]
     fn the_bulk_socket_is_not_inheritable_once_registered() {
@@ -290,7 +291,10 @@ mod retired_attempt {
         let (port, peer) = silent_peer();
         let seen = Rc::new(RefCell::new(None));
         let record = seen.clone();
-        attempt_seam::arm(Stage::AfterRegister, move |socket| {
+        attempt_seam::arm(Stage::AfterConnect, |socket| {
+            tasty_utils::socket_inherit::make_inheritable(socket).unwrap();
+        });
+        attempt_seam::arm_also(Stage::AfterRegister, move |socket| {
             *record.borrow_mut() = Some(tasty_utils::socket_inherit::is_inheritable(socket));
             // 응답하지 않는 상대를 기다리지 않게 여기서 끝낸다.
             socket.shutdown(std::net::Shutdown::Both).unwrap();
@@ -298,6 +302,7 @@ mod retired_attempt {
         let result = open(port, &active);
         peer.join().unwrap();
         assert!(result.is_err(), "the closed socket ends the open");
+        assert!(attempt_seam::reached(Stage::AfterConnect));
         let inheritable = seen.borrow_mut().take().expect("the open passed the seam");
         assert!(
             !inheritable.expect("handle information"),
