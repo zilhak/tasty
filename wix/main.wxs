@@ -103,6 +103,12 @@
                         <Component Id='NoticeEmojiIcon' Guid='*'>
                             <File Id='NoticeEmojiIconFile' Name='emoji-icon-font-MIT.txt' DiskId='1' Source='LICENSES\emoji-icon-font-MIT.txt' KeyPath='yes'/>
                         </Component>
+                        <Component Id='NoticeLucide' Guid='*'>
+                            <File Id='NoticeLucideFile' Name='Lucide-ISC.txt' DiskId='1' Source='LICENSES\Lucide-ISC.txt' KeyPath='yes'/>
+                        </Component>
+                        <Component Id='NoticeFeather' Guid='*'>
+                            <File Id='NoticeFeatherFile' Name='Feather-MIT.txt' DiskId='1' Source='LICENSES\Feather-MIT.txt' KeyPath='yes'/>
+                        </Component>
                     </Directory>
 
                     <Directory Id='Bin' Name='bin'>
@@ -185,6 +191,8 @@
             <ComponentRef Id='NoticeNotoEmoji'/>
             <ComponentRef Id='NoticeUbuntu'/>
             <ComponentRef Id='NoticeEmojiIcon'/>
+            <ComponentRef Id='NoticeLucide'/>
+            <ComponentRef Id='NoticeFeather'/>
             <ComponentRef Id='binary0'/>
             <ComponentRef Id='ApplicationShortcut'/>
 

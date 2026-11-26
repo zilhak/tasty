@@ -2,8 +2,8 @@
 
 Tasty 자체 코드는 [`LICENSE`](LICENSE) 파일에 명시된 MIT 라이선스를 따릅니다.
 아래 외부 프로젝트의 자산도 함께 배포합니다. 각 자산에는
-OFL 1.1, Ubuntu Font Licence 1.0, MIT(Hack은 Bitstream Vera 라이선스 포함) 또는
-BSD-3-Clause 라이선스가 적용됩니다.
+OFL 1.1, Ubuntu Font Licence 1.0, MIT(Hack은 Bitstream Vera 라이선스 포함),
+BSD-3-Clause 또는 ISC 라이선스가 적용됩니다.
 
 | 프로젝트 | 버전 | 라이선스 | 포함 위치 | 라이선스 본문 |
 |---|---|---|---|---|
@@ -15,12 +15,13 @@ BSD-3-Clause 라이선스가 적용됩니다.
 | egui 기본 폰트: Noto Emoji Regular | epaint_default_fonts 0.31.1 | OFL 1.1 | 본체 바이너리, egui를 링크하는 plugin 바이너리 | [`LICENSES/NotoEmoji-OFL-1.1.txt`](LICENSES/NotoEmoji-OFL-1.1.txt) |
 | egui 기본 폰트: Ubuntu Light | epaint_default_fonts 0.31.1 | Ubuntu Font Licence 1.0 | 본체 바이너리, egui를 링크하는 plugin 바이너리 | [`LICENSES/Ubuntu-Ubuntu-font-1.0.txt`](LICENSES/Ubuntu-Ubuntu-font-1.0.txt) |
 | egui 기본 폰트: emoji-icon-font | epaint_default_fonts 0.31.1 | MIT | 본체 바이너리, egui를 링크하는 plugin 바이너리 | [`LICENSES/emoji-icon-font-MIT.txt`](LICENSES/emoji-icon-font-MIT.txt) |
+| Lucide (Feather 유래 부분 포함) | lucide-static 0.460.0 | ISC, MIT(Feather) | 본체 바이너리 (`tasty-icons` 아이콘) | [`LICENSES/Lucide-ISC.txt`](LICENSES/Lucide-ISC.txt), [`LICENSES/Feather-MIT.txt`](LICENSES/Feather-MIT.txt) |
 
 `LICENSES/`의 파일은 각 프로젝트의 원문을 수정 없이 복사했습니다. mermaid, highlight.js,
 KaTeX는 번들 버전의 태그에 있는 `LICENSE`를 사용합니다. egui 기본 폰트 네 개의 본문은
 crates.io `epaint_default_fonts` 0.31.1 패키지의 `fonts/` 폴더에 있는 파일입니다. D2Coding Ver 1.3.2의 태그와
 릴리스 ZIP에는 라이선스 파일이 없어, 다음 태그 `VER1.3.3`의 `OFL.txt`를 사용합니다.
-출처는 아래 D2Coding 절에 기록했습니다. 프로젝트별 저작권 고지가 달라 일반 템플릿으로
+출처는 아래 D2Coding 절에 기록했습니다. Lucide와 Feather의 본문 출처는 아래 아이콘 절에 기록했습니다. 프로젝트별 저작권 고지가 달라 일반 템플릿으로
 대체하지 않습니다.
 
 ## 폰트
@@ -64,6 +65,29 @@ OFL 1.1은 폰트의 사용·변경·재배포(상용 포함)를 허용하지만
 
 OFL 1.1과 Ubuntu Font Licence 1.0은 폰트를 재배포할 때 저작권 고지와 라이선스 본문을 함께
 넣도록 요구합니다. Tasty는 폰트 파일을 수정하지 않고 크레이트가 넣은 그대로 배포합니다.
+
+## 아이콘
+
+### Lucide (Feather 유래 부분 포함)
+
+- 출처: Lucide Contributors — https://github.com/lucide-icons/lucide (npm `lucide-static`).
+  Lucide의 일부는 Feather(https://github.com/feathericons/feather, Cole Bemis)에서 왔습니다.
+- 버전: lucide-static 0.460.0
+- 적용 범위: `crates/tasty-icons/src/lib.rs`의 아이콘 정의 중 Lucide 아이콘과 도형이 같거나 Lucide 아이콘에서
+  고쳐 온 것. 해당 정의마다 바로 위 주석에 Lucide 아이콘 이름과 "같은 도형" 또는 "고쳐 온 도형"을 적었습니다.
+  이 정의는 본체 바이너리에 들어갑니다.
+- 라이선스: ISC — Lucide 부분, MIT — Feather 부분
+- 라이선스 본문:
+  - [`LICENSES/Lucide-ISC.txt`](LICENSES/Lucide-ISC.txt) — npm `lucide-static` 0.460.0 패키지의 `LICENSE`와 바이트 동일
+    (lucide 저장소 태그 `0.460.0`의 `LICENSE`와도 같습니다, sha256
+    `1e7290b35280a048667bbf0ebabac1c7fd52a75300e8b2946ac165715997f2bc`).
+  - [`LICENSES/Feather-MIT.txt`](LICENSES/Feather-MIT.txt) — feathericons/feather 커밋
+    `3dc050d97405062eba78aa57115c0a15c63abdaa`의 `LICENSE`와 바이트 동일(sha256
+    `308028e93fcf84972523cdf6e616f73168546b4953895f516d01287f16fe7bee`). Lucide의 `LICENSE`는 Feather
+    부분의 저작권 줄만 적고 MIT 허가 문구는 싣지 않으므로 Feather의 본문을 따로 넣습니다.
+- 저작권: 위 두 파일 머리의 저작권 줄을 그대로 따릅니다.
+
+ISC와 MIT는 저작권 고지와 허가 문구를 모든 사본에 함께 넣도록 요구합니다.
 
 ## markdown plugin 의 렌더링 엔진
 
@@ -115,7 +139,7 @@ MIT는 위 저작권 고지와 허가 문구를 "소프트웨어의 모든 사�
 
 - `LICENSE` — Tasty 자체 코드의 MIT 본문
 - `THIRD_PARTY_LICENSES.md` — 본 문서 (무엇이 번들되고 무슨 의무가 따르는지)
-- `LICENSES/` 의 **모든 파일** — 번들 자산의 라이선스 본문. 지금은 위 표의 여덟 파일입니다.
+- `LICENSES/` 의 **모든 파일** — 번들 자산의 라이선스 본문. 지금은 위 표의 열 파일입니다.
 
 `LICENSES/`는 폴더 안의 모든 파일을 포함합니다. 새 자산의 라이선스 파일을 이 폴더에
 추가하고 위 표도 갱신합니다. 이 폴더에는 라이선스 본문 파일만 둡니다. RPM은 본문을 한 폴더에
@@ -144,5 +168,5 @@ MIT는 위 저작권 고지와 허가 문구를 "소프트웨어의 모든 사�
 `tar.gz`·Windows `.zip`(헤드리스 포함)·`.msi`(관리 설치, 다른 아키텍처는 WiX `dark` 추출)는 꺼낸 파일을, `.AppImage`는 패키징 직전
 AppDir를 저장소 사본과 바이트 비교합니다.
 
-OFL 1.1, Ubuntu Font Licence 1.0, MIT, BSD-3-Clause의 고지는 산출물 안에도 포함해야 합니다. 릴리스에서 별도로
+OFL 1.1, Ubuntu Font Licence 1.0, MIT, BSD-3-Clause, ISC의 고지는 산출물 안에도 포함해야 합니다. 릴리스에서 별도로
 다운로드할 수 있게 하는 것만으로는 이를 대신하지 못합니다.
