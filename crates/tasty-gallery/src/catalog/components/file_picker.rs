@@ -39,9 +39,6 @@ const FOLDER_SEL: &str = "configs";
 /// 없다 — 칩 하나의 구조 높이라 spacing 리듬 값이 아니다.
 const HOST_BADGE_H: LogicalPx = LogicalPx(22.0);
 
-/// 디자인에서 정한 13px 아이콘. 대응 Theme 크기 토큰이 없어 그대로 사용한다.
-const CRUMB_GLYPH: LogicalPx = LogicalPx(13.0);
-
 const HOST: &str = "work-laptop-attach";
 
 /// 헤더 높이. 고정값이 없고 위아래 `fp-header-pad-y`와 sm IconButton으로 정해진다.

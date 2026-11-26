@@ -5,16 +5,14 @@ use tasty_ui_widgets::{
     Button, ButtonVariant, Input, filter_readout, filter_readout_label, filter_readout_width,
 };
 
-use super::{
-    CRUMB_GLYPH, FilePickerAction, FilePickerMode, FilePickerProps, FpViewState, selected_folder,
-};
+use super::{FilePickerAction, FilePickerMode, FilePickerProps, FpViewState, selected_folder};
 use crate::adapters::ui::icons;
 use crate::theme::Theme;
 
 /// 덮어쓰기 경고 줄 한 줄의 높이 — caption 글꼴의 행 높이와 경고 글리프 중 큰 쪽.
 fn warning_line_height(ui: &egui::Ui, th: &Theme) -> LogicalPx {
     let row = ui.fonts(|f| f.row_height(&egui::FontId::proportional(th.font_size_caption.value())));
-    LogicalPx(row).max(CRUMB_GLYPH)
+    LogicalPx(row).max(th.fp_footer_line_glyph_size())
 }
 
 /// 푸터 높이. 저장 모드에서 기존 파일명을 둔 채 폴더를 고르면
@@ -247,7 +245,7 @@ fn folder_line(
 ) {
     let muted: egui::Color32 = th.text_muted().into();
     let size = th.font_size_caption.value();
-    let glyph = CRUMB_GLYPH.value();
+    let glyph = th.fp_footer_line_glyph_size().value();
     let icon_rect = egui::Rect::from_min_size(
         egui::pos2(line.left(), line.center().y - glyph * 0.5),
         egui::vec2(glyph, glyph),
@@ -330,7 +328,7 @@ fn split_named(template: &str) -> Vec<(&str, Slot)> {
 fn overwrite_line(ui: &mut egui::Ui, th: &Theme, line: egui::Rect, template: &str, name: &str) {
     let warn: egui::Color32 = th.accent_warning().into();
     let size = th.font_size_caption.value();
-    let glyph = CRUMB_GLYPH.value();
+    let glyph = th.fp_footer_line_glyph_size().value();
     let icon_rect = egui::Rect::from_min_size(
         egui::pos2(line.left(), line.center().y - glyph * 0.5),
         egui::vec2(glyph, glyph),

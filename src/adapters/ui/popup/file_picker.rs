@@ -45,8 +45,6 @@ use tasty_type_geometry::length::LogicalPx;
 
 use crate::adapters::ui::icons;
 
-/// breadcrumb 구분자 크기. 대응 토큰이 없어 갤러리와 같은 별도 값을 사용한다.
-pub(super) const CRUMB_GLYPH: LogicalPx = LogicalPx(13.0);
 /// 호스트 배지의 글리프 크기(디자인 FpHostBadge의 remote 아이콘 13). 대응 Theme 크기 토큰이 없다.
 const HOST_BADGE_GLYPH: LogicalPx = LogicalPx(13.0);
 /// 호스트 배지의 글리프 ↔ 글자 간격(디자인 FpHostBadge gap 5). 대응 Theme 간격 토큰이 없다.

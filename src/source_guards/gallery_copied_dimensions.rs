@@ -158,11 +158,6 @@ const COPIED: &[(&str, Side, Side)] = &[
         Side::Lit(GALLERY_REMOTE_ATTACH, "WS_ROW_H"),
     ),
     (
-        "파일 picker 경로 구분 글리프 크기",
-        Side::Lit(HOST_FILE_PICKER, "CRUMB_GLYPH"),
-        Side::Lit(GALLERY_FILE_PICKER, "CRUMB_GLYPH"),
-    ),
-    (
         "튜토리얼 말풍선 폭",
         Side::Lit(HOST_TUTORIAL_CALLOUT, "CALLOUT_W"),
         Side::Lit(GALLERY_TUTORIAL, "CALLOUT_W"),
@@ -206,7 +201,6 @@ const COPIED: &[(&str, Side, Side)] = &[
 
 const GALLERY_QUIT_MODAL: &str = "crates/tasty-gallery/src/catalog/components/quit_modal.rs";
 const GALLERY_REMOTE_ATTACH: &str = "crates/tasty-gallery/src/catalog/components/remote_attach.rs";
-const GALLERY_FILE_PICKER: &str = "crates/tasty-gallery/src/catalog/components/file_picker.rs";
 const GALLERY_TUTORIAL: &str = "crates/tasty-gallery/src/catalog/widgets/tutorial.rs";
 const GALLERY_EXPLORER_SIDEBAR: &str =
     "crates/tasty-gallery/src/catalog/components/explorer_sidebar.rs";
@@ -217,7 +211,6 @@ const GALLERY_SETTINGS_HANDLER: &str =
 
 const HOST_PRESET_DEMO: &str = "src/adapters/ui/preset/demo_layout.rs";
 const HOST_REMOTE_ATTACH: &str = "src/adapters/ui/popup/remote_attach.rs";
-const HOST_FILE_PICKER: &str = "src/adapters/ui/popup/file_picker.rs";
 const HOST_TUTORIAL_CALLOUT: &str = "src/adapters/ui/tutorial/callout.rs";
 const HOST_EXPLORER: &str = "src/adapters/ui/surface/explorer.rs";
 const HOST_HOOK_HANDLERS: &str = "src/view/settings/ui/file_handler_tab/hook_handlers.rs";
@@ -358,8 +351,8 @@ fn resolve(side: &Side, theme: &str, semantic: &str, primitive: &str) -> (String
 fn the_gallery_still_agrees_with_the_dimensions_it_restates() {
     // 항목을 삭제해 불일치를 숨기지 않도록 하한을 둔다. 쌍을 더할 때는 고치지 않는다.
     assert!(
-        COPIED.len() >= 33,
-        "비교 명부가 {}쌍으로 하한 33보다 적다. 복사본이 실제로 사라졌다면 양쪽이 같은 토큰을 읽는지 확인한 뒤 하한을 낮춘다. 불일치를 숨기려고 쌍을 지우지 않는다.",
+        COPIED.len() >= 32,
+        "비교 명부가 {}쌍으로 하한 32보다 적다. 복사본이 실제로 사라졌다면 양쪽이 같은 토큰을 읽는지 확인한 뒤 하한을 낮춘다. 불일치를 숨기려고 쌍을 지우지 않는다.",
         COPIED.len()
     );
     let theme = read(THEME);

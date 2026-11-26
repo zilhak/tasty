@@ -5,7 +5,7 @@ use tasty_ui_widgets::{
     Button, ButtonVariant, filter_readout, filter_readout_label, filter_readout_width,
 };
 
-use super::{CRUMB_GLYPH, FOLDER_SEL, FpState, MULTI_PICKED, Mode, Variant};
+use super::{FOLDER_SEL, FpState, MULTI_PICKED, Mode, Variant};
 use crate::catalog::icons;
 use crate::catalog::widgets::dialog as kit;
 use tasty_type_appearance::theme::Theme;
@@ -14,7 +14,7 @@ use tasty_type_appearance::theme::Theme;
 fn warning_line_height(ui: &egui::Ui, theme: &Theme) -> LogicalPx {
     let row =
         ui.fonts(|f| f.row_height(&egui::FontId::proportional(theme.font_size_caption.value())));
-    LogicalPx(row).max(CRUMB_GLYPH)
+    LogicalPx(row).max(theme.fp_footer_line_glyph_size())
 }
 
 /// footer 높이. 덮어쓰기 줄과 폴더 안내 줄은 서로 배타적이지 않지만, 한 줄이 늘 때마다
@@ -169,7 +169,7 @@ fn folder_line(ui: &mut egui::Ui, theme: &Theme, mode: Mode) {
     let mono = egui::TextFormat::simple(egui::FontId::monospace(size), muted);
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = theme.spacing_xs.value();
-        kit::icon(ui, icons::FOLDER, CRUMB_GLYPH, muted);
+        kit::icon(ui, icons::FOLDER, theme.fp_footer_line_glyph_size(), muted);
         let mut job = egui::text::LayoutJob::default();
         match mode {
             Mode::Folder { .. } => unreachable!(),
@@ -207,7 +207,12 @@ fn overwrite_line(ui: &mut egui::Ui, theme: &Theme, name: &str) {
     let size = theme.font_size_caption.value();
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = theme.spacing_xs.value();
-        kit::icon(ui, icons::ALERT_TRIANGLE, CRUMB_GLYPH, warn);
+        kit::icon(
+            ui,
+            icons::ALERT_TRIANGLE,
+            theme.fp_footer_line_glyph_size(),
+            warn,
+        );
         let mut job = egui::text::LayoutJob::default();
         job.append(
             name,

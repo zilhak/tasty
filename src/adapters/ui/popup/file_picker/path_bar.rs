@@ -5,7 +5,7 @@ use tasty_ui_widgets::{ControlSize, IconButton, IconButtonVariant, MenuItemVaria
 
 use tasty_ui_widgets::crumb_alloc::{Caps, CrumbSlot, Measure, Role, plan};
 
-use super::{CRUMB_GLYPH, FilePickerAction, FilePickerProps};
+use super::{FilePickerAction, FilePickerProps};
 use crate::adapters::ui::icons;
 use crate::theme::Theme;
 
@@ -197,7 +197,7 @@ fn draw_crumbs(
     let measure = Measure {
         natural: &natural,
         ellipsis: natural_width(ui, th, "…", false),
-        separator: CRUMB_GLYPH.value() + gap * 2.0,
+        separator: th.fp_crumb_glyph_size().value() + gap * 2.0,
         available: ui.available_width(),
         caps: caps(th),
     };
@@ -209,7 +209,10 @@ fn draw_crumbs(
     let mut hidden_menu = None;
     for (slot_idx, placed) in plan.placed.iter().enumerate() {
         if slot_idx > 0 {
-            ui.add(icons::CHEVRON_RIGHT.image(CRUMB_GLYPH.value(), th.text_disabled().into()));
+            ui.add(
+                icons::CHEVRON_RIGHT
+                    .image(th.fp_crumb_glyph_size().value(), th.text_disabled().into()),
+            );
         }
         match &placed.slot {
             CrumbSlot::Crumb(i) => {

@@ -6,7 +6,7 @@ use tasty_ui_widgets::{
     ControlSize, IconButton, IconButtonVariant, MenuItemVariant, menu_item_with_hover,
 };
 
-use super::{CRUMB_GLYPH, Variant, path_bar_height};
+use super::{Variant, path_bar_height};
 use crate::catalog::icons;
 use crate::catalog::widgets::dialog as kit;
 use tasty_egui_theme::overlay_edge::BoxEdge;
@@ -231,7 +231,7 @@ fn allocate(ui: &egui::Ui, theme: &Theme, kind: PathKind, available: f32) -> Pla
     let measure = Measure {
         natural: &natural,
         ellipsis: text_width(ui, "…", &crumb_font(theme, false)),
-        separator: CRUMB_GLYPH.value() + STRUCT_GAP_2.value() * 2.0,
+        separator: theme.fp_crumb_glyph_size().value() + STRUCT_GAP_2.value() * 2.0,
         available,
         caps: caps(theme),
     };
@@ -249,7 +249,7 @@ fn crumbs(ui: &mut egui::Ui, theme: &Theme, kind: PathKind) -> Option<HiddenCrum
             kit::icon(
                 ui,
                 icons::CHEVRON_RIGHT,
-                CRUMB_GLYPH,
+                theme.fp_crumb_glyph_size(),
                 theme.text_disabled().to_egui(),
             );
         }

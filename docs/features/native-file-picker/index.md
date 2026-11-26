@@ -160,6 +160,8 @@ forward/tap 도 동반 — file picker 뿐 아니라 mirror 연결 자체가 끊
 드래그보다 먼저 입력을 받는다. 닫는 길은 헤더 ✕ · Cancel · Esc 이고 셋 다 `Cancelled` 를 남긴다.
 
 헤더 아래 path bar 줄은 `bg-sidebar` 로 창 좌우 끝까지 칠해져 헤더·목록(`bg-panel`)과 구분된다.
+crumb 사이 chevron 은 `fp-crumb-glyph-size`(13), footer 의 폴더 안내·덮어쓰기 경고 줄 글리프는
+`fp-footer-line-glyph-size`(13) 토큰이며 둘 다 UI 배율을 따른다.
 
 목록이 보일 때는 path bar 아래에 열 이름 줄(목록 머리)이 있다. 이름·크기·수정일 열 이름을 mono
 micro 대문자로 쓰고, 열 위치는 행과 같은 계산을 써서 값 바로 위에 선다. 문구는 파일 선택기 전용
