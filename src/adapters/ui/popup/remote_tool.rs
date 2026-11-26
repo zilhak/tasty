@@ -1846,16 +1846,7 @@ fn draw_passkey_form(ui: &mut egui::Ui, th: &Theme, st: &mut UiState) {
             });
             form_row(ui, th, t("remote_tool.field_value"), |ui| {
                 if f.kind == "inline" {
-                    changed |= ui
-                        .add(
-                            egui::TextEdit::multiline(&mut f.value)
-                                .desired_rows(3)
-                                .hint_text(tasty_egui_theme::hint_text(
-                                    th,
-                                    t("remote_tool.value_inline_hint"),
-                                )),
-                        )
-                        .changed();
+                    changed |= passkey_value_area(ui, th, &mut f.value);
                 } else {
                     changed |= ui
                         .add(
@@ -2005,6 +1996,52 @@ fn form_row(ui: &mut egui::Ui, th: &Theme, label: &str, add_input: impl FnOnce(&
 }
 
 /// 입력 행. placeholder는 host·port·경로 등의 기술 예시이며 번역하지 않는다.
+/// inline passkey 값 칸. code_area와 같은 방식으로 Input 칸 모양을 칠한다: input-bg 채움, input-border
+/// 테두리, 포커스면 input-border-focus 테두리와 바깥 링. 칸 크기와 안쪽 여백은 TextEdit의 것이다.
+fn passkey_value_area(ui: &mut egui::Ui, th: &Theme, value: &mut String) -> bool {
+    let bed = ui.painter().add(egui::Shape::Noop);
+    let resp = ui.add(
+        egui::TextEdit::multiline(value)
+            .id_salt(PASSKEY_VALUE_ID)
+            .frame(false)
+            .desired_rows(3)
+            .hint_text(tasty_egui_theme::hint_text(
+                th,
+                t("remote_tool.value_inline_hint"),
+            )),
+    );
+    let radius = th.corner_radius.value();
+    ui.painter().set(
+        bed,
+        egui::epaint::RectShape::filled(resp.rect, radius, th.input_bg().to_egui()),
+    );
+    let focused = resp.has_focus();
+    let edge = if focused {
+        th.input_border_focus()
+    } else {
+        th.input_border()
+    };
+    ui.painter().rect_stroke(
+        resp.rect,
+        radius,
+        egui::Stroke::new(th.border_width.value(), edge.to_egui()),
+        egui::StrokeKind::Inside,
+    );
+    if focused {
+        tasty_ui_widgets::paint_field_ring(
+            ui.painter(),
+            th,
+            resp.rect,
+            radius,
+            th.input_border_focus().to_egui(),
+        );
+    }
+    resp.changed()
+}
+
+/// inline passkey 값 칸의 TextEdit id 소금.
+const PASSKEY_VALUE_ID: &str = "remote_tool_passkey_value";
+
 fn text_row(
     ui: &mut egui::Ui,
     th: &Theme,
@@ -2100,6 +2137,54 @@ pub(crate) fn accept_detection(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// inline passkey 값 칸은 Input 칸 모양이다: 쉴 때 input-bg 채움과 input-border 테두리, 포커스면
+    /// input-border-focus 테두리.
+    #[test]
+    fn the_inline_passkey_value_takes_the_input_field_look() {
+        for th in crate::painted_test_support::themes() {
+            assert_ne!(th.input_border(), th.input_border_focus());
+            for focus in [false, true] {
+                let ctx = egui::Context::default();
+                let mut first = true;
+                let p = crate::painted_test_support::paint_ctx(&ctx, |ctx| {
+                    egui::CentralPanel::default().show(ctx, |ui| {
+                        if focus && first {
+                            let id = ui.make_persistent_id(PASSKEY_VALUE_ID);
+                            ui.memory_mut(|m| m.request_focus(id));
+                        }
+                        first = false;
+                        let mut value = String::new();
+                        passkey_value_area(ui, &th, &mut value);
+                    });
+                });
+                let bed = p
+                    .shapes
+                    .iter()
+                    .find_map(|s| match s {
+                        egui::Shape::Rect(r) if r.fill == th.input_bg().to_egui() => Some(r.rect),
+                        _ => None,
+                    })
+                    .expect("input-bg 채움");
+                let edges: Vec<_> = p
+                    .stroked_rects()
+                    .into_iter()
+                    .filter(|(r, _, _)| *r == bed)
+                    .map(|(_, _, c)| c)
+                    .collect();
+                let want = if focus {
+                    th.input_border_focus()
+                } else {
+                    th.input_border()
+                };
+                assert_eq!(
+                    edges.first(),
+                    Some(&want.to_egui()),
+                    "focus={focus}: {edges:?}"
+                );
+            }
+        }
+    }
 
     fn prof(name: &str, kind: &str) -> RemoteProfile {
         RemoteProfile::new(name, kind)
