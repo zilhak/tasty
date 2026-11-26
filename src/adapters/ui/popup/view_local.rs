@@ -52,6 +52,8 @@ impl PopupManager {
                 PopupAction::ReleaseFocus | PopupAction::None => {}
             }
         }
+        // 이 패스의 닫기를 모두 적용한 뒤 창마다 한 번: 닫힌 인스턴스의 egui 포커스를 놓고 창 하한을 등록한다.
+        self.finish_pass_focus(ctx);
         ViewClosed(self.take_closed_queue())
     }
 }

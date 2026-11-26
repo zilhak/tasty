@@ -653,8 +653,8 @@ fn panel_pass(
     })
 }
 
-/// 충돌 확인을 열고 L2 사이드바 필터 입력칸에 egui 포커스를 준다. 충돌 질문은 창을 덮으므로 포커스 기록이 밖이어도
-/// 패스 시작 키 주인은 충돌 질문이다(`window_uncovered`).
+/// 충돌 확인을 열고 L2 사이드바 필터 입력칸에 egui 포커스를 준다. 충돌 질문은 창을 덮으므로 패스 시작 키 주인은 충돌
+/// 질문이다(`window_uncovered`). 덮인 필터는 창 하한(`PopupManager::window_cover_floor`) 아래라 그 포커스를 놓는다.
 fn conflict_with_outside_focus(
     ctx: &egui::Context,
     p: &mut Panel,
@@ -676,11 +676,12 @@ fn conflict_with_outside_focus(
     );
     ctx.memory_mut(|m| m.request_focus(filter));
     drop(panel_pass(ctx, p, st, raw()));
-    assert_eq!(focused(ctx), Some(filter));
     assert_eq!(
-        WindowFocusRecord::read(ctx).layer().map(|l| l.order),
-        Some(egui::Order::Background)
+        focused(ctx),
+        None,
+        "the covered filter gives up the egui focus"
     );
+    assert_eq!(WindowFocusRecord::read(ctx).layer().map(|l| l.order), None);
     assert_eq!(
         next_owner(ctx, st),
         Some(conflict_instance(st)),
@@ -748,8 +749,8 @@ fn a_discarded_pass_keeps_the_covering_conflict_the_owner() {
     assert_eq!(out.platform_output.num_completed_passes, 2);
     assert_eq!(
         WindowFocusRecord::read(&ctx).layer().map(|l| l.order),
-        Some(egui::Order::Background),
-        "the record after the return is the outside input"
+        None,
+        "the record after the return holds no covered widget"
     );
     assert_eq!(next_owner(&ctx, &st), Some(conflict_instance(&st)));
     drop(panel_pass(&ctx, &mut p, &mut st, raw()));
@@ -1689,7 +1690,7 @@ fn chooser_pass(
     (owned, out)
 }
 
-/// T-F3-1: Given 설정 창 저장 모드 chooser 와 egui 포커스를 가진 창 위젯 입력칸(그 패스 W1 키 주인 없음), When 별도
+/// T-F3-1: Given 설정 창 저장 모드 chooser 와 포커스를 준 창 위젯 입력칸(덮여서 포커스를 놓는다), When 별도
 /// 창 사건 입구로 chooser 의 이름 입력칸을 누르면, Then 누름이 사건 시점에 포커스를 옮겨 그 패스부터 chooser 가 키
 /// 주인이고, 누른 위젯이 이름 입력칸이며, 패스 끝 egui 포커스가 그 입력칸에 남는다. 뗀 다음 패스에도 그대로다.
 #[test]
@@ -1715,7 +1716,11 @@ fn a_press_on_the_save_name_keeps_its_focus() {
     let name_id = click_widget_at(&ctx, name).expect("이름 입력칸");
     ctx.memory_mut(|m| m.request_focus(outside_id));
     drop(chooser_pass(&mut h, &mut st, &mut outside));
-    assert_eq!(focused(&ctx), Some(outside_id), "창 위젯이 포커스를 가진다");
+    assert_eq!(
+        focused(&ctx),
+        None,
+        "덮인 창 위젯은 창 하한 아래라 포커스를 놓는다"
+    );
     assert!(
         next_owner(&ctx, &st).is_some(),
         "창을 덮은 chooser 가 누르기 전부터 키 주인이다"
@@ -1771,3 +1776,6 @@ fn alt_up_in_the_separate_folder_chooser_goes_to_the_parent() {
         "Alt+Up 이 부모 폴더로 올라간다"
     );
 }
+
+#[path = "covered_focus_tests.rs"]
+mod covered_focus;

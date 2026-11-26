@@ -934,6 +934,8 @@ pub struct PopupManager {
     focus: Option<focus::PopupNode>,
     /// 별도 창의 몫별 노드와 패스 뒤 egui 포커스 기록(`window_segments.rs`). 메인 창은 쓰지 않는다.
     window: window_segments::WindowSegments,
+    /// 이번 패스에 닫힌 인스턴스. 패스 끝(`finish_pass_focus`)이 그 레이어의 egui 포커스를 놓고 비운다.
+    closed_this_pass: Vec<(PopupId, PopupInstanceId)>,
 }
 
 impl PopupManager {
@@ -948,6 +950,7 @@ impl PopupManager {
             keys: Default::default(),
             focus: None,
             window: Default::default(),
+            closed_this_pass: Vec::new(),
         }
     }
 
@@ -1213,6 +1216,7 @@ impl PopupManager {
         p.reset_closed();
         let id = closed.id;
         let iid = closed.instance;
+        self.closed_this_pass.push((id, iid));
         if record {
             self.closed_queue.push(closed);
         }
@@ -1543,6 +1547,7 @@ mod tests {
             keys: Default::default(),
             focus,
             window: Default::default(),
+            closed_this_pass: Vec::new(),
         }
     }
 

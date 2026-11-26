@@ -182,6 +182,48 @@ impl PopupManager {
             .map(|p| (p.instance, p.placement_scope(), p.z_seq))
     }
 
+    /// 창 전체를 덮는 host 덮개 가운데 맨 위(z 최대)의 덮음 막이 레이어. 창의 egui 하한이다: 그 아래 레이어의 위젯은
+    /// 포커스를 얻지 못하고 그릴 때 포커스를 놓는다. 포커스 노드를 출발로 찾지 않는다(정규화로 덮개가 포커스가 되면
+    /// 그 위를 찾아 덮개가 빠진다). 막이 위의 팝업 Area와 등록 자식은 하한 위다.
+    pub(crate) fn window_cover_floor(&self) -> Option<egui::LayerId> {
+        self.covering_nodes()
+            .filter(|(_, scope, _)| matches!(scope, PopupScope::Window))
+            .max_by_key(|(_, _, z)| *z)
+            .and_then(|(iid, _, _)| self.instance(iid))
+            .map(|p| {
+                let block =
+                    super::draw::area_id_of(p.id, p.instance).with(super::draw::COVER_BLOCK);
+                egui::LayerId::new(egui::Order::Foreground, block)
+            })
+    }
+
+    /// 창마다 패스 끝 한 곳(그 패스의 닫기를 모두 적용한 뒤, `end_pass` 전)에서 부른다. 이번 패스에 닫힌 인스턴스
+    /// (Area와 등록 자식)의 레이어에 egui 포커스가 있으면 놓고, 창 하한(`window_cover_floor`)이 있으면 egui에
+    /// 등록한다. egui는 등록한 다음 패스부터 하한을 적용하고, 등록이 없는 패스 뒤에는 하한을 비운다. 포커스 위젯의
+    /// 레이어는 위젯 기록에서 읽는다. `Context::read_response`는 그 패스에 다른 곳을 누른 포커스 위젯의 포커스를 놓으므로
+    /// 쓰지 않는다.
+    pub(crate) fn finish_pass_focus(&mut self, ctx: &egui::Context) {
+        let closed = std::mem::take(&mut self.closed_this_pass);
+        if let Some(focused) = ctx.memory(|m| m.focused())
+            && let Some(layer) = ctx.viewport(|v| {
+                v.this_pass
+                    .widgets
+                    .get(focused)
+                    .or_else(|| v.prev_pass.widgets.get(focused))
+                    .map(|w| w.layer_id.id)
+            })
+            && closed.iter().any(|(id, iid)| {
+                super::draw::area_id_of(id, *iid) == layer
+                    || super::child_popup_ids::child_layer_ids(ctx, *iid).contains(&layer)
+            })
+        {
+            ctx.memory_mut(|m| m.surrender_focus(focused));
+        }
+        if let Some(floor) = self.window_cover_floor() {
+            ctx.memory_mut(|m| m.set_modal_layer(floor));
+        }
+    }
+
     /// 범위를 덮지 않는 보이는 host 인스턴스와 그 배치 범위·순번·Esc 선언. 범위 노드에 붙는 팝업의 원천이다
     /// (`key_nodes::window_key_path`). 부모 버튼이 대표하는(그리지 않는) 자식은 빠진다.
     pub(crate) fn attached_nodes(

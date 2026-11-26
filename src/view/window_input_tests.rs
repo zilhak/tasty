@@ -257,6 +257,11 @@ impl Harness {
         self.queue.push(button(pos, true));
     }
 
+    /// 포인터만 옮긴다(끊지 않는 사건).
+    pub(crate) fn hover(&mut self, pos: egui::Pos2) {
+        self.queue.push(egui::Event::PointerMoved(pos));
+    }
+
     /// 누른 버튼을 뗀다(끊지 않는 사건).
     pub(crate) fn release(&mut self, pos: egui::Pos2) {
         self.queue.push(button(pos, false));
@@ -657,15 +662,16 @@ fn covered_widget() -> (Harness, TestWindow) {
     (h, w)
 }
 
-/// Given 창 위젯 w 에 egui 포커스가 남은 채 창을 덮는 팝업 C 가 포커스를 가지고 열렸다, When 누름 없이 x 를 치면,
-/// Then 포커스 기록이 덮인 w 여도 덮인 노드는 노드가 될 수 없으므로 C 가 받고 w 는 그 키를 보지 않는다.
+/// Given 창 위젯 w 에 egui 포커스가 있던 채 창을 덮는 팝업 C 가 포커스를 가지고 열렸다, When 누름 없이 x 를 치면,
+/// Then 덮인 노드는 노드가 될 수 없으므로 C 가 받고 w 는 그 키를 보지 않는다. 덮인 w 는 창 하한
+/// (`PopupManager::window_cover_floor`) 아래라 egui 포커스를 놓는다.
 #[test]
 fn a_key_over_a_covering_popup_does_not_reach_the_widget_holding_the_old_focus() {
     let (mut h, mut w) = covered_widget();
     assert_eq!(
         h.ctx.memory(|m| m.focused()),
-        Some(egui::Id::new("w")),
-        "w keeps the egui focus"
+        None,
+        "the covered w gives up the egui focus"
     );
     h.type_x(&mut w);
     let seen = h.drain(&mut w);
@@ -791,6 +797,56 @@ fn a_press_on_the_cover_makes_the_covering_popup_the_event_node() {
     );
 }
 
+/// T-TAB-9: Given 창을 덮는 팝업 C 가 그려졌다, When 창 하한을 고르면, Then 하한은 창 위젯 위의 맨 위 덮개
+/// (`window_uncovered(None)`)인 C 의 덮음 막이 레이어다. 덮인 창 위젯 자리의 레이어가 그 하한이다.
+#[test]
+fn the_window_cover_floor_matches_the_cover_above_the_window_widget() {
+    let (h, w) = covered_widget();
+    let c = w
+        .popups
+        .instances_of(crate::view::settings::ui::KEYBINDING_CONFLICT_POPUP_ID)
+        .next()
+        .expect("C")
+        .instance;
+    assert_eq!(w.popups.window_uncovered(None), Some(c));
+    let floor = w.popups.window_cover_floor().expect("a floor");
+    assert_eq!(
+        h.ctx.layer_id_at(w.center("w")),
+        Some(floor),
+        "the floor is the cover block over the window widget"
+    );
+}
+
+/// T-TAB-1b: Given 창 위젯 w 와 포커스가 없는 창, When 누름 한 번이 그리기 중에 창을 덮는 팝업 C 를 열고 바로 뒤에 Tab
+/// 이 오면, Then 그 Tab 은 덮인 w 에 포커스를 주지 않는다.
+#[test]
+fn tab_in_the_segment_right_after_the_opening_press_stays_off_the_covered_window() {
+    let mut h = Harness::new();
+    let mut w = TestWindow::new();
+    w.popups
+        .register_def(&crate::view::settings::ui::keybinding_conflict_def(), 1.0);
+    h.drain(&mut w);
+    assert_eq!(h.ctx.memory(|m| m.focused()), None);
+    w.open_while_drawing = Some(crate::view::settings::ui::KEYBINDING_CONFLICT_POPUP_ID);
+    let blank = egui::pos2(700.0, 560.0);
+    h.click(&mut w, blank);
+    h.key(&mut w, egui::Key::Tab, None);
+    let mut focus = Vec::new();
+    while h.has_input() {
+        drop(h.pass(&mut w));
+        focus.push(h.ctx.memory(|m| m.focused()));
+    }
+    assert!(
+        w.popups
+            .is_open(crate::view::settings::ui::KEYBINDING_CONFLICT_POPUP_ID),
+        "the press opened C"
+    );
+    assert!(
+        focus.iter().all(|f| *f != Some(egui::Id::new("w"))),
+        "the covered w never takes the focus: {focus:?}"
+    );
+}
+
 /// debug 주입 대역: egui 입력 큐와 끊은 자리는 하네스 것이다. 보류 줄 검사는 주입 입구 맨 앞
 /// (`enter_window_debug`)이 이미 했으므로 넣은 사건은 큐 끝에 든다. 클립보드는 비어 있다.
 #[cfg(debug_assertions)]
@@ -913,12 +969,12 @@ impl Harness {
     }
 }
 
-/// Given 배경 TextEdit w 가 egui 포커스를 가진 채 창을 덮는 팝업(Keys)이 열린 창, When 그 팝업이 쓰지 않는 Ctrl+V 를
-/// 치면, Then 받는 egui 노드가 없어 편집 판정(클립보드 읽기·보류)을 시작하지 않는다.
+/// Given 배경 TextEdit w 에 egui 포커스가 있던 채 창을 덮는 팝업(Keys)이 열린 창(덮인 w 는 포커스를 놓는다), When 그
+/// 팝업이 쓰지 않는 Ctrl+V 를 치면, Then 받는 egui 노드가 없어 편집 판정(클립보드 읽기·보류)을 시작하지 않는다.
 #[test]
 fn a_paste_under_a_covering_popup_starts_no_edit_in_the_background_field() {
     let (mut h, mut w) = covered_widget();
-    assert_eq!(h.ctx.memory(|m| m.focused()), Some(egui::Id::new("w")));
+    assert_eq!(h.ctx.memory(|m| m.focused()), None);
     assert!(!h.paste_takes_the_edit_judgement(&mut w));
 }
 

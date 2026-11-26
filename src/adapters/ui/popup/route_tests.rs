@@ -471,3 +471,7 @@ mod popup_decode;
 #[cfg(feature = "gui")]
 #[path = "scene_key_owner_tests.rs"]
 mod scene_keys;
+
+#[cfg(feature = "gui")]
+#[path = "cover_floor_tests.rs"]
+mod cover_floor;

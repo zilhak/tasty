@@ -244,8 +244,8 @@ fn open_folder(chooser: &mut WindowFileChooser) {
     ));
 }
 
-/// Given 파일 선택 창이 열리고 포커스가 수정한 입력칸, When Enter, Then 창을 덮은 파일 선택 창이 키 주인이라 surface
-/// 설정은 받지 않는다.
+/// Given 파일 선택 창이 열리고 수정한 입력칸에 포커스를 주었다(덮인 입력칸은 창 하한 아래라 포커스를 놓는다), When
+/// Enter, Then 창을 덮은 파일 선택 창이 키 주인이라 surface 설정은 받지 않는다.
 #[test]
 fn surface_settings_ignore_enter_over_an_outside_focus_under_the_chooser() {
     crate::i18n::init("en");
@@ -259,8 +259,8 @@ fn surface_settings_ignore_enter_over_an_outside_focus_under_the_chooser() {
     drop(preset_pass(&ctx, &mut cfg, &mut chooser, vec![]));
     assert_eq!(
         ctx.memory(|m| m.focused()),
-        Some(input),
-        "the input keeps the egui focus"
+        None,
+        "the covered input gives up the egui focus"
     );
     assert!(
         next_owner(&ctx, &chooser).is_some(),

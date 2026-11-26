@@ -541,3 +541,49 @@ fn the_selected_segment_tab_is_raised_with_a_border_strong_edge() {
         );
     }
 }
+
+/// 별도 창 사건 입구 하네스로 플러그인 창 전체를 남은 몫이 없을 때까지 그리고 빈 패스 하나를 더 그린다.
+fn drain_window(
+    h: &mut crate::view::window_input::tests::Harness,
+    snapshot: &PluginsSnapshot,
+    ui_state: &mut PluginsUiState,
+    actions: &mut Vec<PluginsAction>,
+) {
+    loop {
+        let more = h.has_input();
+        drop(h.run_pass(ui_state, |ctx, pass| {
+            draw_plugins_panel(ctx, snapshot, pass.state, actions);
+        }));
+        if !more {
+            return;
+        }
+    }
+}
+
+/// T-TAB-4: Given 플러그인 창을 덮은 폴더 선택 창이 이미 그려졌다, When Tab 을 치면, Then 포커스는 덮인 플러그인 창
+/// 위젯(Background)이 아니라 선택 창 안으로 간다.
+#[test]
+fn tab_under_the_folder_chooser_keeps_the_plugins_window_unfocused() {
+    crate::i18n::init("en");
+    let (snapshot, mut state) = confirming(PluginsTab::List);
+    let mut h = crate::view::window_input::tests::Harness::new();
+    let mut actions = Vec::new();
+    open_chooser(&mut state);
+    drain_window(&mut h, &snapshot, &mut state, &mut actions);
+    drain_window(&mut h, &snapshot, &mut state, &mut actions);
+    assert!(
+        next_owner(&h.ctx, &state).is_some(),
+        "the chooser owns the keys"
+    );
+    h.key(&mut state, egui::Key::Tab, None);
+    drain_window(&mut h, &snapshot, &mut state, &mut actions);
+    let order = h.ctx.memory(|m| m.focused()).and_then(|id| {
+        h.ctx
+            .viewport(|v| v.prev_pass.widgets.get(id).map(|w| w.layer_id.order))
+    });
+    assert_eq!(
+        order,
+        Some(egui::Order::Foreground),
+        "Tab moves into the chooser, not to a covered plugins widget"
+    );
+}
