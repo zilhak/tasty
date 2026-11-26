@@ -144,6 +144,7 @@ fn a_listing_reply_reaches_only_the_picker_that_asked() {
             local_query: None,
             entries: Vec::new(),
             selected: Vec::new(),
+            row_focus: Default::default(),
             result: None,
             requester: None,
             filters: Vec::new(),

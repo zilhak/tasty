@@ -164,16 +164,19 @@ fn folder_key_up(
     let th = crate::theme::theme();
     let entries = entries();
     let selected: Vec<String> = Vec::new();
+    // `/w`: 상위 폴더가 있어야 Alt+↑ 가 NavigateUp 을 낸다.
+    let crumbs = super::layout_tests::deep_crumbs(2, "w");
     let props = FilePickerProps {
         theme: &th,
         remote_host: None,
-        crumbs: &[],
+        crumbs: &crumbs,
         state: FpViewState::Loaded,
         entries: &entries,
         selected: &selected,
         focus_row: None,
         ring: false,
         up_enabled,
+        scroll_to: None,
         mode,
         title_label: "",
         name_field_label: "",
@@ -224,7 +227,7 @@ fn folder_key_up(
                     &crate::adapters::ui::input::edit_key::EditBindings::default(),
                 )
                 .with_window_route(true);
-                action = folder::keyboard(ui, &props, &mut keys);
+                action = draw_file_picker_view(ui, &props, &mut keys).actions.pop();
             });
         },
     ));
@@ -281,13 +284,13 @@ fn shift_enter_opens_the_folder() {
     );
 }
 
-/// T-9b-4: Given 일반 파일 모드 목록, When Alt+↑ 를 누르면, Then 아무 동작도 없다.
+/// T-9b-4: Given 열기 모드 목록, When Alt+↑ 를 누르면, Then 상위 폴더로 간다(spec: 세 모드 모두).
 #[test]
-fn alt_up_in_file_mode_does_nothing() {
+fn alt_up_in_open_mode_goes_to_the_parent_folder() {
     let open = FilePickerMode::Open { selection_text: "" };
     assert_eq!(
         folder_key(open, false, egui::Key::ArrowUp, egui::Modifiers::ALT),
-        None
+        Some(FilePickerAction::NavigateUp)
     );
 }
 

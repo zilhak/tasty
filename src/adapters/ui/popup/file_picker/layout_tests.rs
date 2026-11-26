@@ -161,6 +161,51 @@ pub(super) fn painted_frames_themed(
     )
 }
 
+/// 글자를 비운 props(경로·필터 없음, 목록 Loaded). 키 몫 판정처럼 그리지 않는 시험이 쓴다.
+pub(super) fn bare_props<'a>(
+    th: &'a Theme,
+    entries: &'a [FilePickerEntryView],
+    selected: &'a [String],
+    mode: FilePickerMode<'a>,
+) -> FilePickerProps<'a> {
+    FilePickerProps {
+        theme: th,
+        remote_host: None,
+        crumbs: &[],
+        state: FpViewState::Loaded,
+        entries,
+        selected,
+        focus_row: None,
+        ring: false,
+        up_enabled: true,
+        scroll_to: None,
+        mode,
+        title_label: "",
+        name_field_label: "",
+        name_placeholder: "",
+        cancel_label: "",
+        confirm_label: "",
+        overwrite_warning: "",
+        hidden_folders_one: "",
+        hidden_folders_many: "",
+        folder_not_save_target: "",
+        folder_open_enters: "",
+        empty_label: "",
+        loading_label: "",
+        loading_body_local: "",
+        loading_body_remote: "",
+        error_perm_title: "",
+        error_perm_retry: "",
+        error_conn_title: "",
+        error_conn_reconnect: "",
+        col_name: "",
+        col_size: "",
+        col_modified: "",
+        filters: &[],
+        filter_showing: "",
+    }
+}
+
 /// [`painted_frames_themed`] 에서 그리기 전에 `tweak` 으로 props 를 고친다(행 포커스·링).
 pub(super) fn painted_frames_tweaked(
     th: &Theme,
@@ -189,6 +234,7 @@ pub(super) fn painted_frames_tweaked(
         focus_row: None,
         ring: false,
         up_enabled: true,
+        scroll_to: None,
         mode,
         title_label: "title",
         name_field_label: "File name",

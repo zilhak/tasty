@@ -378,13 +378,13 @@ fn a_lost_session_ignores_navigate_up() {
     let d = file_picker::instances::picker_of_mut(&mut f.payload).expect("picker payload");
     d.mirror_ws_id = Some(f.ws + 1000);
     assert!(matches!(
-        super::apply_action(d, &mut f.state, &read, super::FilePickerAction::NavigateUp),
+        super::apply::apply_action(d, &mut f.state, &read, super::FilePickerAction::NavigateUp),
         crate::adapters::ui::popup::PopupAction::None
     ));
     assert_eq!(d.current_dir, "/srv/app", "세션 소실: 그대로");
     d.mirror_ws_id = Some(f.ws);
     assert!(matches!(
-        super::apply_action(d, &mut f.state, &read, super::FilePickerAction::NavigateUp),
+        super::apply::apply_action(d, &mut f.state, &read, super::FilePickerAction::NavigateUp),
         crate::adapters::ui::popup::PopupAction::None
     ));
     assert_eq!(d.current_dir, "/srv", "세션 있음: 상위로");

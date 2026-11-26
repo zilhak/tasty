@@ -322,6 +322,7 @@ fn child_picker(owner: u64) -> crate::state::FilePickerData {
         local_query: None,
         entries: Vec::new(),
         selected: Vec::new(),
+        row_focus: Default::default(),
         result: None,
         requester: Some(crate::state::FilePickerRequester {
             plugin_id: PLUGIN.to_string(),

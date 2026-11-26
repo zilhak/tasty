@@ -16,6 +16,7 @@ fn data() -> crate::state::FilePickerData {
         local_query: None,
         entries: vec![],
         selected: vec![],
+        row_focus: Default::default(),
         result: None,
         requester: None,
         filters: vec![],

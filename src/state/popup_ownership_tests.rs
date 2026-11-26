@@ -29,6 +29,7 @@ fn state_with_picker(owner: Option<u64>) -> RequestContext {
         local_query: None,
         entries: Vec::new(),
         selected: Vec::new(),
+        row_focus: Default::default(),
         result: None,
         requester: owner.map(|iid| FilePickerRequester {
             plugin_id: "com.example.any".to_string(),

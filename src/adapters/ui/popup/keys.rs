@@ -334,22 +334,70 @@ impl PopupKeys {
         last
     }
 
-    /// 노드 키맵 읽기: `modifiers`+`key` 누름 하나를 egui `consume_key`와 같은 매처(`matches_logically`, 패턴에
-    /// 없는 Shift·Alt 는 허용)로 소비한다. 소비 집합 판정을 거치지 않는다. 폴더 키처럼 집합 밖 조합(Alt+↑)과 수식키를
-    /// 너그럽게 받는 조작이 그 노드의 키맵으로 쓴다. 소비했으면 패턴을 기록한다.
-    pub(crate) fn consume_keymap_key(
+    /// 노드 키맵 읽기: 키 누름을 도착 순서대로 하나씩 `classify` 로 노드 조작에 맞추고, `own` 이 참인 누름만 지운다.
+    /// 지운 Space 누름 바로 뒤의 글자 사건 " " 도 지운다(그 누름이 만든 글자다). 다른 글자 사건은 그 누름과 무관할 수
+    /// 있어(키로 바뀌지 않은 글자) 남긴다. 지운 조작을 도착 순서대로 돌려준다. 소비 집합 판정을 거치지 않는다. `own` 이
+    /// 거짓인 누름은 입력에 남아 egui 위젯이 읽는다.
+    pub(crate) fn take_keymap_presses<T: Copy>(
         &mut self,
-        modifiers: egui::Modifiers,
-        key: egui::Key,
-    ) -> bool {
+        classify: impl Fn(egui::Modifiers, egui::Key) -> Option<T>,
+        mut own: impl FnMut(T) -> bool,
+    ) -> Vec<T> {
         if !self.receives {
-            return false;
+            return Vec::new();
         }
-        let hit = self.ctx.input_mut(|i| i.consume_key(modifiers, key));
-        if hit {
-            self.consumed.push(ConsumedKey::Key { key, modifiers });
-        }
-        hit
+        let mut taken = Vec::new();
+        let mut consumed = Vec::new();
+        self.ctx.input_mut(|i| {
+            let mut n = 0;
+            while n < i.events.len() {
+                let hit = match &i.events[n] {
+                    egui::Event::Key {
+                        key,
+                        pressed: true,
+                        modifiers,
+                        ..
+                    } => classify(*modifiers, *key)
+                        .filter(|t| own(*t))
+                        .map(|t| (t, *key, *modifiers)),
+                    _ => None,
+                };
+                let Some((t, key, modifiers)) = hit else {
+                    n += 1;
+                    continue;
+                };
+                i.events.remove(n);
+                if key == egui::Key::Space
+                    && matches!(i.events.get(n), Some(egui::Event::Text(text)) if text == " ")
+                {
+                    i.events.remove(n);
+                }
+                taken.push(t);
+                consumed.push(ConsumedKey::Key { key, modifiers });
+            }
+        });
+        self.consumed.extend(consumed);
+        taken
+    }
+
+    /// 입력에 화살표 누름이 남아 있는지. 노드가 키맵 누름을 가져간 뒤 egui 위젯 몫으로 남은 화살표가 있는지 본다.
+    pub(crate) fn has_arrow_press(&self) -> bool {
+        self.receives
+            && self.ctx.input(|i| {
+                i.events.iter().any(|e| {
+                    matches!(
+                        e,
+                        egui::Event::Key {
+                            key: egui::Key::ArrowUp
+                                | egui::Key::ArrowDown
+                                | egui::Key::ArrowLeft
+                                | egui::Key::ArrowRight,
+                            pressed: true,
+                            ..
+                        }
+                    )
+                })
+            })
     }
 
     /// 노드 키맵 읽기: 설정 바인딩 목록(`bindings`) 가운데 하나에 맞는 누름을 단축키 매처(`consume_binding_egui`)로

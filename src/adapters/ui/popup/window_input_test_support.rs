@@ -421,6 +421,16 @@ pub(crate) fn layer_frame(
     engine: &crate::runtime::engine_read::EngineRead<'_>,
     events: Vec<egui::Event>,
 ) -> Vec<(String, egui::Rect)> {
+    painted_texts(&layer_pass(ctx, state, engine, events))
+}
+
+/// [`layer_frame`] 과 같은 한 프레임의 출력 전체. 칠한 도형을 볼 때 쓴다.
+pub(crate) fn layer_pass(
+    ctx: &egui::Context,
+    state: &mut RequestContext,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
+    events: Vec<egui::Event>,
+) -> egui::FullOutput {
     let raw = egui::RawInput {
         screen_rect: Some(egui::Rect::from_min_size(
             egui::Pos2::ZERO,
@@ -436,7 +446,7 @@ pub(crate) fn layer_frame(
         crate::adapters::ui::draw_popups(ctx, state, engine, &[], layer_screen(), 1.0);
     });
     state.close_input_pass(ctx);
-    painted_texts(&out)
+    out
 }
 
 /// 한 프레임 출력에 칠한 글자와 그 영역.

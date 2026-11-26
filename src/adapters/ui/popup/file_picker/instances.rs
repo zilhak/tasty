@@ -176,7 +176,7 @@ pub(crate) fn apply_to_current(
     let mut payload =
         std::mem::take(&mut state.popups.instance_mut(iid).expect("instance").payload);
     let data = picker_of_mut(&mut payload).expect("picker data");
-    let action = super::apply_action(data, state, engine, action);
+    let action = super::apply::apply_action(data, state, engine, action);
     state.popups.instance_mut(iid).expect("instance").payload = payload;
     action
 }

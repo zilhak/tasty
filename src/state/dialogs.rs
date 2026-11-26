@@ -397,6 +397,37 @@ pub(crate) struct FilePickerRequester {
     pub(crate) origin_surface_id: Option<u32>,
 }
 
+/// 파일 피커 목록의 행 포커스. 키보드가 목록에서 서 있는 행과 그 링 표시, 다음 프레임에 걸 스크롤 위치다.
+/// 메인 피커(`FilePickerData`)와 별도 창 선택기가 같이 쓴다. 규칙은 tasty-page spec `row-focus-and-list-keys`.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub(crate) struct FpRowFocus {
+    /// 행 포커스 이름(현재 디렉터리 기준).
+    pub(crate) row: Option<String>,
+    /// 링을 보인다. 행 키가 켜고 목록 클릭이 끈다.
+    pub(crate) ring: bool,
+    /// 다음 프레임 목록 스크롤 위치. 그리면서 꺼낸다.
+    pub(crate) scroll_to: Option<f32>,
+}
+
+impl FpRowFocus {
+    /// 행 포커스를 `row` 에 두고 링 표시를 정한다. `scroll` 이 있으면 다음 프레임에 그 위치로 스크롤한다.
+    pub(crate) fn place(&mut self, row: String, ring: bool, scroll: Option<f32>) {
+        self.row = Some(row);
+        self.ring = ring;
+        if scroll.is_some() {
+            self.scroll_to = scroll;
+        }
+    }
+
+    /// 행 포커스가 있으면 링을 켜고 `scroll` 로 스크롤한다. 없으면 아무것도 하지 않는다.
+    pub(crate) fn show_ring(&mut self, scroll: f32) {
+        if self.row.is_some() {
+            self.ring = true;
+            self.scroll_to = Some(scroll);
+        }
+    }
+}
+
 /// 파일 피커의 탐색·선택 상태. 피커는 경로를 고르는 데서 끝나며 결과로 무엇을 할지 모른다.
 pub(crate) struct FilePickerData {
     /// None opens existing files; Some edits a single save name without writing.
@@ -420,6 +451,8 @@ pub(crate) struct FilePickerData {
     pub(crate) entries: Vec<crate::core::fs_list::DirEntryInfo>,
     /// 현재 디렉터리에서 선택한 이름. Select는 단일 선택으로 교체한다.
     pub(crate) selected: Vec<String>,
+    /// 행 포커스·링·예약 스크롤. 디렉터리를 옮기면 선택과 같이 지운다.
+    pub(crate) row_focus: FpRowFocus,
     /// Confirm/Cancel 결과. 피커가 닫힐 때 출력함으로 옮겨 App이 호출자에게 넘긴다.
     pub(crate) result: Option<FilePickerResult>,
     /// `Some` 이면 `file_picker.trigger` IPC 로 이 popup 을 연 plugin.

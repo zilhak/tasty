@@ -1,0 +1,158 @@
+//! 목록 키 spec(`row-focus-and-list-keys`, page fe45514) 중 탐색 뒤 지움 · 세션 소실 · 키 포커스 없는 링을 창 키 경로와
+//! 팝업 층 한 프레임의 도형으로 본다. 하네스는 [`super::list_keys_app_tests`] 의 것이다.
+use super::list_keys_app_tests::{App, load, open_picker, some, tree};
+use super::*;
+use crate::adapters::ui::popup::window_input_test_support::layer_pass;
+
+/// 팝업 층 한 프레임을 그려 행 포커스 링(행 높이 · `fp-row-focus-ring-width` · `radius-sm` 선)의 사각형을 모은다.
+fn rings(app: &mut App<'_>) -> Vec<egui::Rect> {
+    let th = crate::theme::theme();
+    let out = layer_pass(&app.ctx, app.state, app.read, Vec::new());
+    let row_h = row_height(&th).value();
+    out.shapes
+        .iter()
+        .filter_map(|c| match &c.shape {
+            egui::Shape::Rect(r)
+                if r.stroke.width == th.fp_row_focus_ring_width().value()
+                    && f32::from(r.corner_radius.nw) == th.corner_radius_sm.value()
+                    && (r.rect.height() - row_h).abs() < 0.5 =>
+            {
+                Some(r.rect)
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+/// 글리프 이미지(텍스처 사각형)의 사각형.
+fn glyph_rects(app: &mut App<'_>) -> Vec<egui::Rect> {
+    let out = layer_pass(&app.ctx, app.state, app.read, Vec::new());
+    out.shapes
+        .iter()
+        .filter_map(|c| match &c.shape {
+            egui::Shape::Rect(r) if r.brush.is_some() => Some(r.rect),
+            _ => None,
+        })
+        .collect()
+}
+
+fn same_dir(a: &str, b: &std::path::Path) -> bool {
+    std::path::Path::new(a).canonicalize().ok() == b.canonicalize().ok()
+}
+
+/// [Alt+↑ · Backspace] 세션 소실(출처 mirror 워크스페이스 없음)이면 두 키 모두 아무것도 하지 않는다. 세 모드가 같고,
+/// Up 버튼이 읽는 판정(`up_enabled`)을 같이 읽는다.
+#[test]
+fn a_lost_session_leaves_alt_up_and_backspace_idle() {
+    for mode in ["open", "save", "folder"] {
+        for (k, m) in [
+            (egui::Key::ArrowUp, egui::Modifiers::ALT),
+            (egui::Key::Backspace, egui::Modifiers::NONE),
+        ] {
+            let (mut state, mut session) = crate::state::tests::two_pane_fixture();
+            let dir = tree(&["a-dir"], &[]);
+            let inner = dir.path().join("a-dir");
+            open_picker(&mut state, &mut session.borrow_mut(), mode, &inner);
+            let engine = session.borrow_mut();
+            let read = engine.read();
+            let mut app = App::new(&mut state, &read);
+            instances::current_mut(app.state)
+                .expect("picker open")
+                .mirror_ws_id = Some(u32::MAX);
+            app.frame();
+            app.press_with(k, m);
+            assert!(
+                same_dir(&app.data().current_dir, &inner),
+                "{mode}: {m:?}+{k:?} 는 세션 소실 때 그대로"
+            );
+        }
+    }
+}
+
+/// [after navigation · shows] crumb 와 Refresh 는 선택 · 행 포커스 · 링을 지우고, 읽기가 끝난 뒤에도 다음 행 키 전까지
+/// 링이 없다. 다음 ↓ 는 첫 행부터 잡는다.
+#[test]
+fn a_crumb_refresh_and_finished_load_leave_no_selection_or_ring() {
+    let (mut state, mut session) = crate::state::tests::two_pane_fixture();
+    let dir = tree(&["a-dir"], &["b.txt"]);
+    let inner = dir.path().join("a-dir");
+    open_picker(&mut state, &mut session.borrow_mut(), "open", &inner);
+    let engine = session.borrow_mut();
+    let read = engine.read();
+    let mut app = App::new(&mut state, &read);
+    // 이미지 글리프(Refresh)를 찾으려면 로더가 있어야 한다.
+    egui_extras::install_image_loaders(&app.ctx);
+    app.frame();
+    app.frame();
+
+    app.press(egui::Key::ArrowDown);
+    assert_eq!(app.row_focus(), (some("inner.txt"), true), "↓");
+    assert_eq!(app.rings().len(), 1, "↓ 뒤 링");
+    // Refresh 는 경로 막대 맨 오른쪽 글리프다.
+    let crumb = app.at("a-dir");
+    let refresh = glyph_rects(&mut app)
+        .into_iter()
+        .filter(|r| (r.center().y - crumb.center().y).abs() < 2.0)
+        .max_by(|a, b| a.center().x.total_cmp(&b.center().x))
+        .expect("Refresh 글리프");
+    app.frame();
+    app.click(refresh.center());
+    assert!(app.selected().is_empty(), "Refresh: 선택 지움");
+    assert_eq!(app.row_focus(), (None, false), "Refresh: 행 포커스 지움");
+    load(app.state);
+    app.frame();
+    assert!(app.rings().is_empty(), "읽기가 끝나도 링 없음");
+    assert!(app.selected().is_empty(), "읽기가 끝나도 선택 없음");
+
+    app.press(egui::Key::ArrowDown);
+    assert_eq!(
+        app.row_focus(),
+        (some("inner.txt"), true),
+        "다음 ↓ 는 첫 행"
+    );
+    let parent = dir
+        .path()
+        .file_name()
+        .and_then(|n| n.to_str())
+        .expect("임시 폴더 이름")
+        .to_string();
+    let at = app.at(&parent);
+    app.frame();
+    app.click(at.center());
+    assert!(
+        same_dir(&app.data().current_dir, dir.path()),
+        "crumb 로 상위"
+    );
+    assert!(app.selected().is_empty(), "crumb: 선택 지움");
+    assert_eq!(app.row_focus(), (None, false), "crumb: 행 포커스 지움");
+    load(app.state);
+    app.frame();
+    assert!(app.rings().is_empty(), "crumb 읽기 뒤 링 없음");
+}
+
+/// [shows] 피커가 키 포커스를 잃으면 링을 그리지 않고 행 포커스는 남는다.
+#[test]
+fn the_ring_hides_while_the_picker_lacks_key_focus() {
+    let (mut state, mut session) = crate::state::tests::two_pane_fixture();
+    let dir = tree(&[], &["c.txt", "d.txt"]);
+    open_picker(&mut state, &mut session.borrow_mut(), "open", dir.path());
+    let engine = session.borrow_mut();
+    let read = engine.read();
+    let mut app = App::new(&mut state, &read);
+    app.press(egui::Key::ArrowDown);
+    let rings = app.rings();
+    assert_eq!(rings.len(), 1, "키 포커스가 있으면 링");
+    assert!(rings[0].contains(app.at("c.txt").center()), "c.txt 의 링");
+    // 다른 칸의 surface 로 키 포커스를 옮긴다. 피커는 출처 surface 의 팝업이라 열린 채 남는다.
+    assert!(app.state.focus_surface_by_id(app.read, 101));
+    app.frame();
+    assert!(instances::current(app.state).is_some(), "피커는 열려 있다");
+    assert!(app.rings().is_empty(), "키 포커스가 없으면 링 없음");
+    assert_eq!(app.row_focus(), (some("c.txt"), true), "행 포커스는 남는다");
+}
+
+impl App<'_> {
+    fn rings(&mut self) -> Vec<egui::Rect> {
+        rings(self)
+    }
+}

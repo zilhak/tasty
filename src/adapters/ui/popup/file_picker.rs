@@ -9,6 +9,7 @@
 
 #[cfg(test)]
 mod admission_tests;
+mod apply;
 #[cfg(test)]
 mod fold_tests;
 pub(crate) mod folder;
@@ -20,6 +21,7 @@ mod host_badge_tests;
 pub(crate) mod instances;
 #[cfg(test)]
 mod layout_tests;
+pub(crate) mod list_keys;
 mod location;
 mod path_bar;
 #[cfg(test)]
@@ -28,7 +30,11 @@ mod pure_return_tests;
 mod remote_open_tests;
 mod rows;
 
+#[cfg(test)]
+mod list_keys_app_tests;
 mod paths;
+#[cfg(test)]
+mod row_focus_app_tests;
 #[cfg(test)]
 mod row_ink_tests;
 pub(crate) mod save;
@@ -140,6 +146,8 @@ pub struct FilePickerProps<'a> {
     pub ring: bool,
     /// 상위 폴더로 갈 수 있다. Up 버튼과 상위 폴더 키가 이 값 하나를 읽는다([`up_enabled`]).
     pub up_enabled: bool,
+    /// 이번 프레임에 목록을 이 위치로 스크롤한다(행 키가 예약한 값).
+    pub scroll_to: Option<f32>,
     pub mode: FilePickerMode<'a>,
 
     // i18n — 호출처가 t() 로 미리 해상해서 전달(file_handler_picker.rs 관례).
@@ -193,7 +201,7 @@ pub(super) fn selected_folder<'a>(props: &'a FilePickerProps<'a>) -> Option<&'a 
 }
 
 /// View 가 발생시킨 사용자 의도. Wrapper 가 mutation 으로 변환.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum FilePickerAction {
     ClearSelection,
     None,
@@ -215,11 +223,30 @@ pub enum FilePickerAction {
     ConfirmEntry(String),
     /// 저장 모드 이름 칸이 편집됐다 — 새 전체 값.
     EditName(String),
+    /// 이동 키 — 행 포커스를 그 행으로 옮기고 링을 켠다. `select` 면 선택도 그 행이다(열기·폴더 모드).
+    /// `scroll` 은 그 행이 보이는 목록 스크롤 위치다.
+    FocusRow {
+        name: String,
+        select: bool,
+        scroll: f32,
+    },
+    /// Space — 행 포커스 행을 클릭처럼 고르고 링을 켠다(다시 눌러도 선택을 풀지 않는다).
+    PickRow {
+        name: String,
+        scroll: f32,
+    },
+    /// 제자리 행 키(파일에서 →) — 행 포커스가 있으면 링을 켠다.
+    ShowRing {
+        scroll: f32,
+    },
+    /// 열기·저장 모드 목록 빈 곳 클릭 — 선택·행 포커스는 두고 링만 숨긴다.
+    HideRing,
 }
 
 /// 뷰 한 프레임의 결과.
 pub struct FilePickerViewOut {
-    pub action: FilePickerAction,
+    /// 이번 프레임 조작. 그리기(클릭·편집) 다음 키 조작이 도착 순서대로 온다. 호출자가 순서대로 적용한다.
+    pub actions: Vec<FilePickerAction>,
     /// 뷰가 그린 헤더 줄. 셸 타이틀바가 없는 popup 은 이 사각형을 이동 손잡이로 보고한다.
     /// Esc 로 바로 닫히는 프레임에는 헤더를 그리지 않아 `Rect::NOTHING` 이다.
     pub header_rect: egui::Rect,
@@ -249,17 +276,58 @@ pub fn draw_file_picker_view(
     props: &FilePickerProps<'_>,
     keys: &mut super::keys::PopupKeys,
 ) -> FilePickerViewOut {
-    let ctx = ui.ctx().clone();
-    let nested_popup_open = ctx.memory(|m| m.any_popup_open());
+    // 피커 몫 키는 위젯을 그리기 전에 입력에서 뺀다. 그래서 이름 칸·버튼이 그 키를 보지 않는다.
+    let owned = list_keys::take_keys(ui, props, keys, list_keys::WidgetIds::load(ui));
     // 콘텐츠 영역은 창 가장자리까지 온다. 구역마다 배경·구분선은 전폭으로 두고
     // 내용은 `fp-*` 인셋 안에 그린다.
     let outer = ui.available_rect_before_wrap();
-    let mut out = draw_view_sections(ui, props, outer);
-    if !nested_popup_open && let Some(action) = folder::keyboard(ui, props, keys) {
-        out.action = action;
+    let (mut out, drawn) = draw_view_sections(ui, props, outer);
+    list_keys::WidgetIds {
+        focus_hold: list_keys::focus_to_hold(ui, &owned, keys),
+        ..drawn.ids
+    }
+    .store(ui);
+    // 그리기 조작이 실제로 디렉터리를 옮기거나 닫으면 그리기 전 목록으로 만든 키 조작은 버린다. 아니면 그 조작(클릭)이
+    // 정한 행 포커스에서 키를 이어 계산한다.
+    if !out.actions.iter().any(|a| settles(props, a)) {
+        let open = matches!(props.mode, FilePickerMode::Open { .. });
+        let focus_row = out.actions.iter().fold(props.focus_row, |row, a| match a {
+            FilePickerAction::Select(name) => Some(name.as_str()),
+            FilePickerAction::ConfirmEntry(name) if !open => Some(name.as_str()),
+            FilePickerAction::ClearSelection => None,
+            _ => row,
+        });
+        let keyed = list_keys::actions(props, focus_row, &owned, drawn.list_view);
+        // 누름을 입력에서 뺐으므로 egui 의 입력 기반 다시 그리기에 기대지 않고 바뀐 행 상태를 다음 프레임에 그린다.
+        if !keyed.is_empty() {
+            ui.ctx().request_repaint();
+        }
+        out.actions.extend(keyed);
     }
     ui.advance_cursor_after_rect(outer);
     out
+}
+
+/// 그리기 조작이 디렉터리를 옮기거나 피커를 닫는지. 이름이 아니라 실제 결과로 본다: 루트의 상위 폴더와 저장·폴더 모드
+/// 파일 더블클릭(고르기와 같다)은 옮기지 않는다.
+fn settles(props: &FilePickerProps<'_>, action: &FilePickerAction) -> bool {
+    match action {
+        FilePickerAction::Cancel
+        | FilePickerAction::Confirm
+        | FilePickerAction::NavigateInto(_)
+        | FilePickerAction::NavigateTo(_)
+        | FilePickerAction::Refresh => true,
+        FilePickerAction::NavigateUp => props.up_enabled && props.crumbs.len() > 1,
+        FilePickerAction::ConfirmEntry(_) => matches!(props.mode, FilePickerMode::Open { .. }),
+        _ => false,
+    }
+}
+
+/// 그린 뒤 키 읽기가 쓰는 값.
+struct Drawn {
+    ids: list_keys::WidgetIds,
+    /// 목록을 그렸으면 그 view.
+    list_view: Option<list_keys::ListView>,
 }
 
 /// 헤더 높이. 고정값이 없고 위아래 `fp-header-pad-y`와 sm IconButton으로 정해진다.
@@ -291,7 +359,7 @@ fn draw_view_sections(
     ui: &mut egui::Ui,
     props: &FilePickerProps<'_>,
     outer: egui::Rect,
-) -> FilePickerViewOut {
+) -> (FilePickerViewOut, Drawn) {
     let th = props.theme;
     let mut action = FilePickerAction::None;
 
@@ -361,7 +429,7 @@ fn draw_view_sections(
             ))
             .layout(egui::Layout::top_down(egui::Align::Min)),
     );
-    let hidden_crumbs_menu = path_bar::path_bar(&mut path_ui, props, &mut action);
+    let hidden_menu = path_bar::path_bar(&mut path_ui, props, &mut action);
     hline(ui, th, outer.x_range(), band.bottom());
 
     let rest = egui::Rect::from_min_max(egui::pos2(outer.left(), band.bottom()), outer.max);
@@ -380,7 +448,7 @@ fn draw_view_sections(
             .layout(egui::Layout::top_down(egui::Align::Min)),
     );
     body_ui.set_clip_rect(body_rect.intersect(ui.clip_rect()));
-    draw_body(
+    let list_view = draw_body(
         &mut body_ui,
         props,
         LogicalPx(body_rect.height()),
@@ -401,24 +469,37 @@ fn draw_view_sections(
             .layout(egui::Layout::top_down(egui::Align::Min)),
     );
     footer_ui.set_clip_rect(footer_rect.intersect(ui.clip_rect()));
-    footer::draw_footer(&mut footer_ui, props, &mut action);
+    let name_field = footer::draw_footer(&mut footer_ui, props, &mut action);
 
-    FilePickerViewOut {
-        action,
+    let out = FilePickerViewOut {
+        actions: match action {
+            FilePickerAction::None => Vec::new(),
+            a => vec![a],
+        },
         header_rect,
-        hidden_crumbs_menu,
-    }
+        hidden_crumbs_menu: hidden_menu.map(|m| m.popup),
+    };
+    let ids = list_keys::WidgetIds {
+        name_field,
+        menu_button: hidden_menu.map(|m| m.button),
+        menu: hidden_menu.map(|m| m.popup),
+        focus_hold: None,
+    };
+    (out, Drawn { ids, list_view })
 }
 
+/// 본문을 그리고, 목록을 그렸으면 그 view(스크롤 위치·보이는 높이·행 높이)를 돌려준다.
 fn draw_body(
     ui: &mut egui::Ui,
     props: &FilePickerProps<'_>,
     body_height: LogicalPx,
     action: &mut FilePickerAction,
-) {
+) -> Option<list_keys::ListView> {
     let th = props.theme;
     let mut body_rect = ui.available_rect_before_wrap();
     let mut row_hit = false;
+    let mut list_view = None;
+    let mut on_scrollbar = false;
     match &props.state {
         FpViewState::Loaded => {
             // 머리와 목록은 붙어 있다.
@@ -426,29 +507,45 @@ fn draw_body(
             // 목록은 머리를 그리고 남은 높이 안에서 스크롤한다. egui 가 남은 높이로 제한한다.
             list_head(ui, props);
             body_rect.min.y = ui.next_widget_position().y;
-            egui::ScrollArea::vertical()
+            let mut area = egui::ScrollArea::vertical()
                 .id_salt("file_picker_list")
                 .max_height(body_height.value())
                 .auto_shrink([false, true])
-                .drag_to_scroll(false)
-                .show(ui, |ui| {
-                    // 행은 붙어 있고 높이는 `row_height`가 모두 정한다.
-                    ui.spacing_mut().item_spacing.y = 0.0;
-                    for entry in props.entries {
-                        let hit = egui::Rect::from_min_size(
-                            ui.next_widget_position(),
-                            egui::vec2(ui.available_width(), row_height(th).value()),
-                        );
-                        row_hit |=
-                            ui.input(|i| i.pointer.interact_pos().is_some_and(|p| hit.contains(p)));
-                        if let Some(a) = rows::entry_row(ui, props, entry)
-                            && (matches!(action, FilePickerAction::None)
-                                || !matches!(a, FilePickerAction::Select(_)))
-                        {
-                            *action = a;
-                        }
-                    }
+                .drag_to_scroll(false);
+            if let Some(offset) = props.scroll_to {
+                area = area.vertical_scroll_offset(offset);
+            }
+            let row_h = row_height(th).value();
+            let scrolled = area.show_viewport(ui, |ui, viewport| {
+                // 온전히 보이는 행은 행을 배치한 이 viewport 로 센다(휠·스크롤바는 패스 끝에 반영된다).
+                list_view = Some(list_keys::ListView {
+                    offset: viewport.min.y,
+                    height: viewport.height(),
+                    row_h,
                 });
+                // 행은 붙어 있고 높이는 `row_height`가 모두 정한다.
+                ui.spacing_mut().item_spacing.y = 0.0;
+                for entry in props.entries {
+                    let hit = egui::Rect::from_min_size(
+                        ui.next_widget_position(),
+                        egui::vec2(ui.available_width(), row_height(th).value()),
+                    );
+                    row_hit |=
+                        ui.input(|i| i.pointer.interact_pos().is_some_and(|p| hit.contains(p)));
+                    if let Some(a) = rows::entry_row(ui, props, entry)
+                        && (matches!(action, FilePickerAction::None)
+                            || !matches!(a, FilePickerAction::Select(_)))
+                    {
+                        *action = a;
+                    }
+                }
+            });
+            // 빈 곳 클릭 판정은 스크롤바를 뺀다(목록이 짧아도 그 아래 빈 곳은 판정 안이다). 세로 바는 egui 가
+            // `id.with(1)` 로 입력을 등록하므로 그 응답에 포인터가 있으면 목록 클릭이 아니다.
+            on_scrollbar = ui
+                .ctx()
+                .read_response(scrolled.id.with(1_usize))
+                .is_some_and(|r| r.contains_pointer());
         }
         FpViewState::Loading => {
             let sub = if props.remote_host.is_some() {
@@ -486,14 +583,20 @@ fn draw_body(
             }
         }
     }
-    if matches!(props.mode, FilePickerMode::Folder { .. })
-        && matches!(action, FilePickerAction::None)
-        && !row_hit
+    // 목록 클릭이 조작을 내지 않았으면(빈 곳, 폴더 모드의 파일 행) 링을 숨긴다. 폴더 모드 빈 곳은 선택·행 포커스도
+    // 지운다. 열기·저장 빈 곳과 파일 행은 선택·행 포커스를 둔다.
+    if matches!(action, FilePickerAction::None)
+        && !on_scrollbar
         && ui.rect_contains_pointer(body_rect)
         && ui.input(|i| i.pointer.primary_clicked())
     {
-        *action = FilePickerAction::ClearSelection;
+        *action = if !row_hit && matches!(props.mode, FilePickerMode::Folder { .. }) {
+            FilePickerAction::ClearSelection
+        } else {
+            FilePickerAction::HideRing
+        };
     }
+    list_view
 }
 
 /// 목록 머리 높이. 위아래 `fp-list-head-pad-y`와 micro 글꼴 줄(`line-height-ui`)로 정해진다.
@@ -657,16 +760,11 @@ pub(super) fn up_enabled(
 }
 
 /// 상태에서 화면 입력을 만들고 사용자 동작을 반영한다.
-pub fn draw_file_picker(
-    ui: &mut egui::Ui,
-    state: &mut MainViewState,
+/// 원격 피커의 프레임마다 바뀌는 값: 세션 소실 · 호스트 글자 · 응답 시간 초과.
+fn refresh_remote(
+    data: &mut crate::state::FilePickerData,
     engine: &crate::runtime::engine_read::EngineRead<'_>,
-    cx: &mut crate::adapters::ui::popup::PopupCx<'_>,
-) -> PopupAction {
-    let Some(data) = instances::picker_of_mut(cx.payload) else {
-        return PopupAction::Close;
-    };
-
+) {
     // 원격 mirror 워크스페이스가 사라지면 연결 오류로 표시한다.
     // 세션의 disconnected 플래그는 이 호출부에서 직접 읽을 수 없다.
     if let Some(mirror_ws_id) = data.mirror_ws_id
@@ -694,8 +792,23 @@ pub fn draw_file_picker(
     {
         data.load = FpLoadState::ErrorConn(t("filepicker.error_conn.timeout").to_string());
     }
+}
+
+pub fn draw_file_picker(
+    ui: &mut egui::Ui,
+    state: &mut MainViewState,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
+    cx: &mut crate::adapters::ui::popup::PopupCx<'_>,
+) -> PopupAction {
+    let Some(data) = instances::picker_of_mut(cx.payload) else {
+        return PopupAction::Close;
+    };
+
+    refresh_remote(data, engine);
 
     let th = theme::theme();
+    // 예약 스크롤은 이번 프레임에 한 번 건다.
+    let scroll_to = data.row_focus.scroll_to.take();
     // 키 입력은 관리자가 키를 준 인스턴스만 읽는다(`cx.keys`). 다른 범위의 피커는 같은 키에 취소·확정되지 않는다.
     // Esc 취소는 선언(`PopupEscape::Close`)대로 중앙 단계가 한다. 경로 메뉴가 열려 있으면 egui 가 그 메뉴만 닫고,
     // 펼친 묶음 안이면 중앙 단계가 묶음 뿌리부터 접는다.
@@ -783,9 +896,11 @@ pub fn draw_file_picker(
         state: view_state,
         entries: &view_entries,
         selected: &data.selected,
-        focus_row: None,
-        ring: false,
+        focus_row: data.row_focus.row.as_deref(),
+        // 키 포커스가 없는 인스턴스는 링을 숨긴다.
+        ring: data.row_focus.ring && cx.keys.receives(),
         up_enabled: up_enabled(data, engine),
+        scroll_to,
         mode: match &data.save_name {
             _ if data.folder => FilePickerMode::Folder {
                 path: &folder_target,
@@ -852,138 +967,14 @@ pub fn draw_file_picker(
     // 셸 타이틀바가 없으므로 위젯 헤더 줄을 이동 손잡이로 보고한다.
     super::header_drag::report(ui.ctx(), cx.instance, out.header_rect);
     report_hidden_crumbs_menu(ui, cx.instance, out.hidden_crumbs_menu);
-    apply_action(data, state, engine, out.action)
-}
-
-fn apply_action(
-    d: &mut crate::state::FilePickerData,
-    state: &mut MainViewState,
-    engine: &crate::runtime::engine_read::EngineRead<'_>,
-    action: FilePickerAction,
-) -> PopupAction {
-    match action {
-        FilePickerAction::None => PopupAction::None,
-        FilePickerAction::ClearSelection => {
-            d.selected.clear();
-            PopupAction::None
-        }
-        FilePickerAction::Cancel => {
-            d.result = Some(FilePickerResult::Cancelled);
-            PopupAction::Close
-        }
-        FilePickerAction::EditName(name) => {
-            if d.save_name.is_some() {
-                if d.selected.first() != Some(&name) {
-                    d.selected.clear();
-                }
-                d.save_name = Some(name);
-            }
-            PopupAction::None
-        }
-        FilePickerAction::Select(name) => {
-            if d.save_name.is_some()
-                && d.entries
-                    .iter()
-                    .any(|e| e.name == name && !e.is_dir && matches_filters(&d.filters, &e.name))
-            {
-                d.save_name = Some(name.clone());
-            }
-            d.selected = vec![name];
-            PopupAction::None
-        }
-        FilePickerAction::NavigateInto(name) => {
-            navigate(d, state, engine, |dir, is_remote| {
-                join_dir(is_remote, dir, &name)
-            });
-            PopupAction::None
-        }
-        FilePickerAction::NavigateTo(idx) => {
-            let is_remote = d.mirror_ws_id.is_some();
-            let targets = path_ancestors(is_remote, &d.current_dir);
-            if let Some(target) = targets.get(idx).cloned() {
-                navigate(d, state, engine, move |_dir, _is_remote| target.clone());
-            }
-            PopupAction::None
-        }
-        FilePickerAction::NavigateUp if !up_enabled(d, engine) => PopupAction::None,
-        FilePickerAction::NavigateUp => {
-            let is_remote = d.mirror_ws_id.is_some();
-            let targets = path_ancestors(is_remote, &d.current_dir);
-            if targets.len() > 1 {
-                let parent = targets[targets.len() - 2].clone();
-                navigate(d, state, engine, move |_dir, _is_remote| parent.clone());
-            }
-            PopupAction::None
-        }
-        FilePickerAction::Refresh => {
-            navigate(d, state, engine, |dir, _is_remote| dir.to_string());
-            PopupAction::None
-        }
-        FilePickerAction::Confirm => {
-            if d.folder {
-                if !matches!(d.load, FpLoadState::Loaded | FpLoadState::Empty) {
-                    return PopupAction::None;
-                }
-                let path = folder::target(d);
-                d.result = Some(FilePickerResult::Confirmed { paths: vec![path] });
-                return PopupAction::Close;
-            }
-            if let Some(name) = &d.save_name {
-                if let Some(path) = save::confirmed_path(
-                    std::path::Path::new(&d.current_dir),
-                    name,
-                    matches!(d.load, FpLoadState::Loaded | FpLoadState::Empty),
-                    &d.entries,
-                ) {
-                    d.result = Some(FilePickerResult::Confirmed { paths: vec![path] });
-                    return PopupAction::Close;
-                }
-                return PopupAction::None;
-            }
-            let folder = match d.selected.as_slice() {
-                [name] => d
-                    .entries
-                    .iter()
-                    .find(|e| &e.name == name)
-                    .filter(|e| e.is_dir)
-                    .map(|e| e.name.clone()),
-                _ => None,
-            };
-            if let Some(name) = folder {
-                navigate(d, state, engine, |dir, is_remote| {
-                    join_dir(is_remote, dir, &name)
-                });
-                return PopupAction::None;
-            }
-            let is_remote = d.mirror_ws_id.is_some();
-            // 화면의 활성화 검사와 별개로 디렉터리를 파일로 확정하지 않게 재확인한다.
-            let all_files = d.selected.iter().all(|name| {
-                d.entries
-                    .iter()
-                    .find(|e| &e.name == name)
-                    .is_some_and(|e| !e.is_dir)
-            });
-            let paths: Vec<String> = d
-                .selected
-                .iter()
-                .map(|name| join_dir(is_remote, &d.current_dir, name))
-                .collect();
-            if all_files && !paths.is_empty() {
-                d.result = Some(FilePickerResult::Confirmed { paths });
-                return PopupAction::Close;
-            }
-            PopupAction::None
-        }
-        FilePickerAction::ConfirmEntry(name) => {
-            if d.folder || d.save_name.is_some() {
-                return apply_action(d, state, engine, FilePickerAction::Select(name));
-            }
-            let is_remote = d.mirror_ws_id.is_some();
-            let path = join_dir(is_remote, &d.current_dir, &name);
-            d.result = Some(FilePickerResult::Confirmed { paths: vec![path] });
-            PopupAction::Close
+    // 조작은 순서대로 적용한다(이름 편집 뒤 Enter 면 편집한 이름으로 확정을 판정한다). 닫으면 뒤 조작은 버린다.
+    for action in out.actions {
+        let result = apply::apply_action(data, state, engine, action);
+        if !matches!(result, PopupAction::None) {
+            return result;
         }
     }
+    PopupAction::None
 }
 
 /// 원격은 로컬에서 검사하지 않고 주어진 경로를 사용한다. 없으면 서버가 홈으로 해석할 빈 문자열이다.
@@ -1089,6 +1080,7 @@ pub(crate) fn open(
         local_query: None,
         entries: Vec::new(),
         selected: Vec::new(),
+        row_focus: Default::default(),
         result: None,
         requester,
         filters: options.filters,
@@ -1128,6 +1120,7 @@ fn navigate(
     let target = target_of(&d.current_dir, is_remote);
     d.current_dir = target.clone();
     d.selected.clear();
+    d.row_focus = crate::state::FpRowFocus::default();
 
     if let Some(mirror_ws_id) = d.mirror_ws_id {
         d.local_query = None;

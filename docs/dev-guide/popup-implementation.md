@@ -263,7 +263,7 @@ scrim 이 덮는 rect 는 그 팝업의 `PopupScope` rect 다 — `Surface` 범�
 
 - 본문은 egui 입력을 직접 읽지 않고 키 통로 `cx.keys`(`popup::keys::PopupKeys`)로만 읽는다. 소스 가드 `source_guards::popup_body_key_gate::popup_layer_reads_no_keys_directly` 가 팝업 층 파일 출하 줄의 직접 읽기(`key_pressed(`·`consume_key(`·`Event::Key` 등)를 `파일:줄:형태` 로 막는다. 예외는 키 통로 파일 넷(`keys.rs`·`body_keys.rs`·`frame_keys.rs`·`window_input_test_support.rs`)과 plugin mesh 입력을 직렬화하는 `popup_render.rs::collect_mesh_popup_input` 하나다.
 - 기본 조작은 `BasicKey`(Escape·Confirm·Expand·화살표·Tab·BackTab)로 읽는다. 바인딩은 설정에 노출하지 않는 고정 값(`enter`, `shift+tab` 등)이고 수식키까지 정확히 같아야 맞는다. 그래서 Ctrl+Enter 는 `Confirm` 이 아니다. `consume` 은 누름을 입력에서 지우고, `pressed` 는 지우지 않고 본다(포커스된 버튼·입력칸이 같은 Enter 를 써야 하는 충돌 카드, 전송 오류, 이름 바꾸기).
-- 수식키가 붙은 조합은 `consume_key(수식키, 키)`(정확 일치, 소비 집합 안), 글자 단축키는 `consume_physical(후보)`(물리 키), egui 논리 일치를 쓰는 노드 키맵(파일 피커 폴더 이동, 검색 find)은 `consume_keymap_key`·`consume_keymap_binding` 으로 읽는다.
+- 수식키가 붙은 조합은 `consume_key(수식키, 키)`(정확 일치, 소비 집합 안), 글자 단축키는 `consume_physical(후보)`(물리 키), egui 논리 일치를 쓰는 노드 키맵은 `take_keymap_presses`(파일 피커 목록 키 — 누름마다 조작으로 맞추고 피커 몫만 지운다)·`consume_keymap_binding`(검색 find)으로 읽는다.
 - 키 주인이 아닌 인스턴스와 선언 `keyboard = None` 은 모든 조회에서 빈 값을 받는다. 소비 집합 밖 누름도 빈 값이고 입력에 남는다. 창은 bare Esc가 아닌 경로 키 가운데 그 팝업이 쓰는 키만 egui에 싣고, 쓰지 않는 키는 붙은 범위와 그 위 level의 단축키로 보낸다([입력 계층의 키 입력 경로](../architecture/input-layer.md#키-입력-경로)). 덮는 팝업이 포커스면 덮인 범위 level의 단축키는 돌지 않는다.
 - 공용 위젯은 키를 읽지 않고 호출자가 통로로 읽은 판정값을 받는다(충돌 카드의 Enter, 승인 선택지의 숫자, 접기 버튼의 `focused`). 팝업 층이 부르는, 키를 읽는 위젯은 예외 짝 셋뿐이고 같은 가드 모듈의 `a_popup_layer_calls_no_key_reading_widget` 이 그 목록을 고정한다.
 

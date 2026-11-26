@@ -508,7 +508,7 @@ pub(crate) fn separate_window_attached(
         .collect()
 }
 
-/// host 팝업의 활성 노드 키맵에 이 키가 맞는지. 사건 시점에 정해지는 조건(폴더 모드, find 바인딩)만 본다.
+/// host 팝업의 활성 노드 키맵에 이 키가 맞는지. 사건 시점에 정해지는 조건(find 바인딩)만 본다.
 fn host_keymap_receives(
     p: &crate::adapters::ui::popup::PopupState,
     key: RouteKey,
@@ -527,14 +527,12 @@ fn host_keymap_receives(
             )
         });
     }
+    // 파일 피커 목록 키는 세 모드가 같은 표라 payload(메인 피커·별도 창 선택기)를 보지 않는다.
     if p.id == crate::adapters::ui::popup::file_picker::FILE_PICKER_POPUP_ID {
-        let folder = crate::adapters::ui::popup::file_picker::instances::picker_of(&p.payload)
-            .is_some_and(|data| data.folder);
-        return folder
-            && crate::adapters::ui::popup::file_picker::folder::folder_keymap_receives(
-                key.modifiers,
-                egui_key,
-            );
+        return crate::adapters::ui::popup::file_picker::list_keys::list_keymap_receives(
+            key.modifiers,
+            egui_key,
+        );
     }
     false
 }

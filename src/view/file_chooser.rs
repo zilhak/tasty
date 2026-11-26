@@ -72,6 +72,8 @@ struct ChooserSession {
     query: Option<crate::app::local_reads::Query<Vec<DirEntryInfo>>>,
     /// 선택된 행. 저장 모드에서는 비었거나 `[save_name]`(나열된 파일) 둘 중 하나다.
     selected: Vec<String>,
+    /// 행 포커스·링·예약 스크롤(메인 피커와 같은 타입). 디렉터리를 옮기면 지운다.
+    row_focus: crate::state::FpRowFocus,
     /// 확장자 필터(점 없이). 비면 필터 없음. 디렉토리는 거르지 않는다.
     filters: Vec<String>,
     /// 저장 모드의 파일명 입력.
@@ -152,6 +154,7 @@ impl LocalFileChooser {
             load: FpViewState::Empty,
             query: None,
             selected: Vec::new(),
+            row_focus: Default::default(),
             filters,
             save_name,
             title: None,
@@ -216,8 +219,10 @@ impl LocalFileChooser {
                 child_menu: None,
             };
         };
-        let (action, child_menu) = draw_view(ui, th, s, keys);
-        let done = match s.apply(action) {
+        let (actions, child_menu) = draw_view(ui, th, s, keys);
+        // 조작은 순서대로 적용하고 결과가 나면 뒤 조작은 버린다.
+        let outcome = actions.into_iter().find_map(|a| s.apply(a));
+        let done = match outcome {
             Some(o) => {
                 self.finish(o);
                 true
@@ -261,6 +266,7 @@ impl ChooserSession {
     /// 현재 디렉터리 조회를 요청한다. 이전 receipt와 선택은 버린다.
     fn reload(&mut self) {
         self.selected.clear();
+        self.row_focus = Default::default();
         self.query = Some(crate::app::local_reads::directory(self.current_dir.clone()));
         self.entries.clear();
         self.load = FpViewState::Loading;
@@ -347,11 +353,41 @@ impl ChooserSession {
             FilePickerAction::None => None,
             FilePickerAction::ClearSelection => {
                 self.selected.clear();
+                self.row_focus = Default::default();
+                None
+            }
+            FilePickerAction::HideRing => {
+                self.row_focus.ring = false;
+                None
+            }
+            FilePickerAction::ShowRing { scroll } => {
+                self.row_focus.show_ring(scroll);
+                None
+            }
+            FilePickerAction::FocusRow {
+                name,
+                select,
+                scroll,
+            } => {
+                if select {
+                    self.selected = vec![name.clone()];
+                }
+                self.row_focus.place(name, true, Some(scroll));
+                None
+            }
+            // Space 는 클릭처럼 고르되 이미 고른 폴더를 다시 눌러도 선택을 풀지 않는다.
+            FilePickerAction::PickRow { name, scroll } => {
+                if !(self.is_folder() && self.selected.first() == Some(&name)) {
+                    self.apply(FilePickerAction::Select(name.clone()));
+                }
+                self.row_focus.place(name, true, Some(scroll));
                 None
             }
             FilePickerAction::Cancel => Some(FileChooserOutcome::Cancelled),
             // 단일 클릭은 선택만 한다. 저장 모드의 이름 칸은 파일을 골랐을 때만 바꾼다.
             FilePickerAction::Select(name) => {
+                // 행 클릭은 행 포커스를 그 행으로 옮기고 링을 숨긴다.
+                self.row_focus.place(name.clone(), false, None);
                 if self.is_folder() {
                     if !self.is_dir_entry(&name) {
                         return None;
@@ -406,6 +442,10 @@ impl ChooserSession {
             }
             FilePickerAction::Confirm if self.is_save() => self.confirm_save(),
             FilePickerAction::Confirm => {
+                // 열기 확정은 footer 버튼과 같이 목록이 Loaded 일 때만이다.
+                if !matches!(self.load, FpViewState::Loaded) {
+                    return None;
+                }
                 let [name] = self.selected.as_slice() else {
                     return None;
                 };
@@ -448,9 +488,12 @@ impl ChooserSession {
 fn draw_view(
     ui: &mut egui::Ui,
     th: &Theme,
-    s: &ChooserSession,
+    s: &mut ChooserSession,
     keys: &mut crate::adapters::ui::popup::keys::PopupKeys,
-) -> (FilePickerAction, Option<egui::Id>) {
+) -> (Vec<FilePickerAction>, Option<egui::Id>) {
+    // 예약 스크롤은 이번 프레임에 한 번 건다.
+    let scroll_to = s.row_focus.scroll_to.take();
+    let s = &*s;
     let crumbs: Vec<CrumbView> = s
         .ancestors()
         .iter()
@@ -516,9 +559,12 @@ fn draw_view(
         state: s.load.clone(),
         entries: &entries,
         selected: &s.selected,
-        focus_row: None,
-        ring: false,
+        focus_row: s.row_focus.row.as_deref(),
+        // 키 포커스가 없는 인스턴스는 링을 숨긴다.
+        ring: s.row_focus.ring && keys.receives(),
+        // 로컬 전용이라 세션 소실이 없다.
         up_enabled: true,
+        scroll_to,
         mode,
         title_label: s.title(),
         name_field_label: t(if s.is_folder() {
@@ -558,7 +604,7 @@ fn draw_view(
         crate::adapters::ui::popup::file_picker::FILE_PICKER_POPUP_ID,
         out.header_rect,
     );
-    (out.action, out.hidden_crumbs_menu)
+    (out.actions, out.hidden_crumbs_menu)
 }
 
 #[cfg(test)]

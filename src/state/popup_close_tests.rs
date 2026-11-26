@@ -1245,6 +1245,7 @@ fn mk_file_picker_data() -> FilePickerData {
         local_query: None,
         entries: vec![],
         selected: vec![],
+        row_focus: Default::default(),
         result: None,
         requester: None,
         filters: vec![],

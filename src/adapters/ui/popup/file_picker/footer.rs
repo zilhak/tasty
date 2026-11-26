@@ -5,7 +5,7 @@ use tasty_ui_widgets::{
     Button, ButtonVariant, Input, filter_readout, filter_readout_label, filter_readout_width,
 };
 
-use super::{FilePickerAction, FilePickerMode, FilePickerProps, FpViewState, selected_folder};
+use super::{FilePickerAction, FilePickerMode, FilePickerProps, selected_folder};
 use crate::adapters::ui::icons;
 use crate::theme::Theme;
 
@@ -47,11 +47,12 @@ pub(super) fn footer_height(ui: &egui::Ui, props: &FilePickerProps<'_>) -> Logic
 
 /// footer — 이름 행(라벨 flex:none · 이름 칸 flex:1) · 덮어쓰기 경고 · 버튼 행(버튼 flex:none).
 /// 행마다 폭을 이 영역 안의 사각형으로 잡으므로 버튼은 오른쪽 끝에서 먼저 자리 잡는다.
+/// 저장 모드 이름 칸을 그렸으면 그 위젯 id를 돌려준다.
 pub(super) fn draw_footer(
     ui: &mut egui::Ui,
     props: &FilePickerProps<'_>,
     action: &mut FilePickerAction,
-) {
+) -> Option<egui::Id> {
     let th = props.theme;
     if let Some(folder) = super::folder::footer(props) {
         let (confirm, cancel) = folder.show(ui, th, &|ui, rect, color| {
@@ -62,8 +63,9 @@ pub(super) fn draw_footer(
         } else if confirm {
             *action = FilePickerAction::Confirm;
         }
-        return;
+        return None;
     }
+    let mut name_field = None;
     let area = ui.max_rect();
     let w = area.width();
     let gap = th.fp_section_gap().value();
@@ -117,12 +119,12 @@ pub(super) fn draw_footer(
         }
         FilePickerMode::Save { name, .. } => {
             let mut buf = name.to_owned();
-            if Input::new()
+            let resp = Input::new()
                 .placeholder(props.name_placeholder)
                 .width(field_w)
-                .show(&mut row, th, &mut buf)
-                .changed()
-            {
+                .show(&mut row, th, &mut buf);
+            name_field = Some(resp.id);
+            if resp.changed() {
                 *action = FilePickerAction::EditName(buf);
             }
         }
@@ -167,23 +169,7 @@ pub(super) fn draw_footer(
             .layout(egui::Layout::right_to_left(egui::Align::Center)),
     );
     buttons.spacing_mut().item_spacing.x = th.spacing_sm.value();
-    let can_confirm = match props.mode {
-        FilePickerMode::Folder { .. } => unreachable!(),
-        // 폴더 하나면 그 안으로 이동하고, 그 외에는 선택한 항목이 모두 파일이어야 한다.
-        FilePickerMode::Open { .. } => {
-            matches!(props.state, FpViewState::Loaded)
-                && !props.selected.is_empty()
-                && (selected_folder(props).is_some()
-                    || props.selected.iter().all(|name| {
-                        props
-                            .entries
-                            .iter()
-                            .find(|e| &e.name == name)
-                            .is_some_and(|e| !e.is_dir)
-                    }))
-        }
-        FilePickerMode::Save { can_confirm, .. } => can_confirm,
-    };
+    let can_confirm = super::list_keys::confirm_enabled(props);
     if Button::new(props.confirm_label)
         .variant(ButtonVariant::Primary)
         .enabled(can_confirm)
@@ -200,6 +186,7 @@ pub(super) fn draw_footer(
     {
         *action = FilePickerAction::Cancel;
     }
+    name_field
 }
 
 /// 열기 모드의 이름 칸 — 입력 토큰으로 그린 읽기 전용 칸. 넘치는 텍스트는 칸 안에서 잘린다.
