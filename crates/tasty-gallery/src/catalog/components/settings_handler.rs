@@ -872,7 +872,7 @@ fn hook_add_card(
         .fill(theme.surface_raised().to_egui())
         .stroke(egui::Stroke::new(
             theme.border_width.value(),
-            theme.border_default().to_egui(),
+            theme.border_strong().to_egui(),
         ))
         .corner_radius(theme.corner_radius.value())
         .inner_margin(egui::Margin::same(theme.spacing_md.value() as i8))
@@ -939,7 +939,7 @@ pub fn draw_hook_add_card_raised(ui: &mut egui::Ui, theme: &Theme) {
         &[
             (
                 "card",
-                "surface-raised + border-default + radius · caps head",
+                "surface-raised + border-strong + radius · caps head",
             ),
             ("labels", "text-secondary-raised"),
             (
@@ -1007,4 +1007,28 @@ fn hook_field_row(
             .placeholder(placeholder)
             .show(ui, theme, buf);
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::catalog::components::painted::paint;
+
+    /// Hook Handlers 추가 카드는 raised 카드라 외곽이 border-strong이다.
+    #[test]
+    fn the_hook_add_card_edges_with_border_strong() {
+        for theme in [
+            tasty_themes::mocha_fallback(),
+            crate::host_shell::latte_theme(),
+        ] {
+            let strong = theme.border_strong().to_egui();
+            assert_ne!(strong, theme.border_default().to_egui());
+            let p = paint(|ui| {
+                let (mut id, mut cmd) = (String::new(), String::new());
+                hook_add_card(ui, &theme, &mut id, &mut cmd);
+            });
+            let head = p.text("New hook handler").rect;
+            assert_eq!(p.edge_around(head), strong);
+        }
+    }
 }
