@@ -397,6 +397,8 @@ impl App {
         sess.state.bulk_port = port;
         sess.state.pending_op_focus.clear();
         sess.state.agent_requests.clear();
+        // 옛 연결로 보낸 원문 요청의 회신은 오지 않는다. 아래 변경 신호 전에 같은 id 실패로 끝낸다.
+        let unanswered = sess.state.markdown_requests.take_all();
         sess.state.next_delta_focus = None;
         // 옛 연결의 목록 요청은 다시 응답하지 않는다. 소비자는 자체 timeout으로 실패 처리한다.
         sess.state.pending_list_dir_consumers.clear();
@@ -408,6 +410,12 @@ impl App {
         sess.state.remote_label = format!("127.0.0.1:{port}");
         // 원문은 바로 다시 받지 않는다. 변경 신호를 보내 플러그인이 재요청이나 stale 표시를 선택하게 한다.
         let markdown_locals: Vec<u32> = sess.state.markdown_locals.iter().copied().collect();
+        for (request_id, local) in unanswered {
+            push_markdown_content_result(
+                &mut self.plugin_manager,
+                &markdown_content_failure(local, request_id, "mirror workspace disconnected"),
+            );
+        }
         for local in markdown_locals {
             push_markdown_changed(&mut self.plugin_manager, local);
         }
