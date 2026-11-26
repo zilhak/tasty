@@ -467,8 +467,13 @@ mod tests {
 #[cfg(feature = "gui")]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) struct RowView {
-    /// 사용자가 끊은 행이다.
+    /// 사용자가 직접 끊은 행이다. 원격 Tasty 가 끊은 행은 아니다.
     pub(crate) user_disconnected: bool,
+    /// 이번 실행에서 원격 Tasty 가 이 행을 강제로 끊었다. 저장하지 않는다.
+    pub(crate) force_detached: bool,
+    /// 이 행이 끊긴 것은 아니고 연결 대상의 강제 끊김 표지·보류로만 막혔다(같은 원격 workspace 의 다른
+    /// 행이 끊겼거나 재시작 뒤 저장 표지가 남았다).
+    pub(crate) held: bool,
     /// 이번 실행에서 연결돼 있던 동안 원격 workspace 가 다른 곳에서 닫혔다. 저장하지 않는다.
     pub(crate) closed_elsewhere: bool,
     /// 연결을 시도하기 시작한 시각. 시도 중이 아니면 없다. 행 로딩 표시의 시작점이다.

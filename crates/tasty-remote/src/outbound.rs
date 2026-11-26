@@ -49,6 +49,9 @@ pub struct Remote {
     pub refusals: crate::refusal::Refusals,
     /// 이 실행 중 사용자가 연결을 끊은 원격 행. 명시적 연결 전까지 자동으로 붙지 않는다. 저장하지 않는다.
     pub user_disconnected: std::collections::HashSet<u32>,
+    /// 이 실행 중 서버가 강제로 끊은 원격 행. 그 행은 `user_disconnected`에도 들어 막힘 판정은 그쪽이
+    /// 한다. 이 집합은 연결 팝업이 사용자 끊음과 원격 끊음을 가르는 데만 쓴다. 저장하지 않는다.
+    pub force_detached: std::collections::HashSet<u32>,
     /// 서버가 강제로 끊은 연결 대상의 실행 중 보류. 값은 이 실행에서 명시적 연결로 풀린 행이다. 대상의
     /// 표지를 쓸 때와 기동 때 걸고, 대상의 마지막 행을 없애면 지운다. 저장하지 않는다.
     pub held: std::collections::HashMap<tasty_model::RemoteBinding, std::collections::HashSet<u32>>,
@@ -82,6 +85,7 @@ impl Remote {
             pending_reactivation: Default::default(),
             reconnect: Default::default(),
             user_disconnected: Default::default(),
+            force_detached: Default::default(),
             held: Default::default(),
             refusals: Default::default(),
             next_attempt_id: 1,

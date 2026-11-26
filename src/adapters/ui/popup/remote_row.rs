@@ -189,9 +189,13 @@ pub(crate) fn popup_kind(
         RemoteRowState::Reconnecting => K::Reconnecting,
         RemoteRowState::Disconnected if view.closed_elsewhere => K::Closed,
         RemoteRowState::Disconnected if view.user_disconnected => K::User,
+        RemoteRowState::Disconnected if view.force_detached => K::Server,
+        RemoteRowState::Disconnected if view.held => K::Held,
         RemoteRowState::Disconnected if has_reason => K::Failed,
         RemoteRowState::Disconnected => K::GaveUp,
         RemoteRowState::NotConnected if view.closed_elsewhere => K::Closed,
+        RemoteRowState::NotConnected if view.force_detached => K::Server,
+        RemoteRowState::NotConnected if view.held => K::Held,
         RemoteRowState::NotConnected if has_reason => K::Failed,
         RemoteRowState::NotConnected => K::Idle,
     }
@@ -387,23 +391,37 @@ mod tests {
         super::super::frame::sync_open_when(state, engine);
     }
 
-    /// 끊긴 행은 다른 곳에서 닫힘 › 사용자 끊음 › 이유 › 시간 초과 순서로 종류를 고른다.
+    /// 끊긴 행은 다른 곳에서 닫힘 › 사용자 끊음 › 원격 끊음 › 보류 › 이유 › 시간 초과 순서로 종류를 고른다.
     #[test]
-    fn a_disconnected_row_picks_closed_then_user_then_reason_then_timed_out() {
+    fn a_disconnected_row_picks_closed_user_server_held_reason_then_timed_out() {
         let view = |closed, user| RowView {
             closed_elsewhere: closed,
             user_disconnected: user,
-            trying_since: None,
+            ..RowView::default()
+        };
+        let marked = |forced, held| RowView {
+            force_detached: forced,
+            held,
+            ..RowView::default()
         };
         let d = RemoteRowState::Disconnected;
         assert_eq!(popup_kind(d, view(true, true), true), K::Closed);
         assert_eq!(popup_kind(d, view(false, true), true), K::User);
         assert_eq!(popup_kind(d, view(false, false), true), K::Failed);
         assert_eq!(popup_kind(d, view(false, false), false), K::GaveUp);
+        assert_eq!(popup_kind(d, marked(true, false), true), K::Server);
+        assert_eq!(popup_kind(d, marked(false, true), true), K::Held);
+        let closed_and_forced = RowView {
+            closed_elsewhere: true,
+            ..marked(true, true)
+        };
+        assert_eq!(popup_kind(d, closed_and_forced, true), K::Closed);
         let n = RemoteRowState::NotConnected;
         assert_eq!(popup_kind(n, view(false, false), true), K::Failed);
         assert_eq!(popup_kind(n, view(true, false), true), K::Closed);
         assert_eq!(popup_kind(n, view(false, false), false), K::Idle);
+        assert_eq!(popup_kind(n, marked(true, false), true), K::Server);
+        assert_eq!(popup_kind(n, marked(false, true), true), K::Held);
         assert_eq!(
             popup_kind(RemoteRowState::Reconnecting, RowView::default(), false),
             K::Reconnecting

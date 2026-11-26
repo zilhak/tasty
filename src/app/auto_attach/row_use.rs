@@ -575,8 +575,13 @@ impl App {
     /// 상태 이름 밖에서 화면이 읽는 행 사실. `trying_since`는 시도 중 표지일 뿐이고 실제 시각은
     /// `publish_row_states`가 채운다.
     fn row_view(&self, row: u32, name: &'static str) -> crate::remote::state::RowView {
+        // 막힘 판정(`row_blocked`)은 바꾸지 않고 그 원인만 나눈다. 원격이 끊은 행도 user_disconnected 에 든다.
+        let marked = self.remote.user_disconnected.contains(&row);
+        let forced = marked && self.remote.force_detached.contains(&row);
         crate::remote::state::RowView {
-            user_disconnected: self.row_blocked(row),
+            user_disconnected: marked && !forced,
+            force_detached: forced,
+            held: !marked && self.row_blocked(row),
             closed_elsewhere: self.row_closed_elsewhere(row),
             trying_since: matches!(name, "connecting" | "reconnecting")
                 .then(std::time::Instant::now),

@@ -341,6 +341,8 @@ impl App {
             // 이미 끊긴 행은 토큰 교체·닫기 결과 안내·Detach·재연결 표지를 다시 만들지 않는다. 멈춤에 남은
             // 연결 의사는 사용자의 마지막 뜻이 끊기라 버린다.
             self.remote.user_disconnected.insert(row);
+            // 사용자가 직접 끊었으니 팝업은 원격 끊음이 아니라 사용자 끊음을 말한다.
+            self.remote.force_detached.remove(&row);
             self.drop_connect_after_stop(row);
             tracing::info!(
                 "mirror disconnect: saved remote row {row} was already {previous_state}"
@@ -350,6 +352,7 @@ impl App {
         let cancelled =
             self.abandon_row_attempts(row, "the mirror workspace was disconnected by the user");
         self.remote.user_disconnected.insert(row);
+        self.remote.force_detached.remove(&row);
         if let Some(index) = self
             .remote
             .sessions

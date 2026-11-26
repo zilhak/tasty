@@ -43,6 +43,7 @@ impl App {
     /// 남는다. 연결 버튼·메뉴·`remote.connect` 같은 명시적 연결만 표지를 지우고 다시 붙인다.
     pub(super) fn mark_force_detached_target(&mut self, row: u32) {
         self.remote.user_disconnected.insert(row);
+        self.remote.force_detached.insert(row);
         self.mark_force_detached_row(row);
         tracing::info!(
             "gui attach: 서버가 saved remote row {row} 의 점유를 강제로 끊어 재연결하지 않는다"

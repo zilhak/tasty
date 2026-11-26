@@ -184,6 +184,7 @@ impl App {
     /// 명시적 연결(원격 팝업이 행을 넘겨받는 연결 포함)이 강제로 끊긴 표지를 지운다. 이후 끊김은 평소 자동 재연결 규칙을 따른다.
     /// 그 행의 보류도 풀린다. 같은 대상의 다른 행은 이 실행 동안 계속 막힌다.
     pub(crate) fn forget_force_detached_row(&mut self, row: u32) {
+        self.remote.force_detached.remove(&row);
         let Some(binding) = self.saved_row_binding(row) else {
             return;
         };
@@ -918,6 +919,7 @@ pub(crate) fn forget_row(remote: &mut tasty_remote::outbound::Remote, row: u32) 
     remote.reconnect.remove(&row);
     remote.pending_reactivation.remove(&row);
     remote.user_disconnected.remove(&row);
+    remote.force_detached.remove(&row);
     for released in remote.held.values_mut() {
         released.remove(&row);
     }

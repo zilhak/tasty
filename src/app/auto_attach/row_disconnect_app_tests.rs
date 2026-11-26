@@ -589,3 +589,128 @@ fn a_reconnecting_row_stops_when_its_target_is_force_detached_through_another_ro
         "the mark stays until an explicit connect"
     );
 }
+
+/// 행 `row` 를 실은 engine 에 행 상태를 싣고, 연결 팝업이 읽는 그대로 그 행의 팝업 종류를 고른다.
+/// 이유 안내는 창 상태에 있어 여기서는 없다고 본다.
+fn popup_kind_of(app: &mut App, row: u32) -> tasty_ui_widgets::RemoteRowPopupKind {
+    app.publish_row_states();
+    let engine = app.saved_remote_row_engine(row).expect("the row engine");
+    let session = app.engines.get(engine).expect("the row engine");
+    let read = session.read();
+    crate::adapters::ui::popup::remote_row::popup_kind(
+        read.remote_row_state(row),
+        read.remote_row_view(row),
+        false,
+    )
+}
+
+/// 같은 연결 대상의 두 번째 저장 행을 행 engine 에 더한다. 세션은 없다.
+fn push_sibling_row(app: &mut App, id: u32) {
+    let mut row = crate::model::Workspace::new_with_terminal_marker(
+        id,
+        "remote b".to_string(),
+        id + 1,
+        id + 2,
+        id + 3,
+    );
+    row.mirror = true;
+    row.remote_row = Some(binding());
+    let engine = app.saved_remote_row_engine(ROW).expect("the row engine");
+    app.engines
+        .get_mut(engine)
+        .expect("the row engine")
+        .push_mirror_workspace(row);
+}
+
+/// Given 연결된 저장 행 A 와 같은 원격 workspace 의 행 B, When 원격 Tasty 가 A 를 강제로 끊으면,
+/// Then A 의 팝업은 원격 끊음, B 는 보류이고 둘 다 막힌다. When A 가 원격 끊음인 동안 A 를 명시적으로
+/// 연결하면, Then 연결 직전에 있던 A 의 원격 끊음 표지가 지워지고 A 는 풀리며 B 는 보류로 남는다.
+#[test]
+fn a_force_detached_row_says_the_remote_disconnected_it_and_its_sibling_is_held() {
+    alone!("a_force_detached_row_says_the_remote_disconnected_it_and_its_sibling_is_held");
+    use tasty_ui_widgets::RemoteRowPopupKind as K;
+    const ROW_B: u32 = 9_200;
+    let event_loop = event_loop();
+    let mut app = saved_row_app(&event_loop, Some(SessionState::Connected));
+    push_sibling_row(&mut app, ROW_B);
+
+    end_row_connection(&mut app, true);
+    assert_eq!(app.row_state_name(ROW), "disconnected");
+    assert_eq!(popup_kind_of(&mut app, ROW), K::Server);
+    assert_eq!(popup_kind_of(&mut app, ROW_B), K::Held);
+    assert!(app.row_blocked(ROW) && app.row_blocked(ROW_B));
+
+    assert!(
+        app.remote.force_detached.contains(&ROW),
+        "the remote disconnect mark is there before the connect"
+    );
+    app.connect_saved_row(ROW, true);
+    assert!(
+        !app.remote.force_detached.contains(&ROW),
+        "the explicit connect clears the remote disconnect mark"
+    );
+    assert!(!app.row_blocked(ROW));
+    assert_eq!(popup_kind_of(&mut app, ROW_B), K::Held);
+}
+
+/// Given 원격 Tasty 가 강제로 끊어 원격 끊음으로 보이는 행, When 사용자가 그 행을 직접 끊으면, Then 팝업은
+/// 사용자 끊음이 되고 행은 계속 막힌다.
+#[test]
+fn the_user_s_own_disconnect_turns_a_remote_disconnect_into_the_user_copy() {
+    alone!("the_user_s_own_disconnect_turns_a_remote_disconnect_into_the_user_copy");
+    use tasty_ui_widgets::RemoteRowPopupKind as K;
+    let event_loop = event_loop();
+    let mut app = saved_row_app(&event_loop, Some(SessionState::Connected));
+
+    end_row_connection(&mut app, true);
+    assert_eq!(popup_kind_of(&mut app, ROW), K::Server);
+
+    assert_already_disconnected(&disconnect(&mut app, ROW), "disconnected");
+    assert_eq!(popup_kind_of(&mut app, ROW), K::User);
+    assert!(
+        app.row_blocked(ROW),
+        "the user's own disconnect still holds it"
+    );
+}
+
+/// Given 마지막 화면이 남은 채 사용자가 먼저 끊은 행 B, When 같은 원격 workspace 의 행 A 가 강제로
+/// 끊기면, Then B 는 여전히 사용자 끊음이고 A 만 원격 끊음이다.
+#[test]
+fn a_row_the_user_disconnected_keeps_the_user_copy_when_a_sibling_is_force_detached() {
+    alone!("a_row_the_user_disconnected_keeps_the_user_copy_when_a_sibling_is_force_detached");
+    use crate::app::auto_attach::force_detach_result_tests::{
+        ROW_B, push_other_row_session_unflagged,
+    };
+    use tasty_ui_widgets::RemoteRowPopupKind as K;
+    let event_loop = event_loop();
+    let mut app = saved_row_app(&event_loop, Some(SessionState::Connected));
+    push_other_row_session_unflagged(&mut app, SessionState::Disconnected);
+    assert_eq!(
+        disconnect(&mut app, ROW_B)["result"]["already_disconnected"],
+        true
+    );
+    assert!(app.remote.user_disconnected.contains(&ROW_B));
+
+    end_row_connection(&mut app, true);
+    assert_eq!(popup_kind_of(&mut app, ROW), K::Server);
+    assert_eq!(popup_kind_of(&mut app, ROW_B), K::User);
+}
+
+/// Given 강제 끊김 표지가 저장된 채 다시 시작한 App(실행 중 표지 없음), When 행이 보이면, Then 갈래
+/// 표지가 없어 그 행은 보류(Not connected + held_body)로 보이고 막힘은 지금과 같다.
+#[test]
+fn after_a_restart_a_force_detached_row_shows_the_held_copy() {
+    alone!("after_a_restart_a_force_detached_row_shows_the_held_copy");
+    use tasty_ui_widgets::RemoteRowPopupKind as K;
+    let event_loop = event_loop();
+    let mut app = saved_row_app(&event_loop, None);
+    app.services
+        .registries
+        .remote_force_detached
+        .update(|marks| marks.insert(binding()));
+    app.hold_marked_targets();
+    app.maybe_connect_visible_row(Some(ROW), None);
+    assert!(app.row_blocked(ROW));
+    assert!(!app.remote.active.contains(&ROW));
+    assert_eq!(popup_kind_of(&mut app, ROW), K::Held);
+}
