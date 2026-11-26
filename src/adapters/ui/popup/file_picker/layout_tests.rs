@@ -5,7 +5,7 @@ const CONFIRM: &str = "CONFIRM-LABEL";
 const CANCEL: &str = "CANCEL-LABEL";
 
 /// 메인 피커 PopupDef 대로(셸 타이틀바 유무 포함) 만든 같은 크기의 popup.
-fn picker_state(size: egui::Vec2) -> crate::adapters::ui::popup::PopupState {
+pub(super) fn picker_state(size: egui::Vec2) -> crate::adapters::ui::popup::PopupState {
     let def = crate::adapters::ui::popup::defs::find(FILE_PICKER_POPUP_ID)
         .expect("file picker PopupDef 가 등록돼 있어야 한다");
     let mut popup = crate::adapters::ui::popup::PopupState::declared(
@@ -19,7 +19,7 @@ fn picker_state(size: egui::Vec2) -> crate::adapters::ui::popup::PopupState {
     popup
 }
 
-fn deep_crumbs(depth: usize, seg: &str) -> Vec<CrumbView> {
+pub(super) fn deep_crumbs(depth: usize, seg: &str) -> Vec<CrumbView> {
     let mut out = vec![CrumbView { label: "/".into() }];
     out.extend((1..depth).map(|i| CrumbView {
         label: format!("{seg}-{i:02}"),
@@ -126,11 +126,35 @@ fn painted_frames_filtered(
     filters: &[String],
 ) -> (egui::Rect, Vec<egui::epaint::ClippedShape>) {
     let th = crate::theme::theme();
+    painted_frames_themed(
+        &th,
+        popup,
+        (crumbs, mode, entries, selection),
+        frames,
+        events,
+        filters,
+    )
+}
+
+/// [`painted_frames_filtered`] 를 호출자가 준 Theme(배율 포함)으로 그린다.
+pub(super) fn painted_frames_themed(
+    th: &Theme,
+    popup: &crate::adapters::ui::popup::PopupState,
+    (crumbs, mode, entries, selection): (
+        &[CrumbView],
+        FilePickerMode<'_>,
+        &[FilePickerEntryView],
+        &str,
+    ),
+    frames: usize,
+    events: &dyn Fn(usize, egui::Rect) -> Vec<egui::Event>,
+    filters: &[String],
+) -> (egui::Rect, Vec<egui::epaint::ClippedShape>) {
     let ctx = egui::Context::default();
     let content = popup.content_rect();
     let selected = vec![selection.to_string()];
     let props = FilePickerProps {
-        theme: &th,
+        theme: th,
         remote_host: None,
         crumbs,
         state: FpViewState::Loaded,
@@ -607,7 +631,7 @@ fn every_section_starts_on_the_fp_inset_start_column() {
 }
 
 /// 칠해진 텍스트 하나의 사각형과 글꼴 크기.
-fn text_shape(shapes: &[egui::epaint::ClippedShape], label: &str) -> (egui::Rect, f32) {
+pub(super) fn text_shape(shapes: &[egui::epaint::ClippedShape], label: &str) -> (egui::Rect, f32) {
     let hits: Vec<_> = shapes
         .iter()
         .filter_map(|c| match &c.shape {

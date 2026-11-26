@@ -202,16 +202,6 @@ const COPIED: &[(&str, Side, Side)] = &[
         Side::Lit(HOST_KB_IMPORT_EXPORT, "PLUGIN_DOT_GAP"),
         Side::Lit(GALLERY_KB_IMPORT_EXPORT, "PLUGIN_DOT_GAP"),
     ),
-    (
-        "파일 피커 크기 열 폭",
-        Side::Lit(HOST_FILE_PICKER, "SIZE_COL_W"),
-        Side::Lit(GALLERY_FILE_PICKER, "SIZE_COL_W"),
-    ),
-    (
-        "파일 피커 수정일 열 폭",
-        Side::Lit(HOST_FILE_PICKER, "MOD_COL_W"),
-        Side::Lit(GALLERY_FILE_PICKER, "MOD_COL_W"),
-    ),
 ];
 
 const GALLERY_QUIT_MODAL: &str = "crates/tasty-gallery/src/catalog/components/quit_modal.rs";
@@ -368,8 +358,8 @@ fn resolve(side: &Side, theme: &str, semantic: &str, primitive: &str) -> (String
 fn the_gallery_still_agrees_with_the_dimensions_it_restates() {
     // 항목을 삭제해 불일치를 숨기지 않도록 하한을 둔다. 쌍을 더할 때는 고치지 않는다.
     assert!(
-        COPIED.len() >= 35,
-        "비교 명부가 {}쌍으로 하한 35보다 적다. 복사본이 실제로 사라졌다면 양쪽이 같은 토큰을 읽는지 확인한 뒤 하한을 낮춘다. 불일치를 숨기려고 쌍을 지우지 않는다.",
+        COPIED.len() >= 33,
+        "비교 명부가 {}쌍으로 하한 33보다 적다. 복사본이 실제로 사라졌다면 양쪽이 같은 토큰을 읽는지 확인한 뒤 하한을 낮춘다. 불일치를 숨기려고 쌍을 지우지 않는다.",
         COPIED.len()
     );
     let theme = read(THEME);

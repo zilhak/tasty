@@ -1277,7 +1277,7 @@ C 프레임보더) 중 **A 배지가 사용자 확정**되었다. 본체와 갤�
 | `overlays-windows.jsx` "Save mode — one confirm, in the footer" | `draw_save_mode` | 4 프레임(new · picked · edited · deep) + Meta + Note |
 
 본체 `src/adapters/ui/popup/file_picker.rs::entry_row`도 `FpRow`의 오른쪽 고정 열과
-이름 가변 열 배치를 따른다. 이름은 남은 열 폭에서 egui 단일 행 galley로 말줄임하며,
+이름 가변 열 배치를 따른다. 고정 열 폭은 갤러리와 본체 모두 `fp_size_col_width()`·`fp_modified_col_width()`를 읽는다. 이름은 남은 열 폭에서 egui 단일 행 galley로 말줄임하며,
 선택·확정에 사용하는 원래 이름은 보존한다.
 
 **갤러리 vs 디자인 차이**: 긴 파일명 말줄임은 jsx `text-overflow:ellipsis`(CSS 네이티브)

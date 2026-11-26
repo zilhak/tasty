@@ -32,6 +32,8 @@ mod paths;
 pub(crate) mod save;
 #[cfg(test)]
 mod save_tests;
+#[cfg(test)]
+mod zoom_tests;
 
 pub(crate) use location::locate;
 pub(crate) use paths::{crumb_label, join_dir, matches_filters, path_ancestors};
@@ -59,10 +61,6 @@ pub const FILE_PICKER_POPUP_ID: &str = "file_picker";
 
 pub(crate) const POPUP_WIDTH: LogicalPx = LogicalPx(640.0);
 pub(crate) const POPUP_HEIGHT: LogicalPx = LogicalPx(480.0);
-
-// FilePickerFrame/FpRow 열 치수 — gallery specimen 과 같은 구조 폭.
-const SIZE_COL_W: LogicalPx = LogicalPx(68.0);
-const MOD_COL_W: LogicalPx = LogicalPx(108.0);
 
 // 원격 연결 화면과 같은 공용 중앙 안내 영역 치수.
 /// 원격 응답이 이 시간 안에 오지 않으면 `ErrorConn` 으로 전이(soft timeout — 세션의
@@ -512,8 +510,8 @@ fn cols(rect: egui::Rect, th: &Theme) -> Cols {
     let name_left = icon_left + th.icon_glyph_size_md + th.spacing_sm;
     // 오른쪽의 고정 열부터 배치하고 이름은 남은 폭을 쓴다.
     let modified_right = LogicalPx(rect.right()) - th.fp_inset_start();
-    let size_right = modified_right - MOD_COL_W - th.spacing_sm;
-    let name_right = size_right - SIZE_COL_W - th.spacing_sm;
+    let size_right = modified_right - th.fp_modified_col_width() - th.spacing_sm;
+    let name_right = size_right - th.fp_size_col_width() - th.spacing_sm;
     Cols {
         icon_left,
         name_left,

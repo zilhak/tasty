@@ -142,6 +142,7 @@ forward/tap 도 동반 — file picker 뿐 아니라 mirror 연결 자체가 끊
 ### 목록의 긴 파일명
 
 이름 열은 크기·수정일 열을 제외한 남은 폭을 사용하고, 긴 이름은 끝을 `…`로 말줄임한다.
+크기·수정일 열 폭은 `fp-size-col-width`(68)·`fp-modified-col-width`(108) 토큰이며 UI 배율을 따른다.
 말줄임은 표시만 바꾼다 — 선택·더블클릭·확정은 전체 파일명을 사용한다. 열 배치는
 [갤러리 매핑](../../design/systems/design-gallery-mapping.md)의 `FpRow`를 따른다.
 `src/adapters/ui/popup/file_picker/layout_tests.rs`의 `filenames_stay_inside_the_name_column_at_default_width`와

@@ -32,8 +32,6 @@ const FRAME_W: LogicalPx = LogicalPx(640.0);
 const FRAME_H: LogicalPx = LogicalPx(480.0);
 /// `…` 메뉴 예제 카드의 높이 — 디자인 `FilePickerFrame mode="save" deep crumbMenu w={320} h={420}`.
 const CRUMB_MENU_H: LogicalPx = LogicalPx(420.0);
-const SIZE_COL_W: LogicalPx = LogicalPx(68.0);
-const MOD_COL_W: LogicalPx = LogicalPx(108.0);
 /// 폴더 선택 갈래에서 고른 행 — 디자인 seed(`overlays-shared.jsx` `folderSel`).
 const FOLDER_SEL: &str = "configs";
 
@@ -775,8 +773,8 @@ fn cols(rect: egui::Rect, theme: &Theme, multi: bool) -> Cols {
     x += glyph + gap;
     let name_left = x;
     let mod_right = LogicalPx(rect.right()) - pad;
-    let size_right = mod_right - MOD_COL_W - gap;
-    let name_right = size_right - SIZE_COL_W - gap;
+    let size_right = mod_right - theme.fp_modified_col_width() - gap;
+    let name_right = size_right - theme.fp_size_col_width() - gap;
     Cols {
         checkbox_x,
         icon_x,
