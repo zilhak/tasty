@@ -18,7 +18,7 @@ mod html_address_keys;
 mod html_content;
 pub(crate) mod input_segment;
 mod key_event_steps;
-mod keyboard;
+pub(crate) mod keyboard;
 mod link_menu;
 mod menu_target;
 mod mouse;

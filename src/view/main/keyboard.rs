@@ -40,6 +40,15 @@ struct KeyboardSendOutcome {
     sent: bool,
 }
 
+/// 단축키를 처리한 뒤 조합 문자를 버릴지(참) PTY 로 확정 전송할지(거짓). 팝업을 여는 단축키는 조합 문자를 버리고, 그
+/// 외에는 PTY로 확정 전송한다. plugin 팝업은 아직 캐시에 없을 수 있으므로 열기 요청 큐도 확인한다
+/// (`MainView::after_shortcut_consumed`).
+pub(crate) fn shortcut_drops_preedit(state: &crate::state::MainViewState) -> bool {
+    state.popups.has_focused()
+        || state.plugin_popup_owns_keys()
+        || !state.pending_popup_opens.is_empty()
+}
+
 impl MainView {
     pub(super) fn handle_keyboard_input(
         &mut self,
@@ -318,12 +327,7 @@ impl MainView {
     pub(crate) fn after_shortcut_consumed(&mut self, engine: &EngineRead<'_>) {
         self.reset_modifier_hint_reveal_timer();
         if self.ime_preedit.is_some() {
-            // 팝업을 여는 단축키는 조합 문자를 버리고, 그 외에는 PTY로 확정 전송한다.
-            // plugin 팝업은 아직 캐시에 없을 수 있으므로 열기 요청 큐도 확인한다.
-            if self.state.popups.has_focused()
-                || self.state.plugin_popup_owns_keys()
-                || !self.state.pending_popup_opens.is_empty()
-            {
+            if shortcut_drops_preedit(&self.state) {
                 self.clear_ime_preedit(engine);
             } else {
                 self.flush_ime_preedit(engine);
