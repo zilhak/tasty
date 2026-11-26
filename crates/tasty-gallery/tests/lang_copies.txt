@@ -685,6 +685,7 @@ src/catalog/icons_keys.rs	Shift key display:	settings.general.shift_display_styl
 src/catalog/icons_keys.rs	Symbol	settings.general.alt_display_style_symbol,settings.general.option_display_style_symbol,settings.general.shift_display_style_symbol
 src/catalog/layouts_remote_row.rs	close	command_palette.hint_close
 src/catalog/layouts_remote_row.rs	connecting	remote.row.state.connecting
+src/catalog/layouts_remote_row.rs	held	modifier_hint.held
 src/catalog/layouts_remote_row.rs	reconnecting	status_bar.remote_reconnecting
 src/catalog/layouts_remote_row.rs	{}	remote.size_sync.names
 src/catalog/layouts_settled.rs	Error	dag.detail.error

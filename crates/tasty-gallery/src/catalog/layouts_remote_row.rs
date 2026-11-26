@@ -326,6 +326,20 @@ fn draw_bare(ui: &mut egui::Ui, theme: &Theme) {
                 );
             },
         );
+        for (label, kind) in [
+            (
+                "force-detached while connecting, before a screen · Connect",
+                K::Server,
+            ),
+            (
+                "held — another row of the same remote workspace was force-detached, or any of them after a restart · Connect",
+                K::Held,
+            ),
+        ] {
+            labelled(ui, theme, label, |ui| {
+                frame(ui, theme, FRAME_W, Pop::new(kind, false));
+            });
+        }
     });
     stage(ui, theme, StageVariant::Wrap, |ui| {
         for reason in [
@@ -365,6 +379,9 @@ fn draw_bare(ui: &mut egui::Ui, theme: &Theme) {
                         .reason(RemoteRowReason::Chain)
                         .lang(lang),
                 );
+            });
+            labelled(ui, theme, &format!("{lang} · held"), |ui| {
+                frame(ui, theme, FRAME_W, Pop::new(K::Held, false).lang(lang));
             });
         }
         labelled(
@@ -409,6 +426,14 @@ fn draw_bare(ui: &mut egui::Ui, theme: &Theme) {
             (
                 "state block",
                 "title body semibold text-primary + body text-secondary · warning glyph 14 (accent-warning-glyph) only for failed, timed out and closed elsewhere",
+            ),
+            (
+                "remote disconnected",
+                "the remote Tasty force-detached this row's own first attempt in this run, before it had a screen · no glyph · title remote.row.popup.user_title · body remote.row.popup.server_body · Connect enabled",
+            ),
+            (
+                "held",
+                "the row is held by its remote workspace's force-detach mark and lost no connection of its own · no glyph · title remote.row.popup.idle_title · body remote.row.popup.held_body · Connect enabled",
             ),
             (
                 "action",
@@ -470,6 +495,14 @@ fn draw_last_screen(ui: &mut egui::Ui, theme: &Theme) {
                 Pop::new(K::User, true),
             ),
             (
+                "disconnected — the remote Tasty force-detached this row · Reconnect",
+                Pop::new(K::Server, true),
+            ),
+            (
+                "held — another row of the same remote workspace was force-detached · reconnecting stops · Reconnect",
+                Pop::new(K::Held, true),
+            ),
+            (
                 "failed Reconnect — the remote workspace is gone",
                 Pop::new(K::Failed, true).reason(RemoteRowReason::WorkspaceMissing),
             ),
@@ -486,6 +519,7 @@ fn draw_last_screen(ui: &mut egui::Ui, theme: &Theme) {
             for (word, kind) in [
                 ("reconnecting", K::Reconnecting),
                 ("timed out", K::GaveUp),
+                ("disconnected by the remote Tasty", K::Server),
                 ("closed elsewhere", K::Closed),
             ] {
                 labelled(ui, theme, &format!("{lang} · {word}"), |ui| {
@@ -529,6 +563,14 @@ fn draw_last_screen(ui: &mut egui::Ui, theme: &Theme) {
             (
                 "user disconnected",
                 "no glyph · Disconnected · user_body_stay (L1 a) · Reconnect",
+            ),
+            (
+                "remote disconnected",
+                "the remote Tasty force-detached this row while it was connected (surface or workspace) · no glyph · title remote.row.popup.user_title · body remote.row.popup.server_body · Reconnect enabled",
+            ),
+            (
+                "held over the last screen",
+                "another saved row of the same remote workspace was force-detached while this row had its last screen (connected, reconnecting or timed out) · the hold stops its reconnecting · no glyph · title remote.row.popup.user_title · body remote.row.popup.held_body · Reconnect enabled",
             ),
             (
                 "failed",
@@ -970,123 +1012,9 @@ fn draw_pending(ui: &mut egui::Ui, theme: &Theme) {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
+#[path = "layouts_remote_row_tests.rs"]
+mod tests;
 
-    fn collect_text(shape: &egui::Shape, out: &mut Vec<String>) {
-        match shape {
-            egui::Shape::Text(text) => out.push(text.galley.text().to_owned()),
-            egui::Shape::Vec(shapes) => shapes.iter().for_each(|s| collect_text(s, out)),
-            _ => {}
-        }
-    }
-
-    fn frame_text(out: &egui::FullOutput) -> String {
-        let mut texts = Vec::new();
-        for clipped in &out.shapes {
-            collect_text(&clipped.shape, &mut texts);
-        }
-        texts.join("\n")
-    }
-
-    /// `draw`가 돌려준 rect 위에 포인터를 툴팁 지연보다 오래 두고, 그 전과 뒤에 그려진 글자를 돌려준다.
-    fn hover_text(
-        draw: impl Fn(&mut egui::Ui, &Theme) -> Vec<egui::Rect>,
-        at: usize,
-    ) -> (String, String) {
-        let theme = tasty_themes::mocha_fallback();
-        let ctx = egui::Context::default();
-        crate::fonts::install(&ctx);
-        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1200.0, 800.0));
-        let input = |time: f64, pointer: Option<egui::Pos2>| egui::RawInput {
-            screen_rect: Some(screen),
-            time: Some(time),
-            events: pointer
-                .map(|p| vec![egui::Event::PointerMoved(p)])
-                .unwrap_or_default(),
-            ..Default::default()
-        };
-        let mut target = Vec::new();
-        let run = |raw: egui::RawInput, target: &mut Vec<egui::Rect>| {
-            ctx.run(raw, |ctx| {
-                egui::CentralPanel::default().show(ctx, |ui| *target = draw(ui, &theme));
-            })
-        };
-        let before = frame_text(&run(input(0.0, None), &mut target));
-        let rect = *target.get(at).expect("drawn target");
-        let delay = theme.tooltip_delay().to_secs_f64();
-        let mut last = run(input(0.1, Some(rect.center())), &mut target);
-        for step in 1..4 {
-            last = run(input(0.2 + delay + step as f64 * 0.1, None), &mut target);
-        }
-        (before, frame_text(&last))
-    }
-
-    /// 툴팁에 있어야 할 세 줄. 이유 문장의 인자는 프로필이 없어진 행은 옛 프로필 이름, 그 밖은 행 이름이다.
-    fn expected_lines(lang: &str, reason: RemoteRowReason) -> [String; 3] {
-        let (profile, arg) = match reason {
-            RemoteRowReason::ProfileMissing => ("host-old", "host-old"),
-            _ => ("host", "tasty-core"),
-        };
-        [
-            t_lang(lang, "attach.mirror_workspace").to_owned(),
-            format!("{profile} \u{2192} tasty-core"),
-            t_lang(lang, reason.key()).replacen("{}", arg, 1),
-        ]
-    }
-
-    fn assert_tip(label: &str, before: &str, after: &str, lang: &str, reason: RemoteRowReason) {
-        let lines = expected_lines(lang, reason);
-        assert!(
-            !before.contains(&lines[2]),
-            "{label}: the reason shows before hover"
-        );
-        for line in &lines {
-            assert!(
-                after.contains(line.as_str()),
-                "{label}: no {line:?} in {after:?}"
-            );
-        }
-        assert!(
-            !after.contains("{}"),
-            "{label}: a template slot is left in {after:?}"
-        );
-    }
-
-    #[test]
-    fn the_row_mark_tooltip_names_the_target_and_fills_the_reason() {
-        let reasons: Vec<_> = ROWS
-            .iter()
-            .filter_map(|(_, s, r)| r.map(|r| (*s, r)))
-            .collect();
-        assert_eq!(reasons.len(), 2, "two reason rows");
-        for lang in langs() {
-            for &(state, reason) in &reasons {
-                let (before, after) = hover_text(
-                    |ui, theme| {
-                        row(ui, theme, lang, state, Some(reason), false)
-                            .into_iter()
-                            .collect()
-                    },
-                    0,
-                );
-                assert_tip(
-                    &format!("row {lang} {reason:?}"),
-                    &before,
-                    &after,
-                    lang,
-                    reason,
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn the_rail_avatar_tooltip_matches_the_row_mark() {
-        let reasons: Vec<_> = ROWS.iter().filter_map(|(_, _, r)| *r).collect();
-        for (i, reason) in reasons.into_iter().enumerate() {
-            let (before, after) = hover_text(rail, i);
-            assert_tip(&format!("rail {reason:?}"), &before, &after, "en", reason);
-        }
-    }
-}
+#[cfg(test)]
+#[path = "layouts_remote_row_tooltip_tests.rs"]
+mod tooltip_tests;
