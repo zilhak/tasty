@@ -1027,7 +1027,10 @@ mod tests {
                 let (mut id, mut cmd) = (String::new(), String::new());
                 hook_add_card(ui, &theme, &mut id, &mut cmd);
             });
-            let head = p.text("New hook handler").rect;
+            // mono_head는 머리글을 대문자로 그린다.
+            let head_text =
+                crate::i18n::t("settings.file_handler.hook_handlers.new_head").to_uppercase();
+            let head = p.text(&head_text).rect;
             assert_eq!(p.edge_around(head), strong);
         }
     }
