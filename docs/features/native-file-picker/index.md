@@ -357,7 +357,7 @@ view 는 `FilePickerProps` 만 받고 `FilePickerAction` 만 돌려주므로 상
   - 이름을 고쳐 고른 행과 달라지는 순간 선택이 풀린다(`FilePickerAction::EditName`). 같은 값이면
     선택이 유지된다. 그래서 "고른 파일" 과 "입력한 이름" 이 서로 다른 경로를 가리키는 상태가 없다.
   - **덮어쓰기**: 입력한 이름(앞뒤 공백 제외)이 지금 나열된 폴더에 **보이는 파일**로 있으면 버튼 위에
-    경고 줄(`filepicker.save.overwrite_warning`, 이름만 mono · `accent-warning`)이 뜨고 버튼 라벨이
+    경고 줄(`filepicker.save.overwrite_warning`, 이름만 mono · `accent-warning-raised`)이 뜨고 버튼 라벨이
     **Overwrite** 로 바뀐다. 확인 대화상자는 없다. 판정은 나열된 목록 조회뿐이다 — 필터에 걸려 안 보이는
     파일이나 나열되지 않은 경로는 stat 하지 않는다.
   - **확정 조건**: 현재 디렉토리가 읽혔고, 이름이 한 경로 성분이며(`/`·`\`·`.`·`..`·빈 이름 거부),

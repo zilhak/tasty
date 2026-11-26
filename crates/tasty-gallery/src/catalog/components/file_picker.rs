@@ -477,9 +477,9 @@ pub fn draw_save_mode(ui: &mut egui::Ui, theme: &Theme) {
         ],
         &[
             TokenChip::new(
-                "accent-warning",
+                "accent-warning-raised",
                 "overwrite line",
-                theme.accent_warning().to_egui(),
+                theme.accent_warning_raised().to_egui(),
             ),
             TokenChip::new("input-bg", "name field", theme.input_bg().to_egui()),
             TokenChip::new(

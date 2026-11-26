@@ -324,9 +324,9 @@ fn split_named(template: &str) -> Vec<(&str, Slot)> {
     out
 }
 
-/// 덮어쓰기 경고 줄 — `alertTriangle` + 문구(이름만 mono). caption · `accent-warning`.
+/// 덮어쓰기 경고 줄 — `alertTriangle` + 문구(이름만 mono). caption · `accent-warning-raised`.
 fn overwrite_line(ui: &mut egui::Ui, th: &Theme, line: egui::Rect, template: &str, name: &str) {
-    let warn: egui::Color32 = th.accent_warning().into();
+    let warn: egui::Color32 = th.accent_warning_raised().into();
     let size = th.font_size_caption.value();
     let glyph = th.fp_footer_line_glyph_size().value();
     let icon_rect = egui::Rect::from_min_size(

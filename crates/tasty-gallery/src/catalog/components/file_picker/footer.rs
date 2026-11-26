@@ -201,9 +201,9 @@ fn folder_line(ui: &mut egui::Ui, theme: &Theme, mode: Mode) {
 }
 
 /// 덮어쓰기 경고 줄 — `alertTriangle` + "`<name>` already exists in this folder. Saving
-/// replaces it." (11px · `accent-warning`, 이름만 mono).
+/// replaces it." (11px · `accent-warning-raised`, 이름만 mono).
 fn overwrite_line(ui: &mut egui::Ui, theme: &Theme, name: &str) {
-    let warn = theme.accent_warning().to_egui();
+    let warn = theme.accent_warning_raised().to_egui();
     let size = theme.font_size_caption.value();
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = theme.spacing_xs.value();

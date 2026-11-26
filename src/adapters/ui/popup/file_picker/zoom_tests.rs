@@ -123,3 +123,45 @@ fn the_overwrite_line_glyph_follows_the_ui_zoom() {
         );
     }
 }
+
+/// 내장 Latte. 경고 잉크 `accent-warning` 과 `accent-warning-raised` 가 갈리는 테마다.
+fn latte() -> Theme {
+    let file = tasty_themes::ThemeFile::parse(tasty_themes::LATTE_TOML_TEXT).expect("latte");
+    let (partial, is_light) = file.to_partial();
+    let mut colors = tasty_themes::mocha_fallback_colors();
+    colors.apply_partial(&partial);
+    Theme::with_colors(colors, is_light.unwrap_or(true))
+}
+
+/// 덮어쓰기 경고 문구는 `accent-warning-raised` 로 칠한다(Latte 패널 위 글자 대비 기준).
+#[test]
+fn the_overwrite_line_text_reads_the_raised_warning_ink() {
+    let th = latte();
+    let raised: egui::Color32 = th.accent_warning_raised().into();
+    let plain: egui::Color32 = th.accent_warning().into();
+    assert_ne!(
+        raised, plain,
+        "Latte 에서 두 잉크가 갈려야 시험이 뜻을 갖는다"
+    );
+    let shapes = painted_mode(&th, egui::vec2(640.0, 480.0), OVERWRITE);
+    let inks: Vec<egui::Color32> = shapes
+        .iter()
+        .filter_map(|c| match &c.shape {
+            egui::epaint::Shape::Text(t) if t.galley.text() == WARNING_TEXT => Some(
+                t.galley
+                    .job
+                    .sections
+                    .iter()
+                    .map(|s| s.format.color)
+                    .collect::<Vec<_>>(),
+            ),
+            _ => None,
+        })
+        .flatten()
+        .collect();
+    assert!(!inks.is_empty(), "경고 문구가 칠해진다");
+    assert!(
+        inks.iter().all(|c| *c == raised),
+        "경고 문구 구간 색 {inks:?}, 기대 {raised:?}"
+    );
+}

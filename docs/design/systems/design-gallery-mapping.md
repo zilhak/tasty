@@ -1267,7 +1267,7 @@ C 프레임보더) 중 **A 배지가 사용자 확정**되었다. 본체와 갤�
 | 로딩/빈폴더/에러(권한·연결끊김) | `body` → `center` → 공용 `CenterState` | Spinner · folderOpen · 부품 소유 오류 글리프(alertTriangle). Retry/Reconnect 는 refresh 아이콘을 단 위젯 액션으로, 가운데 정렬 밖 보조 슬롯 아래에 매달린다 |
 | footer(name field+filter chip+Cancel/Open) | `footer` + 공용 `filter_readout` | `kit::field` 재사용, Open 은 loaded 상태에서만 활성. 라벨·칩·버튼 flex:none, 이름 칸만 준다 |
 | `FilePickerFrame filters` prop · `overlays-windows.jsx` "File-type filter chip — a read-only readout" | `Variant::filtered` · `Variant::sized` · `draw_filter_chip`(Spec `filepicker-filter-chip`) | 4 프레임(필터 없음 · 하나 · 둘+저장 · 여섯=상한 말줄임), 디자인과 같은 480×300 카드. 읽기 전용 표시라 chevron·채움·hover 없음, 툴팁 "Showing …" |
-| footer overwrite line(`save="picked"`) | `overwrite_line` · `footer_height` | alertTriangle + 이름 mono · `accent-warning`. footer 가 커지면 본문이 준다 |
+| footer overwrite line(`save="picked"`) | `overwrite_line` · `footer_height` | alertTriangle + 이름 mono · `accent-warning-raised`. footer 가 커지면 본문이 준다 |
 | `FilePickerFrame mode/save` prop | `Variant` · `Mode` · `SaveState` | Save file 제목 · Save/Overwrite 라벨 · 저장 모드 선택 행 |
 | `FilePickerFrame remote/deep/pathKind` prop | `Variant::path` · `path_bar::PathKind`(`Local` · `Remote` · `Deep` · `LongTwo` · `LongRoot`) | 디자인 crumbs seed 를 그대로 쓴다 |
 | `FilePickerFrame folderSel` prop | `Variant::folder_selected` · `footer::folder_line`(Spec `filepicker-gesture-table`) | 고른 것이 폴더인 상태 — 저장은 "저장 대상이 아니다", 열기는 "확정하면 들어간다". 톤 없는 muted caption + `folder` 글리프, 열기 문구는 확정 버튼 이름을 부른다. 본체는 `file_picker::selected_folder` · `footer::folder_line` |
