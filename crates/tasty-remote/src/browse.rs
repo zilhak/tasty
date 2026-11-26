@@ -130,6 +130,10 @@ pub(crate) fn probe_method_bound(
 ) -> Result<serde_json::Value> {
     let stream = TcpStream::connect(("127.0.0.1", port))
         .with_context(|| format!("터널 localport 127.0.0.1:{port} 연결 실패"))?;
+    #[cfg(test)]
+    crate::attempt_seam::at(crate::attempt_seam::Stage::AfterConnect, &stream);
+    // 이 연결과 writer 복제는 자식 프로세스가 물려받지 않게 한다(Windows).
+    tasty_utils::socket_inherit::disable_inherit(&stream)?;
     if let Some(attempt) = attempt {
         attempt.register_socket(&stream)?;
         #[cfg(test)]
@@ -157,7 +161,9 @@ pub(crate) fn probe_method_bound(
         session_token: None,
     };
 
-    let mut writer = stream.try_clone()?;
+    let mut writer = tasty_utils::socket_inherit::try_clone_uninherited(&stream)?;
+    #[cfg(test)]
+    crate::attempt_seam::at(crate::attempt_seam::Stage::BeforeRequest, &writer);
     let json = serde_json::to_string(&request)?;
     writeln!(writer, "{json}").context("IPC 요청 전송 실패")?;
     writer.flush().context("IPC 요청 flush 실패")?;
@@ -413,3 +419,7 @@ mod tests {
         );
     }
 }
+
+#[cfg(all(test, windows))]
+#[path = "browse_inherit_tests.rs"]
+mod inherit_tests;

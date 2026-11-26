@@ -1,4 +1,4 @@
-//! 시험 전용: 연결 단계 사이에 시험이 끼어드는 자리. 연결 직후, 시도 토큰을 등록한 직후, open 직전에
+//! 시험 전용: 연결 단계 사이에 시험이 끼어드는 자리. 연결 직후, 시도 토큰을 등록한 직후, open·요청 직전에
 //! 시험이 건 함수를 한 번 부르고, 어느 자리에 닿았는지 남긴다. 연결 함수는 시험 스레드에서 직접 부르므로
 //! thread-local 로 충분하다.
 
@@ -13,6 +13,8 @@ pub enum Stage {
     AfterRegister,
     /// 기한 설정 뒤 handshake open 직전.
     BeforeOpen,
+    /// JSON-RPC 요청 한 번(`probe_method_bound`)이 요청을 쓰기 직전. 넘기는 소켓은 쓰는 쪽 복제다.
+    BeforeRequest,
 }
 
 type Hook = Box<dyn FnOnce(&TcpStream)>;
