@@ -393,7 +393,7 @@ pub(super) fn name_row(
             let slot = theme.icon_glyph_size_md.value();
             let pad = theme.spacing_sm.value();
             let cell = egui::vec2(
-                super::CELL_W.value(),
+                theme.explorer_grid_cell_width().value(),
                 pad + slot + theme.spacing_xs.value() + theme.input_height().value() + pad,
             );
             let (_, field, event) = explorer_name_row_in(

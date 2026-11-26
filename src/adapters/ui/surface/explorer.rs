@@ -37,8 +37,6 @@ pub(crate) use kind::{file_kind_word, kind_word};
 use view::{DirEntryInfo, ExplorerView, LoadState, human_size};
 use visible_rows::{GridMetrics, grid_metrics, open_span, scroll_target};
 
-/// grid 셀 폭.
-const CELL_W: LogicalPx = LogicalPx(80.0);
 /// 사이드바 폭 (logical px — design `ExpSidebar` width 196).
 const SIDEBAR_W: LogicalPx = LogicalPx(196.0);
 
@@ -1133,12 +1131,13 @@ fn grid_view(
     let lead = usize::from(parent.is_some());
     let at = create::place::slot_index(view);
     let count = view.shown_count() + usize::from(at.is_some());
-    let cols = (((ui.available_width() + gap) / (CELL_W.value() + gap)).floor() as usize).max(1);
+    let cell_w = theme.explorer_grid_cell_width().value();
+    let cols = (((ui.available_width() + gap) / (cell_w + gap)).floor() as usize).max(1);
     let in_first = cols.saturating_sub(lead).min(count);
     let rest_lines = (count - in_first).div_ceil(cols);
     let target = scroll_target(view).map(|t| create::place::virtual_index(at, t));
     ui.spacing_mut().item_spacing = egui::vec2(gap, 0.0);
-    view.note_grid(ui, (CELL_W.value(), ctx.metrics.cell_h), gap, (cols, lead));
+    view.note_grid(ui, (cell_w, ctx.metrics.cell_h), gap, (cols, lead));
     create::place::fit_layout(view, at, |l| l.lead += 1);
 
     ui.horizontal(|ui| {
@@ -1207,8 +1206,10 @@ fn grid_cell(
 ) -> egui::Response {
     let EntryCtx { theme, query, .. } = *ctx;
     let GridMetrics { slot, cell_h, .. } = ctx.metrics;
-    let (rect, resp) =
-        ui.allocate_exact_size(egui::vec2(CELL_W.value(), cell_h), egui::Sense::click());
+    let (rect, resp) = ui.allocate_exact_size(
+        egui::vec2(theme.explorer_grid_cell_width().value(), cell_h),
+        egui::Sense::click(),
+    );
     let p = ui.painter_at(rect);
 
     let state = tasty_ui_widgets::RowState::from_response(selected, &resp);
@@ -1249,7 +1250,8 @@ fn grid_cell(
     // 링크는 마지막 줄 끝에 link 글리프가 들어갈 폭을 남긴다.
     let tail = link::has_tail(e).then(|| link::tail_width(theme, e));
     job.wrap = egui::text::TextWrapping {
-        max_width: (CELL_W - theme.spacing_xs.scaled(2.0)).value() - tail.unwrap_or(0.0),
+        max_width: (theme.explorer_grid_cell_width() - theme.spacing_xs.scaled(2.0)).value()
+            - tail.unwrap_or(0.0),
         max_rows: 3,
         overflow_character: Some('…'),
         ..Default::default()
@@ -1601,6 +1603,8 @@ fn tool_icon(ui: &mut egui::Ui, theme: &Theme, icon: Icon, enabled: bool, tip: &
     enabled && resp.clicked()
 }
 
+#[cfg(test)]
+mod grid_zoom_tests;
 #[cfg(test)]
 mod virtual_tests;
 

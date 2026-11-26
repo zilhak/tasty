@@ -12,9 +12,6 @@ use tasty_ui_widgets::{
 use crate::catalog::icons::{FILE, FOLDER, IMAGE, MockGlyph};
 use crate::catalog::spec::{StageVariant, TokenChip, body_column, cluster, meta, note, stage};
 
-/// 셀 폭.
-const CELL_W: LogicalPx = LogicalPx(80.0);
-
 /// 샘플 항목의 종류. 이미지는 accent-info 로 칠한다(본체 explorer 와 같은 규칙).
 #[derive(Clone, Copy)]
 pub(super) enum Kind {
@@ -373,8 +370,10 @@ pub(super) fn grid_cell_parts(
         + theme.spacing_xs.value()
         + label_h
         + theme.spacing_sm.value();
-    let (rect, resp) =
-        ui.allocate_exact_size(egui::vec2(CELL_W.value(), cell_h), egui::Sense::click());
+    let (rect, resp) = ui.allocate_exact_size(
+        egui::vec2(theme.explorer_grid_cell_width().value(), cell_h),
+        egui::Sense::click(),
+    );
     let p = ui.painter_at(rect);
 
     if selected {
@@ -426,7 +425,7 @@ pub(super) fn grid_cell_parts(
     let mut job = egui::text::LayoutJob {
         halign: egui::Align::Center,
         wrap: egui::text::TextWrapping {
-            max_width: (CELL_W - theme.spacing_xs.scaled(2.0)).value(),
+            max_width: (theme.explorer_grid_cell_width() - theme.spacing_xs.scaled(2.0)).value(),
             max_rows: 3,
             overflow_character: Some('…'),
             ..Default::default()

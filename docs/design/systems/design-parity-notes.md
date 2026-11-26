@@ -496,9 +496,9 @@ State 셀은 `status_dot`(점 `status_dot_size` 8 + `space-xs` 4 + caption 11px 
 
 ## Explorer — 아이콘과 여러 줄 파일명
 
-파일명은 폭 기준으로 최대 3줄을 표시하고 마지막 줄을 말줄임한다. `LayoutJob`의 `halign: Align::Center`, `TextWrapping { max_width: CELL_W - spacing_xs*2, max_rows: 3, overflow_character: Some('…') }`를 사용한다. `p.galley()`는 라벨 블록 위쪽에서 그려 각 행을 가운데 정렬한다.
+파일명은 폭 기준으로 최대 3줄을 표시하고 마지막 줄을 말줄임한다. `LayoutJob`의 `halign: Align::Center`, `TextWrapping { max_width: explorer_grid_cell_width() - spacing_xs*2, max_rows: 3, overflow_character: Some('…') }`를 사용한다. `p.galley()`는 라벨 블록 위쪽에서 그려 각 행을 가운데 정렬한다.
 
-`CELL_W`는 80, 유효 라벨 폭은 72다. 줄 높이 `round(11×1.3)`인 14를 3줄 예약해 짧은 이름도 같은 셀 높이를 사용한다. 아이콘과 라벨 간격은 `spacing_xs`(4), 블록 상하 간격은 `spacing_sm`(8)이다.
+칸 폭은 `explorer-grid-cell-width`(80) 토큰이고 UI 배율을 따른다. 배율 1에서 유효 라벨 폭은 72다. 줄 높이 `round(11×1.3)`인 14를 3줄 예약해 짧은 이름도 같은 셀 높이를 사용한다. 아이콘과 라벨 간격은 `spacing_xs`(4), 블록 상하 간격은 `spacing_sm`(8)이다.
 
 아이콘은 `icon_glyph_size_md`(16), 라벨은 `font_size_caption`(11)을 사용하고 사용자 Explorer 글꼴 크기도 caption 상한으로 제한한다. 선택한 라벨은 `text_on_active`, 나머지는 `text_secondary`다. 폴더·파일 글리프는 text-muted이고 선택 행에서는 행 잉크다. 이미지는 `accent_info_raised`이고 선택 행에서는 `accent_info_on_active`다. 호버·잘라내기 표시는 기존 규칙을 따른다.
 

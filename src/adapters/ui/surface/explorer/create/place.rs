@@ -110,11 +110,12 @@ pub(in super::super) fn grid_lines(
         && !span.contains(&((a - in_first) / cols))
     {
         let (line, col) = ((a - in_first) / cols, (a - in_first) % cols);
+        let cell_w = ctx.theme.explorer_grid_cell_width().value();
         let min = egui::pos2(
-            ui.max_rect().left() + col as f32 * (super::super::CELL_W.value() + gap),
+            ui.max_rect().left() + col as f32 * (cell_w + gap),
             top + line as f32 * pitch + gap,
         );
-        let rect = egui::Rect::from_min_size(min, egui::vec2(super::super::CELL_W.value(), pitch));
+        let rect = egui::Rect::from_min_size(min, egui::vec2(cell_w, pitch));
         let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect));
         name_row(&mut child, ctx.theme, view, Slot::Grid, action);
     }
