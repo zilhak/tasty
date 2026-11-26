@@ -249,14 +249,4 @@ impl PopupManager {
             .iter()
             .any(|p| p.id == id && p.open && p.scope_visible && p.passive)
     }
-
-    /// 포커스 위치인 열린 popup ID. Linux 탐색기 IME가 rename 입력의 소유를 판정할 때 쓴다.
-    #[cfg(target_os = "linux")]
-    pub fn keyboard_focused_ids(&self) -> Vec<PopupId> {
-        self.focused_host()
-            .filter(|p| p.open && p.scope_visible)
-            .map(|p| p.id)
-            .into_iter()
-            .collect()
-    }
 }

@@ -372,7 +372,6 @@ fn every_overlay_open_composite_is_stage_aware() {
         callers,
         vec![
             "src/adapters/ipc/handler/debug_state.rs".to_string(),
-            "src/adapters/ui/input/explorer_ime.rs".to_string(),
             "src/adapters/ui/input/key_nodes.rs".to_string(),
             "src/app/webview_sync.rs".to_string(),
             "src/state/popup_key_owner.rs".to_string(),

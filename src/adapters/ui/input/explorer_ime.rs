@@ -139,14 +139,20 @@ fn rename_input_owner(
     if state.fullscreen_stage_active()
         || state.has_settings_open_request()
         || state.plugin_popup_owns_keys()
-        || state.popups.keyboard_focused_ids() != ["rename"]
     {
         return None;
     }
+    // 포커스 노드인 rename host 인스턴스 하나에서 소유 여부와 payload 를 함께 읽는다.
+    let crate::state::focus_node::FocusNode::Popup(
+        crate::adapters::ui::popup::focus::PopupNode::Host(iid),
+    ) = state.focus_node(engine)
+    else {
+        return None;
+    };
     let rename = state
         .popups
-        .instances_of(crate::adapters::ui::rename_popup::RENAME_POPUP_ID)
-        .find(|p| state.popups.is_instance_focused(p.instance))
+        .instance(iid)
+        .filter(|p| p.id == crate::adapters::ui::rename_popup::RENAME_POPUP_ID)
         .and_then(|p| crate::adapters::ui::rename_popup::payload_of(&p.payload))?;
     if rename.waiting.is_some() {
         return None;
@@ -201,15 +207,24 @@ impl crate::App {
     }
 }
 
-/// IME 를 받을 explorer surface: 창 키가 오버레이로 가지 않을 때 포커스된 explorer.
+/// IME 를 받을 explorer surface: 포커스 노드가 그 explorer surface 이고, 포커스 노드에 없는 키 게이트 항(몫 결속
+/// `bound_input_key_owner`, 복원 안내 키 포커스, 입력 대화상자, plugin 키 주인)이 모두 거짓일 때.
 fn ime_explorer_surface(
     state: &crate::state::MainViewState,
     engine: &crate::runtime::engine_read::EngineRead<'_>,
 ) -> Option<u32> {
-    if state.window_keys_to_overlay() {
+    let crate::state::focus_node::FocusNode::Surface(Some(sid)) = state.focus_node(engine) else {
+        return None;
+    };
+    if state.popups.bound_input_key_owner().is_some()
+        || crate::adapters::ui::restore_notice::has_keyboard_focus(&state.popups)
+        || state.input_dialog_owns_keys()
+        || state.plugin_popup_owns_keys()
+    {
         return None;
     }
     crate::adapters::ui::input::shortcuts::focused_explorer_surface_id(state, engine)
+        .filter(|explorer| *explorer == sid)
 }
 
 /// X11 raw 키 누름의 입력 소유자: 이름 바꾸기 팝업, 아니면 IME 를 받을 explorer 의 목록·찾기 입력칸. raw 키는 창의 키
