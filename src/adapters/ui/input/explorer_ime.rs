@@ -201,17 +201,40 @@ impl crate::App {
     }
 }
 
-impl crate::view::main::MainView {
-    fn ime_explorer_surface(
-        &self,
-        engine: &crate::runtime::engine_read::EngineRead<'_>,
-    ) -> Option<u32> {
-        if self.state.window_keys_to_overlay() {
-            return None;
-        }
-        crate::adapters::ui::input::shortcuts::focused_explorer_surface_id(&self.state, engine)
+/// IME 를 받을 explorer surface: 창 키가 오버레이로 가지 않을 때 포커스된 explorer.
+fn ime_explorer_surface(
+    state: &crate::state::MainViewState,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
+) -> Option<u32> {
+    if state.window_keys_to_overlay() {
+        return None;
     }
+    crate::adapters::ui::input::shortcuts::focused_explorer_surface_id(state, engine)
+}
 
+/// X11 raw 키 누름의 입력 소유자: 이름 바꾸기 팝업, 아니면 IME 를 받을 explorer 의 목록·찾기 입력칸.
+fn raw_key_owner(
+    state: &crate::state::MainViewState,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
+) -> Option<InputOwner> {
+    rename_input_owner(state, engine).or_else(|| {
+        ime_explorer_surface(state, engine).and_then(|sid| {
+            let view = state.explorer_views.get(sid)?;
+            if !view.text_input_active() {
+                Some(InputOwner::List(sid))
+            } else if !view.addr_editing
+                && view.create.is_none()
+                && view.find.as_ref().is_some_and(|find| find.field_focused)
+            {
+                Some(InputOwner::Find(sid))
+            } else {
+                None
+            }
+        })
+    })
+}
+
+impl crate::view::main::MainView {
     /// `waiting` 은 그 창 보류 줄(창의 편집·정착 줄, App 플러그인 편집 보류 줄)에 선 가장 이른 사건의 도착 시각이다.
     pub(crate) fn observe_explorer_raw_key(
         &mut self,
@@ -220,21 +243,7 @@ impl crate::view::main::MainView {
         waiting: Option<Instant>,
     ) {
         if event.state == ElementState::Pressed {
-            let input = rename_input_owner(&self.state, engine).or_else(|| {
-                self.ime_explorer_surface(engine).and_then(|sid| {
-                    let view = self.state.explorer_views.get(sid)?;
-                    if !view.text_input_active() {
-                        Some(InputOwner::List(sid))
-                    } else if !view.addr_editing
-                        && view.create.is_none()
-                        && view.find.as_ref().is_some_and(|find| find.field_focused)
-                    {
-                        Some(InputOwner::Find(sid))
-                    } else {
-                        None
-                    }
-                })
-            });
+            let input = raw_key_owner(&self.state, engine);
             self.explorer_ime_keys
                 .press(event.physical_key, input, Instant::now(), waiting);
         }
@@ -260,7 +269,7 @@ impl crate::view::main::MainView {
                 let rename = rename_input_owner(&self.state, engine);
                 let surface = rename
                     .map(InputOwner::surface)
-                    .or_else(|| self.ime_explorer_surface(engine));
+                    .or_else(|| ime_explorer_surface(&self.state, engine));
                 let arrived = self.base.gpu.event_arrival();
                 if let Some(owner) =
                     self.explorer_ime_keys
