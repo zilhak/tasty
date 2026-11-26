@@ -472,6 +472,7 @@ src/catalog/components/remote.rs	inactive	remote_attach.inactive,remote_tool.att
 src/catalog/components/remote.rs	inline	remote_tool.attach_tag_inline
 src/catalog/components/remote.rs	passkey missing	remote_tool.passkey_missing
 src/catalog/components/remote.rs	profile	remote_tool.attach_tag_profile
+src/catalog/components/remote.rs	profile missing	remote_tool.attach_profile_missing
 src/catalog/components/remote.rs	unknown	remote_tool.filter_unknown
 src/catalog/components/remote.rs	—	dag.detail.none,port_scanner.external_dash
 src/catalog/components/remote/forms.rs	(none)	remote_tool.passkey_none

@@ -52,7 +52,19 @@ fn the_attach_specimen_draws_old_attach_with_a_profile_missing_badge() {
             "legacy-attach is muted"
         );
 
-        let badges: Vec<&PaintedText> = p.texts.iter().filter(|t| t.text == missing).collect();
+        // 표본 아래 Meta 표에도 정본 행 이름 `profile missing`이 같은 글자로 그려지므로 그 표 위만 센다.
+        let meta_top = p
+            .texts
+            .iter()
+            .find(|t| t.text == "row1")
+            .expect("the specimen notes are drawn")
+            .rect
+            .top();
+        let badges: Vec<&PaintedText> = p
+            .texts
+            .iter()
+            .filter(|t| t.text == missing && t.rect.top() < meta_top)
+            .collect();
         assert_eq!(badges.len(), 1, "one profile missing badge in the specimen");
         let badge = badges[0];
         let target = p

@@ -462,8 +462,15 @@ pub fn draw_attach(ui: &mut egui::Ui, theme: &Theme) {
         &[
             ("frame", "520×460 · bg-panel · middle tab"),
             ("row1", "name · (label) · mode Tag · inactive badge"),
-            ("row2", "target mono (→ profile | user@host[:port])"),
+            (
+                "row2",
+                "target mono (→ profile | user@host[:port]) · profile missing badge beside it",
+            ),
             ("row3", "tasty: + port: captions · gap 12"),
+            (
+                "profile missing",
+                "warning badge (referenced profile missing)",
+            ),
             ("add-bar", "Add attach only — no protocol filter"),
         ],
         &[
