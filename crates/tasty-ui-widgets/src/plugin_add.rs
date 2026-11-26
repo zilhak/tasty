@@ -194,7 +194,7 @@ pub fn plugin_manifest_card(
         .fill(theme.surface_raised().to_egui())
         .stroke(egui::Stroke::new(
             theme.border_width.value(),
-            theme.border_default().to_egui(),
+            theme.border_strong().to_egui(),
         ))
         .corner_radius(theme.corner_radius.value())
         .inner_margin(egui::Margin::same(theme.spacing_lg.value() as i8))
@@ -913,6 +913,81 @@ mod tests {
             click("file:///etc/passwd", card("file:///etc/passwd")),
             (false, false)
         );
+    }
+
+    fn latte() -> Theme {
+        let file = tasty_themes::ThemeFile::parse(tasty_themes::LATTE_TOML_TEXT).expect("latte");
+        let (partial, is_light) = file.to_partial();
+        let mut colors = tasty_themes::mocha_fallback_colors();
+        colors.apply_partial(&partial);
+        Theme::with_colors(colors, is_light.unwrap_or(true))
+    }
+
+    fn flatten(shape: &egui::Shape, out: &mut Vec<egui::Shape>) {
+        match shape {
+            egui::Shape::Vec(shapes) => shapes.iter().for_each(|s| flatten(s, out)),
+            other => out.push(other.clone()),
+        }
+    }
+
+    /// 매니페스트 카드는 raised 카드라 외곽이 border-strong이다. 이름 글자를 품는 가장 작은 테두리를 본다.
+    #[test]
+    fn the_manifest_card_edges_with_border_strong() {
+        for theme in [tasty_themes::mocha_fallback(), latte()] {
+            let strong = theme.border_strong().to_egui();
+            assert_ne!(strong, theme.border_default().to_egui());
+            let ctx = egui::Context::default();
+            let mut shapes = Vec::new();
+            for _ in 0..2 {
+                let out = ctx.run(egui::RawInput::default(), |ctx| {
+                    egui::CentralPanel::default().show(ctx, |ui| {
+                        plugin_manifest_card(
+                            ui,
+                            &theme,
+                            &PluginManifestCardView {
+                                name: "Git helper",
+                                version: "1.0.0",
+                                id: "com.a.b",
+                                authors: &[],
+                                description: "",
+                                surface_kinds_label: "Surface kinds",
+                                surface_kinds: &[],
+                                source_label: "Source",
+                                source: "/tmp/p",
+                                homepage_label: "Homepage",
+                                homepage: "",
+                                none: "None",
+                            },
+                        );
+                    });
+                });
+                shapes.clear();
+                out.shapes
+                    .iter()
+                    .for_each(|c| flatten(&c.shape, &mut shapes));
+            }
+            let name = shapes
+                .iter()
+                .find_map(|s| match s {
+                    egui::Shape::Text(t) if t.galley.text() == "Git helper" => {
+                        Some(t.visual_bounding_rect())
+                    }
+                    _ => None,
+                })
+                .expect("이름이 그려져야 한다");
+            let edge = shapes
+                .iter()
+                .filter_map(|s| match s {
+                    egui::Shape::Rect(r) if r.stroke.width > 0.0 && r.rect.contains_rect(name) => {
+                        Some((r.rect.area(), r.stroke.color))
+                    }
+                    _ => None,
+                })
+                .min_by(|a, b| a.0.total_cmp(&b.0))
+                .map(|(_, c)| c)
+                .expect("카드 테두리");
+            assert_eq!(edge, strong);
+        }
     }
 
     #[test]
