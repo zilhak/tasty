@@ -3,6 +3,7 @@
 //! 연보라 고리를 두르고, `notif` 는 제목을 경고색으로 칠한다.
 
 use tasty_type_appearance::theme::Theme;
+use tasty_ui_widgets::{Attention, tab_title_color};
 
 use crate::catalog::icons::{CLOSE, MARKDOWN, MockGlyph, TERMINAL};
 use crate::catalog::spec::{StageVariant, TokenChip, meta, note, stage};
@@ -14,6 +15,8 @@ struct TabSpec {
     busy: bool,
     attached: bool,
     notif: bool,
+    /// 제목의 attention. 있으면 본체와 같은 `tab_title_color`로 칠한다(활성 탭에서도 이긴다).
+    attention: Option<Attention>,
 }
 
 const TABS: [TabSpec; 3] = [
@@ -24,6 +27,7 @@ const TABS: [TabSpec; 3] = [
         busy: true,
         attached: false,
         notif: false,
+        attention: None,
     },
     TabSpec {
         label: "README.md",
@@ -32,6 +36,7 @@ const TABS: [TabSpec; 3] = [
         busy: false,
         attached: true,
         notif: false,
+        attention: None,
     },
     TabSpec {
         label: "server.log",
@@ -40,31 +45,66 @@ const TABS: [TabSpec; 3] = [
         busy: false,
         attached: false,
         notif: true,
+        attention: None,
     },
 ];
 
+/// 시안 둘째 Stage: attention을 지우지 못한 활성 탭이 제목 색을 지킨다. (캡션, 활성 탭, 옆 rest 탭).
+const ACTIVE_ATTENTION: [(&str, TabSpec, TabSpec); 2] = [
+    (
+        "active · needs-input · OS window inactive",
+        TabSpec {
+            label: "deploy.sh",
+            icon: TERMINAL,
+            active: true,
+            busy: false,
+            attached: false,
+            notif: false,
+            attention: Some(Attention::NeedsInput),
+        },
+        REST_TAB,
+    ),
+    (
+        "active · completion · surface hard occupied",
+        TabSpec {
+            label: "README.md",
+            icon: MARKDOWN,
+            active: true,
+            busy: false,
+            attached: false,
+            notif: false,
+            attention: Some(Attention::Completion),
+        },
+        REST_TAB,
+    ),
+];
+
+const REST_TAB: TabSpec = TabSpec {
+    label: "server.log",
+    icon: TERMINAL,
+    active: false,
+    busy: false,
+    attached: false,
+    notif: false,
+    attention: None,
+};
+
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     stage(ui, theme, StageVariant::Tight, |ui| {
-        let strip_h = theme.item_height_tab.value();
-        let tab_w = theme.tab_width.value();
-        let strip_w = tab_w * TABS.len() as f32;
-        let (rect, _) = ui.allocate_exact_size(egui::vec2(strip_w, strip_h), egui::Sense::hover());
-        let painter = ui.painter_at(rect);
-        let sep = egui::Stroke::new(
-            theme.border_width.value(),
-            theme.separator.to_egui_premultiplied(),
-        );
-
-        painter.rect_filled(rect, 0.0, egui::Color32::from(theme.bg_sidebar()));
-        painter.hline(rect.x_range(), rect.bottom(), sep);
-
-        for (i, tab) in TABS.iter().enumerate() {
-            let x = rect.left() + tab_w * i as f32;
-            let tab_rect =
-                egui::Rect::from_min_size(egui::pos2(x, rect.top()), egui::vec2(tab_w, strip_h));
-            draw_tab(ui, &painter, theme, tab_rect, tab);
-            // 시안 탭은 오른쪽 테두리로 칸을 나눈다.
-            painter.vline(tab_rect.right(), tab_rect.y_range(), sep);
+        strip(ui, theme, &TABS.iter().collect::<Vec<_>>());
+    });
+    stage(ui, theme, StageVariant::Column, |ui| {
+        ui.spacing_mut().item_spacing.y = theme.spacing_md.value();
+        for (cap, active, rest) in &ACTIVE_ATTENTION {
+            ui.vertical(|ui| {
+                ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
+                ui.label(
+                    egui::RichText::new(*cap)
+                        .size(theme.font_size_caption.value())
+                        .color(egui::Color32::from(theme.text_muted())),
+                );
+                strip(ui, theme, &[active, rest]);
+            });
         }
     });
 
@@ -99,6 +139,31 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     );
 }
 
+/// sidebar 바탕의 탭 줄. 탭마다 오른쪽 테두리로 칸을 나누고 줄 아래에 구분선을 긋는다.
+fn strip(ui: &mut egui::Ui, theme: &Theme, tabs: &[&TabSpec]) {
+    let strip_h = theme.item_height_tab.value();
+    let tab_w = theme.tab_width.value();
+    let strip_w = tab_w * tabs.len() as f32;
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(strip_w, strip_h), egui::Sense::hover());
+    let painter = ui.painter_at(rect);
+    let sep = egui::Stroke::new(
+        theme.border_width.value(),
+        theme.separator.to_egui_premultiplied(),
+    );
+
+    painter.rect_filled(rect, 0.0, egui::Color32::from(theme.bg_sidebar()));
+    painter.hline(rect.x_range(), rect.bottom(), sep);
+
+    for (i, tab) in tabs.iter().enumerate() {
+        let x = rect.left() + tab_w * i as f32;
+        let tab_rect =
+            egui::Rect::from_min_size(egui::pos2(x, rect.top()), egui::vec2(tab_w, strip_h));
+        draw_tab(ui, &painter, theme, tab_rect, tab);
+        // 시안 탭은 오른쪽 테두리로 칸을 나눈다.
+        painter.vline(tab_rect.right(), tab_rect.y_range(), sep);
+    }
+}
+
 fn draw_tab(
     ui: &egui::Ui,
     painter: &egui::Painter,
@@ -118,7 +183,9 @@ fn draw_tab(
     // 시안 `.tasty-tab`: padding 0 space-sm 0 space-md, gap space-sm.
     let gap = theme.spacing_sm.value();
     let cy = rect.center().y;
-    let label_color = if tab.notif {
+    let label_color = if let Some(attention) = tab.attention {
+        egui::Color32::from(tab_title_color(theme, Some(attention), tab.active))
+    } else if tab.notif {
         egui::Color32::from(theme.status_dot_warning())
     } else if tab.active {
         egui::Color32::from(theme.text_primary())
@@ -194,4 +261,43 @@ fn draw_tab(
         galley,
         label_color,
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::catalog::components::painted::{mocha_latte, paint};
+
+    /// 둘째 Stage의 활성 탭이 attention 제목 색으로, 옆 rest 탭이 rest 색으로 칠해지는지 그린 글자로 본다.
+    #[test]
+    fn active_attention_tabs_keep_their_title_tint() {
+        for (name, th) in mocha_latte() {
+            assert_ne!(th.tab_fg_needs_input(), th.tab_fg_active(), "{name}");
+            assert_ne!(th.tab_fg_completion(), th.tab_fg_active(), "{name}");
+            let painted = paint(|ui| draw(ui, &th));
+            let colors = |label: &str| -> Vec<egui::Color32> {
+                painted
+                    .texts
+                    .iter()
+                    .filter(|t| t.text == label)
+                    .map(|t| t.color)
+                    .collect()
+            };
+            for (attention, label, want) in [
+                (Attention::NeedsInput, "deploy.sh", th.tab_fg_needs_input()),
+                (Attention::Completion, "README.md", th.tab_fg_completion()),
+            ] {
+                assert_eq!(want, tab_title_color(&th, Some(attention), true));
+                assert!(
+                    colors(label).contains(&egui::Color32::from(want)),
+                    "{name} {label}: {:?}",
+                    colors(label)
+                );
+            }
+            let caps = ACTIVE_ATTENTION.map(|(cap, _, _)| cap);
+            for cap in caps {
+                assert_eq!(colors(cap).len(), 1, "{name} {cap}");
+            }
+        }
+    }
 }
