@@ -354,7 +354,7 @@ fn display_scale_card(
             radius,
             egui::Stroke::new(
                 th.border_width.value(),
-                egui::Color32::from(th.border_frame()),
+                egui::Color32::from(th.border_strong()),
             ),
             egui::StrokeKind::Inside,
         );
@@ -2713,3 +2713,37 @@ mod default_font_section_tests {
 #[cfg(test)]
 #[path = "font_rows_tests.rs"]
 mod font_rows_tests;
+
+#[cfg(test)]
+mod display_scale_card_tests {
+    use super::*;
+
+    /// UI Scale 카드: 미선택 카드는 raised 카드라 외곽이 border-strong이고, 선택 카드는 border-focus다.
+    #[test]
+    fn the_unselected_scale_card_edges_with_border_strong() {
+        for th in crate::painted_test_support::themes() {
+            assert_ne!(th.border_strong(), th.border_frame());
+            let mut settings = Settings::default();
+            settings.appearance.ui_scale = "medium".into();
+            for (key, want) in [("small", th.border_strong()), ("medium", th.border_focus())] {
+                let p = crate::painted_test_support::paint(|ui| {
+                    display_scale_card(
+                        ui,
+                        &th,
+                        &settings,
+                        key,
+                        "settings.appearance.ui_scale_small",
+                    );
+                });
+                let card = egui::vec2(DISPLAY_CARD_WIDTH.value(), DISPLAY_CARD_HEIGHT.value());
+                let edges: Vec<_> = p
+                    .stroked_rects()
+                    .into_iter()
+                    .filter(|(r, _, _)| r.size() == card)
+                    .collect();
+                assert_eq!(edges.len(), 1, "{key}: {edges:?}");
+                assert_eq!(edges[0].2, egui::Color32::from(want), "{key}");
+            }
+        }
+    }
+}
