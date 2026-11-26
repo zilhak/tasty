@@ -212,11 +212,14 @@ fn ime_explorer_surface(
     crate::adapters::ui::input::shortcuts::focused_explorer_surface_id(state, engine)
 }
 
-/// X11 raw 키 누름의 입력 소유자: 이름 바꾸기 팝업, 아니면 IME 를 받을 explorer 의 목록·찾기 입력칸.
+/// X11 raw 키 누름의 입력 소유자: 이름 바꾸기 팝업, 아니면 IME 를 받을 explorer 의 목록·찾기 입력칸. raw 키는 창의 키
+/// 사건 경로(`MainView::settle_key_event`)를 거치지 않으므로 판정 전에 그 경로와 같이 포커스를 정규화한다.
 fn raw_key_owner(
-    state: &crate::state::MainViewState,
+    state: &mut crate::state::MainViewState,
     engine: &crate::runtime::engine_read::EngineRead<'_>,
 ) -> Option<InputOwner> {
+    state.normalize_focus(engine);
+    let state = &*state;
     rename_input_owner(state, engine).or_else(|| {
         ime_explorer_surface(state, engine).and_then(|sid| {
             let view = state.explorer_views.get(sid)?;
@@ -243,7 +246,7 @@ impl crate::view::main::MainView {
         waiting: Option<Instant>,
     ) {
         if event.state == ElementState::Pressed {
-            let input = raw_key_owner(&self.state, engine);
+            let input = raw_key_owner(&mut self.state, engine);
             self.explorer_ime_keys
                 .press(event.physical_key, input, Instant::now(), waiting);
         }
@@ -308,6 +311,10 @@ impl crate::view::main::MainView {
 #[cfg(test)]
 #[path = "explorer_ime_rename_tests.rs"]
 mod rename_tests;
+
+#[cfg(test)]
+#[path = "explorer_ime_owner_tests.rs"]
+mod owner_tests;
 
 #[cfg(test)]
 mod tests {

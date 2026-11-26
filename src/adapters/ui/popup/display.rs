@@ -562,6 +562,15 @@ impl PopupManager {
         }
         true
     }
+
+    /// 시험용: 이 인스턴스를 부모 버튼이 대표하는(그리지 않는) 자식으로 둔다. 다음 그리기의 표시 판정
+    /// (`judge_display`)이 포커스를 버튼으로 넘기기 전 상태를 만든다. 쓰는 explorer 시험이 Linux 전용이다.
+    #[cfg(all(test, target_os = "linux"))]
+    pub(crate) fn hide_behind_parent_button(&mut self, iid: super::PopupInstanceId) {
+        if let Some(p) = self.instance_mut(iid) {
+            p.display = PopupDisplay::Collapsed(None);
+        }
+    }
 }
 
 #[cfg(test)]
