@@ -228,7 +228,7 @@ impl AttemptToken {
     }
     /// Register the exact connecting socket before the first blocking handshake read/write.
     pub fn register_socket(&self, socket: &std::net::TcpStream) -> std::io::Result<()> {
-        let control = socket.try_clone()?;
+        let control = tasty_utils::socket_inherit::try_clone_uninherited(socket)?;
         let mut sockets = self
             .0
             .sockets
@@ -246,6 +246,17 @@ impl AttemptToken {
     }
     fn same(&self, other: &Self) -> bool {
         std::sync::Arc::ptr_eq(&self.0, &other.0)
+    }
+    /// 시험 전용: 등록한 취소용 소켓마다 자식 프로세스가 물려받을 수 있는지.
+    #[cfg(all(test, windows))]
+    pub(crate) fn registered_sockets_inheritable(&self) -> Vec<bool> {
+        let sockets = self.0.sockets.lock().expect("attempt sockets");
+        sockets
+            .iter()
+            .map(|socket| {
+                tasty_utils::socket_inherit::is_inheritable(socket).expect("handle information")
+            })
+            .collect()
     }
 }
 pub struct AttemptRecord {

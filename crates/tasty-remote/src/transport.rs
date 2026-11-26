@@ -30,6 +30,8 @@ pub fn attach_handshake(
     }
     let address = std::net::SocketAddr::from(([127, 0, 0, 1], port));
     let sock = TcpStream::connect_timeout(&address, std::time::Duration::from_millis(250))?;
+    // 이 연결과 그 복제는 자식 프로세스가 물려받지 않게 한다(Windows).
+    tasty_utils::socket_inherit::disable_inherit(&sock)?;
     cancel.register_socket(&sock)?;
     arm_socket_timeouts(&sock, heartbeat_timeout, Some(cancel), |what, e| {
         tracing::warn!("{log_prefix}: failed to set {what}: {e}");
@@ -1004,7 +1006,7 @@ impl PreparedConnection {
             &cancel,
             heartbeat_timeout,
         )?;
-        let control = write_half.try_clone()?;
+        let control = tasty_utils::socket_inherit::try_clone_uninherited(&write_half)?;
         let (frame_tx, frame_rx) = super::connection::channel();
         frame_tx.enable_input_receipts(input_acks);
         frame_tx.set_win32_console_input(win32_console_input);
@@ -1116,3 +1118,7 @@ pub(crate) fn retire_tunnel(tunnel: tasty_ssh::SshTunnel) -> RetirementReceipt {
 #[cfg(test)]
 #[path = "transport_tests.rs"]
 mod tests;
+
+#[cfg(all(test, windows))]
+#[path = "transport_inherit_tests.rs"]
+mod inherit_tests;
