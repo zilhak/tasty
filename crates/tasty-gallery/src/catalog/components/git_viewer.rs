@@ -685,32 +685,21 @@ fn diff_line(
     let sz = theme.font_size_caption.value();
     let h = (sz * 1.65).round();
     let rect = egui::Rect::from_min_size(egui::pos2(well.left(), *ly), egui::vec2(well.width(), h));
-    // diff 줄 배경 톤. hunk 머리만 한 단계 더 옅다. 대응 토큰 없음.
-    const DIFF_HUNK_BG_OPACITY: f32 = 0.09;
-    const DIFF_LINE_BG_OPACITY: f32 = 0.10;
+    // diff 줄 채움은 정본 git-diff-*-bg(tint-fill-alpha)다.
     let (fg, bg, sign) = match kind {
         DiffKind::Hunk => (
             theme.accent_info().to_egui(),
-            theme
-                .accent_info()
-                .to_egui()
-                .gamma_multiply(DIFF_HUNK_BG_OPACITY),
+            theme.git_diff_hunk_bg().to_egui(),
             "",
         ),
         DiffKind::Add => (
             theme.accent_success().to_egui(),
-            theme
-                .accent_success()
-                .to_egui()
-                .gamma_multiply(DIFF_LINE_BG_OPACITY),
+            theme.git_diff_add_bg().to_egui(),
             "+",
         ),
         DiffKind::Del => (
             theme.accent_danger().to_egui(),
-            theme
-                .accent_danger()
-                .to_egui()
-                .gamma_multiply(DIFF_LINE_BG_OPACITY),
+            theme.git_diff_del_bg().to_egui(),
             "-",
         ),
         DiffKind::Ctx => (
@@ -811,3 +800,7 @@ fn vline(ui: &mut egui::Ui, theme: &Theme, x: LogicalPx, y0: LogicalPx, y1: Logi
         ),
     );
 }
+
+#[cfg(test)]
+#[path = "git_viewer_tests.rs"]
+mod tests;
