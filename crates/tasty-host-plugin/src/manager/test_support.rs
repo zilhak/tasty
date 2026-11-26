@@ -145,6 +145,34 @@ prefix = "{prefix}"
         }
     }
 
+    /// `surface_id` 를 소유한 연결된 stub 플러그인을 붙인다. 요청 큐는 `capacity` 개만 받으므로
+    /// 그 surface 로 가는 이벤트의 순서와 큐 포화를 잴 수 있다.
+    pub fn attach_surface_owner_stub_for_test(
+        &mut self,
+        plugin_id: &str,
+        surface_id: u32,
+        capacity: usize,
+    ) -> CallerStub {
+        let (process, tap) = PluginProcess::stub_with_request_rx_capacity(plugin_id, capacity);
+        self.processes.insert(plugin_id.to_string(), process);
+        self.surfaces.insert(
+            surface_id,
+            super::RemoteSurfaceEntry {
+                plugin_id: plugin_id.to_string(),
+                handles: crate::host_cmd::SurfaceHandles {
+                    display_name: std::sync::Arc::default(),
+                    snapshot_cache: std::sync::Arc::default(),
+                },
+                publication: super::RemotePublication::NeverSent,
+                origin: super::reattach::SurfaceOrigin::create(serde_json::json!({})),
+            },
+        );
+        CallerStub {
+            plugin_id: plugin_id.to_string(),
+            tap,
+        }
+    }
+
     /// 편집 결과 회신을 약속한 연결된 stub 플러그인을 붙인다. 놓은 요청 수신단은 버린다.
     pub fn attach_edit_outcome_stub_for_test(&mut self, plugin_id: &str) {
         let (process, _tap) = PluginProcess::stub_with_request_rx(plugin_id);
