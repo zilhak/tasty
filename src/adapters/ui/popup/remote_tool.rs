@@ -737,6 +737,7 @@ fn draw_protocol_filter(
         apply: t("remote_tool.filter_apply"),
         unknown: t("remote_tool.filter_unknown"),
         unknown_hint: t("remote_tool.type_unknown_hint"),
+        empty: t("remote_tool.filter_empty"),
     };
     let mut applied: Option<HashSet<String>> = None;
     // 본문의 구획이 프레임 끝까지 닿도록 popup 프레임의 안쪽 여백을 없앤다. 래퍼에도 둘레 0 을 넘긴다.

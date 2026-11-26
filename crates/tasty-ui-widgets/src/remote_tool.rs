@@ -634,6 +634,8 @@ pub struct ProtocolFilterLabels<'a> {
     pub apply: &'a str,
     pub unknown: &'a str,
     pub unknown_hint: &'a str,
+    /// 프로토콜 목록이 비었을 때 목록 자리에 그리는 줄.
+    pub empty: &'a str,
 }
 
 /// 프로토콜 필터 버튼(funnel + 라벨). `filtered` 면 primary(accent), 아니면 secondary.
@@ -714,6 +716,16 @@ pub fn draw_protocol_filter_body(
             .drag_to_scroll(false)
             .show(ui, |ui| {
                 ui.spacing_mut().item_spacing.y = th.spacing_sm.value();
+                if items.is_empty() {
+                    // 시안 `No protocols.` — caption · text-muted, 빈 내용을 대신하는 줄이라 `font-style-absent`(italic).
+                    let mut job = egui::text::LayoutJob::simple_singleline(
+                        labels.empty.to_owned(),
+                        egui::FontId::proportional(th.font_size_caption.value()),
+                        th.text_muted().into(),
+                    );
+                    crate::italicize_name(&mut job);
+                    ui.add(egui::Label::new(job).selectable(false));
+                }
                 for item in items {
                     ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing.x = th.spacing_sm.value();

@@ -29,6 +29,7 @@ fn list_viewport(th: &Theme) -> Rect {
         apply: "Apply",
         unknown: "unknown",
         unknown_hint: "",
+        empty: "",
     };
     let mut draft: HashSet<String> = NAMES.iter().map(|n| n.to_string()).collect();
     let mut viewport = None;

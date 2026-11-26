@@ -972,6 +972,7 @@ pub fn draw_filter(ui: &mut egui::Ui, theme: &Theme) {
                             apply: "Apply",
                             unknown: "unknown",
                             unknown_hint: crate::i18n::t("remote_tool.type_unknown_hint"),
+                            empty: crate::i18n::t("remote_tool.filter_empty"),
                         },
                         &mut draft,
                     );

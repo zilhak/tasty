@@ -113,6 +113,7 @@ fn painted_warn_badge_glyphs_read_their_host_ink() {
             apply: "Apply",
             unknown: "unknown",
             unknown_hint: "hint",
+            empty: "No protocols.",
         };
         let items = [
             ProtocolFilterItem {
@@ -268,12 +269,12 @@ fn filter_labels() -> ProtocolFilterLabels<'static> {
         apply: tasty_i18n::t("remote_tool.filter_apply"),
         unknown: tasty_i18n::t("remote_tool.filter_unknown"),
         unknown_hint: tasty_i18n::t("remote_tool.type_unknown_hint"),
+        empty: tasty_i18n::t("remote_tool.filter_empty"),
     }
 }
 
 /// 필터 본문을 두 번 그려 둘째 프레임의 도형을 모은다.
 fn filter_shapes(th: &Theme) -> Vec<egui::Shape> {
-    let labels = filter_labels();
     let items = [
         ProtocolFilterItem {
             name: "ssh",
@@ -284,6 +285,12 @@ fn filter_shapes(th: &Theme) -> Vec<egui::Shape> {
             unknown: true,
         },
     ];
+    filter_shapes_with(th, &items)
+}
+
+/// `items` 로 필터 본문을 두 번 그려 둘째 프레임의 도형을 모은다.
+fn filter_shapes_with(th: &Theme, items: &[ProtocolFilterItem<'_>]) -> Vec<egui::Shape> {
+    let labels = filter_labels();
     let mut draft = HashSet::new();
     let ctx = egui::Context::default();
     let mut shapes = Vec::new();
@@ -297,7 +304,7 @@ fn filter_shapes(th: &Theme) -> Vec<egui::Shape> {
         };
         let out = ctx.run(raw, |ctx| {
             egui::CentralPanel::default().show(ctx, |ui| {
-                draw_protocol_filter_body(ui, th, &items, &labels, &mut draft);
+                draw_protocol_filter_body(ui, th, items, &labels, &mut draft);
             });
         });
         shapes.clear();
@@ -440,6 +447,58 @@ fn painted_warn_badge_border_reads_tint_border_alpha() {
         assert_eq!(
             painted_warn_badge_border(&th),
             warn.gamma_multiply(th.tint_border_alpha()),
+        );
+    }
+}
+
+/// 그려진 글자 가운데 `needle` 과 같은 줄.
+fn painted_texts<'a>(shapes: &'a [egui::Shape], needle: &str) -> Vec<&'a egui::epaint::TextShape> {
+    shapes
+        .iter()
+        .filter_map(|s| match s {
+            egui::Shape::Text(t) if t.galley.text() == needle => Some(t),
+            _ => None,
+        })
+        .collect()
+}
+
+/// 프로토콜 목록이 비면 목록 자리에 정본 `No protocols.` 줄을 caption · text-muted · italic
+/// (`font-style-absent`)으로 그린다. 목록이 있으면 그 줄은 없다.
+#[test]
+fn an_empty_protocol_list_draws_the_absent_note() {
+    let empty = tasty_i18n::t("remote_tool.filter_empty");
+    assert_ne!(empty, "remote_tool.filter_empty", "the lang key exists");
+    for th in [tasty_themes::mocha_fallback(), latte()] {
+        let shapes = filter_shapes_with(&th, &[]);
+        let notes = painted_texts(&shapes, empty);
+        assert_eq!(notes.len(), 1, "the empty note is drawn once");
+        let sections = &notes[0].galley.job.sections;
+        assert!(!sections.is_empty());
+        for sec in sections {
+            assert!(sec.format.italics, "font-style-absent is italic");
+            assert_eq!(sec.format.color, th.text_muted().to_egui(), "text-muted");
+            assert_eq!(
+                sec.format.font_id.size,
+                th.font_size_caption.value(),
+                "caption size"
+            );
+        }
+        // 다른 구획은 그대로다.
+        assert_eq!(
+            painted_texts(&shapes, tasty_i18n::t("remote_tool.filter_apply")).len(),
+            1,
+            "the Apply button still draws"
+        );
+
+        let listed = filter_shapes(&th);
+        assert!(
+            painted_texts(&listed, empty).is_empty(),
+            "a non-empty list draws no empty note"
+        );
+        assert_eq!(
+            painted_texts(&listed, "ssh").len(),
+            1,
+            "the list draws its rows"
         );
     }
 }
