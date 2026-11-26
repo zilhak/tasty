@@ -99,7 +99,8 @@ pub fn draw_general_display_tab(ui: &mut egui::Ui, settings: &mut Settings) {
 }
 
 /// 아이콘을 지원하는 표시 스타일 드롭다운 하나. 닫힌 트리거는 현재 선택이
-/// `"symbol"` 이면 아이콘 단독(+chevronDown), 아니면 텍스트(+chevronDown). 펼친
+/// `"symbol"` 이면 아이콘 단독(+chevronDown), 아니면 텍스트(+chevronDown). 트리거는 두 경우 모두 쉴 때
+/// Select 틀(select-bg 채움, select-border 테두리)이다. 펼친
 /// 옵션 리스트는 [`menu_item`] 행(아이콘 있으면 leading) + 활성 행 trailing 체크.
 fn display_style_combo(
     ui: &mut egui::Ui,
@@ -131,6 +132,7 @@ fn display_style_combo(
         current.label
     })
     .variant(ButtonVariant::Secondary)
+    .select_rest(true)
     .trailing_icon(&chevron_paint);
     if current.icon.is_some() {
         button = button.leading_icon(&glyph_paint);
@@ -174,4 +176,49 @@ fn display_style_combo(
             },
         )
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::painted_test_support::{paint, themes};
+
+    /// 닫힌 표시 스타일 트리거는 아이콘만 보일 때와 글자가 보일 때 모두 Select rest 틀(select-bg 채움,
+    /// select-border 테두리)이다.
+    #[test]
+    fn the_closed_trigger_reads_the_select_rest_tokens_for_icon_and_text() {
+        for th in themes() {
+            assert_ne!(th.select_border(), th.button_secondary_border());
+            let want = (th.select_bg().to_egui(), th.select_border().to_egui());
+            for current in ["symbol", "alt"] {
+                let p = paint(|ui| {
+                    let mut value = current.to_owned();
+                    display_style_combo(
+                        ui,
+                        &th,
+                        "display_style_test",
+                        &mut value,
+                        &[
+                            DisplayStyleOption {
+                                value: "alt",
+                                label: "Alt",
+                                icon: None,
+                            },
+                            DisplayStyleOption {
+                                value: "symbol",
+                                label: "Symbol",
+                                icon: Some(tasty_icons::CMD_KEY),
+                            },
+                        ],
+                    );
+                });
+                let frames: Vec<_> = p
+                    .stroked_rects()
+                    .into_iter()
+                    .map(|(_, fill, edge)| (fill, edge))
+                    .collect();
+                assert_eq!(frames, vec![want], "{current}");
+            }
+        }
+    }
 }

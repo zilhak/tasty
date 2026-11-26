@@ -79,6 +79,8 @@ pub struct Button<'a> {
     focus_ring: bool,
     /// 할당 직후 이 버튼에 egui 포커스를 요청한다(초기 포커스). 같은 패스에 링이 그려진다.
     request_focus: bool,
+    /// Secondary를 닫힌 Select 트리거로 쓴다. 쉴 때만 채움·테두리가 select-bg·select-border다.
+    select_rest: bool,
 }
 
 impl<'a> Button<'a> {
@@ -96,7 +98,15 @@ impl<'a> Button<'a> {
             ground: crate::Ground::Panel,
             focus_ring: true,
             request_focus: false,
+            select_rest: false,
         }
+    }
+
+    /// 참이면 Secondary 버튼을 닫힌 Select 트리거로 그린다: 쉴 때(hover·눌림이 아닐 때) 채움은 select-bg, 테두리는
+    /// select-border다. hover·눌림·disabled와 다른 variant는 그대로다.
+    pub fn select_rest(mut self, on: bool) -> Self {
+        self.select_rest = on;
+        self
     }
 
     /// 키보드 포커스 링을 그릴지(기본 참). 접힌 팝업처럼 링 조건이 다른 호출자가 끈다.
@@ -303,6 +313,7 @@ impl<'a> Button<'a> {
                     )
                 }
                 ButtonVariant::Secondary => {
+                    let mut bg = theme.button_secondary_bg();
                     let (edge, label) = if pressed {
                         (theme.border_default(), theme.text_on_active())
                     } else if resp.hovered() {
@@ -310,14 +321,13 @@ impl<'a> Button<'a> {
                             theme.button_secondary_border_hover(),
                             theme.text_on_active(),
                         )
+                    } else if self.select_rest {
+                        bg = theme.select_bg();
+                        (theme.select_border(), theme.button_fg())
                     } else {
                         (theme.button_secondary_border(), theme.button_fg())
                     };
-                    (
-                        Some(theme.button_secondary_bg().to_egui()),
-                        Some(edge.to_egui()),
-                        label.to_egui(),
-                    )
+                    (Some(bg.to_egui()), Some(edge.to_egui()), label.to_egui())
                 }
                 ButtonVariant::Ghost => {
                     let f = ghost_label(theme, self.ground, resp.hovered(), pressed);
@@ -443,6 +453,61 @@ fn ghost_label(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn latte() -> Theme {
+        let file = tasty_themes::ThemeFile::parse(tasty_themes::LATTE_TOML_TEXT).expect("latte");
+        let (partial, is_light) = file.to_partial();
+        let mut colors = tasty_themes::mocha_fallback_colors();
+        colors.apply_partial(&partial);
+        Theme::with_colors(colors, is_light.unwrap_or(true))
+    }
+
+    /// 쉬는 Secondary 버튼 하나를 그리고 그 상자의 채움·테두리 색을 돌려준다.
+    fn rest_box(theme: &Theme, select_rest: bool) -> (egui::Color32, egui::Color32) {
+        let ctx = egui::Context::default();
+        let mut boxes = Vec::new();
+        for _ in 0..2 {
+            let out = ctx.run(egui::RawInput::default(), |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    Button::new("Open")
+                        .variant(ButtonVariant::Secondary)
+                        .select_rest(select_rest)
+                        .show(ui, theme);
+                });
+            });
+            boxes = out
+                .shapes
+                .into_iter()
+                .filter_map(|c| match c.shape {
+                    egui::Shape::Rect(r) if r.stroke.width > 0.0 => Some((r.fill, r.stroke.color)),
+                    _ => None,
+                })
+                .collect();
+        }
+        assert_eq!(boxes.len(), 1, "{boxes:?}");
+        boxes[0]
+    }
+
+    /// 쉬는 Secondary 버튼은 button-secondary 채움·테두리다. `select_rest`를 켠 버튼만 select-bg·select-border다.
+    #[test]
+    fn only_a_select_rest_secondary_button_takes_the_select_tokens_at_rest() {
+        for theme in [tasty_themes::mocha_fallback(), latte()] {
+            assert_ne!(theme.select_border(), theme.button_secondary_border());
+            assert_eq!(
+                rest_box(&theme, false),
+                (
+                    theme.button_secondary_bg().to_egui(),
+                    theme.button_secondary_border().to_egui()
+                ),
+                "기본 Secondary"
+            );
+            assert_eq!(
+                rest_box(&theme, true),
+                (theme.select_bg().to_egui(), theme.select_border().to_egui()),
+                "select_rest"
+            );
+        }
+    }
 
     #[test]
     fn banner_surface_marks_only_its_own_scope_and_nests() {
