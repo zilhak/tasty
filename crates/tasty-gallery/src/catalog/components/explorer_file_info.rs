@@ -778,10 +778,11 @@ fn preview_panel(ui: &mut egui::Ui, theme: &Theme, kind: PreviewKind, height: f3
                 theme.corner_radius_sm.value(),
                 theme.surface_raised().to_egui(),
             );
+            // raised 이미지 자리의 외곽이라 `line`(separator) 대신 border-strong이다.
             p.rect_stroke(
                 img,
                 theme.corner_radius_sm.value(),
-                line,
+                egui::Stroke::new(theme.border_width.value(), theme.border_strong().to_egui()),
                 egui::StrokeKind::Inside,
             );
             p.text(
@@ -995,4 +996,41 @@ pub fn draw_thumbnails(ui: &mut egui::Ui, theme: &Theme) {
         "“img” stands in for the decoded picture. The real grid cell reserves the 40 slot for every entry; \
          the thumbnail cache is keyed by path + mtime.",
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::catalog::components::painted::paint;
+
+    /// Image 미리보기: raised 이미지 자리의 외곽은 border-strong, 패널 머리 아래선은 separator다.
+    #[test]
+    fn the_image_slot_edges_with_border_strong_and_the_head_rule_stays_separator() {
+        for theme in [
+            tasty_themes::mocha_fallback(),
+            crate::host_shell::latte_theme(),
+        ] {
+            let strong = theme.border_strong().to_egui();
+            let sep = theme.separator.to_egui_premultiplied();
+            assert_ne!(strong, sep);
+            let p = paint(|ui| preview_panel(ui, &theme, PreviewKind::Image, 400.0));
+            let raised = theme.surface_raised().to_egui();
+            let slot = p.rect_filled_with(raised);
+            let edges: Vec<_> = p
+                .stroked_rects()
+                .into_iter()
+                .filter(|(r, _, _)| *r == slot)
+                .collect();
+            assert_eq!(edges.len(), 1, "이미지 자리 외곽 하나: {edges:?}");
+            assert_eq!(edges[0].2, strong);
+            let w = theme.explorer_preview_width().value();
+            let head: Vec<_> = p
+                .segments()
+                .into_iter()
+                .filter(|(a, b, _)| a.y == b.y && (b.x - a.x).abs() == w)
+                .collect();
+            assert!(!head.is_empty(), "머리 아래선");
+            assert!(head.iter().all(|(_, _, c)| *c == sep), "{head:?}");
+        }
+    }
 }
