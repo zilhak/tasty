@@ -156,9 +156,14 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 theme.surface_active().to_egui(),
             ),
             TokenChip::new(
-                "accent-warning",
-                "favorite star",
-                theme.accent_warning().to_egui(),
+                "accent-warning-glyph",
+                "filled star at rest",
+                theme.accent_warning_glyph().to_egui(),
+            ),
+            TokenChip::new(
+                "accent-warning-on-active",
+                "filled star on selected row",
+                theme.accent_warning_on_active().to_egui(),
             ),
             TokenChip::new(
                 "accent-primary",
