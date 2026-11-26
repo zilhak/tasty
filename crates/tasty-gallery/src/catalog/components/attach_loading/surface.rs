@@ -365,7 +365,12 @@ pub(super) fn notice_window(
         );
         tab_bar::tab_cell(&strip_ui, th, cell, cfg);
     }
-    p.hline(strip.x_range(), strip.bottom(), sep);
+    // raised 탭 띠 아래선은 border-strong이다. 공용 `sep`는 mantle 사이드바 세로선이 쓰므로 둔다.
+    p.hline(
+        strip.x_range(),
+        strip.bottom(),
+        egui::Stroke::new(th.border_width.value(), th.border_strong().to_egui()),
+    );
     let surface = egui::Rect::from_min_max(egui::pos2(body.left(), strip.bottom()), body.max);
     paint_term(ui, th, surface, Term::default());
     let column = tasty_ui_widgets::notice_column_rect(th, body, strip.bottom());
@@ -477,4 +482,46 @@ pub(super) fn together(ui: &mut egui::Ui, theme: &Theme) {
             TokenChip::without_color("spinner-duration", "→ duration-900"),
         ],
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::catalog::components::painted::paint;
+
+    /// 알림 열 창 표본: raised 탭 띠 아래선은 border-strong, mantle 사이드바 오른쪽 세로선은 separator다.
+    #[test]
+    fn the_notice_window_strip_rule_is_border_strong_and_the_sidebar_line_stays_separator() {
+        for th in [
+            tasty_themes::mocha_fallback(),
+            crate::host_shell::latte_theme(),
+        ] {
+            let strong = th.border_strong().to_egui();
+            let sep = th.separator.to_egui_premultiplied();
+            assert_ne!(strong, sep);
+            let size = [LogicalPx(560.0), LogicalPx(180.0)];
+            let chip = PendingIndicator {
+                label: "Copying",
+                time: "2s",
+                compact: false,
+                details: "Copying · 2s",
+                open: false,
+            };
+            let p = paint(|ui| notice_window(ui, &th, size, &chip));
+            let lnb_w = th.field_width_lg.value();
+            let segs = p.segments();
+            let strip_rule: Vec<_> = segs
+                .iter()
+                .filter(|(a, b, _)| a.y == b.y && (b.x - a.x).abs() == 560.0 - lnb_w)
+                .collect();
+            assert_eq!(strip_rule.len(), 1, "띠 아래선 하나: {strip_rule:?}");
+            assert_eq!(strip_rule[0].2, strong);
+            let side: Vec<_> = segs
+                .iter()
+                .filter(|(a, b, _)| a.x == b.x && (b.y - a.y).abs() == 180.0)
+                .collect();
+            assert_eq!(side.len(), 1, "사이드바 세로선 하나: {side:?}");
+            assert_eq!(side[0].2, sep);
+        }
+    }
 }
