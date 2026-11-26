@@ -2,7 +2,7 @@
 //! - 출처 주석은 바로 다음 줄이 아이콘 정의(`stroke_icon!`·`fill_icon!`)다.
 //! - 출처 주석을 단 (정의 이름, Lucide 이름, 같은 도형·고쳐 온 도형) 집합이 아래 `CREDITS`와 같다.
 //!   `CREDITS`는 디자인 icons.json의 `source` 필드를 옮긴 기준표다. 고지 문서에는 수를 적지 않는다.
-//! - 출처 주석마다 라이선스 본문 두 개를 정확히 적고, 그 본문은 `LICENSES/`에 있으며
+//! - 출처 주석마다 끝 괄호 안에만 라이선스 본문 두 개를 정확히 적고, 그 본문은 `LICENSES/`에 있으며
 //!   `THIRD_PARTY_LICENSES.md`가 링크한다.
 //!
 //! 주석이 가리키는 도형이 실제로 Lucide와 같은지는 검사하지 않는다.
@@ -123,8 +123,8 @@ fn read_credits(src: &str) -> (Vec<Credit>, Vec<String>) {
             continue;
         };
         // 고지 경로는 주석 끝의 `(…).` 안에 쉼표로 나눠 적는다. 경로 전체를 읽어야 다른 폴더의
-        // 같은 이름(`other/LICENSES/…`)을 본문으로 잘못 세지 않고, 괄호가 주석 끝이어야 괄호 밖에
-        // 덧붙인 경로를 놓치지 않는다.
+        // 같은 이름(`other/LICENSES/…`)을 본문으로 잘못 세지 않는다. 주석 전체에서 찾은 경로('/'를
+        // 담은 낱말)가 그 괄호 안 목록과 같아야 괄호 앞뒤에 끼운 경로도 놓치지 않는다.
         let Some(inside) = rest
             .strip_suffix(").")
             .and_then(|body| body.rfind('(').map(|open| &body[open + 1..]))
@@ -136,6 +136,18 @@ fn read_credits(src: &str) -> (Vec<Credit>, Vec<String>) {
         };
         let mut texts: Vec<String> = inside.split(',').map(|t| t.trim().to_string()).collect();
         texts.sort();
+        let mut anywhere: Vec<String> = rest
+            .split(|c: char| c.is_whitespace() || matches!(c, ',' | '(' | ')'))
+            .filter(|w| w.contains('/'))
+            .map(|w| w.trim_end_matches('.').to_string())
+            .collect();
+        anywhere.sort();
+        if anywhere != texts {
+            problems.push(format!(
+                "{n}행: 고지 경로 괄호 밖에도 경로가 있다(주석 전체 {anywhere:?}, 괄호 안 {texts:?}): {line}"
+            ));
+            continue;
+        }
         let Some(definition) = definition_name(&lines, i + 1) else {
             let next = lines.get(i + 1).map(|l| l.trim_start()).unwrap_or("");
             problems.push(format!(
@@ -227,7 +239,10 @@ fn credit_reader_takes_the_definition_kind_and_texts() {
                stroke_icon!(Y, \"y\", r#\"\"#);\n\
                // Lucide 원본을 본뜸\n\
                // 출처: Lucide \"z\", 비슷한 도형.\n\
-               // 출처: Lucide \"w\", 같은 도형. v(LICENSES/a.txt), LICENSES/c.txt.\n";
+               // 출처: Lucide \"w\", 같은 도형. v(LICENSES/a.txt), LICENSES/c.txt.\n\
+               stroke_icon!(W, \"w\", r#\"\"#);\n\
+               // 출처: Lucide \"v\", 같은 도형. v(LICENSES/k.txt) (LICENSES/a.txt).\n\
+               stroke_icon!(V, \"v\", r#\"\"#);\n";
     let (credits, problems) = read_credits(src);
     assert_eq!(
         credits,
@@ -248,9 +263,17 @@ fn credit_reader_takes_the_definition_kind_and_texts() {
             },
         ]
     );
-    assert_eq!(problems.len(), 4, "{problems:?}");
+    // 11행·13행은 유효한 정의 바로 위에 있어 경로 판정만으로 실패해야 한다.
+    assert_eq!(problems.len(), 5, "{problems:?}");
     assert!(problems[0].starts_with("6행:"), "{problems:?}");
     assert!(problems[1].starts_with("9행:"), "{problems:?}");
     assert!(problems[2].starts_with("10행:"), "{problems:?}");
-    assert!(problems[3].starts_with("11행:"), "{problems:?}");
+    assert!(
+        problems[3].starts_with("11행: 주석이 고지 경로 괄호"),
+        "{problems:?}"
+    );
+    assert!(
+        problems[4].starts_with("13행: 고지 경로 괄호 밖에도 경로가 있다"),
+        "{problems:?}"
+    );
 }
