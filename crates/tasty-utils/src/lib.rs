@@ -7,6 +7,7 @@
 //! 테마·설정·DB 등 기능별 경로는 각 크레이트가 path::tasty_home 위에 정의한다.
 //! path_resolve는 한 Tasty 프로세스 안에서 같은 입력을 같은 경로로 푸는 규칙이다.
 //! socket_wake는 다른 스레드의 막힌 읽기까지 끝내는 소켓 닫기다(Windows는 진행 중 I/O 취소를 더한다).
+//! socket_inherit는 소켓 핸들을 자식 프로세스가 물려받지 않게 한다(Windows만 동작한다).
 
 pub mod batch_writer;
 pub mod execution;
@@ -21,6 +22,7 @@ pub mod plugin_namespaces;
 pub mod poison;
 pub mod process;
 pub mod shell_family;
+pub mod socket_inherit;
 pub mod socket_wake;
 pub mod target;
 /// 시험 전용 대기 도우미. 의존 크레이트의 시험은 `test-support` 기능으로 켠다.
