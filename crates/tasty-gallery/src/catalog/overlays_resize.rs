@@ -16,8 +16,6 @@ const MAP_BAND: LogicalPx = LogicalPx(12.0);
 const MAP_CORNER: LogicalPx = LogicalPx(16.0);
 /// 손잡이 이름(N·NW…)과 scope rect 표시의 글자 크기. 시안 리터럴 9 이다.
 const DEMO_LABEL_SIZE: LogicalPx = LogicalPx(9.0);
-/// 손잡이 hover 칠의 accent-info 비율(시안 `color-mix 14%`).
-const ZONE_HOVER_MIX: f32 = 0.14;
 
 /// 커서 표의 폭, 행 안쪽 여백(5 · 8), 행 사이 간격 1, 글리프 칸 26, 칸 사이 10.
 const MATRIX_W: LogicalPx = LogicalPx(320.0);
@@ -131,21 +129,15 @@ fn faux_popup(
     }
 }
 
-/// 손잡이 한 칸. hover 하면 accent-info 를 엷게 칠하고 그 방향 커서를 보인다.
+/// 손잡이 한 칸. hover 하면 그 방향 커서만 보인다. 앱처럼 칸을 칠하지 않는다.
 fn zone(ui: &egui::Ui, theme: &Theme, rect: egui::Rect, cursor: egui::CursorIcon, label: &str) {
     let hovered = ui
         .interact(rect, ui.id().with(("zone", label)), egui::Sense::hover())
         .hovered();
-    let p = ui.painter();
     if hovered {
         ui.ctx().set_cursor_icon(cursor);
-        p.rect_filled(
-            rect,
-            0.0,
-            ec(theme.accent_info()).gamma_multiply(ZONE_HOVER_MIX),
-        );
     }
-    p.text(
+    ui.painter().text(
         rect.center(),
         egui::Align2::CENTER_CENTER,
         label,
@@ -546,4 +538,58 @@ pub fn draw_constraints(ui: &mut egui::Ui, theme: &Theme) {
         theme,
         "Don't flash a warning color (peach/red) when a popup hits min size or the scope edge — the limit is communicated by simply not moving. Reserve danger tones for actual errors.",
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 손잡이 한 칸을 포인터가 올라간 채로 두 프레임 그려 (커서, 그 칸 안에 칠한 채움 수)를 돌려준다.
+    fn hovered_zone(theme: &Theme) -> (egui::CursorIcon, usize) {
+        let ctx = egui::Context::default();
+        let rect = egui::Rect::from_min_size(egui::pos2(40.0, 40.0), egui::vec2(120.0, 12.0));
+        let mut last = None;
+        for _ in 0..2 {
+            let raw = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(320.0, 240.0),
+                )),
+                events: vec![egui::Event::PointerMoved(rect.center())],
+                ..Default::default()
+            };
+            last = Some(ctx.run(raw, |ctx| {
+                egui::CentralPanel::default()
+                    .frame(egui::Frame::NONE)
+                    .show(ctx, |ui| {
+                        zone(ui, theme, rect, egui::CursorIcon::ResizeVertical, "N");
+                    });
+            }));
+        }
+        let out = last.expect("painted");
+        let fills = out
+            .shapes
+            .iter()
+            .filter(|c| match &c.shape {
+                egui::Shape::Rect(r) => {
+                    r.fill != egui::Color32::TRANSPARENT && rect.contains_rect(r.rect)
+                }
+                _ => false,
+            })
+            .count();
+        (out.platform_output.cursor_icon, fills)
+    }
+
+    /// 앱처럼 hover 한 손잡이는 방향 커서만 바꾸고 칸을 칠하지 않는다.
+    #[test]
+    fn a_hovered_resize_zone_sets_the_cursor_without_a_fill() {
+        let theme = tasty_themes::mocha_fallback();
+        let (cursor, fills) = hovered_zone(&theme);
+        assert_eq!(
+            cursor,
+            egui::CursorIcon::ResizeVertical,
+            "the zone is hovered"
+        );
+        assert_eq!(fills, 0, "no fill inside the hovered zone");
+    }
 }
