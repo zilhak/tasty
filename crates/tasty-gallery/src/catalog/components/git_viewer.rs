@@ -713,7 +713,12 @@ fn diff_line(
     }
     let p = ui.painter();
     let cy = rect.center().y;
-    let gutter = theme.text_muted_raised().to_egui();
+    // 줄 번호는 행 바탕의 text-muted 칸을 쓴다: 채운 추가·삭제 줄은 raised 칸, 그 밖은 crust 칸.
+    let gutter = match kind {
+        DiffKind::Add | DiffKind::Del => theme.text_muted_raised(),
+        DiffKind::Hunk | DiffKind::Ctx => theme.text_muted(),
+    }
+    .to_egui();
     let mono = |s| egui::FontId::monospace(s);
     p.text(
         egui::pos2(rect.left() + DIFF_OLD_LINE_NUMBER_RIGHT_X.value(), cy),
