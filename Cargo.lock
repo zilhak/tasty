@@ -6160,7 +6160,7 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-mesh-demo"
-version = "0.1.545"
+version = "0.1.546"
 dependencies = [
  "anyhow",
  "egui",

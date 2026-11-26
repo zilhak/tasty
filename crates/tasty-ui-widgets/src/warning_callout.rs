@@ -1,12 +1,9 @@
 //! 아이콘과 줄바꿈 본문을 경고색 상자로 묶는다. 아이콘은 호출자가 전달한다.
-//! 배경은 공통 tint_fill_alpha, 테두리는 이 위젯의 비율을 egui 색에 곱한다.
+//! 배경은 공통 tint_fill_alpha, 테두리는 공통 tint_border_alpha를 경고색에 곱한다.
 
 use tasty_type_appearance::theme::Theme;
 
 use crate::icon_button::IconPainter;
-
-/// 경고 테두리의 비율. 배경 채움만 공통 tint_fill_alpha를 사용한다.
-const BORDER_MIX: f32 = 0.4;
 
 /// bordered warning callout — leading 경고 삼각 아이콘 + wrapping caption 본문.
 ///
@@ -20,7 +17,7 @@ pub fn warning_callout(
 ) -> egui::Response {
     let warning = theme.accent_warning().to_egui();
     let bg = warning.gamma_multiply(theme.tint_fill_alpha());
-    let border = warning.gamma_multiply(BORDER_MIX);
+    let border = warning.gamma_multiply(theme.tint_border_alpha());
     let glyph = theme.icon_glyph_size_sm.value();
     egui::Frame::new()
         .fill(bg)
@@ -48,4 +45,74 @@ pub fn warning_callout(
             });
         })
         .response
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn latte() -> Theme {
+        let file = tasty_themes::ThemeFile::parse(tasty_themes::LATTE_TOML_TEXT).expect("latte");
+        let (partial, is_light) = file.to_partial();
+        let mut colors = tasty_themes::mocha_fallback_colors();
+        colors.apply_partial(&partial);
+        Theme::with_colors(colors, is_light.unwrap_or(true))
+    }
+
+    fn flatten(shape: &egui::Shape, out: &mut Vec<egui::Shape>) {
+        match shape {
+            egui::Shape::Vec(shapes) => shapes.iter().for_each(|s| flatten(s, out)),
+            other => out.push(other.clone()),
+        }
+    }
+
+    /// 그린 callout 상자의 테두리 색. 채움(accent-warning × tint-fill-alpha)으로 상자를 찾는다.
+    fn painted_callout_border(theme: &Theme) -> egui::Color32 {
+        let ctx = egui::Context::default();
+        let raw = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(480.0, 320.0),
+            )),
+            ..Default::default()
+        };
+        let out = ctx.run(raw, |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                warning_callout(ui, theme, "notice", &|_, _, _| {});
+            });
+        });
+        let mut shapes = Vec::new();
+        for clipped in out.shapes {
+            flatten(&clipped.shape, &mut shapes);
+        }
+        let fill = theme
+            .accent_warning()
+            .to_egui()
+            .gamma_multiply(theme.tint_fill_alpha());
+        let borders: Vec<egui::Color32> = shapes
+            .iter()
+            .filter_map(|s| match s {
+                egui::Shape::Rect(r) if r.fill == fill && r.stroke.width > 0.0 => {
+                    Some(r.stroke.color)
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(borders.len(), 1, "one callout box is painted");
+        borders[0]
+    }
+
+    /// 경고 callout 테두리는 정본 `tint-border-alpha`를 accent-warning에 곱한다.
+    #[test]
+    fn painted_callout_border_reads_tint_border_alpha() {
+        for theme in [tasty_themes::mocha_fallback(), latte()] {
+            assert_eq!(
+                painted_callout_border(&theme),
+                theme
+                    .accent_warning()
+                    .to_egui()
+                    .gamma_multiply(theme.tint_border_alpha()),
+            );
+        }
+    }
 }

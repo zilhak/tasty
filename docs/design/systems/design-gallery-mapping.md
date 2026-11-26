@@ -743,7 +743,7 @@ TUI 섹션의 OSC 52 경고 박스) ↔ 위젯 `crates/tasty-ui-widgets/src/warn
 
 | 디자인 jsx (css) | 토큰 | 위젯/갤러리 |
 |---|---|---|
-| `border: 1px solid color-mix(accent-warning 40%, transparent)` | `accent-warning`.gamma_multiply(0.4) + `border_width` | `warning_callout` stroke |
+| `border: 1px solid color-mix(accent-warning × tint-border-alpha, transparent)` | `accent-warning`.gamma_multiply(`tint_border_alpha()`) + `border_width` | `warning_callout` stroke |
 | `background: color-mix(accent-warning 12%, transparent)` | `accent-warning`.gamma_multiply(0.12) | `warning_callout` fill |
 | 라운드 박스 | `corner_radius` | Frame corner_radius |
 | padding | `spacing_md`(x) / `spacing_sm`(y) | Frame inner_margin |
