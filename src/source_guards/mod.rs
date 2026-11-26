@@ -712,6 +712,10 @@ mod stream_wakes_go_through_the_gate;
 #[cfg(test)]
 mod edit_key_judgment_order;
 
+/// W2 회수는 WebView 동기화에서 표시 술어 관측 뒤, 표시 적용 전에 한 번 있다.
+#[cfg(test)]
+mod webview_key_release_order;
+
 /// 보류 검사는 창 입력 맨 앞 한 자리다.
 #[cfg(test)]
 mod window_input_hold_order;

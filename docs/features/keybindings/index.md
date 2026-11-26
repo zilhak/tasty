@@ -251,11 +251,11 @@ Option 시퀀스·튜플 원소와 중첩 Option의 Some(None)은 표현을 다�
   자식 창 위이기만 해도 키를 넣으므로, 키를 근거로 삼으면 focus-follows-mouse 가 된다). 그래도 WebView 가
   넘긴 키의 host 단축키(닫기·이름 바꾸기·탭 전환·zoom 등)는 모델 포커스가 아니라 키를 받은 surface 의
   workspace·pane·탭을 대상으로 한다([키 매핑](../../design/policies/key-mapping.md)).
-- **가림과 포커스 회수**: egui overlay 가 열릴 때(webview 를 숨기는 모드와 보인 채 두는 모드 모두), 그리고 탭·workspace 전환으로
-  webview 가 활성 탭에서 빠질 때 키보드 포커스를 host 창으로 돌린다(숨김과 포커스 해제는
+- **가림과 포커스 회수**: 창의 포커스 노드가 그 webview 의 surface 가 아니거나 그 webview 가 이번 프레임에 숨을 때,
+  그리고 탭·workspace 전환으로 webview 가 활성 탭에서 빠질 때 키보드 포커스를 host 창으로 돌린다(숨김과 포커스 해제는
   세 OS 모두 별개). 다시 보일 때 자동 복원은 하지 않는다.
   회수는 **창이 활성(`base.focused` 이거나 webview 자식이 OS 포커스를 쥠)이고, 포커스가 실제로 그 webview 자식 안에 있을 때만**
-  한다 — overlay 와 탭 전환은 IPC 로도 일어나므로 무조건 회수하면 tasty 가 다른 앱의 OS 키보드
+  한다 — 포커스 이동과 탭 전환은 IPC 로도 일어나므로 무조건 회수하면 tasty 가 다른 앱의 OS 키보드
   포커스를 빼앗는다([사용자 통제와 데이터 원칙](../../principles/control-and-data.md)). 시점과 한계는 [WebView 호스트 계약](../../design/systems/webview.md#포커스--회수는-조건부다)이 정본이다.
 - **폴링 tick 은 Linux 에서만 세워진다.** GDK 는 winit 과 다른 X 연결로 이벤트를 받아
   루프를 깨우지 못해, 드러난 webview 가 있고 창이 활성(`host_window_has_os_focus` — `base.focused`

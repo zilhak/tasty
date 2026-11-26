@@ -509,10 +509,11 @@ macOS의 performKeyEquivalent도 실제 first responder가 자기 뷰 안에 있
 
 ## 포커스 — 회수는 **조건부**다
 
-host가 webview를 가릴 때 host 창이 활성이고 실제 focus가 해당 자식 안에 있을 때만
-부모 winit 창으로 회수한다. 가리는 경로는 두 가지다.
+host는 실제 focus가 해당 자식 안에 있을 때만 부모 winit 창으로 회수한다. 회수하는 경로는 두 가지다.
 
-- overlay를 열 때: 모든 webview를 대상으로 개폐마다 한 번 회수한다.
+- 키 쥘 곳(`key_focus::webview_key_holder_of`)이 아니거나 이번 프레임에 숨는 webview가 OS 키 포커스를 쥘 때:
+  동기화마다 그 webview를 회수한다(`webview_sync::key_release::release_webview_key_focus`). 같은 구간에 다시 쥐거나
+  늦게 나타난 webview도 회수한다. 판정은 표시 술어 관측 뒤, 표시 적용 전이다.
 - 탭·workspace 전환으로 surface가 활성 탭에서 빠질 때: 그 surface만 전이마다 한 번 회수한다.
   숨기기 전에 회수한다. 숨긴 뒤에는 backend가 focus가 이미 자식 밖에 있다고 판정할 수 있다.
   창이 비활성이면 창이 활성이 될 때까지 미루고, 그 사이 다시 활성 탭에 들어오거나 닫힌 surface는 뺀다.
@@ -547,7 +548,7 @@ holds_keyboard_focus는 위 표의 자식 focus 확인을 다시 쓰며 다른 �
 Linux의 GTK 펌프 폴링(`webview_poll_needed`)도 같은 판정을 쓴다. base.focused만 보면 자식이 X focus를 쥔 동안
 GDK가 받은 클릭과 키가 다음 루프 깨움까지 처리되지 않는다(아래 "Linux 클릭 반영 지연").
 
-OS 조회는 base.focused가 거짓이고 회수할 대상이 있을 때만 한다. 탭 전환 경로는 회수할 surface가 없는 프레임에 조회하지 않는다.
+탭 전환 경로의 OS 조회는 base.focused가 거짓이고 회수할 대상이 있을 때만 하고, 회수할 surface가 없는 프레임에는 조회하지 않는다. 키 쥘 곳 경로는 동기화마다 키 쥘 곳이 아니거나 숨는 webview의 holds_keyboard_focus를 조회한다.
 창 활성 판정 없이 backend의 회수 조건(자식 focus 확인)만 쓰면 macOS에서 IPC로 overlay를 열거나 탭을 바꿀 때 비활성 창의 first responder가 바뀐다.
 컴파일만으로 이 동작을 확인할 수 없으므로 활성·비활성 창에서 각각 재현한다.
 Linux/X11(Xvfb)에서는 X focus를 자식 창에 직접 넣은 상태와 다른 X 클라이언트가 focus를 가진 상태를 확인했다.
@@ -726,7 +727,7 @@ macOS·Windows는 투명 모드를 보고하지 않고 주 표면의 불투명 �
 입력·키보드·포커스·캡처 계약:
 
 - **포인터**: 대상 층이 보이는 동안 WebView 영역 전체의 클릭·휠은 호스트로 온다(`host_takes_pointer`). 입력 의미는 숨긴 상태와 같다. 페이지 클릭은 egui의 바깥 클릭으로 도착하고, 그 처리는 팝업 정의를 그대로 따른다. `close_on_outside_click`(plugin은 `dismiss_on_outside_click`)이 참이면 닫고, 거짓이면 닫지 않고 언포커스만 한다. `sticky_focus` 는 포커스 판정이 읽지 않는다([팝업 §포커스](popup.md#포커스), [§sticky_focus](popup.md#sticky_focus)). 어느 경우에도 그 클릭은 페이지로 가지 않는다. 대상 층이 사라지면 다음 프레임부터 포인터가 페이지로 간다.
-- **키보드·IME**: 대상 층이 보이는 동안 키와 IME는 페이지로 가지 않는다. 키는 지금처럼 포커스된 팝업이 받고, 포커스된 팝업이 없으면 호스트의 기존 규칙(터미널 등)을 따른다. 열 때의 포커스 회수(위 "포커스" 절)는 모드와 관계없이 유지한다. Linux에서 포인터가 페이지 위에 있으면 X 서버가 키를 WebView로 보내므로, 포인터를 호스트로 돌리는 처리가 이 라우팅도 막아야 한다. 오버레이 중 WebView가 전달한 키는 받은 surface에서 시작한 [키 경로](../../architecture/input-layer.md#plugin-명령과-webview-전달-키)로 판정한다. 받은 surface를 덮는 팝업이 있거나, 경로 키가 아니고 창의 키 게이트(`window_keys_to_overlay`)가 닫혀 있으면 `webview_keys`에서 버린다. 닫을 때 native 자식 포커스를 자동 복원하지 않는다.
+- **키보드·IME**: 대상 층이 보이는 동안 키와 IME는 페이지로 가지 않는다. 키는 지금처럼 포커스된 팝업이 받고, 포커스된 팝업이 없으면 호스트의 기존 규칙(터미널 등)을 따른다. 포커스 회수는 위 "포커스" 절의 키 쥘 곳을 따른다. Linux에서 포인터가 페이지 위에 있으면 X 서버가 키를 WebView로 보내므로, 포인터를 호스트로 돌리는 처리가 이 라우팅도 막아야 한다. 오버레이 중 WebView가 전달한 키는 받은 surface에서 시작한 [키 경로](../../architecture/input-layer.md#plugin-명령과-webview-전달-키)로 판정한다. 받은 surface를 덮는 팝업이 있거나, 경로 키가 아니고 창의 키 게이트(`window_keys_to_overlay`)가 닫혀 있으면 `webview_keys`에서 버린다. 닫을 때 native 자식 포커스를 자동 복원하지 않는다.
 - **포커스**: 새 OS 층(오버레이 창 등)은 OS 포커스나 창 활성화를 가져가지 않는다. 창이 비활성일 때 first responder·포커스를 바꾸지 않는 판정(`host_window_has_os_focus`)을 그대로 따른다.
 - **그리기**: 팝업은 주 표면에도 계속 그린다. 오버레이 창은 페이지 위 영역만 칠하므로 한 픽셀은 scrim과 정확히 한 번 합성된다(아래 GPU 분리).
 - **캡처**: `ui.screenshot`은 주 표면을 읽으므로 팝업은 지금처럼 캡처에 남고 WebView 픽셀은 지금처럼 없다. 페이지와 팝업이 함께 보이는지는 OS 화면 캡처로 확인한다. 원격 attach mesh 중계는 host 팝업 픽셀을 보내지 않아 영향이 없다.
@@ -810,7 +811,7 @@ debug 빌드의 `debug.webview.overlay`(CLI `tasty debug webview-overlay [--forc
 - `overlay_paint_source`: 불투명은 주 표면이라 오버레이 창을 만들지 않는다. 투명은 오버레이 창이다.
 - `apply_overlay`: 숨김이면 `Unsupported`다. 요청 영역과 `host_takes_pointer`를 저장하고 shape를 다시 맞춘다. `clear_overlay`는 저장을 지우고 다시 맞춘다.
 - shape 합성: X 창의 shape는 하나라서 `set_native_holes`의 입력 구멍·그림 구멍과 오버레이 영역을 한 함수(`linux_shape::compose`)로 합친다. 그림(`ShapeBounding`)에서는 안내 카드와 불투명 모드의 팝업 상자를 뺀다. 투명 모드는 페이지 그림을 그대로 두고 입력만 가져간다. 입력(`ShapeInput`)은 `host_takes_pointer`면 빈 region이고, 아니면 모든 구멍을 뺀다. 마지막 적용값과 같으면 X 요청을 보내지 않는다. 동기화는 `apply_overlay`를 `set_bounds`보다 먼저 부르므로 창 크기가 바뀐 프레임은 뒤의 `set_native_holes`가 새 크기로 다시 맞춘다. 오버레이를 지우면 native 구멍만 남은 shape로 돌아간다.
-- 키: 입력 shape가 비면 포인터가 페이지 위에 있어도 X 서버가 키를 부모 창으로 보낸다. 그래서 오버레이가 포인터를 가져간 동안 `receives_keyboard_input`은 X 포커스가 WebView 안에 있는지만 본다. 열 때의 포커스 회수와 닫을 때 복원하지 않는 규칙은 공통 동기화가 그대로 맡는다. 이 backend는 포커스를 옮기지 않는다.
+- 키: 입력 shape가 비면 포인터가 페이지 위에 있어도 X 서버가 키를 부모 창으로 보낸다. 그래서 오버레이가 포인터를 가져간 동안 `receives_keyboard_input`은 X 포커스가 WebView 안에 있는지만 본다. 포커스 회수(위 "포커스" 절)와 닫을 때 복원하지 않는 규칙은 공통 동기화가 그대로 맡는다. 이 backend는 포커스를 옮기지 않는다.
 - 표시: GTK `show_all`이 매 프레임 불려도 X 창 shape는 유지됐다(아래 측정).
 
 2026-10-22 격리 debug 인스턴스(Xvfb, 창 관리자 없음)에서 확인한 범위다. 배율은 1, 그리고 `WINIT_X11_SCALE_FACTOR`로 준 2와 1.25다. 첫 불투명 측정의 배율 2는 `GDK_SCALE=2`를 함께 줬다. 아래 픽셀 경계 측정의 배율 2·1.25는 `GDK_SCALE`을 주지 않았다(배율 1.25 실행 로그의 GDK 배율은 1).

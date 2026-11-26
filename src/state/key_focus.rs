@@ -133,6 +133,17 @@ pub(crate) fn key_focus_of(node: FocusNode, notice: bool, selected: Option<u32>)
     }
 }
 
+/// 포커스 노드에서 OS 키를 쥘 WebView surface로 가는 대응표 열. `notice`는 복원 안내 안쪽 컨트롤이 키를 가졌는지다.
+/// surface 노드만 그 surface이고, 그 밖의 노드(팝업·무대·설정 열기 요청·주소 띠·말풍선)와 안내가 키를 가진 때는
+/// 없다. host 키 포커스(`key_focus_of`)와 달리 주소 띠·설정 열기 요청에서 선택 surface를 돌려주지 않는다.
+#[cfg(feature = "gui")]
+pub(crate) fn webview_key_holder_of(node: FocusNode, notice: bool) -> Option<u32> {
+    match node {
+        FocusNode::Surface(surface) if !notice => surface,
+        _ => None,
+    }
+}
+
 /// surface에 알리는 focused 값(egui-mesh·attach mesh). 점유와 무관하게 키 포커스만 따른다.
 pub(crate) fn told_focused(key_focus: Option<u32>, surface_id: u32) -> bool {
     key_focus == Some(surface_id)

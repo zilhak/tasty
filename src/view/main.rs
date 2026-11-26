@@ -160,9 +160,6 @@ pub struct MainView {
         std::collections::HashMap<u32, (std::time::Instant, bool, crate::webview::NavState)>,
     /// native 자식 창에서 받은 키·포커스를 host로 전달하는 브리지.
     pub(crate) webview_key_bridge: std::rc::Rc<crate::webview::WebViewKeyBridge>,
-    /// overlay 가 열려 webview 키보드 포커스를 이미 host 로 회수했는지(edge 판정).
-    /// overlay 가 닫히면 false 로 돌아가 다음 개폐에 다시 1 회만 회수한다.
-    pub(crate) webview_overlay_focus_released: bool,
     /// 직전 동기화에서 활성 탭에 있던 webview surface. 탭·workspace 전환으로
     /// 활성 탭에서 빠진 surface를 한 번만 가려내는 edge 판정에 쓴다.
     pub(crate) webview_prev_active: std::collections::HashSet<u32>,
@@ -307,7 +304,6 @@ impl MainView {
             webview_create_attempts: std::collections::HashMap::new(),
             webview_reveal_pending: std::collections::HashMap::new(),
             webview_key_bridge: std::rc::Rc::new(crate::webview::WebViewKeyBridge::new()),
-            webview_overlay_focus_released: false,
             webview_prev_active: std::collections::HashSet::new(),
             html_script_seen_focus: None,
             html_script_phases: std::collections::HashMap::new(),

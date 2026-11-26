@@ -465,6 +465,10 @@ mod tutorial_exclusive;
 mod tutorial_escape;
 
 #[cfg(feature = "gui")]
+#[path = "webview_release_tests.rs"]
+mod webview_release;
+
+#[cfg(feature = "gui")]
 #[path = "frame_key_owner_tests.rs"]
 mod frame_keys;
 

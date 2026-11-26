@@ -1,10 +1,13 @@
-//! W2: overlay 가 열린 동안 WebView 의 OS 키 포커스를 호스트 창으로 돌리는 판정. 동기화(`sync_webviews`)가 이 함수
-//! 하나를 부른다. backend 는 자기 자식이 실제로 포커스를 가졌을 때만 회수한다.
+//! W2: WebView 는 키 쥘 곳(`key_focus::webview_key_holder_of`)이 그 surface 이고 이번 프레임에 드러날 때만 OS 키
+//! 포커스를 쥘 수 있다. 동기화(`sync_webviews`)가 W1 모드 결정과 표시 술어 관측 뒤, 표시 적용 전에 이 판정 하나를
+//! 부른다. backend 는 자기 자식이 실제로 포커스를 가졌을 때만 회수한다.
 
-use crate::view::main::redraw::host_window_has_os_focus;
+use crate::state::MainViewState;
+use crate::state::key_focus::webview_key_holder_of;
+use crate::state::webview_overlay::OverlayMode;
 
 /// OS 키 포커스를 쥘 수 있는 WebView. 창의 `PlatformWebView` 와 시험용 WebView 가 구현한다.
-pub(super) trait KeyFocusWebView {
+pub(crate) trait KeyFocusWebView {
     fn holds_keyboard_focus(&self) -> bool;
     fn release_keyboard_focus(&self);
 }
@@ -19,32 +22,38 @@ impl KeyFocusWebView for crate::webview::PlatformWebView {
     }
 }
 
-/// overlay 를 열면 WebView 키보드 포커스를 호스트 창으로 돌린다. 숨기기만으로는 포커스가 해제되지 않는다. 닫을 때
-/// 자동으로 native 자식에 포커스를 돌려주지는 않는다. 다른 앱의 포커스를 바꾸지 않도록 이 창이 OS 포커스를 가질 때만
-/// 처리한다(`host_window_has_os_focus`). overlay 구간 처음에 한 번 회수하고 그 구간의 창 표지(`released`)를 세운다.
-/// overlay 가 닫히면 표지를 지운다. 돌려준 값이 새 표지다.
-pub(super) fn release_webview_key_focus<W: KeyFocusWebView>(
+/// 키 쥘 곳이 아닌 WebView, 또는 이번 프레임에 숨는(모드가 `Hide` 이고 overlay 가 열림) 키 쥘 곳 WebView 가 OS 키
+/// 포커스를 쥐면 회수하고 그 surface 의 회수 기록(`MainViewState::webview_key_released`)을 세운다. OS 키 포커스를 쥔
+/// WebView 가 있으면 이 창이 OS 포커스를 가진 것이라(`host_window_has_os_focus`) 다른 앱의 포커스를 바꾸지 않는다.
+/// 기록은 재회수를 막지 않는다(매 동기화의 `holds_keyboard_focus` 관측이 정한다). 기록은 그 surface 가 키 쥘 곳이
+/// 되거나 사라지거나 native 포커스 알림이 오면(`note_native_webview_focus`) 지운다. 입구에서 포커스를 정규화해 그
+/// 패스의 닫기와 plugin 덮음 갱신까지 반영한, 다음 입력이 볼 포커스 노드를 읽는다.
+pub(crate) fn release_webview_key_focus<W: KeyFocusWebView>(
+    state: &mut MainViewState,
+    core: &crate::core::CoreState,
+    overlay_mode: OverlayMode,
     overlay_open: bool,
-    released: bool,
-    window_focused: bool,
-    webviews: &[&W],
-) -> bool {
-    if !overlay_open {
-        return false;
+    webviews: &[(u32, &W)],
+) {
+    state.normalize_focus(core);
+    let holder = webview_key_holder_of(
+        state.focus_node(core),
+        crate::adapters::ui::restore_notice::has_keyboard_focus(&state.popups),
+    );
+    let revealed = !(overlay_open && overlay_mode == OverlayMode::Hide);
+    state
+        .webview_key_released
+        .retain(|sid| Some(*sid) != holder && webviews.iter().any(|(s, _)| s == sid));
+    for &(sid, wv) in webviews {
+        if (holder != Some(sid) || !revealed) && wv.holds_keyboard_focus() {
+            wv.release_keyboard_focus();
+            state.webview_key_released.insert(sid);
+        }
     }
-    if released
-        || !host_window_has_os_focus(window_focused, || {
-            webviews.iter().any(|wv| wv.holds_keyboard_focus())
-        })
-    {
-        return released;
-    }
-    for wv in webviews {
-        wv.release_keyboard_focus();
-    }
-    true
 }
 
-#[cfg(test)]
-#[path = "key_release_tests.rs"]
-mod tests;
+/// native 포커스 알림(사용자가 그 native 페이지를 누름)이 그 surface 의 회수 기록을 지운다. 누름이 포커스 노드를 그
+/// surface 로 옮기지 못하면 다음 동기화가 다시 회수한다.
+pub(crate) fn note_native_webview_focus(state: &mut MainViewState, sid: u32) {
+    state.webview_key_released.remove(&sid);
+}

@@ -1386,8 +1386,8 @@ impl PopupManager {
             .any(|p| p.id == id && p.open && p.passive)
     }
 
-    /// 최신 draw에서 보이는 열린 popup 중 native WebView를 모두 숨기고 키보드 포커스를 회수해야 하는 것이
-    /// 있는지. passive popup은 [`Self::visible_passive_rects`]로 겹치는 WebView만 숨긴다. 포커스를 받지 않는
+    /// 최신 draw에서 보이는 열린 popup 중 native WebView를 모두 숨겨야 하는 것이 있는지(키보드 포커스 회수는
+    /// 포커스 노드가 정한다, `webview_sync::key_release`). passive popup은 [`Self::visible_passive_rects`]로 겹치는 WebView만 숨긴다. 포커스를 받지 않는
     /// 팝업은 어느 쪽에도 세지 않고 [`Self::quiet_popup_rects`]로 WebView에 구멍만 낸다.
     pub fn has_visible_open(&self) -> bool {
         self.popups

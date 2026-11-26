@@ -72,6 +72,10 @@ impl App {
         let Some((main, engine)) = engines_mut!(self).window_pair(id) else {
             return;
         };
+        crate::app::webview_sync::key_release::note_native_webview_focus(
+            &mut main.state,
+            surface_id,
+        );
         if main.state.focus_surface_by_id(engine.core, surface_id) {
             main.mark_dirty();
         }

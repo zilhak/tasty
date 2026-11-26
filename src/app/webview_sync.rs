@@ -28,7 +28,7 @@ use tasty_model::html_script::BannerPhase;
 
 mod script_gate;
 use script_gate::attach_script_gate;
-mod key_release;
+pub(crate) mod key_release;
 mod overlay_host_settle;
 mod overlay_settle;
 pub(crate) use overlay_host_settle::settle_overlay_host;
@@ -762,14 +762,6 @@ fn sync_webviews(
             .collect(),
     );
 
-    let webviews: Vec<_> = view.webviews.values().collect();
-    view.webview_overlay_focus_released = key_release::release_webview_key_focus(
-        overlay_open,
-        view.webview_overlay_focus_released,
-        view.base.state.focused,
-        &webviews,
-    );
-
     // 주소 띠가 키보드 포커스를 새로 얻으면 그 surface의 페이지에서 포커스를 회수해 키가 페이지로
     // 가지 않게 한다. 띠가 포커스를 가진 동안에만 OS 포커스를 조회한다.
     let webviews = &view.webviews;
@@ -893,6 +885,14 @@ fn sync_webviews(
         }
         planned.extend(reveal.then_some(*sid));
     }
+    let webviews: Vec<_> = view.webviews.iter().map(|(sid, wv)| (*sid, wv)).collect();
+    key_release::release_webview_key_focus(
+        &mut view.state,
+        engine.core,
+        overlay_mode,
+        overlay_open,
+        &webviews,
+    );
     // 대상 팝업 아래 페이지는 오버레이 창에 같은 모드·페이지의 그림이 올라간 프레임에만 드러난다.
     let revealed = apply_reveal(
         view,

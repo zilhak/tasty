@@ -177,6 +177,10 @@ pub struct MainViewState {
     /// 허용(`ime_permission::window_ime_allowed`)이 그 몫 위젯의 IME 출력이 어느 노드의 것인지 읽는다.
     #[cfg(feature = "gui")]
     pub(crate) closed_segment_focus: Option<crate::state::focus_node::FocusNode>,
+    /// W2 회수 기록: 이번 구간에 OS 키 포커스 회수를 부른 WebView surface(`webview_sync::key_release`). 재회수를
+    /// 막지 않는다.
+    #[cfg(feature = "gui")]
+    pub(crate) webview_key_released: std::collections::BTreeSet<u32>,
     /// 이번 그리기 몫 키들의 사건 시점 복원 안내(안쪽 포커스를 가진 인스턴스, 없으면 `Some(None)`,
     /// `cut_key_frame`). 키가 없는 몫은 `None` 이다.
     #[cfg(feature = "gui")]
