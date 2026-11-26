@@ -1,6 +1,6 @@
 //! 원격 표시 C안 띠와 B안 호스트 글자가 디자인 토큰 치수로 그려지는지 본다.
-use super::indicator::{Indicator, top_strip};
-use super::{FpState, Variant};
+use super::indicator::{Indicator, after_title, top_strip};
+use super::{FpState, HOST, Variant};
 use tasty_type_appearance::theme::Theme;
 
 fn zoomed(zoom: f32) -> Theme {
@@ -43,4 +43,24 @@ fn the_border_indicator_strip_is_the_remote_strip_height() {
         assert_eq!(strips, vec![want], "배율 {zoom}: 띠 높이");
         assert_eq!(returned.get(), want, "배율 {zoom}: 돌려준 높이");
     }
+}
+
+/// B안 제목 옆 호스트 글자는 배지 글자와 같은 `fp-host-badge-font-size`(caption 11)다.
+#[test]
+fn the_glyph_indicator_host_text_is_the_host_badge_font_size() {
+    let v = Variant::open(FpState::Loaded, true, false).indicated(Indicator::Glyph);
+    let theme = zoomed(1.0);
+    let shapes = shapes_of(&theme, |ui, th| {
+        ui.horizontal(|ui| after_title(ui, th, v));
+    });
+    let sizes: Vec<f32> = shapes
+        .iter()
+        .filter_map(|c| match &c.shape {
+            egui::epaint::Shape::Text(t) if t.galley.text() == HOST => {
+                Some(t.galley.job.sections[0].format.font_id.size)
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(sizes, vec![11.0], "호스트 글자 크기");
 }

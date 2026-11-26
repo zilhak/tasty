@@ -9,9 +9,6 @@ use crate::catalog::icons::{self, MockGlyph};
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 use crate::i18n::t;
 
-/// B안에서 제목 옆에 적는 호스트 글자 크기. 시안 `fontSize: 12` 리터럴이며 대응 UI 토큰이 없다.
-const GLYPH_HOST_FONT_PRIMITIVE_12: LogicalPx = LogicalPx(12.0);
-
 /// 원격 표시 방식 — 시안 `FilePickerFrame indicator`.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum Indicator {
@@ -122,7 +119,7 @@ pub(super) fn after_title(ui: &mut egui::Ui, theme: &Theme, v: Variant) {
                 v.host,
                 t("attach.mirror_pill_label"),
                 tasty_ui_widgets::label_font_family(),
-                GLYPH_HOST_FONT_PRIMITIVE_12.value(),
+                theme.fp_host_badge_font_size().value(),
             );
             ui.label(
                 egui::RichText::new(text)
