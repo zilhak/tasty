@@ -28,6 +28,7 @@ use tasty_model::html_script::BannerPhase;
 
 mod script_gate;
 use script_gate::attach_script_gate;
+mod key_release;
 mod overlay_host_settle;
 mod overlay_settle;
 pub(crate) use overlay_host_settle::settle_overlay_host;
@@ -761,23 +762,13 @@ fn sync_webviews(
             .collect(),
     );
 
-    // overlay를 열면 WebView 키보드 포커스를 호스트 창으로 돌린다. 숨기기만으로는
-    // 포커스가 해제되지 않는다. 닫을 때 자동으로 native 자식에 포커스를 돌려주지는 않는다.
-    // 다른 앱의 포커스를 바꾸지 않도록 이 창이 OS 포커스를 가질 때만 처리한다.
-    if overlay_open {
-        if !view.webview_overlay_focus_released
-            && host_window_has_os_focus(view.base.state.focused, || {
-                view.webviews.values().any(|wv| wv.holds_keyboard_focus())
-            })
-        {
-            for wv in view.webviews.values() {
-                wv.release_keyboard_focus();
-            }
-            view.webview_overlay_focus_released = true;
-        }
-    } else {
-        view.webview_overlay_focus_released = false;
-    }
+    let webviews: Vec<_> = view.webviews.values().collect();
+    view.webview_overlay_focus_released = key_release::release_webview_key_focus(
+        overlay_open,
+        view.webview_overlay_focus_released,
+        view.base.state.focused,
+        &webviews,
+    );
 
     // 주소 띠가 키보드 포커스를 새로 얻으면 그 surface의 페이지에서 포커스를 회수해 키가 페이지로
     // 가지 않게 한다. 띠가 포커스를 가진 동안에만 OS 포커스를 조회한다.
