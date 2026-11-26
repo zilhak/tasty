@@ -11,10 +11,9 @@ use std::collections::BTreeSet;
 
 const ICONS: &str = "crates/tasty-icons/src/lib.rs";
 const INVENTORY: &str = "THIRD_PARTY_LICENSES.md";
-const TEXTS_DIR: &str = "LICENSES";
 const CREDIT_PREFIX: &str = "// 출처: Lucide \"";
-/// 출처 주석마다 적는 라이선스 본문.
-const REQUIRED_TEXTS: [&str; 2] = ["Feather-MIT.txt", "Lucide-ISC.txt"];
+/// 출처 주석마다 적는 라이선스 본문의 저장소 루트 기준 경로.
+const REQUIRED_TEXTS: [&str; 2] = ["LICENSES/Feather-MIT.txt", "LICENSES/Lucide-ISC.txt"];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum Kind {
@@ -122,17 +121,25 @@ fn read_credits(src: &str) -> (Vec<Credit>, Vec<String>) {
             ));
             continue;
         };
-        let needle = format!("{TEXTS_DIR}/");
-        let texts: BTreeSet<String> = rest
-            .match_indices(&needle)
-            .map(|(pos, _)| {
-                rest[pos + needle.len()..]
-                    .split([',', ')', ' '])
-                    .next()
-                    .unwrap_or("")
-                    .to_string()
+        // 고지 경로는 주석 끝 괄호 안에 쉼표로 나눠 적는다. 경로 전체를 읽어야 다른 폴더의
+        // 같은 이름(`docs/LICENSES/…`)을 본문으로 잘못 세지 않는다.
+        let Some(texts) = rest
+            .rfind('(')
+            .and_then(|open| {
+                rest[open + 1..]
+                    .find(')')
+                    .map(|close| &rest[open + 1..open + 1 + close])
             })
-            .collect();
+            .map(|inside| {
+                inside
+                    .split(',')
+                    .map(|t| t.trim().to_string())
+                    .collect::<BTreeSet<String>>()
+            })
+        else {
+            problems.push(format!("{n}행: 고지 경로 괄호가 없다: {line}"));
+            continue;
+        };
         let Some(definition) = definition_name(&lines, i + 1) else {
             let next = lines.get(i + 1).map(|l| l.trim_start()).unwrap_or("");
             problems.push(format!(
@@ -168,15 +175,12 @@ fn every_lucide_credit_names_shipped_license_texts() {
             ));
         }
         for text in &c.texts {
-            if !root.join(TEXTS_DIR).join(text).is_file() {
-                problems.push(format!(
-                    "{}행 {}: {TEXTS_DIR}/{text} 가 없다",
-                    c.line, c.definition
-                ));
+            if !root.join(text).is_file() {
+                problems.push(format!("{}행 {}: {text} 가 없다", c.line, c.definition));
             }
-            if !inventory.contains(&format!("]({TEXTS_DIR}/{text})")) {
+            if !inventory.contains(&format!("]({text})")) {
                 problems.push(format!(
-                    "{}행 {}: {INVENTORY} 가 {TEXTS_DIR}/{text} 를 링크하지 않는다",
+                    "{}행 {}: {INVENTORY} 가 {text} 를 링크하지 않는다",
                     c.line, c.definition
                 ));
             }
@@ -218,7 +222,7 @@ fn every_lucide_credit_names_shipped_license_texts() {
 fn credit_reader_takes_the_definition_kind_and_texts() {
     let src = "// 출처: Lucide \"x\", 같은 도형. v(LICENSES/a.txt, LICENSES/b.txt).\n\
                stroke_icon!(CLOSE, \"close\", r#\"\"#);\n\
-               // 출처: Lucide \"star\", 고쳐 온 도형. v(LICENSES/a.txt).\n\
+               // 출처: Lucide \"star\", 고쳐 온 도형. v(docs/LICENSES/a.txt).\n\
                fill_icon!(\n\
                \x20   STAR_FILL,\n\
                // 출처: Lucide \"y\", 같은 도형. v(LICENSES/a.txt).\n\
@@ -235,14 +239,14 @@ fn credit_reader_takes_the_definition_kind_and_texts() {
                 definition: "CLOSE".into(),
                 lucide: "x".into(),
                 kind: Kind::Same,
-                texts: BTreeSet::from(["a.txt".to_string(), "b.txt".to_string()]),
+                texts: BTreeSet::from(["LICENSES/a.txt".to_string(), "LICENSES/b.txt".to_string()]),
             },
             Credit {
                 line: 3,
                 definition: "STAR_FILL".into(),
                 lucide: "star".into(),
                 kind: Kind::Adapted,
-                texts: BTreeSet::from(["a.txt".to_string()]),
+                texts: BTreeSet::from(["docs/LICENSES/a.txt".to_string()]),
             },
         ]
     );
