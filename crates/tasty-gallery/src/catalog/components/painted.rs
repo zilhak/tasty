@@ -287,6 +287,29 @@ impl Painted {
             .collect()
     }
 
+    /// 획이 있는 사각형(테두리)의 사각형·채움·획 색. 채움 없이 테두리만 그린 것도 든다.
+    pub(crate) fn stroked_rects(&self) -> Vec<(egui::Rect, egui::Color32, egui::Color32)> {
+        self.shapes
+            .iter()
+            .filter_map(|s| match s {
+                egui::Shape::Rect(r) if r.brush.is_none() && r.stroke.width > 0.0 => {
+                    Some((r.rect, r.fill, r.stroke.color))
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// `inner`를 품는 가장 작은 테두리 사각형의 획 색.
+    pub(crate) fn edge_around(&self, inner: egui::Rect) -> egui::Color32 {
+        self.stroked_rects()
+            .into_iter()
+            .filter(|(r, _, _)| r.contains_rect(inner))
+            .min_by(|a, b| a.0.area().total_cmp(&b.0.area()))
+            .map(|(_, _, edge)| edge)
+            .unwrap_or_else(|| panic!("no edge around {inner:?}"))
+    }
+
     /// `area` 안에 `text`와 똑같은 글자가 그려졌는가.
     pub(crate) fn has_text_in(&self, text: &str, area: egui::Rect) -> bool {
         self.texts

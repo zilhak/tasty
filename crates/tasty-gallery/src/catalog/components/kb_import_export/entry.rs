@@ -69,9 +69,9 @@ pub fn draw_entry(ui: &mut egui::Ui, theme: &Theme) {
                 theme.surface_raised().to_egui(),
             ),
             TokenChip::new(
-                "border-default",
+                "border-strong",
                 "action row edge",
-                theme.border_default().to_egui(),
+                theme.border_strong().to_egui(),
             ),
             TokenChip::without_color("settings-sidebar-width", "200 — L2 column"),
         ],
@@ -225,7 +225,7 @@ pub(super) fn action_row(
         .fill(theme.surface_raised().to_egui())
         .stroke(egui::Stroke::new(
             theme.border_width.value(),
-            theme.border_default().to_egui(),
+            theme.border_strong().to_egui(),
         ))
         .corner_radius(theme.corner_radius.value())
         .inner_margin(tasty_ui_widgets::margin_all(theme.spacing_md))
@@ -294,4 +294,35 @@ pub(super) fn action_row(
 fn export_toast(ui: &mut egui::Ui, theme: &Theme) {
     let text = format!("Exported to ~/tasty/{IE_FILE}");
     toast_card::draw_single_card(ui, theme, ToastKind::Success, &text, &[], 1.0);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::catalog::components::painted::paint;
+
+    /// 액션 행 카드는 raised 카드라 외곽이 border-strong이다. 카드마다 설명 글자를 품는 가장 작은 테두리를 본다.
+    #[test]
+    fn the_action_row_cards_edge_with_border_strong() {
+        for theme in [
+            tasty_themes::mocha_fallback(),
+            crate::host_shell::latte_theme(),
+        ] {
+            let strong = theme.border_strong().to_egui();
+            assert_ne!(strong, theme.border_default().to_egui());
+            let p = paint(|ui| entry(ui, &theme));
+            let descs: Vec<egui::Rect> = [
+                "settings.keybindings.ie_export_desc",
+                "settings.keybindings.ie_import_desc",
+            ]
+            .iter()
+            .flat_map(|k| p.texts_with(crate::i18n::t(k)))
+            .map(|t| t.rect)
+            .collect();
+            assert_eq!(descs.len(), 3, "Export 둘·Import 하나");
+            for d in descs {
+                assert_eq!(p.edge_around(d), strong);
+            }
+        }
+    }
 }

@@ -940,7 +940,7 @@ Icons › `keys-in-use`(`catalog/icons_keys.rs`)의 "option per OS" 묶음에 �
 | 디자인 jsx | 갤러리 | 비고 |
 |---|---|---|
 | `IeL2Tail` · `KB_L2_SEPARATED` | `l2_tail` · `l2_separator` · `l2_row` | **신규 축** — L2 행 위 1px separator(margin space-sm), 필터 활성 시 숨김 |
-| `IeActionRow` ×2 (`IeEntry`) | `entry` · `action_row` | surface-raised + border-default + radius, padding `kb-ie-notice-inset`(→ space-md, 가로·세로 모두 12). Import primary · Export secondary. `notice` 자리(행 아래, gap space-sm) + trailing 버튼 비활성 축 |
+| `IeActionRow` ×2 (`IeEntry`) | `entry` · `action_row` | surface-raised + border-strong + radius, padding `kb-ie-notice-inset`(→ space-md, 가로·세로 모두 12). Import primary · Export secondary. `notice` 자리(행 아래, gap space-sm) + trailing 버튼 비활성 축 |
 | 창 toast(export 경로) | `export_toast`(`toast_card::draw_single_card`, Success) | 설정 창 자체 `ToastManager` 의 카드 |
 | `DrillDown` detail + back bar actions | `detail_frame`(실제 `DrillDown`) | 우측 슬롯: `Show all {n}`/`Changed only` ghost · Apply primary |
 | `IeDiffTable` (grid `size-32 minmax(0,1.6fr) 1fr 1fr`) | `diff_table` | **신규 축 둘** — 선두 선택 열(32) · 그룹 헤더 행(surface-raised, select-all · chevron · `font-label` micro caps 그룹명 · `N changed · M total`). 변경 = accent-primary |
