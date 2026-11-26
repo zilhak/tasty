@@ -53,7 +53,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ),
             (
                 "idle",
-                "surface-raised fill · 1px border-default border · text-secondary-raised",
+                "surface-raised fill · 1px border-strong border · text-secondary-raised",
             ),
         ],
         &[
@@ -63,9 +63,9 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 egui::Color32::from(theme.surface_raised()),
             ),
             TokenChip::new(
-                "border-default",
+                "border-strong",
                 "idle border",
-                egui::Color32::from(theme.border_default()),
+                egui::Color32::from(theme.border_strong()),
             ),
             TokenChip::new(
                 "accent-primary",

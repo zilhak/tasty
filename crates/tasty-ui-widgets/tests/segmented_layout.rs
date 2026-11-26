@@ -49,9 +49,11 @@ fn each_segment_is_its_own_pill_segmented_gap_apart() {
     }
     let accent = th.accent_primary().to_egui();
     assert_eq!((pills[1].fill, pills[1].stroke.color), (accent, accent));
+    // 미선택 알약은 raised 채움이라 외곽이 border-strong이다(border-default는 Mocha에서 채움과 같은 색이다).
+    assert_ne!(th.border_strong(), th.border_default());
     for i in [0, 2] {
         assert_eq!(pills[i].fill, th.surface_raised().to_egui());
-        assert_eq!(pills[i].stroke.color, th.border_default().to_egui());
+        assert_eq!(pills[i].stroke.color, th.border_strong().to_egui());
     }
 }
 

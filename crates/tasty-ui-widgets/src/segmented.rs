@@ -2,7 +2,7 @@
 //!
 //! 정본 배치(원격 연결 폼 Connection·Passkey Kind 토글, tasty-page overlay-frames.jsx `seg`): 칸마다 따로 그린
 //! 알약이 `segmented-gap` 간격으로 놓인다. 알약은 높이 control-height, 좌우 padding space-md, radius, 글자 body다. 선택 칸은
-//! accent-primary 채움과 같은 색 테두리에 text-on-accent, 나머지는 surface-raised 채움과 border-default 테두리에
+//! accent-primary 채움과 같은 색 테두리에 text-on-accent, 나머지는 surface-raised 채움과 border-strong 테두리에
 //! text-secondary(surface-raised 위 대비 값 text-secondary-raised)다.
 
 use tasty_type_appearance::theme::Theme;
@@ -80,7 +80,7 @@ fn segment_chip(
     } else {
         (
             theme.surface_raised(),
-            theme.border_default(),
+            theme.border_strong(),
             theme.text_secondary_raised(),
         )
     };
