@@ -46,7 +46,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("anchor", "directly under the OSC 52 toggle"),
             ("leading", "alertTriangle glyph (injected)"),
             ("body", "caption · wraps in the box width"),
-            ("border", "1px · accent-warning 40%"),
+            ("border", "1px · accent-warning × tint-border-alpha"),
             ("background", "accent-warning 12% tint"),
         ],
         &[
@@ -82,6 +82,6 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::note(
         ui,
         theme,
-        "The warning widget accepts an IconPainter callback. Both the main app and gallery supply the shared ALERT_TRIANGLE icon. The border and background apply gamma_multiply to the warning color at 40% and 12%.",
+        "The warning widget accepts an IconPainter callback. Both the main app and gallery supply the shared ALERT_TRIANGLE icon. The border and background apply gamma_multiply to the warning color with tint-border-alpha and tint-fill-alpha.",
     );
 }
