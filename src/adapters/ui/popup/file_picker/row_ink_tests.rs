@@ -262,3 +262,89 @@ fn the_hovered_row_meta_reads_the_hover_meta_token() {
         .collect();
     assert_eq!(inks, vec![th.fp_row_meta_fg_hover().to_egui()]);
 }
+
+/// 선택 막대: 선택 행마다 `accent-primary-on-active`, 폭 `selection-edge-width`, 행 높이 그대로, 행 바탕(선택 · 선택+hover)
+/// 위에 그린다.
+#[test]
+fn the_selection_bar_is_on_active_over_the_row_ground() {
+    for th in [
+        latte(),
+        Theme::with_colors(tasty_themes::mocha_fallback_colors(), false),
+    ] {
+        let at = name_rect(&paint(&th, "", None), FOLDER).center();
+        let row_h = row_height(&th).value();
+        for (case, pointer) in [("선택", None), ("선택+hover", Some(at))] {
+            let shapes = paint(&th, FOLDER, pointer);
+            let text = name_rect(&shapes, FOLDER);
+            let on_row = |r: &egui::Rect| {
+                (r.height() - row_h).abs() < 0.01 && r.y_range().contains(text.center().y)
+            };
+            let bars: Vec<(usize, egui::Color32)> = shapes
+                .iter()
+                .enumerate()
+                .filter_map(|(i, c)| match &c.shape {
+                    egui::Shape::Rect(r)
+                        if r.brush.is_none()
+                            && on_row(&r.rect)
+                            && (r.rect.width() - th.selection_edge_width.value()).abs() < 0.01 =>
+                    {
+                        Some((i, r.fill))
+                    }
+                    _ => None,
+                })
+                .collect();
+            assert_eq!(
+                bars,
+                vec![(
+                    bars.first().map_or(0, |b| b.0),
+                    th.accent_primary_on_active().to_egui()
+                )],
+                "{case}: 막대 하나"
+            );
+            let ground = shapes
+                .iter()
+                .position(|c| {
+                    matches!(&c.shape, egui::Shape::Rect(r)
+                        if r.brush.is_none() && on_row(&r.rect) && r.rect.width() > text.width()
+                            && r.fill != egui::Color32::TRANSPARENT)
+                })
+                .expect("행 바탕");
+            assert!(bars[0].0 > ground, "{case}: 막대는 바탕 위");
+            let other = paint(&th, FILE, pointer);
+            assert!(
+                other
+                    .iter()
+                    .all(|c| !matches!(&c.shape, egui::Shape::Rect(r)
+                    if r.fill == th.accent_primary_on_active().to_egui()
+                        && (r.rect.width() - th.selection_edge_width.value()).abs() < 0.01
+                        && r.rect.y_range().contains(name_rect(&other, FOLDER).center().y))),
+                "{case}: 고르지 않은 행엔 막대가 없다"
+            );
+        }
+    }
+}
+
+/// hover 행 이름은 text-secondary-raised, 선택+hover 행 이름은 text-on-active-hover 다.
+#[test]
+fn the_hovered_row_name_reads_the_raised_label_ink() {
+    for th in [
+        latte(),
+        Theme::with_colors(tasty_themes::mocha_fallback_colors(), false),
+    ] {
+        let at = name_rect(&paint(&th, "", None), FILE).center();
+        for (case, selection, want) in [
+            ("hover", "", th.text_secondary_raised()),
+            ("선택+hover", FILE, th.text_on_active_hover()),
+        ] {
+            let shapes = paint(&th, selection, Some(at));
+            let inks: Vec<egui::Color32> = shapes
+                .iter()
+                .filter_map(|c| match &c.shape {
+                    egui::Shape::Text(t) if t.galley.text() == FILE => Some(t.fallback_color),
+                    _ => None,
+                })
+                .collect();
+            assert_eq!(inks, vec![want.to_egui()], "{case}");
+        }
+    }
+}
