@@ -73,16 +73,16 @@ fn the_ime_target_follows_the_focus_node_kind() {
     let a = PopupInstanceId(7);
     let host = FocusNode::Popup(PopupNode::Host(a));
     assert_eq!(
-        ime_target(&state, host, host),
+        ime_target(&state, host, Some(host)),
         ImeTarget::HostPopup { drawn: true }
     );
     assert_eq!(
-        ime_target(&state, host, FocusNode::Surface(None)),
+        ime_target(&state, host, Some(FocusNode::Surface(None))),
         ImeTarget::HostPopup { drawn: false }
     );
     let plugin = FocusNode::Popup(PopupNode::Plugin(42));
     assert_eq!(
-        ime_target(&state, plugin, plugin),
+        ime_target(&state, plugin, Some(plugin)),
         ImeTarget::PluginPopup(PopupKeyboard::Text),
         "선언이 없으면 Text"
     );
@@ -90,7 +90,7 @@ fn the_ime_target_follows_the_focus_node_kind() {
         .plugin_popup_key_decls
         .insert(42, (PopupKeyboard::Keys, PopupEscape::Close));
     assert_eq!(
-        ime_target(&state, plugin, plugin),
+        ime_target(&state, plugin, Some(plugin)),
         ImeTarget::PluginPopup(PopupKeyboard::Keys)
     );
     for node in [
@@ -100,7 +100,11 @@ fn the_ime_target_follows_the_focus_node_kind() {
         FocusNode::Tutorial,
         FocusNode::Surface(Some(1)),
     ] {
-        assert_eq!(ime_target(&state, node, host), ImeTarget::Other, "{node:?}");
+        assert_eq!(
+            ime_target(&state, node, Some(host)),
+            ImeTarget::Other,
+            "{node:?}"
+        );
     }
 }
 

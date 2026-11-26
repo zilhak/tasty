@@ -173,8 +173,10 @@ pub struct MainViewState {
     /// (`pass_focus_node`).
     #[cfg(feature = "gui")]
     pub(crate) segment_focus: Option<crate::state::focus_node::FocusNode>,
-    /// 마지막으로 닫은 그리기 몫의 `segment_focus`(`close_input_pass` 가 닫기 전에 붙잡는다). 패스 출력 입구의 IME
-    /// 허용(`ime_permission::window_ime_allowed`)이 그 몫 위젯의 IME 출력이 어느 노드의 것인지 읽는다.
+    /// 마지막으로 닫은 그리기 몫의 노드. 패스 시작이 비우고, host 팝업 층 그리기가 그 몫을 그리며 확정한 노드
+    /// (`pass_focus_node`, 키 없는 몫은 그때의 포커스 노드)를 적는다. 팝업 층을 그리지 않은 패스는 닫을 때 그 몫의
+    /// `segment_focus` 다(`close_input_pass`). 패스 출력 입구의 IME 허용(`ime_permission::window_ime_allowed`)이 그
+    /// 몫 위젯의 IME 출력이 어느 노드의 것인지 읽는다.
     #[cfg(feature = "gui")]
     pub(crate) closed_segment_focus: Option<crate::state::focus_node::FocusNode>,
     /// W2 회수 기록: 이번 구간에 OS 키 포커스 회수를 부른 WebView surface(`webview_sync::key_release`). 재회수를

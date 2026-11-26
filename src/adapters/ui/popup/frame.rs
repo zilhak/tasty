@@ -244,6 +244,8 @@ pub(crate) fn draw_popup_layer(
     state.refresh_plugin_key_candidates(Some(draw_ctx));
     state.normalize_focus(engine);
     state.decide_frame_key_owner(Some(draw_ctx));
+    // 그리기가 이 몫의 노드를 확정하는 자리다. 키 없는 몫도 여기서 정한 노드를 패스 출력과 함께 운반한다.
+    state.closed_segment_focus = Some(state.pass_focus_node(engine));
 
     let notice = state.pass_notice();
     state.popups.set_pass_notice(notice);

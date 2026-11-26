@@ -447,7 +447,7 @@ fn the_input_pass_order_is_shared_by_the_product_and_the_harness() {
     for (name, body) in [
         (
             "fn begin_key_pass(",
-            "{self.tutorial.callout_drawn=false;self.popups.begin_key_pass(escape_held);}",
+            "{self.tutorial.callout_drawn=false;self.closed_segment_focus=None;self.popups.begin_key_pass(escape_held);}",
         ),
         ("fn find_fields(", "{&self.find_fields}"),
         (

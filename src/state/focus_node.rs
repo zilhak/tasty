@@ -485,9 +485,11 @@ impl super::MainViewState {
     /// 포커스 노드를 함께 꺼내, 다음 몫의 것(끊어 넘긴 몫의 것, 없으면 비움)을 다음 패스에 남긴다. 창의 egui 패스는
     /// 모두 이 함수로 닫는다(`GpuState::run_main_pass`). 그 몫에 egui 로 보내지 않은 Esc 뗌이 왔으면 패스를 마친
     /// `ctx` 의 Escape 눌림을 푼다(`PopupManager::note_unfed_escape_release`). 닫는 몫의 노드는
-    /// `closed_segment_focus` 에 남긴다.
+    /// `closed_segment_focus` 에 남긴다. 팝업 층 그리기가 이미 적었으면 그 값을 둔다.
     pub(crate) fn close_input_pass(&mut self, ctx: &egui::Context) {
-        self.closed_segment_focus = self.segment_focus;
+        if self.closed_segment_focus.is_none() {
+            self.closed_segment_focus = self.segment_focus;
+        }
         if self.popups.close_key_pass() {
             crate::adapters::ui::popup::body_keys::release_escape(ctx);
         }

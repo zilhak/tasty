@@ -27,12 +27,16 @@ pub(crate) fn ime_allowed(target: ImeTarget, egui_ime_output: bool) -> bool {
     }
 }
 
-/// 지금 포커스 노드 `node` 의 IME 대상. `drawn` 은 방금 그린 몫의 노드(`MainViewState::pass_focus_node`)다. plugin 팝업
-/// 선언이 없으면 기본값 `Text` 다.
-pub(crate) fn ime_target(state: &MainViewState, node: FocusNode, drawn: FocusNode) -> ImeTarget {
+/// 지금 포커스 노드 `node` 의 IME 대상. `drawn` 은 방금 그린 몫의 노드(`MainViewState::closed_segment_focus`)다. 없으면
+/// 그 노드를 그린 몫이 아니다. plugin 팝업 선언이 없으면 기본값 `Text` 다.
+pub(crate) fn ime_target(
+    state: &MainViewState,
+    node: FocusNode,
+    drawn: Option<FocusNode>,
+) -> ImeTarget {
     match node {
         FocusNode::Popup(PopupNode::Host(iid)) => ImeTarget::HostPopup {
-            drawn: drawn == FocusNode::Popup(PopupNode::Host(iid)),
+            drawn: drawn == Some(FocusNode::Popup(PopupNode::Host(iid))),
         },
         FocusNode::Popup(PopupNode::Plugin(id)) => ImeTarget::PluginPopup(
             state
@@ -49,9 +53,9 @@ pub(crate) fn ime_target(state: &MainViewState, node: FocusNode, drawn: FocusNod
 }
 
 /// 다음 입력의 IME 허용. 대상은 지금 포커스 노드다(`set_ime_allowed` 는 다음 입력부터 적용되므로 다음 입력의 출발
-/// 노드를 읽는다). 그리기 판정이 아니라 `source_guards::draw_pass_key_reads` 의 몫 노드 원칙 밖이다. `drawn` 은 몫을
-/// 닫기 전에 붙잡은 그 몫의 노드(없으면 지금 노드, `input_pass::run_input_pass`)이고 `egui_ime_output` 은 그 몫
-/// 위젯의 IME 출력이다. 입구에서 포커스를 정규화해 그 패스의 닫기와 plugin 덮음 갱신까지 반영한 노드를 읽는다(W2 입구
+/// 노드를 읽는다). 그리기 판정이 아니라 `source_guards::draw_pass_key_reads` 의 몫 노드 원칙 밖이다. `drawn` 은 그리기가
+/// 확정해 출력과 함께 운반한 그 몫의 노드(`MainViewState::closed_segment_focus`)이고 `egui_ime_output` 은 그 몫 위젯의
+/// IME 출력이다. 입구에서 포커스를 정규화해 그 패스의 닫기와 plugin 덮음 갱신까지 반영한 노드를 읽는다(W2 입구
 /// `webview_sync::key_release::release_webview_key_focus` 와 같은 정규화).
 pub(crate) fn window_ime_allowed(
     state: &mut MainViewState,
@@ -61,10 +65,7 @@ pub(crate) fn window_ime_allowed(
 ) -> bool {
     state.normalize_focus(core);
     let node = state.focus_node(core);
-    ime_allowed(
-        ime_target(state, node, drawn.unwrap_or(node)),
-        egui_ime_output,
-    )
+    ime_allowed(ime_target(state, node, drawn), egui_ime_output)
 }
 
 #[cfg(test)]
