@@ -322,13 +322,16 @@ fn strip(ui: &mut egui::Ui, theme: &Theme, cfg: StripCfg) {
 
     arrow(ui, theme, left, Side::Left, cfg);
     arrow(ui, theme, right, Side::Right, cfg);
+    // raised 띠의 아래선은 border-strong, mantle(bg_sidebar) 띠는 separator다.
+    let rule = if cfg.focused {
+        theme.border_strong().to_egui()
+    } else {
+        theme.separator.to_egui_premultiplied()
+    };
     ui.painter().hline(
         rect.x_range(),
         rect.max.y - theme.border_width.value() * 0.5,
-        egui::Stroke::new(
-            theme.border_width.value(),
-            c(theme.separator.to_egui_premultiplied()),
-        ),
+        egui::Stroke::new(theme.border_width.value(), rule),
     );
 }
 
@@ -672,4 +675,40 @@ pub fn draw_status_cluster(ui: &mut egui::Ui, theme: &Theme) {
             ),
         ],
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::catalog::components::painted::paint;
+
+    /// 띠 전체 폭의 아래선 색: focused(raised 채움)면 border-strong, 아니면(bg_sidebar) separator.
+    #[test]
+    fn the_strip_rule_follows_the_strip_ground() {
+        for theme in [
+            tasty_themes::mocha_fallback(),
+            crate::host_shell::latte_theme(),
+        ] {
+            let strong = theme.border_strong().to_egui();
+            let sep = theme.separator.to_egui_premultiplied();
+            assert_ne!(strong, sep);
+            for (focused, want) in [(true, strong), (false, sep)] {
+                let cfg = StripCfg {
+                    focused,
+                    at: At::Start,
+                    hover: None,
+                    mv: None,
+                };
+                let p = paint(|ui| strip(ui, &theme, cfg));
+                let w = STRIP_W.value();
+                let rules: Vec<_> = p
+                    .segments()
+                    .into_iter()
+                    .filter(|(a, b, _)| a.y == b.y && (b.x - a.x).abs() == w)
+                    .collect();
+                assert_eq!(rules.len(), 1, "focused={focused}: {rules:?}");
+                assert_eq!(rules[0].2, want, "focused={focused}");
+            }
+        }
+    }
 }

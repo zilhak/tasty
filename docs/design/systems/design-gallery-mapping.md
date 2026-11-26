@@ -1435,7 +1435,7 @@ C3(port scanner 푸터) 행은 이 specimen에 넣지 않는다. Mocha·Latte는
 
 | 디자인 요소 | 갤러리 | 본체 | 비고 |
 |---|---|---|---|
-| `Strip`(`size-560` 폭, 포커스 surface-raised · 비포커스 bg-sidebar, 아래 separator) | `strip` | 탭이 넘치는 pane의 탭 바 | 폭 560은 예제 전용 이름 붙은 상수 |
+| `Strip`(`size-560` 폭, 포커스 surface-raised · 비포커스 bg-sidebar, 아래선은 포커스 border-strong · 비포커스 separator) | `strip` | 탭이 넘치는 pane의 탭 바 | 폭 560은 예제 전용 이름 붙은 상수 |
 | `Arrow`(`tab-scroll-arrow-width` × `tab-height`, 채움 없음, chevron `tab-scroll-arrow-glyph-size`) | `arrow` → `paint_tab_scroll_arrow` | `tasty_ui_widgets::paint_tab_scroll_arrow`. 칸 폭은 zoom을 적용하지 않는 스트립 높이 `tab_bar_height` | enabled 쪽에만 `tab-scroll-arrow-hover-bg` |
 | 도달한 끝은 disabled(`tab-scroll-arrow-fg-disabled`) | `arrow`의 `disabled` | `can_left`·`can_right` | disabled 쪽은 hover 채움·응답이 없다 |
 | `TabCellS` 최소형(아이콘 · 제목 · 닫기 칸) | `tab_cell` | `tab_bar/tab.rs::draw_tab` | 두 번째 탭이 활성이다 |
