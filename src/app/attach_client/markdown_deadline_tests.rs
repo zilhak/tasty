@@ -132,7 +132,7 @@ fn received(stub: &tasty_host_plugin::manager::CallerStub) -> Vec<(String, Value
 fn a_replaced_connection_fails_its_sent_requests_before_the_change_signal() {
     let (mut manager, stub) = owned_by_plugin(16);
     let mut sess = session_with_requests(Instant::now());
-    end_replaced_connection_requests(&mut manager, &mut sess.state);
+    end_replaced_connection_requests(&mut manager, &mut sess.state, Vec::new());
     let events = received(&stub);
     let order: Vec<(&str, Option<u64>)> = events
         .iter()
@@ -154,5 +154,58 @@ fn a_replaced_connection_fails_its_sent_requests_before_the_change_signal() {
     assert!(
         !sess.state.markdown_requests.answer(4) && !sess.state.markdown_requests.answer(5),
         "a reply from the old connection no longer answers anything"
+    );
+}
+
+/// Given 접수해 plugin 에 id(6)를 돌려줬지만 아직 보내지 않은 원문 요청, When 연결이 바뀌어 그 요청을 버리면,
+/// Then plugin 은 보낸 요청(4·5)과 함께 그 요청의 같은 request_id 실패를 변경 신호보다 먼저 받는다.
+/// 다른 mirror 문서로 가는 요청은 남는다.
+#[test]
+fn a_replaced_connection_fails_its_queued_unsent_requests_before_the_change_signal() {
+    let (mut manager, stub) = owned_by_plugin(16);
+    let mut sess = session_with_requests(Instant::now());
+    let mut remote = crate::remote::state::RemoteState::new();
+    for (local_surface_id, request_id) in [(LOCAL, 6), (LOCAL + 1, 7)] {
+        remote
+            .pending_markdown_content_forward
+            .push(crate::core::PendingMarkdownContentForward {
+                user_wait: false,
+                admitted: Instant::now(),
+                local_surface_id,
+                request_id,
+                agent_origin: false,
+            });
+    }
+    let unsent = remote.discard_connection_requests(&HashMap::from([(30, LOCAL)]), 9_000);
+    let left: Vec<u64> = remote
+        .pending_markdown_content_forward
+        .iter()
+        .map(|request| request.request_id)
+        .collect();
+    assert_eq!(
+        left,
+        vec![7],
+        "only the replaced connection's document loses its queue"
+    );
+    end_replaced_connection_requests(&mut manager, &mut sess.state, unsent);
+    let order: Vec<(String, Option<u64>, Value)> = received(&stub)
+        .into_iter()
+        .map(|(key, payload)| (key, payload["request_id"].as_u64(), payload["ok"].clone()))
+        .collect();
+    let failure = |id| {
+        (
+            "markdown_mirror.content_result".to_owned(),
+            Some(id),
+            Value::Bool(false),
+        )
+    };
+    assert_eq!(
+        order,
+        vec![
+            failure(4),
+            failure(5),
+            failure(6),
+            ("markdown_mirror.changed".to_owned(), None, Value::Null),
+        ]
     );
 }

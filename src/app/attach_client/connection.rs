@@ -295,6 +295,7 @@ impl App {
             anyhow::anyhow!("reconnect View is parked; retain the pending resource")
         })?;
         let removed_documents;
+        let unsent_markdown;
         {
             let sess = &mut self.remote.sessions[sess_idx];
 
@@ -317,7 +318,7 @@ impl App {
                     capture_focused_remote(&main.state.navigation, ws, &sess.state.remote_to_local)
                 });
 
-            engine.remote.discard_connection_requests(
+            unsent_markdown = engine.remote.discard_connection_requests(
                 &sess.state.remote_to_local,
                 sess.state.local_workspace,
             );
@@ -409,6 +410,7 @@ impl App {
         super::markdown_deadline::end_replaced_connection_requests(
             &mut self.plugin_manager,
             &mut sess.state,
+            unsent_markdown,
         );
         tracing::info!(
             "gui attach: mirror workspace {local_workspace} 재연결 성공 (remote ws {workspace})"

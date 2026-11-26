@@ -337,11 +337,13 @@ impl RemoteState {
 impl RemoteState {
     /// This runs on the App thread before exposing a replacement connection. Queued local-ID
     /// requests still refer to the retired mapping and must not be resolved through the new one.
+    /// The plugin already holds the ids of the queued markdown content requests, so those come
+    /// back as (request_id, local surface) for the caller to end.
     pub(crate) fn discard_connection_requests(
         &mut self,
         mapping: &std::collections::HashMap<u32, u32>,
         workspace: u32,
-    ) {
+    ) -> Vec<(u64, u32)> {
         let ids: std::collections::HashSet<u32> = mapping.values().copied().collect();
         self.pending_resize_forward
             .retain(|id, _| !ids.contains(id));
@@ -357,12 +359,19 @@ impl RemoteState {
             .retain(|request| request.local_ws_id != workspace);
         self.pending_git_query_forward
             .retain(|request| !ids.contains(&request.local_surface_id));
-        self.pending_markdown_content_forward
-            .retain(|request| !ids.contains(&request.local_surface_id));
+        let mut unsent_markdown = Vec::new();
+        self.pending_markdown_content_forward.retain(|request| {
+            let keep = !ids.contains(&request.local_surface_id);
+            if !keep {
+                unsent_markdown.push((request.request_id, request.local_surface_id));
+            }
+            keep
+        });
         self.pending_image_uploads
             .retain(|request| request.mirror_ws_id != workspace);
         self.pending_screenshot_captures
             .retain(|(target, _)| *target != Some(workspace));
+        unsent_markdown
     }
 }
 

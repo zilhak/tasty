@@ -55,14 +55,17 @@ pub(super) fn settle_expired<'a>(
     expired.iter().map(Expired::failure).collect()
 }
 
-/// 교체된 연결로 보낸 원문 요청을 같은 request_id 실패로 끝낸 뒤 문서마다 변경 신호를 보낸다.
-/// 옛 연결의 회신은 오지 않고, 그 id를 기다리는 plugin은 변경 신호를 받아도 다시 요청하지 않으므로
-/// 실패가 먼저 가야 한다. 원문은 바로 다시 받지 않고 plugin이 재요청이나 stale 표시를 고른다.
+/// 교체된 연결로 보낸 원문 요청과 접수했지만 보내지 않고 버린 요청(`unsent`)을 같은 request_id
+/// 실패로 끝낸 뒤 문서마다 변경 신호를 보낸다. 두 요청 모두 회신이 오지 않고, 그 id를 기다리는
+/// plugin은 변경 신호를 받아도 다시 요청하지 않으므로 실패가 먼저 가야 한다. 원문은 바로 다시
+/// 받지 않고 plugin이 재요청이나 stale 표시를 고른다.
 pub(super) fn end_replaced_connection_requests(
     plugin_manager: &mut Option<crate::plugin::PluginManager>,
     state: &mut ClientSessionState,
+    unsent: Vec<(u64, u32)>,
 ) {
-    for (request_id, local) in state.markdown_requests.take_all() {
+    let sent = state.markdown_requests.take_all();
+    for (request_id, local) in sent.into_iter().chain(unsent) {
         let failure = markdown_content_failure(local, request_id, "mirror workspace disconnected");
         push_markdown_content_result(plugin_manager, &failure);
     }
