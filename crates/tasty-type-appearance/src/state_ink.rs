@@ -545,11 +545,7 @@ fn tint(accent: HexColor) -> HexColor {
 }
 
 /// 강조색을 틴트 테두리 비율로 낮춘다. `color-mix(강조색 36%, transparent)`처럼 강조색 자신의 알파에
-/// 비율을 곱하고 8비트 alpha로 반올림한다. 불투명한 강조색이면 비율 × 255다. 강조색이 완전히 투명하면
-/// 섞은 알파가 0이라 CSS처럼 투명 검정이다.
+/// 비율을 곱한다(강조색이 완전히 투명하면 투명 검정).
 fn tint_border(accent: HexColor) -> HexColor {
-    if accent.a() == 0 {
-        return CSS_TRANSPARENT;
-    }
-    accent.with_alpha((f32::from(accent.a()) * TINT_BORDER_ALPHA).round() as u8)
+    mix_srgb_premultiplied(accent, whole_percent(TINT_BORDER_ALPHA), CSS_TRANSPARENT)
 }
