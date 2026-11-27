@@ -25,6 +25,7 @@ use crate::plugin_bridge::wire_scroll;
 use crate::state::RequestContext;
 use tasty_ui_widgets::CollapsedPlacement;
 
+mod cover_layers;
 mod plugin_keys;
 
 use plugin_keys::{KeyRoutes, pass_keys, send_undrawn_releases};
@@ -269,16 +270,12 @@ fn draw_plugin_popups_with_keys(
             Id::new("plugin_mesh_popup").with(snap.instance_id),
         );
         // 덮는 범위의 아래 위젯 입력은 팝업 바로 아래 막는 레이어가 받는다.
-        if snap.covers() {
-            state
-                .plugin_popup_layers
-                .push(crate::adapters::ui::popup::press::block_pointer(
-                    ctx,
-                    layer_id.id.with("cover_block"),
-                    scope_rect,
-                ));
-        }
-        state.plugin_popup_layers.push(layer_id);
+        cover_layers::push_popup_layers(
+            ctx,
+            &mut state.plugin_popup_layers,
+            layer_id,
+            snap.covers().then_some(scope_rect),
+        );
         let has_key_focus = crate::adapters::ui::popup::frame_keys::receives_frame_keys(
             key_target,
             snap.instance_id,
