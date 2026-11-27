@@ -577,33 +577,67 @@ fn a_pending_press_holds_only_the_release_of_its_own_webview() {
     }
 }
 
-/// P4 Hide: Given 키 뒤에 R 누름이 남았고 창 범위 팔레트가 열렸다, When 모드가 Hide 라 R 이 이번 프레임에 숨으면,
-/// Then 보류하지 않고 회수한다(숨는 WebView 는 키를 받을 수 없다). 대조: 모드가 Opaque 면 R 을 보류한다.
+/// P4 Hide: Given 키 뒤에 R 누름이 남았고 창의 egui overlay 가 열렸다(덮개 없음), When 모드가 Hide 라 R 이 이번
+/// 프레임에 숨으면, Then 보류하지 않고 회수한다(숨는 WebView 는 키를 받을 수 없다). 대조: 모드가 Opaque 면 R 을
+/// 보류한다.
 #[test]
 fn a_webview_hidden_by_the_overlay_is_released_despite_its_pending_press() {
     for (mode, released) in [(OverlayMode::Hide, 1), (OverlayMode::Opaque, 0)] {
         let (mut state, mut session) = defs_scene();
         let bridge = key_then_press(SURFACE_R);
-        state
-            .popups
-            .open_request(
-                &OpenRequest::new(COMMAND_PALETTE_POPUP_ID, PopupScope::Window)
-                    .centered()
-                    .focused(),
-                true,
-            )
-            .expect("팔레트가 열린다");
         let r = holding();
         let engine = session.borrow_mut();
-        sync_with_notices(
+        crate::app::webview_sync::key_release::release_after_native_focus_notices(
             &mut state,
             &engine.read(),
             &bridge,
+            &|_| true,
             mode,
+            true,
             &[(SURFACE_R, &r)],
         );
         assert_eq!(r.released.get(), released, "{mode:?}");
         assert_eq!(state.webview_release_due, released == 0, "{mode:?}");
+    }
+}
+
+/// Codex 7: 보류는 키 쥘 곳이 될 수 있는 알림만 센다(`PressForecast::may_hold`). Given 창 범위 팔레트(덮개)가 포커스
+/// 노드이고 키 뒤에 R 누름이 남았다, When 모드가 Opaque·Hide 어느 쪽이든, Then R 누름은 덮개가 가져 R 을 키 쥘 곳으로
+/// 만들지 못하므로 R 을 바로 회수하고 의무를 남기지 않는다. 앞 키가 덮개를 닫아도 그 누름은 소비될 때 다시 판정되고,
+/// 회수된 R 은 그때 새 포커스로 키를 받는다. binding 이 맞지 않은 R 의 누름도 같다. 대조: 덮개가 없고 binding 이
+/// 맞으면 R 을 보류한다.
+#[test]
+fn a_pending_press_that_cannot_hold_does_not_keep_the_release() {
+    for (covered, bound, released) in [(true, true, 1), (false, false, 1), (false, true, 0)] {
+        for mode in [OverlayMode::Opaque, OverlayMode::Hide] {
+            let (mut state, mut session) = defs_scene();
+            let bridge = key_then_press(SURFACE_R);
+            if covered {
+                state
+                    .popups
+                    .open_request(
+                        &OpenRequest::new(COMMAND_PALETTE_POPUP_ID, PopupScope::Window)
+                            .centered()
+                            .focused(),
+                        true,
+                    )
+                    .expect("팔레트가 열린다");
+            }
+            let r = holding();
+            let engine = session.borrow_mut();
+            crate::app::webview_sync::key_release::release_after_native_focus_notices(
+                &mut state,
+                &engine.read(),
+                &bridge,
+                &|sid| bound || sid != SURFACE_R,
+                mode,
+                false,
+                &[(SURFACE_R, &r)],
+            );
+            let label = format!("덮개 {covered} binding {bound} {mode:?}");
+            assert_eq!(r.released.get(), released, "{label}");
+            assert_eq!(state.webview_release_due, released == 0, "{label}");
+        }
     }
 }
 

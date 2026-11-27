@@ -61,8 +61,8 @@ pub(crate) fn release_webview_key_focus<W: KeyFocusWebView>(
 /// 프레임 동기화의 회수 판정. 대기열 앞의 아직 소비하지 않은 native 누름 알림을 알림 소비와 같은 전이
 /// (`webview_keys::consume_native_focus_requests`, binding 이 맞지 않는 surface 의 알림은 `bound` 가 거른다)로 먼저
 /// 소비한 뒤 회수를 판정한다. 그 뒤에도 남은 누름은 모두 전달 키 뒤에 있어 지금 적용할 수 없다(앞 키가 탭·덮개·포커스를
-/// 바꿀 수 있다). 그 누름의 surface 만 회수를 보류하고(`WebViewKeyBridge::pending_press_surfaces`) 나머지는 그대로
-/// 회수한다. 이번 프레임에 숨는 WebView(모드가 `Hide` 이고 overlay 가 열림)는 보류하지 않는다. 보류한 후보가 있으면
+/// 바꿀 수 있다). 그 누름이 키 쥘 곳을 만들 수 있으면(`PressForecast::may_hold`, 예측과 같은 binding·덮개·창 차단
+/// 판정) 그 surface 만 회수를 보류하고(`WebViewKeyBridge::pending_presses`) 나머지는 그대로 회수한다. 이번 프레임에 숨는 WebView(모드가 `Hide` 이고 overlay 가 열림)는 보류하지 않는다. 보류한 후보가 있으면
 /// 재판정 의무(`MainViewState::webview_release_due`)를 남기고, 없으면 이 판정이 의무를 지운다. 의무는 대기열이 비면
 /// 동기화 한 번으로 정산한다(`release_retry_due`).
 /// Windows 는 winit 이 누름 메시지와 다시 그리기를 한 회차 안에서 차례로 처리하므로, 누름 알림 뒤 회차 끝 소비
@@ -80,10 +80,14 @@ pub(crate) fn release_after_native_focus_notices<W: KeyFocusWebView>(
     let changed =
         crate::app::webview_keys::consume_native_focus_requests(state, core, bridge, bound);
     let hidden = overlay_open && overlay_mode == OverlayMode::Hide;
-    let held = if hidden {
+    let held: std::collections::BTreeSet<u32> = if hidden {
         std::collections::BTreeSet::new()
     } else {
-        bridge.pending_press_surfaces()
+        let forecast = state.press_forecast(core, bound);
+        (bridge.pending_presses().into_iter())
+            .filter(|&(sid, kind)| forecast.may_hold(sid, kind))
+            .map(|(sid, _)| sid)
+            .collect()
     };
     let (holder, held_any) =
         release_webview_key_focus(state, core, overlay_mode, overlay_open, webviews, &held);

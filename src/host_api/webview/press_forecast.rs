@@ -33,6 +33,20 @@ pub struct PressForecast {
     pub focus_releases_now: HashSet<u32>,
 }
 
+impl PressForecast {
+    /// 그 알림 한 건이 그 surface 를 키 쥘 곳으로 만들 수 있는지. 창 전체를 막는 노드, 덮개, 맞지 않은 binding,
+    /// 표시되지 않은 탭의 알림은 만들지 못한다. OS 키 포커스 회수의 보류가 이 값으로 후보를 센다
+    /// (`key_release::release_after_native_focus_notices`).
+    pub fn may_hold(&self, surface_id: u32, kind: PressKind) -> bool {
+        !self.window_blocked
+            && match kind {
+                PressKind::Click => self.click_holds.contains(&surface_id),
+                #[cfg(any(windows, target_os = "macos", test))]
+                PressKind::Focus => self.focus_valid.contains(&surface_id),
+            }
+    }
+}
+
 /// 앞 알림이 남긴 포커스 노드의 꼴.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Node {

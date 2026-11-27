@@ -421,12 +421,12 @@ impl WebViewKeyBridge {
         (self.inputs.borrow().iter()).any(|input| matches!(input, NativeInput::Press { .. }))
     }
 
-    /// 대기열에 아직 소비하지 않은 누름 알림의 surface 들. 그 surface 의 OS 키 포커스 회수는 알림을 적용할 때까지
-    /// 보류한다(`key_release::release_after_native_focus_notices`).
-    pub fn pending_press_surfaces(&self) -> std::collections::BTreeSet<u32> {
+    /// 대기열에 아직 소비하지 않은 누름 알림(surface, 종류)을 도착 순서대로. 그 알림이 키 쥘 곳을 만들 수 있으면 그
+    /// surface 의 OS 키 포커스 회수는 알림을 적용할 때까지 보류한다(`key_release::release_after_native_focus_notices`).
+    pub fn pending_presses(&self) -> Vec<(u32, PressKind)> {
         (self.inputs.borrow().iter())
             .filter_map(|input| match input {
-                NativeInput::Press { surface_id, .. } => Some(*surface_id),
+                NativeInput::Press { surface_id, kind } => Some((*surface_id, *kind)),
                 NativeInput::Forwarded(_) => None,
             })
             .collect()
