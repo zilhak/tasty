@@ -238,7 +238,18 @@ impl<'a> Input<'a> {
         let caption = theme.font_size_caption.value();
 
         let width = self.width.unwrap_or_else(|| ui.available_width());
-        let (outer, _) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::hover());
+        let (outer, outer_resp) =
+            ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::hover());
+        // 글자 칸(TextEdit)은 가로 padding 안쪽만 덮는다. 편집 중에는 상자 전체에서 누름을 받아,
+        // 여백·아이콘 칸 누름을 egui가 칸 밖 누름으로 보고 포커스를 푸는 것을 막는다.
+        // 포커스를 받는 칸이 아니라(FOCUSABLE 없음) Tab 순서는 그대로이고, 편집 중이 아니면 누름을 받지 않는다.
+        let text_key = outer_resp.id.with("input_text_edit");
+        let editing = self.enabled
+            && ui
+                .data(|d| d.get_temp::<egui::Id>(text_key))
+                .is_some_and(|id| ui.memory(|m| m.has_focus(id)));
+        let box_press =
+            editing.then(|| ui.interact(outer, text_key.with("box"), egui::Sense::CLICK));
 
         // disabled는 opacity 없이 disabled 상자 role과 disabled ink를 쓴다.
         let read_only = self.enabled && self.read_only;
@@ -343,6 +354,11 @@ impl<'a> Input<'a> {
                 None => te,
             };
             let out = te.show(ui);
+            ui.data_mut(|d| d.insert_temp(text_key, out.response.id));
+            // 상자 여백을 누른 패스에 egui가 푼 포커스를 같은 패스에 되돌린다(lost_focus가 서지 않는다).
+            if box_press.is_some_and(|r| r.is_pointer_button_down_on()) {
+                out.response.request_focus();
+            }
             paint_idle_text(ui, &out, self.idle_text, font, text_color);
             let clipped = out.galley.size().x > out.text_clip_rect.width();
             if self.full_value_tooltip {

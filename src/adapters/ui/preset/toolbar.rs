@@ -382,6 +382,73 @@ mod tests {
         (fill, edge.2)
     }
 
+    /// 이름 바꾸기 중 칸 안쪽 가로 여백을 누르고 떼도 이름을 확정하지 않고 편집을 이어 간다.
+    /// 확정은 이름 칸이 포커스를 잃을 때 돈다(`rename`이 `None`이 된다).
+    #[test]
+    fn pressing_the_name_field_padding_keeps_the_rename_open() {
+        let theme = tasty_themes::mocha_fallback();
+        let ctx = egui::Context::default();
+        let kind = PresetKind::Tab;
+        let id = egui::Id::new(("preset_rename_input", kind.as_str()));
+        let mut store = PresetDrafts::default();
+        let mut selected = None;
+        let mut rename = Some(RenameState {
+            kind,
+            original: "Dev".to_owned(),
+            buffer: "Dev 2".to_owned(),
+            request_focus: true,
+        });
+        let mut frame = |events: Vec<egui::Event>, rename: &mut Option<RenameState>| {
+            let raw = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(1200.0, 400.0),
+                )),
+                events,
+                ..Default::default()
+            };
+            // 포커스와 응답만 본다. 패스 출력(도형·텍스처)은 쓰지 않는다.
+            let _ = ctx.run(raw, |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    ui.horizontal(|ui| {
+                        draw_toolbar_view(
+                            ui,
+                            &theme,
+                            &mut store,
+                            kind,
+                            "Dev",
+                            "",
+                            rename,
+                            &mut selected,
+                        );
+                    });
+                });
+            });
+        };
+        frame(Vec::new(), &mut rename);
+        frame(Vec::new(), &mut rename);
+        assert!(ctx.memory(|m| m.has_focus(id)), "이름 칸 포커스");
+        // 글자 칸(TextEdit) 왼쪽 끝에서 가로 padding의 절반만큼 바깥, 곧 상자 안쪽 여백이다.
+        let text = ctx.read_response(id).expect("이름 칸 TextEdit").rect;
+        let pad = egui::pos2(
+            text.min.x - theme.input_padding_x().value() / 2.0,
+            text.center().y,
+        );
+        let button = |pressed| egui::Event::PointerButton {
+            pos: pad,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::default(),
+        };
+        frame(vec![egui::Event::PointerMoved(pad)], &mut rename);
+        frame(vec![button(true)], &mut rename);
+        assert!(rename.is_some(), "여백을 누른 패스에 이름을 확정했다");
+        frame(vec![button(false)], &mut rename);
+        frame(Vec::new(), &mut rename);
+        assert!(rename.is_some(), "여백을 뗀 뒤 이름을 확정했다");
+        assert!(ctx.memory(|m| m.has_focus(id)), "여백 누름 뒤 포커스");
+    }
+
     /// 프리셋 이름 칸은 Input 칸 모양이다: 쉴 때 input-bg 채움과 input-border 테두리, 포커스면 input-border-focus.
     #[test]
     fn the_name_field_takes_the_input_field_look() {
