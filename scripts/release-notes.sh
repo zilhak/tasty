@@ -24,8 +24,9 @@ function render(s, cons,    o) {
     return o
 }
 # 스팬 짝을 GitHub 와 다르게 볼 수 있는 블록인가: 링크 목적지·제목 안의 백틱, 링크 참조 정의 줄,
-# 참조 링크 [글][이름], 판마다 HTML 블록 여부가 다른 태그로 시작하는 줄.
+# 참조 링크 [글][이름], 판마다 HTML 블록 여부가 다른 태그로 시작하는 줄, 백틱까지 이어지는 GFM 자동 링크(www., ://).
 function risky(o,    n, k, ln, t, j, e, z) {
+    if (autolink_tick(o, "www.") || autolink_tick(o, "://")) return 1
     n = split(o, ln, "\n")
     for (k = 1; k <= n; k++) {
         t = tolower(ln[k]); sub(/^[ \t]+/, "", t)
@@ -38,6 +39,17 @@ function risky(o,    n, k, ln, t, j, e, z) {
         j += e + 1
         z = link_end(o, j)
         if (z && index(substr(o, j, z - j + 1), "`")) return 1
+    }
+    return 0
+}
+# o 에서 key 뒤로 공백 전까지 백틱이 있는가. GitHub 의 자동 링크는 공백 전까지의 글자를 링크로 삼는다.
+function autolink_tick(o, key,    j, e, t) {
+    j = 0
+    while ((e = index(substr(o, j + 1), key)) > 0) {
+        j += e
+        t = substr(o, j)
+        match(t, /^[^ \t\n]*/)
+        if (index(substr(t, 1, RLENGTH), "`")) return 1
     }
     return 0
 }

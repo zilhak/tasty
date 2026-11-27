@@ -432,6 +432,20 @@ Keep [the guide](https://example.invalid/a) and `--secs <s>` as code.
 EOF
 check '링크 목적지·제목, 참조 정의, 칸 수가 다른 표처럼 스팬 짝이 애매한 블록은 모두 엔터티로' "$m" "$w"
 
+cat > "$m" <<'EOF'
+chore: bump version to 9.9.9
+
+Docs at www.example.invalid/a`b then <div> `c`.
+
+Visit https://example.invalid/a and run `--secs <s>` as code.
+EOF
+cat > "$w" <<'EOF'
+Docs at www.example.invalid/a`b then &lt;div&gt; `c`.
+
+Visit https://example.invalid/a and run `--secs <s>` as code.
+EOF
+check '공백 전까지 백틱을 삼키는 자동 링크(www., ://)가 있는 블록은 모두 엔터티로' "$m" "$w"
+
 if [ "$failures" -ne 0 ]; then
     echo "실패 $failures 건" >&2
     exit 1
