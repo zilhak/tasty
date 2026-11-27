@@ -315,6 +315,64 @@ fn a_window_blocking_node_keeps_every_notice_off_the_pages() {
     }
 }
 
+/// Codex 5: 창을 덮은 노드 밑에서는 창 범위의 어느 것도 바뀌지 않는다. Given 전체화면 무대가 열렸다, When 쌓여 있던
+/// B 누름·포커스 획득 알림을 소비하면, Then 밑 탭의 선택(A), A 주소 띠 편집, A 범위 검색 바 포커스가 각각 그대로다.
+/// 대조: 무대가 없으면 같은 알림이 선택을 B 로 옮기고 주소 띠·검색 바를 놓는다.
+#[test]
+fn a_window_blocking_stage_keeps_queued_notices_from_the_tab_below() {
+    use crate::adapters::ui::search_bar::SEARCH_BAR_POPUP_ID;
+    for staged in [true, false] {
+        for notices in [&[N::Click(B)][..], &[N::Focus(B)][..]] {
+            for part in ["선택", "주소 띠", "팝업 포커스"] {
+                let (mut state, mut session) = two_surfaces();
+                let engine = session.borrow_mut();
+                match part {
+                    "주소 띠" => state.html_address.set_focused_for_test(A),
+                    "팝업 포커스" => {
+                        state
+                            .popups
+                            .open_request(
+                                &crate::intent::OpenRequest::new(
+                                    SEARCH_BAR_POPUP_ID,
+                                    PopupScope::Surface(A),
+                                )
+                                .focused(),
+                                true,
+                            )
+                            .expect("검색 바가 열린다");
+                    }
+                    _ => {}
+                }
+                if staged {
+                    assert!(state.open_fullscreen_stage("blank"));
+                }
+                let focus = state.popups.focus();
+                let bridge = published(&mut state, engine.core);
+                notify(&bridge, notices);
+                crate::app::webview_keys::consume_native_focus_requests(
+                    &mut state,
+                    engine.core,
+                    &bridge,
+                    &|_| true,
+                );
+                let kept = match part {
+                    "선택" => state.focused_surface_id(engine.core) == Some(A),
+                    "주소 띠" => state.html_address.has_keyboard_focus_on(A),
+                    _ => state.popups.focus() == focus,
+                };
+                // 포커스 획득은 주소 띠를 놓지 않는다(`a_focus_notice_keeps_the_node_it_does_not_release`).
+                let focus_keeps_address = matches!(notices[0], N::Focus(_)) && part == "주소 띠";
+                assert_eq!(
+                    kept,
+                    staged || focus_keeps_address,
+                    "무대 {staged} {part} {:?}",
+                    matches!(notices[0], N::Click(_))
+                );
+            }
+        }
+    }
+}
+
 /// L1: Given A 가 키 쥘 곳일 때 A 가 Ctrl+V 를 받아 판정을 통과했다(Linux 는 확장 응답 때 다시 묻는다), When 응답 전에
 /// 포커스 이탈 없이 키 쥘 곳만 B 로 옮겨 게시되면(host 쪽 포커스 이동), Then 응답 재검사는 A 의 붙여넣기를 버리지 않는다.
 /// 받은 키는 이미 A 의 입력 순서에 들었다. 대조: 같은 자리에서 받을 때 판정(`blocks_edit_key`)은 A 를 막는다.

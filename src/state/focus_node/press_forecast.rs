@@ -12,6 +12,14 @@ use crate::state::MainViewState;
 use crate::webview::PressForecast;
 
 impl MainViewState {
+    /// 창 전체를 막는 노드(무대, 설정 열기 요청, 키를 가진 복원 안내)가 최상위인지. 그동안 창의 어느 페이지 알림도
+    /// 전이를 하지 않는다: 예측(`press_forecast`)과 실제 소비(`webview_keys::apply_native_press`)가 같이 읽는다.
+    pub(crate) fn window_blocks_pages(&self) -> bool {
+        self.fullscreen_stage_active()
+            || self.has_settings_open_request()
+            || crate::adapters::ui::restore_notice::has_keyboard_focus(&self.popups)
+    }
+
     /// 지금 상태에서 surface 마다 누름·포커스 획득 알림 한 건의 결과. 게시 자리(`key_release::publish_key_holder`)가
     /// 정규화 뒤에 부른다. `bound` 가 거짓인 surface(WebView binding 이 지금 surface 와 맞지 않음,
     /// `webview_sync::webview_binding_current`)의 알림은 실제 소비가 건너뛰므로 무효다(덮음 여부는 그대로 적는다).
@@ -28,10 +36,7 @@ impl MainViewState {
         if core.workspaces().is_empty() {
             return forecast;
         }
-        if self.fullscreen_stage_active()
-            || self.has_settings_open_request()
-            || crate::adapters::ui::restore_notice::has_keyboard_focus(&self.popups)
-        {
+        if self.window_blocks_pages() {
             forecast.window_blocked = true;
             return forecast;
         }

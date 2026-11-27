@@ -436,6 +436,10 @@ fn apply_native_press(
     if !state.surface_displayed(core, surface_id) {
         return false;
     }
+    // 창을 덮은 노드 밑에서는 창 범위의 어느 것도 바뀌지 않는다(선택·draft·주소 띠·팝업 포커스·회수 기록).
+    if state.window_blocks_pages() {
+        return false;
+    }
     // 덮인 surface 의 포커스 획득은 덮개를 넘지 않는다: 선택·회수 기록 어느 것도 바꾸기 전에 거른다. 누름은 덮개가
     // 가진다(`press_surface_body`).
     #[cfg(any(windows, target_os = "macos", test))]
