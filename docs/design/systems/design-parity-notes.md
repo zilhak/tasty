@@ -354,8 +354,8 @@ State 셀은 `status_dot`(점 `status_dot_size` 8 + `space-xs` 4 + caption 11px 
   (비율이 가운데 인자다 — `a` 를 `ratio` 만큼 `b` 에 섞고, 결과 알파는 배경 `b` 의 것을 따른다).
   transparent 믹스 = 색은 그대로 두고 알파만 낮춘다. 두 가지가 있다. Tag 상태 테두리
   `tint-*-border`(= accent × tint-border-alpha, transparent)는 강조색 자신의 알파에 t 를 곱한다(정본 식과
-  같다). 채움 `tint()`(`tint-*-bg`)도 같다. `dag_cycle_border`·`dag_runner_*_border` 등은 강조색 알파를
-  상수 알파 t 로 덮는다(불투명 강조색에서만 정본과 같다).
+  같다). 채움 `tint()`(`tint-*-bg`)와 DAG 테두리 `dag_cycle_border`·`dag_runner_*_border`도 같다. 그 밖의
+  transparent 믹스 접근자는 강조색 알파를 상수 알파 t 로 덮는다(불투명 강조색에서만 정본과 같다).
 - **근거**: 경우마다 구현이 있다. 불투명 블렌드는
   `crates/tasty-type-appearance/src/theme.rs` 의 `mix_srgb(a, ratio, b)` 이고, theme.rs 안의 호출자는
   `plugin_avatar_bg`(PluginAvatar 배경) 하나다. 같은 크레이트의

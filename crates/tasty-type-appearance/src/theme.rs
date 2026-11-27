@@ -205,14 +205,8 @@ pub const SCRIM_ALPHA: u8 = 128;
 /// hover-split 존 밴드 채움 알파(22%×255≈56). accent 색은 테마 가변 → 알파만 파생.
 pub const PRESET_SPLIT_ZONE_BG_ALPHA: u8 = 56;
 
-/// `color-mix(in srgb, <accent> 45%, transparent)` 의 알파(45%×255≈115). DAG surface
-/// 의 경고/위험 pill 테두리 3 종이 공유한다 — 두 번째 항이 `transparent` 인 합성은
-/// 색을 섞지 않고 알파만 낮추는 것과 같다.
-pub const DAG_MIX_45_ALPHA: u8 = 115;
-
 /// design `plugins_window.jsx` `PluginAvatar` 보더 `color-mix(in srgb, C 38%, transparent)`
-/// 의 알파(38%×255≈97). 두 번째 항이 `transparent` 라 색은 그대로 두고 알파만 낮춘다
-/// ([`DAG_MIX_45_ALPHA`] 와 같은 형태).
+/// 의 알파(38%×255≈97). 두 번째 항이 `transparent` 라 색은 그대로 두고 알파만 낮춘다.
 pub const PLUGIN_AVATAR_BORDER_ALPHA: u8 = 97;
 
 /// design `--tasty-explorer-drop-target-bg` = accent-primary × tint-fill-alpha(12%) 와
