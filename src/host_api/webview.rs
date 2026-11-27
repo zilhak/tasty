@@ -28,6 +28,8 @@ pub mod overlay;
 pub(crate) mod overlay_host;
 #[cfg(any(target_os = "macos", test))]
 mod page_mask;
+#[cfg(any(windows, test))]
+mod parent_press;
 #[cfg(any(windows, target_os = "linux", target_os = "macos", test))]
 mod process_end;
 #[cfg(any(windows, test))]

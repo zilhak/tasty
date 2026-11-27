@@ -113,6 +113,8 @@ enum Native {
     Shortcut(u32),
     /// 그 surface 의 view 를 지웠다(`WebViewKeyBridge::retire_view`).
     Retire(u32),
+    /// 창 `root` 의 창 프로시저가 받은 `WM_PARENTNOTIFY`(wParam 하위 16비트 `event`, `parent_press::dispatch`).
+    ParentNotify(isize, u32),
 }
 
 /// `events` 를 한 회차에 넣고(키는 backend 판정 `route_key_down`, 그 자리의 편집 실행은 기록) 회차 끝에 제품 소비
@@ -126,6 +128,11 @@ fn send(bridge: &WebViewKeyBridge, event: Native, log: &mut Vec<String>) {
     match event {
         Native::Press(sid) => bridge.note_press(sid),
         Native::Retire(sid) => bridge.retire_view(sid),
+        Native::ParentNotify(root, event) => crate::host_api::webview::parent_press::dispatch(
+            root,
+            crate::host_api::webview::parent_press::WM_PARENTNOTIFY,
+            event as usize,
+        ),
         Native::Shortcut(sid) => {
             let mut ran = None;
             let route = route_key_down(
@@ -158,22 +165,32 @@ fn turn_with_nested(
     if holder != 11 {
         state.focus_surface_by_id(engine.core, holder);
     }
-    let bridge = bridge(holder);
+    let log = turn_on(&bridge(holder), &mut state, engine.core, events, nested);
+    let focused = state.focused_surface_id(&engine.read());
+    (log, focused)
+}
+
+/// `turn_with_nested` 의 회차를 주어진 다리로 돈다(이미 고른 surface 상태에서). 기록을 돌려준다.
+fn turn_on(
+    bridge: &WebViewKeyBridge,
+    state: &mut crate::state::MainViewState,
+    core: &crate::core::CoreState,
+    events: &[Native],
+    nested: &[Native],
+) -> Vec<String> {
     let mut log = Vec::new();
     for event in events {
-        send(&bridge, *event, &mut log);
+        send(bridge, *event, &mut log);
     }
     let mut consumer = Turn {
-        state: &mut state,
-        core: engine.core,
-        bridge: &bridge,
+        state,
+        core,
+        bridge,
         log,
         nested: nested.to_vec(),
     };
     consume_native_inputs(&mut consumer, winit::window::WindowId::from(1));
-    let log = consumer.log;
-    let focused = state.focused_surface_id(&engine.read());
-    (log, focused)
+    consumer.log
 }
 
 /// 프레임 동기화는 대기열 앞 누름만 소비하고, 전달 키와 그 뒤 입력은 host 단축키 처리가 있는 소비에 남긴다
@@ -298,4 +315,68 @@ fn retiring_a_webview_cancels_its_queued_inputs() {
         "대조: 지우지 않은 view 의 항목은 처리된다"
     );
     assert_eq!(focused, Some(12));
+}
+
+/// 옛 runtime(X 판단 2): Given 훅 없는 B(12) view 의 창(0x200)을 누름 알림에 등록했고 A(11)가 키 쥘 곳이다(선택을
+/// A 로 옮긴 직후라 B controller 는 OS 포커스를 가진 채 `GotFocus` 가 오지 않는다), When B 창 프로시저가 왼쪽 누름
+/// `WM_PARENTNOTIFY`(0x201)를 받고 B F2 가 오면, Then 분배가 낸 누름 알림 하나가 대기열에서 F2 앞에 적용돼 B 가 키
+/// 쥘 곳이 되고 F2 가 B 에서 동작한다. 대조: 등록하지 않은 창(훅 있는 view)의 같은 알림은 누름 0회이고 훅 알림만
+/// 남으며, 알림이 없으면 B F2 는 막힌다.
+#[test]
+fn a_fallback_hwnd_press_without_got_focus_routes_the_next_shortcut() {
+    use std::rc::Rc;
+    let shortcut_after = |events: &[Native], register: bool| {
+        let (mut state, mut session) = two_surfaces();
+        let engine = session.borrow_mut();
+        let bridge = Rc::new(bridge(11));
+        let _guard = register
+            .then(|| crate::host_api::webview::parent_press::register(0x200, 12, bridge.clone()));
+        let log = turn_on(&bridge, &mut state, engine.core, events, &[]);
+        let focused = state.focused_surface_id(&engine.read());
+        (log, focused)
+    };
+    let handled = ["held 12", "shortcut 12 Handled", "forwarded 12 Handled"];
+    let (log, focused) = shortcut_after(
+        &[Native::ParentNotify(0x200, 0x201), Native::Shortcut(12)],
+        true,
+    );
+    assert_eq!(log, handled);
+    assert_eq!(focused, Some(12));
+    // 대조: 등록하지 않은 창의 알림은 누름 0회다. 등록한 창의 같은 알림은 1회다.
+    let notified = Rc::new(bridge(11));
+    let guard = crate::host_api::webview::parent_press::register(0x200, 12, notified.clone());
+    let notify = |root| {
+        crate::host_api::webview::parent_press::dispatch(
+            root,
+            crate::host_api::webview::parent_press::WM_PARENTNOTIFY,
+            0x201,
+        )
+    };
+    notify(0x300);
+    assert!(!notified.has_pending_press(), "미등록 창이 누름을 냈다");
+    notify(0x200);
+    assert!(
+        notified.has_pending_press(),
+        "등록한 창이 누름을 내지 않았다"
+    );
+    drop(guard);
+    // 훅 있는 view 는 등록하지 않으므로 훅 알림 하나만 남는다.
+    let (log, focused) = shortcut_after(
+        &[
+            Native::ParentNotify(0x300, 0x201),
+            Native::Press(12),
+            Native::Shortcut(12),
+        ],
+        false,
+    );
+    assert_eq!(log, handled);
+    assert_eq!(focused, Some(12));
+    // 대조: 알림이 없으면 키 쥘 곳이 아닌 B 의 F2 는 막힌다.
+    let (log, focused) = shortcut_after(&[Native::Shortcut(12)], true);
+    assert_eq!(
+        log,
+        ["held 12", "shortcut 12 Gated", "forwarded 12 Gated"],
+        "알림 없는 B F2 가 동작했다"
+    );
+    assert_eq!(focused, Some(11));
 }
