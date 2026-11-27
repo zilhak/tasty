@@ -385,7 +385,7 @@ mod tests {
             cell_tx.send(cmd.outcome_cell()).expect("cell");
             let resp = JsonRpcResponse::error(
                 cmd.request.id.clone().unwrap_or(Value::Null),
-                -32601,
+                crate::protocol::METHOD_NOT_FOUND,
                 "Method not found",
             );
             cmd.response_tx.send(resp).expect("send resp");

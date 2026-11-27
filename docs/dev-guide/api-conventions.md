@@ -463,6 +463,10 @@ Codex는 대응 훅에서 `codex notify-caller`를 호출한다([Codex](https://
 않는다(동결 파일에서 대상 목록을 관리한다). 근거는
 이 문서.
 
+메서드를 모르는 서버는 `-32601` 로 답한다. 이 값은 `tasty-attach-protocol` 의 `METHOD_NOT_FOUND`
+이고 `tasty_ipc::protocol` 이 같은 이름으로 다시 내보낸다. 원격 client 는 새 메서드의 미지원을 오류
+메시지 문자열이 아니라 이 코드로 판정한다.
+
 ### Deprecation 절차
 
 버전 간 호환성 유예 기간은 제품 의무가 아니다. 개발자 판단으로 break를 낼 수 있다

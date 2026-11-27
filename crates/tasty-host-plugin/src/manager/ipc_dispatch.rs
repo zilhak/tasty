@@ -629,7 +629,12 @@ impl PluginManager {
             .namespaces_read()
             .resolve(method)
             .map(str::to_string)
-            .ok_or_else(|| (-32601, format!("method '{method}' not found")))?;
+            .ok_or_else(|| {
+                (
+                    tasty_ipc::protocol::METHOD_NOT_FOUND,
+                    format!("method '{method}' not found"),
+                )
+            })?;
         if let Some(caller) = caller_plugin_id
             && caller == plugin_id
         {

@@ -671,6 +671,10 @@ pub const HTML_HTTPS_CAPABILITY: &str = "ipc.stream.html-https-v1";
 /// JSON-RPC 요청의 `idempotency_key` 를 서버가 읽는다는 선언의 이름.
 pub const IDEMPOTENCY_CAPABILITY: &str = "ipc.idempotency-key";
 
+/// 서버가 모르는 JSON-RPC 메서드를 받았을 때의 오류 코드(JSON-RPC 2.0 "Method not found").
+/// 구 서버가 새 메서드를 지원하지 않는지는 오류 메시지가 아니라 이 코드로 판정한다.
+pub const METHOD_NOT_FOUND: i32 = -32601;
+
 #[cfg(test)]
 #[path = "control_tests.rs"]
 mod tests;

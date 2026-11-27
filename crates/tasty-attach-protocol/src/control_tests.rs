@@ -832,3 +832,8 @@ fn a_force_detached_control_without_a_string_reason_is_final() {
         );
     }
 }
+
+#[test]
+fn method_not_found_is_the_json_rpc_code() {
+    assert_eq!(METHOD_NOT_FOUND, -32601);
+}

@@ -8,6 +8,9 @@ use serde::{Deserialize, Serialize};
 /// 기본값과의 관계는 admission 시험이 확인하며 사용자별 설정까지 보장하지 않는다.
 pub const MAX_REQUEST_LINE_BYTES: usize = 8 * 1024 * 1024;
 
+// JSON-RPC 미지원 메서드 코드는 tasty-attach-protocol이 정의하고 이 경로로 다시 내보낸다.
+pub use tasty_attach_protocol::METHOD_NOT_FOUND;
+
 // 전송·대기·멱등 키 처리의 오류 코드. 실행 여부는 코드마다 다르므로 각 계약을 따른다.
 
 /// 요청 한 줄이 서버의 줄 상한(`MAX_REQUEST_LINE_BYTES`)을 넘었다. 넘긴 줄의 나머지가
@@ -146,7 +149,11 @@ impl JsonRpcResponse {
     }
 
     pub fn method_not_found(id: serde_json::Value, method: &str) -> Self {
-        Self::error(id, -32601, format!("Method not found: {}", method))
+        Self::error(
+            id,
+            METHOD_NOT_FOUND,
+            format!("Method not found: {}", method),
+        )
     }
 
     /// 외부(CLI / 네트워크 IPC) 호출자가 dispatch 끝까지 못 닿은 이름에 대한 답.
