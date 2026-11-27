@@ -120,7 +120,7 @@ fn a_window_popup_focus_node_releases_every_webview() {
 }
 
 /// T-W2-2: Given R 의 Surface 범위 팝업이 포커스 노드이고 L WebView 가 OS 키 포커스를 쥘 때, When 동기화하면, Then L
-/// 에서 회수한다(J-2 (a)).
+/// 에서 회수한다.
 #[test]
 fn a_surface_popup_focus_node_in_r_releases_the_webview_in_l() {
     let (mut state, mut session) = defs_scene();
@@ -609,11 +609,11 @@ fn a_webview_hidden_by_the_overlay_is_released_despite_its_pending_press() {
     }
 }
 
-/// Codex 7: 보류는 키 쥘 곳이 될 수 있는 알림만 센다(`PressForecast::may_hold`). Given 창 범위 팔레트(덮개)가 포커스
-/// 노드이고 키 뒤에 R 누름이 남았다, When 모드가 Opaque·Hide 어느 쪽이든, Then R 누름은 덮개가 가져 R 을 키 쥘 곳으로
-/// 만들지 못하므로 R 을 바로 회수하고 의무를 남기지 않는다. 앞 키가 덮개를 닫아도 그 누름은 소비될 때 다시 판정되고,
-/// 회수된 R 은 그때 새 포커스로 키를 받는다. binding 이 맞지 않은 R 의 누름도 같다. 대조: 덮개가 없고 binding 이
-/// 맞으면 R 을 보류한다.
+/// 보류는 남은 알림이 키 쥘 곳을 그 surface 로 만들 때만 한다(`WebViewKeyBridge::pending_holders`). Given 창 범위
+/// 팔레트(덮개)가 포커스 노드이고 키 뒤에 R 누름이 남았다, When 모드가 Opaque·Hide 어느 쪽이든, Then R 누름은 덮개가
+/// 가져 R 을 키 쥘 곳으로 만들지 못하므로 R 을 바로 회수하고 의무를 남기지 않는다. 앞 키가 덮개를 닫으면 그 누름은
+/// 소비될 때 R 을 키 쥘 곳으로 만들 수 있지만, 이미 회수한 OS 키 포커스는 돌려주지 않는다. binding 이 맞지 않은 R 의
+/// 누름도 회수한다. 대조: 덮개가 없고 binding 이 맞으면 R 을 보류한다.
 #[test]
 fn a_pending_press_that_cannot_hold_does_not_keep_the_release() {
     for (covered, bound, released) in [(true, true, 1), (false, false, 1), (false, true, 0)] {

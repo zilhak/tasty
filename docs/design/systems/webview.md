@@ -244,8 +244,12 @@ WebView의 binding이 맞지 않으면 어느 단계보다 먼저 막고, 그 �
 게시된 키 쥘 곳에서 출발해 대기열의 누름 알림을 도착 순서대로 그 표로 적용한다(`press_forecast::holder_after_notices`).
 표는 실제 소비와 같은 판정을 읽는다: 창 전체를 막는 노드(`MainViewState::window_blocks_pages`, 실제 소비도 이 판정으로
 알림을 버린다), 표시된 탭, 덮개, WebView binding(`webview_sync::webview_binding_current`, 맞지 않은 surface의 알림은
-무효다). 대기열을 건마다 소비하지 않는 메뉴 종료 펌프와 view를 지울 때의 펌프는 그 직전에 지금 상태로 게시한다
-(`key_release::publish_before_gtk_pump`). 그래서 소비 전의 [B 누름, B 편집 키]는 B에서 실행되고 A 편집 키는 막힌다.
+무효다). 게시하는 키 쥘 곳도 같은 binding 판정을 따른다: 선택된 surface라도 binding이 맞지 않으면(엔진이 실행
+인스턴스를 바꿨고 옛 view가 남음) 키 쥘 곳이 없다. Linux에서 대기열을 건마다 소비하지 않는 GTK 펌프(메뉴 종료 펌프,
+view를 지울 때의 펌프)는 그 직전에 지금 상태로 게시한다(`key_release::publish_before_gtk_pump`). Windows·macOS의 메뉴
+조회와 view 지움은 native 입력을 소비하지 않아 게시하지 않는다. binding이 맞지 않은 view는 하나씩 지운다
+(`key_release::drop_stale_views`): 게시하고 그 view를 버린 뒤 그 surface의 대기열 항목을 지운다. 앞 view의 Drop 펌프
+동안 남은 view가 넣은 항목이 같은 surface로 새로 만든 view에 가지 않는다. 그래서 소비 전의 [B 누름, B 편집 키]는 B에서 실행되고 A 편집 키는 막힌다.
 전달 키의 효과는 예측하지 않는다(그 키를 소비한 자리의 게시가 정한다). 이 예측은 임시 장치이고 입력 순서 경계가
 정해지면 바뀐다.
 
@@ -561,9 +565,11 @@ host는 실제 focus가 해당 자식 안에 있을 때만 부모 winit 창으�
   판정 전에 대기열 앞의 아직 소비하지 않은 누름 알림을 알림 소비와 같은 전이로 먼저 소비한다
   (`key_release::release_after_native_focus_notices`). Windows는 winit이 누름 메시지와 다시 그리기를 한 회차 안에서
   차례로 처리하므로, 그러지 않으면 방금 누른 webview를 앞 포커스 노드로 판정해 회수하고 뒤따르는 글자 키를 잃는다.
-  전달 키 뒤에 남은 누름은 아직 적용되지 않았으므로(앞 키가 탭·덮개·포커스를 바꿀 수 있다), 그 누름이 지금 상태에서
-  키 쥘 곳을 만들 수 있으면(`PressForecast::may_hold`, 대기 알림 예측과 같은 표) 그 surface만 회수를 보류하고 나머지는
-  회수한다. 덮개가 가지는 누름, 창 전체를 막는 노드 밑의 누름, binding이 맞지 않은 누름은 보류하지 않는다. 이번 프레임에 숨는 webview(모드 `Hide`, overlay 열림)는 보류하지 않는다. 보류한 후보가 있으면
+  전달 키 뒤에 남은 누름은 아직 적용되지 않았으므로(앞 키가 탭·덮개·포커스를 바꿀 수 있다), 남은 알림을 지금 상태의
+  예측표로 도착 순서대로 적용할 때 키 쥘 곳이 되는 surface만 회수를 보류하고(`WebViewKeyBridge::pending_holders`, 대기
+  알림 예측과 같은 걸음) 나머지는 회수한다. 덮개가 가지는 누름, 창 전체를 막는 노드 밑의 누름, binding이 맞지 않은
+  누름, 앞 노드(주소 띠·팝업)를 놓지 못하는 포커스 획득은 보류하지 않는다. 앞 키가 상태를 바꿔 그 알림이 소비될 때
+  키 쥘 곳을 만들어도, 이미 회수한 OS 키 포커스는 돌려주지 않는다. 이번 프레임에 숨는 webview(모드 `Hide`, overlay 열림)는 보류하지 않는다. 보류한 후보가 있으면
   재판정 의무를 남기고, 대기열이 비면(소비, `retire_view`, 동기화의 선두 소비 어느 쪽이든) 동기화를 한 번 예약한다
   (`key_release::release_retry_due`). 회수를 적용한 동기화는 의무를 지운다.
 - 탭·workspace 전환으로 surface가 활성 탭에서 빠질 때: 그 surface만 전이마다 한 번 회수한다.

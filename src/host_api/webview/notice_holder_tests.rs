@@ -116,7 +116,7 @@ fn a_linux_edit_key_after_a_press_in_one_drained_pump_runs_in_the_pressed_page()
     );
 }
 
-/// Codex 2: GTK 대기 이벤트를 건마다 소비하지 않고 비우는 펌프(native 메뉴 poll, 맞지 않은 view 의 Drop)는 그리기가
+/// GTK 대기 이벤트를 건마다 소비하지 않고 비우는 펌프(native 메뉴 poll, 맞지 않은 view 의 Drop)는 그리기가
 /// 덮개를 바꾼 뒤이자 프레임 동기화 게시 전에 돈다. Given 앞 게시가 창 덮개를 담았고 그 덮개가 닫혔다, When 펌프 안에서
 /// [B 누름, Ctrl+V] 가 오면, Then B 의 붙여넣기는 닫힌 뒤 표로 열린다. 거꾸로 앞 게시 뒤 창 덮개가 열렸으면 펌프 안의
 /// [B 누름, Ctrl+V] 는 막힌다. 대조: 각 장면의 앞 게시값은 반대로 판정한다.
@@ -212,7 +212,7 @@ fn pending_notices_apply_in_arrival_order() {
     }
 }
 
-/// P-1: Given A 가 키 쥘 곳이고 B 의 WebView binding 이 지금 surface 와 맞지 않는다(엔진이 B 의 실행 인스턴스를
+/// Given A 가 키 쥘 곳이고 B 의 WebView binding 이 지금 surface 와 맞지 않는다(엔진이 B 의 실행 인스턴스를
 /// 바꿨고 동기화가 아직 view 를 바꾸지 않음), When 옛 B 의 누름·포커스 획득 알림이 대기열에 있으면, Then 예측은 실제
 /// 소비처럼 그 알림을 건너뛰어 A 를 지키고, A 의 붙여넣기가 열리고 B 의 것은 막힌다. 뒤 A 포커스 획득은 그대로 A 다.
 /// 대조: binding 이 맞으면 B 다.
@@ -385,7 +385,7 @@ fn a_window_blocking_node_keeps_every_notice_off_the_pages() {
     }
 }
 
-/// Codex 5: 창을 덮은 노드 밑에서는 창 범위의 어느 것도 바뀌지 않는다. Given 전체화면 무대가 열렸다, When 쌓여 있던
+/// 창을 덮은 노드 밑에서는 창 범위의 어느 것도 바뀌지 않는다. Given 전체화면 무대가 열렸다, When 쌓여 있던
 /// B 누름·포커스 획득 알림을 소비하면, Then 밑 탭의 선택(A), A 주소 띠 편집, A 범위 검색 바 포커스가 각각 그대로다.
 /// 대조: 무대가 없으면 같은 알림이 선택을 B 로 옮기고 주소 띠·검색 바를 놓는다.
 #[test]
@@ -584,7 +584,7 @@ fn window_and_native_entries_reach_the_same_press_result() {
     }
 }
 
-/// Codex 4: native 누름 전이는 그린 것을 바꾸면 변경을 돌려준다(입구가 그 값으로 redraw 를 요청한다). 장면 1: 정규화로
+/// native 누름 전이는 그린 것을 바꾸면 변경을 돌려준다(입구가 그 값으로 redraw 를 요청한다). 장면 1: 정규화로
 /// 이미 포커스 위치인 passive 덮개(A 범위, 창 범위)를 덮인 A 의 누름이 승격한다 → 참, passive 해제. 장면 2: 이미
 /// 선택된 A 의 말풍선 키보드 포커스를 A 누름이 끈다 → 참. 대조: 두 장면 모두 같은 누름을 한 번 더 하면 거짓이다.
 #[test]
