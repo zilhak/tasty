@@ -125,8 +125,9 @@ fn dump_heartbeat_interval() -> Duration {
     }
 }
 
-/// 손실 통지를 받겠다고 선언한다. 선언이 없으면 서버는 그 연결에서 종전대로 조용히
-/// 버린다. 보내지 못해도 attach 는 이어간다 — 그 연결은 종전 동작이 될 뿐이다.
+/// 손실 통지를 받겠다고 선언한다. 선언이 없으면 서버는 그 연결의 StreamHub 누적 손실을 종전대로
+/// 조용히 버린다(터미널 구독 넘침은 선언과 무관하게 Loss { frames: 1 }를 시도하고 연결을 끝낸다 —
+/// tasty_attach_protocol 의 StreamControl::Loss). 보내지 못해도 attach 는 이어간다 — 그 연결은 종전 동작이 될 뿐이다.
 fn declare_loss_notify(conn: &mut StreamConnection) {
     let declare = match serde_json::to_vec(&StreamControl::ClientLossNotify {}) {
         Ok(d) => d,
@@ -137,7 +138,7 @@ fn declare_loss_notify(conn: &mut StreamConnection) {
     };
     if let Err(e) = conn.send(StreamTag::Control, &declare) {
         tracing::warn!(
-            "attach: loss-notify declaration was not sent; this session will not hear of gaps: {e}"
+            "attach: loss-notify declaration was not sent; this session will not hear of StreamHub queue gaps: {e}"
         );
     }
 }

@@ -51,7 +51,8 @@ pub fn attach_handshake(
     }
     let ctrl: Value = serde_json::from_slice(&first.payload)?;
     let (name, surfaces, tree) = parse_attach_descriptor(&ctrl)?;
-    // 손실 통지는 연결별 opt-in이다. 구 서버는 이 선언을 모를 수 있으므로
+    // StreamHub 누적 손실 통지는 연결별 opt-in이다(터미널 구독 넘침의 Loss { frames: 1 }는 선언과 무관하다).
+    // 구 서버는 이 선언을 모를 수 있으므로
     // 지원을 확인해야 하면 system.info의 ipc.stream.loss-notify capability를 조회한다.
     let declare = serde_json::to_vec(&StreamControl::ClientLossNotify {}).unwrap_or_default();
     if let Err(e) = conn.send(StreamTag::Control, &declare) {

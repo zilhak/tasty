@@ -177,7 +177,7 @@ workspace mirror 의 **탭 제목**은 스냅샷 pane JSON 의 tab `name`(원격
 - 재attach 에서 살아남은 terminal mirror 는 새 연결이 알린 서버 grid 크기로 맞춘 뒤 새 snapshot 을 받는다. 그래서 끊긴 연결과 함께 echo 를 잃어 mirror 와 원격 grid 가 달라졌어도, 다음 리사이즈 스윕이 로컬 pane 크기와 비교해 다시 요청하고 두 grid 가 pane 크기로 수렴한다. 구조 변경 통지(delta)는 mirror 크기를 바꾸지 않는다.
 - 렌더러는 mirror 의 실제 grid 크기로 셀을 pane 좌상단에 배치한다. mirror 가 pane 크기로 reflow 되므로 pane 을 채운다(별도의 고정 80×24 영역에 그리지 않는다). 초기 attach 순간(원격 기본 80×24 → 첫 forward reflow)에는 약 1 RTT 의 짧은 깜빡임이 있을 수 있다.
 
-`StreamControl` 은 `event` 태그 기반 확장 enum 이라, 새 이벤트도 새 `StreamTag` 없이 variant 로 추가된다. 구버전 서버는 `ClientResize` 를 무시하므로(전방호환) 기존 remote-authoritative 동작으로 graceful degrade 한다. 같은 이유로 구버전 client 는 `Attention` 프레임을 파싱하지 못해 조용히 무시하고, 구버전 서버는 그 프레임을 애초에 보내지 않는다 — 어느 쪽도 세션을 깨지 않고 attention 표시만 빠진다. **다만 그 무시가 공짜일 때만 안전하다** — 놓쳐도 잃을 것이 없는 이벤트에만 성립하는 성질이고, 아래 `Loss` 가 그 예외라 무시가 곧 "손실 없음" 으로 읽히지 않도록 **client 의 명시 선언으로 게이트**한다.
+`StreamControl` 은 `event` 태그 기반 확장 enum 이라, 새 이벤트도 새 `StreamTag` 없이 variant 로 추가된다. 구버전 서버는 `ClientResize` 를 무시하므로(전방호환) 기존 remote-authoritative 동작으로 graceful degrade 한다. 같은 이유로 구버전 client 는 `Attention` 프레임을 파싱하지 못해 조용히 무시하고, 구버전 서버는 그 프레임을 애초에 보내지 않는다 — 어느 쪽도 세션을 깨지 않고 attention 표시만 빠진다. **다만 그 무시가 공짜일 때만 안전하다** — 놓쳐도 잃을 것이 없는 이벤트에만 성립하는 성질이고, 아래 `Loss` 가 그 예외라 무시가 곧 "손실 없음" 으로 읽히지 않도록 StreamHub 누적 통지는 **client 의 명시 선언으로 게이트**한다(터미널 구독 넘침은 아래처럼 선언과 무관하게 통지를 시도하고 연결을 끝낸다).
 
 Control의 server→client 상태 메시지는 `Resize`(그리드), `Activity`(busy/idle),
 `Attention`(주의 표시), `Cwd`(현재 폴더), `Foreground`(전경 프로세스 이름)다. 같은 상태를 다시 적용해도 결과는 같지만,
@@ -245,12 +245,13 @@ mirror 는 이 이름으로 로컬 surface 와 같게 동작한다: 앱별 Shift
 첫 값을 받기 전이나 이 메시지를 보내지 않는 구버전 서버에서는 이름 미상으로 동작해 지금과 같다. 메커니즘은 [dev-guide/attach-behavior "전경 이름 전파"](../../dev-guide/attach-behavior.md#전경-이름-전파).
 
 **서버가 프레임을 버리면 `Loss`로 알린다.** PTY 출력 일부를 놓친 client는 그 상태로
-계속 그리면 잘못된 화면을 보여줄 수 있다. 그래서 서버는 그 연결에서 버린 프레임 수를 `StreamControl::Loss{frames}` 로 되돌려
-준다. 서버 송신 큐에서 쌓인 손실의 통지는 **받겠다고 선언한 연결에만** 간다(`ClientLossNotify` — GUI mirror · GUI bulk 전송 · CLI
+계속 그리면 잘못된 화면을 보여줄 수 있다. 그래서 서버는 `StreamControl::Loss{frames}` 로 손실을 알린다. 보내는 경로는 둘이다.
+서버 송신 큐에서 쌓인 손실은 직전 통지 뒤 누적해 버린 프레임 수를 싣고, **받겠다고 선언한 연결에만** 간다(`ClientLossNotify` — GUI mirror · GUI bulk 전송 · CLI
 `tasty remote attach`·`tasty tool attach` 가 선언한다) — 선언 안 한 peer 의 바이트 열은 무변경이고, 이 통지를 못 읽는
 client 에게 "무시" 는 "손실 없음" 과 구별되지 않기 때문이다. 터미널 출력 구독이 넘친 경우는 다르다. 서버는 선언과
-무관하게 `Loss{frames:1}` 를 넣어 보고 그 연결을 끝낸다 — 선언한 client 는 이 통지를 받으면 다시 붙고, 선언하지 않은
-client 는 연결 끊김(EOF)만 본다. 통지를 받은 client 는 **다시
+무관하게 `Loss{frames:1}`(고정 1) 삽입을 시도하고 그 연결의 등록을 해제해 연결이 끝난다 — 통지가 송신 스레드를 통과하면
+client 는 선언과 무관하게 받는다. Loss 를 읽는 client 는 다시 붙고, 통지가 건너뛰어졌거나 Loss 를 읽지 못하는 client 는
+연결 끊김(EOF)만 본다. 통지를 받은 client 는 **다시
 attach 해 화면을 새로 받는다** — 서버가 터미널 snapshot 을 만드는 자리가 attach 하나뿐이라서다.
 GUI mirror 는 "원격 화면 일부를 놓쳤다" 경고 toast 를 띄운 뒤 스스로 다시 붙고(수동 attach 도
 같다), 그 사이 mirror 터미널의 출력 위치 표지(stream)가 바뀌어 공백을 건너 읽는 에이전트는
