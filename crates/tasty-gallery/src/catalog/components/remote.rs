@@ -25,6 +25,8 @@ mod attach_rows_tests;
 #[cfg(test)]
 mod forms_tests;
 #[cfg(test)]
+mod local_ssh_rows_tests;
+#[cfg(test)]
 mod passkeys_meta_tests;
 mod segment_rule;
 #[cfg(test)]
@@ -122,16 +124,26 @@ const KNOWN_PROFILE_TYPES: &[&str] = &["ssh", "smb", "http"];
 ///
 /// tasty 레코드가 아니라 사용자의 `~/.ssh/config` 라 행 액션은 가져오기 하나뿐이고,
 /// 이미 가져온 alias 는 액션 대신 Tag 로 상태만 보인다.
+///
+/// `in_profiles` 는 본체 `imported_as` 처럼 alias 가 [`PROFILES`] ssh 프로필의 host 와 같은지로 정한 값이다.
+/// 대상 줄은 표시 전용이라 판정에 쓰지 않는다.
 const LOCAL_HOSTS: &[LocalSshHost<'static>] = &[
     LocalSshHost {
         alias: "host",
         target: "maya@host.local:22",
         in_profiles: false,
     },
+    // 별칭만 맞는다: HostName 이 없어 대상 줄이 alias 를 쓰고, db-primary 의 host 가 이 alias 다.
     LocalSshHost {
-        alias: "prod-web",
-        target: "deploy@10.0.4.12:22",
+        alias: "db.internal",
+        target: "maya@db.internal:22",
         in_profiles: true,
+    },
+    // 대상만 맞는다: 대상 줄이 edge-cache 와 같지만 alias 가 어느 프로필의 host 도 아니다.
+    LocalSshHost {
+        alias: "edge",
+        target: "root@edge.example.com:22",
+        in_profiles: false,
     },
     // 긴 별칭으로 오른쪽 동작 버튼을 유지하며 말줄임되는지 확인한다.
     LocalSshHost {
@@ -195,8 +207,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                     &LocalSshSectionData {
                         heading: "From ssh config",
                         path: "~/.ssh/config",
-                        in_profiles_tag: "in profiles",
-                        add_label: "Add profile",
+                        in_profiles_tag: crate::i18n::t("remote_tool.local_ssh_in_profiles"),
+                        add_label: crate::i18n::t("remote_tool.local_ssh_add"),
                         empty_message: crate::i18n::t("remote_tool.local_ssh_empty"),
                         hosts: LOCAL_HOSTS,
                     },
