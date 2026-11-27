@@ -12,13 +12,22 @@ fn an_unknown_reserved_id_is_refused() {
 
 #[test]
 fn every_official_id_is_admitted() {
-    assert_eq!(OFFICIAL_PLUGIN_IDS.len(), 9);
+    assert_eq!(OFFICIAL_PLUGIN_IDS.len(), 8);
     for id in OFFICIAL_PLUGIN_IDS {
         assert_eq!(admit_plugin_id(id), Ok(()), "{id}");
     }
     // 번들하지 않는 공식 플러그인도 목록에 있다.
     assert!(OFFICIAL_PLUGIN_IDS.contains(&"com.tasty.agent-stream"));
-    assert!(OFFICIAL_PLUGIN_IDS.contains(&"com.tasty.mesh-demo"));
+}
+
+/// 지운 시범 플러그인의 id는 공식 목록에 없어 예약 id로 거부된다. 남은 설치 폴더는 확인 필요 탭으로 간다.
+#[test]
+fn the_removed_demo_plugin_id_is_refused() {
+    let id = "com.tasty.mesh-demo";
+    assert_eq!(
+        admit_plugin_id(id),
+        Err(ReservedIdError { id: id.to_string() })
+    );
 }
 
 #[test]
@@ -46,28 +55,7 @@ fn bundled_ids_of_this_build_are_official() {
     }
 }
 
-/// 번들 목록은 OS별로 두 벌이다. 이 빌드가 고르지 않은 벌도 원문에서 읽어 대조한다.
-#[test]
-fn bundled_ids_of_every_os_are_official() {
-    let source = include_str!("builtin.rs");
-    let table = &source[..source
-        .find("pub fn is_builtin_plugin")
-        .expect("builtin.rs layout")];
-    let ids: Vec<&str> = table
-        .lines()
-        .filter_map(|l| l.trim().strip_prefix("id: \""))
-        .filter_map(|l| l.strip_suffix("\","))
-        .collect();
-    assert_eq!(ids.len(), 18, "two tables of nine bundled ids: {ids:?}");
-    for id in ids {
-        assert!(
-            OFFICIAL_PLUGIN_IDS.contains(&id),
-            "bundled '{id}' is not official"
-        );
-    }
-}
-
-/// 번들 플러그인 매니페스트(workspace와 공식 플러그인 픽스처)의 id는 모두 공식 목록에 있어야 설치된다.
+/// 번들 플러그인 매니페스트(공식 플러그인 픽스처, workspace에 매니페스트 크레이트가 있으면 그것도)의 id는 모두 공식 목록에 있어야 설치된다.
 #[test]
 fn repository_plugin_manifests_are_official() {
     let dirs = tasty_test_support::bundled_plugin_manifest_dirs();
@@ -75,7 +63,7 @@ fn repository_plugin_manifests_are_official() {
         let manifest = tasty_plugin_manifest::Manifest::load(dir).expect("manifest");
         assert_eq!(admit_plugin_id(&manifest.id), Ok(()), "{}", dir.display());
     }
-    assert_eq!(dirs.len(), 9, "bundled plugin manifests: {dirs:?}");
+    assert_eq!(dirs.len(), 8, "bundled plugin manifests: {dirs:?}");
 }
 
 #[test]

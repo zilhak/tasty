@@ -90,14 +90,14 @@ const EXCEPTIONS: &[Exception] = &[
     Exception {
         includer: "crates/tasty-i18n",
         target: Target::Dir("lang"),
-        kind: Kind::NotLinkedMeasured,
-        why: "번들 플러그인이 builtin_toml에 닿지 않아 번역표가 링크에서 빠진다. release.md 플러그인 버전 비교의 sha256 측정",
+        kind: Kind::OutsideClosure,
+        why: "호스트 내장 번역표. 이 레포에는 매니페스트 플러그인이 없어 폐포가 비었다. 플러그인이 생겨 tasty-i18n이 폐포에 들어오면 링크 여부를 다시 잰다",
     },
     Exception {
         includer: "crates/tasty-ui-widgets",
         target: Target::File("assets/icons/icon_256.png"),
-        kind: Kind::NotLinkedMeasured,
-        why: "LOGO_PNG. 번들 플러그인 release 바이너리 9개에 이 PNG 바이트가 없고 같은 빌드의 호스트 바이너리에는 있었다. release.md 플러그인 버전 비교",
+        kind: Kind::OutsideClosure,
+        why: "LOGO_PNG. 이 레포에는 매니페스트 플러그인이 없어 폐포가 비었다. 플러그인이 생겨 tasty-ui-widgets가 폐포에 들어오면 링크 여부를 다시 잰다",
     },
     Exception {
         includer: "crates/tasty-gallery",
@@ -540,6 +540,7 @@ fn package_name(manifest: &str) -> Option<String> {
 }
 
 /// 매니페스트 플러그인들의 normal·build 폐포(모든 target)에 드는 저장소 안 크레이트 디렉터리.
+/// 매니페스트 플러그인이 없으면 빈 집합이다.
 /// 저장소 안 크레이트는 dev 의존으로만 선언한 이름을 Cargo.lock 간선에서 빼고, 매니페스트가 선언한
 /// normal·build 의존을 더한다(Cargo.lock 갱신 전의 매니페스트 변경도 본다).
 fn plugin_closure(root: &Path, krates: &[String]) -> BTreeSet<String> {
@@ -580,7 +581,6 @@ fn plugin_closure(root: &Path, krates: &[String]) -> BTreeSet<String> {
                 .unwrap_or_else(|| panic!("{k}의 패키지 이름을 읽지 못했다"))
         })
         .collect();
-    assert!(!stack.is_empty(), "매니페스트 플러그인을 하나도 못 찾았다");
     while let Some(n) = stack.pop() {
         if !seen.insert(n.clone()) {
             continue;
@@ -590,6 +590,17 @@ fn plugin_closure(root: &Path, krates: &[String]) -> BTreeSet<String> {
         }
     }
     seen.iter().filter_map(|n| dir_of.get(n).cloned()).collect()
+}
+
+/// 폐포 계산이 깨졌는지 본다. 플러그인이 있으면 폐포에 SDK가 있어야 한다. 비었으면 볼 것이 없다.
+fn closure_problem(closure: &BTreeSet<String>) -> Option<String> {
+    (!closure.is_empty() && !closure.iter().any(|c| c == "crates/tasty-plugin-sdk"))
+        .then(|| format!("플러그인 폐포에 SDK가 없다. 폐포 계산이 깨졌다: {closure:?}"))
+}
+
+/// 근거가 '플러그인 폐포 밖'인 예외의 읽는 크레이트가 폐포에 들어왔는지.
+fn contradicts_closure(e: &Exception, closure: &BTreeSet<String>) -> bool {
+    e.kind == Kind::OutsideClosure && closure.contains(e.includer)
 }
 
 fn covering<'a>(table: &'a [Exception], input: &Input) -> Option<&'a Exception> {
@@ -613,10 +624,9 @@ fn every_build_input_is_judged_or_listed_with_a_reason() {
         inputs.len()
     );
     let closure = plugin_closure(&root, &krates);
-    assert!(
-        closure.iter().any(|c| c == "crates/tasty-plugin-sdk"),
-        "플러그인 폐포에 SDK가 없다. 폐포 계산이 깨졌다: {closure:?}"
-    );
+    if let Some(why) = closure_problem(&closure) {
+        panic!("{why}");
+    }
 
     let mut used = BTreeSet::new();
     for input in &inputs {
@@ -633,7 +643,7 @@ fn every_build_input_is_judged_or_listed_with_a_reason() {
             )),
             Some(e) => {
                 used.insert((e.includer, e.target.path()));
-                if e.kind == Kind::OutsideClosure && closure.contains(e.includer) {
+                if contradicts_closure(e, &closure) {
                     problems.push(format!(
                         "{}: {} — 예외 근거가 '플러그인 폐포 밖'인데 {}가 플러그인 폐포에 들어왔다. \
                          바이너리 비교로 다시 재거나 검사 대상에 넣는다",
@@ -767,6 +777,44 @@ fn a_plugin_whose_package_name_differs_from_its_directory_still_has_a_closure() 
         closure.contains("crates/shared") && closure.contains("crates/plug-dir"),
         "디렉터리 이름으로 시작해 폐포가 비었다: {closure:?}"
     );
+}
+
+/// 폐포가 비면 SDK 단정을 건너뛰고, 비지 않았는데 SDK가 없으면 폐포 계산이 깨진 것으로 본다.
+#[test]
+fn a_non_empty_closure_without_the_sdk_is_a_broken_closure() {
+    assert_eq!(closure_problem(&BTreeSet::new()), None);
+    let with_sdk: BTreeSet<String> = ["crates/plug", "crates/tasty-plugin-sdk"]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+    assert_eq!(closure_problem(&with_sdk), None);
+    let without_sdk: BTreeSet<String> = ["crates/plug".to_string()].into_iter().collect();
+    assert!(
+        closure_problem(&without_sdk).is_some_and(|why| why.contains("SDK")),
+        "SDK 없는 폐포를 통과시켰다"
+    );
+}
+
+/// 폐포 밖이라는 예외는 읽는 크레이트가 폐포에 들어오면 근거를 잃는다. 다른 근거의 예외는 이 판정과 무관하다.
+#[test]
+fn an_outside_closure_exception_is_refused_once_its_includer_joins_the_closure() {
+    let outside = Exception {
+        includer: "crates/shared",
+        target: Target::Dir("lang"),
+        kind: Kind::OutsideClosure,
+        why: "시험",
+    };
+    let measured = Exception {
+        kind: Kind::NotLinkedMeasured,
+        ..outside
+    };
+    let closure: BTreeSet<String> = ["crates/plug", "crates/shared", "crates/tasty-plugin-sdk"]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+    assert!(contradicts_closure(&outside, &closure));
+    assert!(!contradicts_closure(&outside, &BTreeSet::new()));
+    assert!(!contradicts_closure(&measured, &closure));
 }
 
 #[test]

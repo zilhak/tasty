@@ -14,143 +14,36 @@ use std::path::{Path, PathBuf};
 use crate::{PluginManager, PluginsConfig, discovery};
 use tasty_plugin_manifest::Manifest;
 
-/// 한 builtin plugin의 패키지 메타 — id, 크레이트 이름, 원천, plugin 바이너리 이름.
+/// 한 builtin plugin. 산출물은 공식 플러그인 레포의 릴리스(잠금 파일)나 그 레포 체크아웃의 빌드를
+/// `scripts/stage-dev-plugins.sh`가 개발 번들에 스테이징하고, 배포 패키지는 빌드 단계가 싣는다.
 pub(crate) struct BuiltinSpec {
     pub(crate) id: &'static str,
-    /// 플러그인 크레이트 이름. 원천이 [`BuiltinSource::Workspace`]면 `crates/<crate_dir>/`가
-    /// debug 동기화의 매니페스트/lang 원본이다. 공식 플러그인 레포의 릴리스로 받는 플러그인은
-    /// 그 레포의 크레이트 이름이며 동기화에는 쓰지 않는다.
-    crate_dir: &'static str,
-    /// 개발 번들을 어디서 얻는지. 배포 패키지의 번들 탐색에는 영향이 없다.
-    source: BuiltinSource,
-    /// `target/<profile>/<bin_name>` — workspace 빌드된 plugin 실행 바이너리 이름.
-    bin_name: &'static str,
 }
 
-/// 개발 번들(`target/<profile>/builtin-plugins/<id>/`)의 원천.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum BuiltinSource {
-    /// 공식 플러그인 레포의 릴리스 산출물(잠금 파일)이나 그 레포 체크아웃의 빌드를
-    /// `scripts/stage-dev-plugins.sh`가 스테이징한다. debug 부팅이 workspace 파일로 덮지 않는다.
-    OfficialRelease,
-    /// 이 workspace에서 빌드한다. debug 부팅이 `target/<profile>/<bin>`과 크레이트의
-    /// 매니페스트·lang을 개발 번들로 동기화한다.
-    Workspace,
-}
-
-#[cfg(windows)]
 pub(crate) const BUILTINS: &[BuiltinSpec] = &[
     BuiltinSpec {
         id: "com.tasty.codex",
-        crate_dir: "tasty-plugin-codex",
-        source: BuiltinSource::OfficialRelease,
-        bin_name: "tasty-plugin-codex.exe",
     },
     BuiltinSpec {
         id: "com.tasty.claude",
-        crate_dir: "tasty-plugin-claude",
-        source: BuiltinSource::OfficialRelease,
-        bin_name: "tasty-plugin-claude.exe",
     },
     BuiltinSpec {
         id: "com.tasty.image",
-        crate_dir: "tasty-plugin-image",
-        source: BuiltinSource::OfficialRelease,
-        bin_name: "tasty-plugin-image.exe",
     },
     BuiltinSpec {
         id: "com.tasty.markdown",
-        crate_dir: "tasty-plugin-markdown",
-        source: BuiltinSource::OfficialRelease,
-        bin_name: "tasty-plugin-markdown.exe",
     },
     BuiltinSpec {
         id: "com.tasty.clipboard-viewer",
-        crate_dir: "tasty-plugin-clipboard-viewer",
-        source: BuiltinSource::OfficialRelease,
-        bin_name: "tasty-plugin-clipboard-viewer.exe",
     },
     BuiltinSpec {
         id: "com.tasty.html",
-        crate_dir: "tasty-plugin-html",
-        source: BuiltinSource::OfficialRelease,
-        bin_name: "tasty-plugin-html.exe",
     },
     BuiltinSpec {
         id: "com.tasty.git-viewer",
-        crate_dir: "tasty-plugin-git-viewer",
-        source: BuiltinSource::OfficialRelease,
-        bin_name: "tasty-plugin-git-viewer.exe",
-    },
-    BuiltinSpec {
-        id: "com.tasty.mesh-demo",
-        crate_dir: "tasty-plugin-mesh-demo",
-        source: BuiltinSource::Workspace,
-        bin_name: "tasty-plugin-mesh-demo.exe",
     },
     BuiltinSpec {
         id: "com.tasty.agent-stream",
-        crate_dir: "tasty-plugin-agent-stream",
-        source: BuiltinSource::OfficialRelease,
-        bin_name: "tasty-plugin-agent-stream.exe",
-    },
-];
-
-#[cfg(not(windows))]
-pub(crate) const BUILTINS: &[BuiltinSpec] = &[
-    BuiltinSpec {
-        id: "com.tasty.codex",
-        crate_dir: "tasty-plugin-codex",
-        source: BuiltinSource::OfficialRelease,
-        bin_name: "tasty-plugin-codex",
-    },
-    BuiltinSpec {
-        id: "com.tasty.claude",
-        crate_dir: "tasty-plugin-claude",
-        source: BuiltinSource::OfficialRelease,
-        bin_name: "tasty-plugin-claude",
-    },
-    BuiltinSpec {
-        id: "com.tasty.image",
-        crate_dir: "tasty-plugin-image",
-        source: BuiltinSource::OfficialRelease,
-        bin_name: "tasty-plugin-image",
-    },
-    BuiltinSpec {
-        id: "com.tasty.markdown",
-        crate_dir: "tasty-plugin-markdown",
-        source: BuiltinSource::OfficialRelease,
-        bin_name: "tasty-plugin-markdown",
-    },
-    BuiltinSpec {
-        id: "com.tasty.clipboard-viewer",
-        crate_dir: "tasty-plugin-clipboard-viewer",
-        source: BuiltinSource::OfficialRelease,
-        bin_name: "tasty-plugin-clipboard-viewer",
-    },
-    BuiltinSpec {
-        id: "com.tasty.html",
-        crate_dir: "tasty-plugin-html",
-        source: BuiltinSource::OfficialRelease,
-        bin_name: "tasty-plugin-html",
-    },
-    BuiltinSpec {
-        id: "com.tasty.git-viewer",
-        crate_dir: "tasty-plugin-git-viewer",
-        source: BuiltinSource::OfficialRelease,
-        bin_name: "tasty-plugin-git-viewer",
-    },
-    BuiltinSpec {
-        id: "com.tasty.mesh-demo",
-        crate_dir: "tasty-plugin-mesh-demo",
-        source: BuiltinSource::Workspace,
-        bin_name: "tasty-plugin-mesh-demo",
-    },
-    BuiltinSpec {
-        id: "com.tasty.agent-stream",
-        crate_dir: "tasty-plugin-agent-stream",
-        source: BuiltinSource::OfficialRelease,
-        bin_name: "tasty-plugin-agent-stream",
     },
 ];
 
@@ -241,8 +134,6 @@ fn prune_dest_not_in_src(src: &Path, dest: &Path) -> std::io::Result<()> {
 enum CopyPolicy {
     /// 판정 없이 덮어쓴다 — 버전이 다를 때의 전량 교체.
     Always,
-    /// src 가 더 새것이거나, 같은 눈금이면 내용으로([`copy_if_newer`]). dev 스테이징.
-    NewerThenContent,
     /// 내용이 다를 때만([`copy_file_if_content_differs`]). 번들 → 홈 설치.
     ContentDiffers,
 }
@@ -265,7 +156,6 @@ fn sync_dir(src: &Path, dst: &Path, policy: CopyPolicy) -> std::io::Result<bool>
                     copy_atomic(&src_path, &dest_path)?;
                     true
                 }
-                CopyPolicy::NewerThenContent => copy_if_newer(&src_path, &dest_path)?,
                 CopyPolicy::ContentDiffers => copy_file_if_content_differs(&src_path, &dest_path)?,
             };
         }
@@ -284,10 +174,8 @@ fn overwrite_builtin_dir(src: &Path, dest: &Path) -> std::io::Result<()> {
 /// - 둘째 (macOS 한정): `.app` 번들의 `Contents/Resources/plugins/`.
 /// - 셋째: 실행 파일 옆 `plugins/` (release/dist에서 packaging 시 함께 복사,
 ///   portable .tar.gz / .zip 설치).
-/// - 넷째: 실행 파일 옆 `builtin-plugins/`. 공식 플러그인은 `scripts/stage-dev-plugins.sh`가
-///   스테이징한 것을 그대로 쓴다. debug 에서만 workspace 원천 플러그인(mesh-demo)을
-///   mtime 및 동률 시 내용 비교로 동기화한다. release/dist 는 빌드 단계가 스테이징한 번들을
-///   그대로 사용하며, 시작 시 workspace 원본을 복사하지 않는다.
+/// - 넷째: 실행 파일 옆 `builtin-plugins/`. `scripts/stage-dev-plugins.sh`가 스테이징한 것을
+///   그대로 쓴다. 어느 프로필도 시작할 때 workspace 원본을 복사하지 않는다.
 /// - 다섯째 (linux 한정): FHS 표준 경로 `/usr/lib/tasty/plugins/`,
 ///   `/usr/share/tasty/plugins/` — `.deb` / `.rpm` 패키지가 `/usr/bin/tasty` 옆이
 ///   아닌 FHS 친화 위치에 plugin 을 설치한다. exe-relative 보다 우선순위가
@@ -321,16 +209,7 @@ fn bundle_root_exe_relative() -> Option<PathBuf> {
     bundle_root_from_exe_dir(exe.parent()?)
 }
 
-/// debug 부팅이 workspace에서 개발 번들로 동기화하는 플러그인 id.
-/// 나머지 builtin은 개발 번들에 미리 스테이징해야 한다. 통합 테스트의 준비 누락 진단이 읽는다.
-pub fn workspace_synced_plugin_ids() -> impl Iterator<Item = &'static str> {
-    BUILTINS
-        .iter()
-        .filter(|s| s.source == BuiltinSource::Workspace)
-        .map(|s| s.id)
-}
-
-/// 실행 파일 기준으로 번들을 찾는다. debug에서는 개발 번들도 준비한다.
+/// 실행 파일 기준으로 번들을 찾는다.
 /// 통합 테스트도 이 함수를 사용해 자식 인스턴스와 같은 번들을 선택한다.
 pub fn bundle_root_from_exe_dir(exe_dir: &Path) -> Option<PathBuf> {
     #[cfg(target_os = "macos")]
@@ -351,155 +230,11 @@ pub fn bundle_root_from_exe_dir(exe_dir: &Path) -> Option<PathBuf> {
     if next_to_exe.is_dir() {
         return Some(next_to_exe);
     }
-    // Release bundles pair signed manifests with build-time artifacts.
-    // Never replace individual files from a subsequently edited workspace.
-    if cfg!(debug_assertions)
-        && let Some(dev) = ensure_dev_bundle(exe_dir)
-    {
-        return Some(dev);
-    }
     let dev_bundle = exe_dir.join("builtin-plugins");
     if dev_bundle.is_dir() {
         return Some(dev_bundle);
     }
     None
-}
-
-/// debug 실행 파일 위의 워크스페이스에서 workspace 원천 플러그인의 매니페스트·바이너리·번역을
-/// 동기화한다. 공식 플러그인은 동기화하지 않는다. workspace에 같은 크레이트가 남아 있어도
-/// 스테이징한 릴리스 산출물을 새 빌드로 덮지 않기 위해서다.
-/// 하나라도 준비되면 번들 경로를 반환하며 워크스페이스가 없으면 동기화하지 않는다.
-fn ensure_dev_bundle(exe_dir: &Path) -> Option<PathBuf> {
-    // exe_dir = .../target/<profile>
-    let target_dir = exe_dir.parent()?; // .../target
-    let workspace = target_dir.parent()?; // workspace root
-
-    let bundle_root = exe_dir.join("builtin-plugins");
-    let mut any_synced = false;
-    for spec in BUILTINS
-        .iter()
-        .filter(|s| s.source == BuiltinSource::Workspace)
-    {
-        if sync_builtin_dev(workspace, exe_dir, &bundle_root, spec) {
-            any_synced = true;
-        }
-    }
-    if any_synced {
-        Some(bundle_root)
-    } else {
-        // bundle_root가 이미 존재할 수도 있다 (이전 부팅에서 동기화됨).
-        // 그 경우엔 bundle_root() 호출자가 별도 분기에서 fallback으로 발견.
-        if bundle_root.is_dir() {
-            Some(bundle_root)
-        } else {
-            None
-        }
-    }
-}
-
-/// 한 workspace 원천 builtin plugin을 dev bundle로 동기화. 바이너리 또는 매니페스트가
-/// workspace에 없으면 (예: 아직 빌드하지 않음, 또는 배포 패키지라 `crates/`가 아예
-/// 없음) false 반환. release/dist 는 이 경로를 호출하지 않는다.
-fn sync_builtin_dev(
-    workspace: &Path,
-    exe_dir: &Path,
-    bundle_root: &Path,
-    spec: &BuiltinSpec,
-) -> bool {
-    let plugin_bin = exe_dir.join(spec.bin_name);
-    let crate_dir = workspace.join("crates").join(spec.crate_dir);
-    let src_manifest = crate_dir.join("tasty-plugin.toml");
-    if !plugin_bin.exists() || !src_manifest.exists() {
-        return false;
-    }
-
-    let dest_dir = bundle_root.join(spec.id);
-    if !sync_builtin_dev_required(&plugin_bin, &src_manifest, &dest_dir, spec) {
-        return false;
-    }
-    sync_builtin_dev_sig(&crate_dir, &dest_dir, spec);
-    sync_builtin_dev_lang(&crate_dir, &dest_dir, spec);
-    true
-}
-
-/// 디렉터리 생성, 매니페스트·바이너리 복사는 하나라도 실패하면 중단한다.
-/// 서명과 번역 복사는 별도로 시도한다.
-fn sync_builtin_dev_required(
-    plugin_bin: &Path,
-    src_manifest: &Path,
-    dest_dir: &Path,
-    spec: &BuiltinSpec,
-) -> bool {
-    dev_sync_step(
-        || std::fs::create_dir_all(dest_dir),
-        || format!("dev bundle: mkdir {} failed", dest_dir.display()),
-    ) && dev_sync_step(
-        || copy_if_newer(src_manifest, &dest_dir.join("tasty-plugin.toml")),
-        || format!("dev bundle: copy manifest for {} failed", spec.id),
-    ) && dev_sync_step(
-        || copy_if_newer(plugin_bin, &dest_dir.join(spec.bin_name)),
-        || format!("dev bundle: copy binary for {} failed", spec.id),
-    )
-}
-
-/// 한 fallible 스텝 실행 — 실패 시 `<msg>: <e>` 형식으로 warn 후 `false`.
-fn dev_sync_step<T>(op: impl FnOnce() -> std::io::Result<T>, msg: impl FnOnce() -> String) -> bool {
-    if let Err(e) = op() {
-        tracing::warn!("{}: {e}", msg());
-        return false;
-    }
-    true
-}
-
-/// 매니페스트 서명 sidecar(.sig)가 있으면 함께 동기화한다. 없으면 (미서명 dev
-/// workspace) skip — debug 빌드는 trust gate 를 우회하므로 무방하다.
-/// release/dist 의 서명 스테이징은 빌드 단계가 담당한다.
-/// 복사 실패는 비치명 (debug 는 어차피 우회) 이므로 warn 만 남긴다.
-fn sync_builtin_dev_sig(crate_dir: &Path, dest_dir: &Path, spec: &BuiltinSpec) {
-    let src_sig = crate_dir.join("tasty-plugin.toml.sig");
-    if src_sig.exists()
-        && let Err(e) = copy_if_newer(&src_sig, &dest_dir.join("tasty-plugin.toml.sig"))
-    {
-        tracing::warn!("dev bundle: copy sig for {} failed: {e}", spec.id);
-    }
-}
-
-/// plugin lang/ 디렉토리도 함께 동기화 (i18n 키 호스트 머지에 필요) — best-effort.
-fn sync_builtin_dev_lang(crate_dir: &Path, dest_dir: &Path, spec: &BuiltinSpec) {
-    let src_lang = crate_dir.join("lang");
-    if src_lang.is_dir() {
-        let dest_lang = dest_dir.join("lang");
-        if let Err(e) = sync_dir_if_newer(&src_lang, &dest_lang) {
-            tracing::warn!("dev bundle: copy lang for {} failed: {e}", spec.id);
-        }
-    }
-}
-
-/// 개발 번들의 번역 파일을 동기화한다. 수정 시각이 같으면 내용을 비교한다.
-/// 원본에서 사라진 파일도 제거하므로 대상에는 사용자 파일을 섞으면 안 된다.
-/// 현재 호출 대상은 이 코드가 준비한 builtin-plugins/<id>/lang 디렉터리다.
-fn sync_dir_if_newer(src: &Path, dst: &Path) -> std::io::Result<()> {
-    sync_dir(src, dst, CopyPolicy::NewerThenContent).map(|_| ())
-}
-
-/// 원본이 더 새로우면 복사하고, 시각이 같으면 내용이 다를 때만 복사한다.
-/// cp -p나 압축 해제로 시각이 같아져도 내용 변경을 반영하기 위한 비교다.
-/// 매번 번들 전체를 읽는 비용을 피하려 대상이 더 새로우면 비교하지 않는다.
-/// 따라서 과거 시각을 유지한 채 원본 내용만 바꾼 경우는 놓칠 수 있다.
-fn copy_if_newer(src: &Path, dest: &Path) -> std::io::Result<bool> {
-    if let (Ok(src_meta), Ok(dest_meta)) = (std::fs::metadata(src), std::fs::metadata(dest))
-        && let (Ok(sm), Ok(dm)) = (src_meta.modified(), dest_meta.modified())
-    {
-        if sm < dm {
-            return Ok(false);
-        }
-        // 판정 불가(읽기 실패)는 복사 쪽으로 보낸다 — "같다"고 **확인된** 때만 건너뛴다.
-        if sm == dm && matches!(file_content_differs(src, dest), Ok(false)) {
-            return Ok(false);
-        }
-    }
-    copy_atomic(src, dest)?;
-    Ok(true)
 }
 
 /// 같은 디렉터리의 임시 파일에 복사한 뒤 rename으로 대상을 교체한다.
@@ -1430,47 +1165,6 @@ mod tests {
         v
     }
 
-    /// 같은 시각의 파일에서 내용이 같거나 다른 경우와 대상이 더 새로운 경우를 구분한다.
-    #[test]
-    fn a_staged_copy_with_the_same_mtime_is_judged_by_content() {
-        let tmp = tempfile::tempdir().unwrap();
-        let src = tmp.path().join("src");
-        let dest = tmp.path().join("dest");
-
-        // ① 시각이 같고 내용이 다르다 → 복사해야 한다.
-        std::fs::write(&src, "new").unwrap();
-        std::fs::write(&dest, "old").unwrap();
-        set_mtime(&src, stale_stamp());
-        set_mtime(&dest, stale_stamp());
-        copy_if_newer(&src, &dest).unwrap();
-        assert_eq!(
-            std::fs::read_to_string(&dest).unwrap(),
-            "new",
-            "시각이 같아도 내용이 다르면 복사해야 한다"
-        );
-
-        // ② 시각도 내용도 같다 → 안 써야 한다. 판정은 옛 스탬프가 남아 있는가로 한다.
-        set_mtime(&src, stale_stamp());
-        set_mtime(&dest, stale_stamp());
-        copy_if_newer(&src, &dest).unwrap();
-        assert_eq!(
-            std::fs::metadata(&dest).unwrap().modified().unwrap(),
-            stale_stamp(),
-            "같은 내용을 다시 쓰면 안 된다 — 옛 시각이 그대로여야 한다"
-        );
-
-        // 대상이 더 새로우면 내용을 비교하지 않는 현재 한계를 확인한다.
-        std::fs::write(&src, "newer content").unwrap();
-        set_mtime(&src, stale_stamp());
-        set_mtime(&dest, stale_stamp() + std::time::Duration::from_secs(1));
-        copy_if_newer(&src, &dest).unwrap();
-        assert_eq!(
-            std::fs::read_to_string(&dest).unwrap(),
-            "new",
-            "대상이 더 새로우면 현재 정책은 내용을 비교하지 않는다"
-        );
-    }
-
     #[test]
     fn second_sync_of_the_same_bundle_writes_nothing() {
         // 같은 번들을 두 번 동기화하면 두 번째에는 복사하지 않아야 한다.
@@ -1715,31 +1409,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn dev_lang_sync_removes_what_the_crate_dropped() {
-        let tmp = tempfile::tempdir().unwrap();
-        let src = tmp.path().join("lang");
-        let dest = tmp.path().join("staged-lang");
-        std::fs::create_dir_all(&src).unwrap();
-        std::fs::create_dir_all(&dest).unwrap();
-        std::fs::write(src.join("en.toml"), "en").unwrap();
-        std::fs::write(src.join("ko.toml"), "ko").unwrap();
-        std::fs::write(dest.join("en.toml"), "en").unwrap();
-        std::fs::write(dest.join("ko.toml"), "ko").unwrap();
-        // crate 에서 빠진 파일 — staging 에만 남아 있다.
-        std::fs::write(dest.join("ja.toml"), "ja-dropped").unwrap();
-
-        sync_dir_if_newer(&src, &dest).unwrap();
-
-        // 원본에 남은 파일은 삭제하지 않아야 한다.
-        assert!(dest.join("en.toml").exists(), "src 에 있는 파일을 지웠다");
-        assert!(dest.join("ko.toml").exists(), "src 에 있는 파일을 지웠다");
-        assert!(
-            !dest.join("ja.toml").exists(),
-            "crate 에서 빠진 lang 파일이 staging 에 남았다"
-        );
-    }
-
     /// Always는 같은 내용도 다시 쓰고 ContentDiffers는 건너뛰는지 확인한다.
     /// 파일 내용을 비교해서는 구분할 수 없어 대상의 과거 mtime이 바뀌었는지 검사한다.
     #[test]
@@ -1779,9 +1448,9 @@ mod tests {
         );
     }
 
-    /// 대상이 더 새롭고 내용이 다를 때 세 복사 정책의 결과를 비교한다.
+    /// 대상이 더 새롭고 내용이 다를 때 두 복사 정책의 결과를 비교한다.
     #[test]
-    fn the_three_wrappers_differ_only_in_the_copy_predicate() {
+    fn the_two_wrappers_differ_only_in_the_copy_predicate() {
         let tmp = tempfile::tempdir().unwrap();
         let old = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_000_000);
         let newer = old + std::time::Duration::from_secs(60);
@@ -1806,14 +1475,6 @@ mod tests {
             "Always는 대상의 시각과 관계없이 덮어써야 한다"
         );
 
-        let (src, dest) = build("newer");
-        sync_dir_if_newer(&src, &dest).unwrap();
-        assert_eq!(
-            read(&dest),
-            "old",
-            "NewerThenContent 가 더 새 dest 를 덮었다"
-        );
-
         let (src, dest) = build("content");
         assert!(
             sync_dir_by_content(&src, &dest).unwrap(),
@@ -1825,15 +1486,14 @@ mod tests {
             "ContentDiffers 가 내용이 다른데 안 썼다"
         );
 
-        // 대상이 없으면 세 정책 모두 파일을 만들어야 한다.
-        for label in ["z-always", "z-newer", "z-content"] {
+        // 대상이 없으면 두 정책 모두 파일을 만들어야 한다.
+        for label in ["z-always", "z-content"] {
             let src = tmp.path().join(label).join("src");
             let dest = tmp.path().join(label).join("dest");
             std::fs::create_dir_all(&src).unwrap();
             std::fs::write(src.join("f"), "new").unwrap();
             match label {
                 "z-always" => overwrite_builtin_dir(&src, &dest).unwrap(),
-                "z-newer" => sync_dir_if_newer(&src, &dest).unwrap(),
                 _ => {
                     assert!(sync_dir_by_content(&src, &dest).unwrap());
                 }

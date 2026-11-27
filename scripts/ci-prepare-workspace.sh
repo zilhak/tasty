@@ -174,8 +174,6 @@ MSYS2_ARG_CONV_EXCL='*' git clean -ffdxq -e /target/
 # cargo가 관리하지 않는 target 안의 상태는 남은 캐시에서도 처음부터 빌드한 실행과 같게 비운다.
 # 만드는 곳: scripts/stage-dev-plugins.sh(잠금·스테이징·번들), scripts/sync-official-plugin-fixtures.sh(대조 폴더·잠금),
 # tests/spawn_diag/mod.rs의 BUNDLE_LINK_CACHE_DIR. 받기 캐시 target/official-plugins는 SHA-256 대조 뒤에만 쓰므로 남긴다.
-# workspace 원천 번들 플러그인(crates/tasty-host-plugin/src/builtin.rs의 BuiltinSource::Workspace, 지금은 mesh-demo)의
-# 실행 파일도 지운다. debug 호스트가 실행 파일 옆의 이 파일로 번들을 다시 만들기 때문이다. Cargo는 지워진 실행 파일을 다음 빌드에서 다시 놓는다.
 # 프로필·교차 타깃 폴더(target/*, target/*/*)가 링크면 링크 자체만 지운다. 링크 대상은 작업 트리 밖일 수 있어
 # 건드리지 않고, 남겨 두면 뒤의 스테이징이 그 링크를 따라가 이전 잠금·번들을 쓴다. 깊이 1을 먼저 지운 뒤 깊이 2를
 # 다시 펼쳐야 링크 안으로 들어가지 않는다. 파일을 가리키는 링크는 프로필 폴더가 아니므로 남긴다.
@@ -198,10 +196,7 @@ if [[ "$action" == keep ]]; then
             "${dir}builtin-plugins"
             "${dir}builtin-plugins.lock"*
             "${dir}.official-plugins-stage."*
-            "${dir}.mesh-demo-stage."*
             "${dir}test-bundle-links"
-            "${dir}tasty-plugin-mesh-demo"
-            "${dir}tasty-plugin-mesh-demo.exe"
         )
     done
     shopt -u nullglob

@@ -6159,22 +6159,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "tasty-plugin-mesh-demo"
-version = "0.1.580"
-dependencies = [
- "anyhow",
- "egui",
- "serde_json",
- "tasty-plugin-manifest",
- "tasty-plugin-protocol",
- "tasty-plugin-sdk",
- "tasty-type-appearance",
- "tasty-ui-widgets",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
 name = "tasty-plugin-protocol"
 version = "0.2.16"
 dependencies = [
@@ -6197,6 +6181,7 @@ dependencies = [
  "serde_json",
  "tasty-i18n",
  "tasty-plugin-protocol",
+ "tasty-plugin-sdk",
  "tasty-shm",
  "tasty-themes",
  "tasty-type-appearance",

@@ -480,8 +480,6 @@ opt-level = 3
 opt-level = 3
 [profile.dev.package.tasty-plugin-manifest]
 opt-level = 3
-[profile.dev.package.tasty-plugin-mesh-demo]
-opt-level = 3
 [profile.dev.package.tasty-plugin-protocol]
 opt-level = 3
 [profile.dev.package.tasty-plugin-sdk]

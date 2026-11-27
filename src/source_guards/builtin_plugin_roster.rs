@@ -1,6 +1,6 @@
-//! 번들 플러그인 목록을 Windows·그 외의 BUILTINS, 디스크 매니페스트, 패키징 문서와 카탈로그에서 대조한다.
-//! 한 플랫폼의 컴파일만으로는 다른 cfg 분기의 이름을 확인하지 못하므로 두 분기를 함께 읽는다.
-//! 개수뿐 아니라 ID와 크레이트의 집합을 비교해 다른 플러그인으로 바뀐 경우도 찾는다.
+//! 번들 플러그인 목록을 BUILTINS, 디스크 매니페스트, 패키징 문서와 카탈로그에서 대조한다.
+//! BUILTINS·카탈로그는 ID 집합으로, 패키징 표는 (ID, 크레이트) 짝을 디스크에서 얻은 짝과 비교한다.
+//! 개수뿐 아니라 집합을 비교해 다른 플러그인으로 바뀐 경우도 찾는다.
 
 use std::collections::BTreeSet;
 
@@ -20,22 +20,12 @@ fn read(rel: &str) -> String {
     std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{rel} 을 읽지 못했다: {e}"))
 }
 
-/// `BuiltinSpec { id: "...", crate_dir: "...", .. }` 항목에서 (id, crate_dir) 를 뽑는다.
-fn specs_in(block: &str) -> BTreeSet<(String, String)> {
-    let mut out = BTreeSet::new();
-    let mut id: Option<String> = None;
-    for line in block.lines() {
-        let t = line.trim();
-        if let Some(v) = field(t, "id:") {
-            id = Some(v);
-        } else if let Some(v) = field(t, "crate_dir:")
-            && let Some(i) = id.take()
-        {
-            // crate_dir 줄일 때만 take해야 앞에서 읽은 id를 잃지 않는다.
-            out.insert((i, v));
-        }
-    }
-    out
+/// `BuiltinSpec { id: "..." }` 항목에서 id를 뽑는다.
+fn ids_in(block: &str) -> BTreeSet<String> {
+    block
+        .lines()
+        .filter_map(|line| field(line.trim(), "id:"))
+        .collect()
 }
 
 fn field(line: &str, key: &str) -> Option<String> {
@@ -45,28 +35,29 @@ fn field(line: &str, key: &str) -> Option<String> {
     Some(rest[..end].to_string())
 }
 
-/// 주석을 지운 뒤 각 cfg 분기의 BUILTINS 배열을 따로 읽는다.
-fn builtin_arms() -> Vec<(String, BTreeSet<(String, String)>)> {
+/// 주석을 지운 뒤 BUILTINS 배열 정의마다 id 집합을 읽는다.
+fn builtin_tables() -> Vec<BTreeSet<String>> {
     let src = strip_comments(&read(BUILTIN_SRC));
-    let mut arms = Vec::new();
-    let rest = src.as_str();
+    let mut tables = Vec::new();
     let mut cursor = 0usize;
-    while let Some(i) = rest[cursor..].find("const BUILTINS") {
+    while let Some(i) = src[cursor..].find("const BUILTINS") {
         let start = cursor + i;
-        let label = src[..start]
-            .rsplit('\n')
-            .find(|l| l.trim_start().starts_with("#[cfg("))
-            .unwrap_or("(cfg 없음)")
-            .trim()
-            .to_string();
-        let end = rest[start..]
+        let end = src[start..]
             .find("\n];")
             .map(|e| start + e)
-            .unwrap_or(rest.len());
-        arms.push((label, specs_in(&rest[start..end])));
+            .unwrap_or(src.len());
+        tables.push(ids_in(&src[start..end]));
         cursor = end;
     }
-    arms
+    tables
+}
+
+/// BUILTINS의 id 집합. 정의가 하나라는 것은 `builtins_is_one_table_of_plugins`가 본다.
+fn builtin_ids() -> BTreeSet<String> {
+    builtin_tables()
+        .into_iter()
+        .next()
+        .expect("BUILTINS 정의 없음")
 }
 
 /// 매니페스트 폴더의 최상위 `id`. 매니페스트가 없으면 None이다(번들 대상이 아닌 라이브러리 크레이트).
@@ -215,39 +206,25 @@ mod tests {
     use super::*;
 
     #[test]
-    fn both_cfg_arms_of_builtins_declare_the_same_plugins() {
-        let arms = builtin_arms();
+    fn builtins_is_one_table_of_plugins() {
+        let tables = builtin_tables();
         assert_eq!(
-            arms.len(),
-            2,
-            "{BUILTIN_SRC} 의 BUILTINS의 빌드 조건별 정의가 2개가 아니다: {:?}",
-            arms.iter().map(|(l, _)| l).collect::<Vec<_>>()
+            tables.len(),
+            1,
+            "{BUILTIN_SRC} 의 BUILTINS 정의가 하나가 아니다: {tables:?}"
         );
         assert!(
-            arms[0].1.len() >= 5,
-            "BUILTINS 분기 하나가 비었거나 너무 작다. 파싱 범위를 확인한다: {:?}",
-            arms[0]
-        );
-        assert_eq!(
-            arms[0].1,
-            arms[1].1,
-            "BUILTINS의 플랫폼별 목록이 다르다. {}에만 있는 항목: {:?}, {}에만 있는 항목: {:?}",
-            arms[0].0,
-            arms[0].1.difference(&arms[1].1).collect::<Vec<_>>(),
-            arms[1].0,
-            arms[1].1.difference(&arms[0].1).collect::<Vec<_>>(),
+            tables[0].len() >= 5,
+            "BUILTINS가 비었거나 너무 작다. 파싱 범위를 확인한다: {:?}",
+            tables[0]
         );
     }
 
     /// 코드 목록을 별도로 수집한 매니페스트와 대조한다.
     #[test]
     fn the_manifests_on_disk_and_the_builtin_table_name_the_same_plugins() {
-        let code = builtin_arms()
-            .into_iter()
-            .next()
-            .expect("BUILTINS 정의 없음")
-            .1;
-        let disk = manifest_specs();
+        let code = builtin_ids();
+        let disk = ids(&manifest_specs());
         assert!(
             disk.len() >= 5,
             "매니페스트를 {} 개밖에 못 찾았다 — 측정 실패다",
@@ -264,41 +241,34 @@ mod tests {
 
     #[test]
     fn both_docs_that_copy_the_builtin_table_still_match_it() {
-        let code = builtin_arms()
-            .into_iter()
-            .next()
-            .expect("BUILTINS 정의 없음")
-            .1;
+        let disk = manifest_specs();
         let packaging = packaging_specs();
         assert_eq!(
-            code,
+            disk,
             packaging,
-            "{PACKAGING_DOC} 의 번들 목록 표가 BUILTINS 와 어긋난다.\n  코드에만: {:?}\n  문서에만: {:?}",
-            code.difference(&packaging).collect::<Vec<_>>(),
-            packaging.difference(&code).collect::<Vec<_>>(),
+            "{PACKAGING_DOC} 의 번들 목록 표(크레이트, ID)가 디스크 매니페스트와 어긋난다.\n  디스크에만: {:?}\n  문서에만: {:?}",
+            disk.difference(&packaging).collect::<Vec<_>>(),
+            packaging.difference(&disk).collect::<Vec<_>>(),
         );
+        let code = builtin_ids();
         let catalog = catalog_ids();
         assert_eq!(
-            ids(&code),
+            code,
             catalog,
             "{CATALOG_DOC} 의 카탈로그가 BUILTINS 와 어긋난다.\n  코드에만: {:?}\n  문서에만: {:?}",
-            ids(&code).difference(&catalog).collect::<Vec<_>>(),
-            catalog.difference(&ids(&code)).collect::<Vec<_>>(),
+            code.difference(&catalog).collect::<Vec<_>>(),
+            catalog.difference(&code).collect::<Vec<_>>(),
         );
     }
 
     /// 같은 개수의 다른 플러그인으로 바꿔 집합 비교가 실패하는지 확인한다.
     #[test]
     fn swapping_one_entry_is_caught_although_the_count_is_unchanged() {
-        let code = builtin_arms()
-            .into_iter()
-            .next()
-            .expect("BUILTINS 정의 없음")
-            .1;
+        let code = builtin_ids();
         let mut mutated = code.clone();
         let victim = code.iter().next().expect("빈 집합").clone();
         mutated.remove(&victim);
-        mutated.insert((format!("{ID_PREFIX}not-a-real-plugin"), victim.1.clone()));
+        mutated.insert(format!("{ID_PREFIX}not-a-real-plugin"));
 
         assert_eq!(
             mutated.len(),
@@ -307,7 +277,7 @@ mod tests {
         );
         assert_ne!(
             mutated,
-            manifest_specs(),
+            ids(&manifest_specs()),
             "다른 플러그인으로 바꾼 목록을 같은 집합으로 판단했다"
         );
     }

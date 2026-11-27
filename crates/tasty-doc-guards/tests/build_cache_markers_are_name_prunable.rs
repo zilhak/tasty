@@ -22,7 +22,7 @@ const COMMON_PRUNED: &[&str] = &["target", ".git"];
 /// 표식 판독을 하지 않는 순회까지 안전하다고 보장하는 목록은 아니다.
 const KNOWN_OUTSIDE: &[(&str, &str)] = &[(
     "target-e2e-headless",
-    "문서의 E2E 전용 CARGO_TARGET_DIR이다(docs/dev-guide/e2e-tests.md). ensure_dev_bundle이 실행 파일 디렉터리의 조부모를 워크스페이스로 사용하므로 target/ 아래에 한 단계 더 넣으면 번들 plugin을 스테이징하지 못한다. Cargo의 CACHEDIR.TAG가 있어 is_build_cache_dir를 호출하는 순회에서는 이름에 관계없이 제외된다.",
+    "문서의 E2E 전용 CARGO_TARGET_DIR이다(docs/dev-guide/e2e-tests.md). Cargo의 CACHEDIR.TAG가 있어 is_build_cache_dir를 호출하는 순회에서는 이름에 관계없이 제외된다.",
 )];
 
 /// 표식 수는 빌드 전이나 외부 target 경로를 사용할 때 0일 수 있어 순회한 디렉터리 수에 하한을 둔다.

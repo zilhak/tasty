@@ -13,8 +13,7 @@ crates/tasty-plugin-*/tasty-plugin.toml.sig
 # 작업 디렉터리와 같은 이름의 심볼릭 링크도 제외하도록 끝에 /를 붙이지 않는다.
 .claude-workspace
 
-# ensure_dev_bundle이 저장소 루트를 찾을 수 있도록 target과 같은 디렉터리에 둔다.
-# 실행 절차: docs/dev-guide/e2e-tests.md
+# E2E 전용 CARGO_TARGET_DIR. 실행 절차: docs/dev-guide/e2e-tests.md
 /target-e2e-headless
 
 # sync-official-plugin-fixtures.sh 가 픽스처 옆에 만드는 교체 폴더. 복구에 실패하면 백업이 남는다.

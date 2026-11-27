@@ -87,6 +87,5 @@ cat <<EOF
   번들에 넣을 플러그인 매니페스트 사본을 서명하고, 본체를 빌드하며 새 공개키를 임베드한다.
   SIGN_KEY_PATH와 ~/.tasty-keys/release.pem이 없으면 이 키로 서명한다.
   just build-plugins만 실행했다면 본체도 다시 빌드해야 새 공개키가 들어간다.
-  debug 빌드는 서명하지 않는다. sign-bundle.sh --all-builtins 는 크레이트 원본 옆에만
-  .sig 를 쓰는 선택적 수동 도구라 번들에는 반영되지 않는다.
+  debug 빌드는 서명하지 않는다.
 EOF

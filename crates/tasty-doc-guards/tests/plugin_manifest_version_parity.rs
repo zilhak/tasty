@@ -42,10 +42,16 @@ fn extract_version(contents: &str, file: &Path) -> String {
     panic!("version 필드를 찾지 못함: {}", file.display());
 }
 
+/// 수집이 `crates/`의 플러그인 접두 폴더를 실제로 보는지 재는 하한이다. 2026-11-27 4개(manifest·protocol·
+/// sdk·sdk-wasm)를 쟀고, workspace 밖인 sdk-wasm이 빠질 수 있어 하나 여유를 둔다. 매니페스트가 있는 플러그인은
+/// 지금 0개다(공식 플러그인의 같은 대조는 공식 플러그인 레포가 한다). 이 레포에 다시 생기면 그것을 대조한다.
+const MIN_PLUGIN_PREFIX_DIRS: usize = 3;
+
 /// 버전·ID 검사가 같은 플러그인 목록을 사용한다.
 fn bundled_plugin_dirs() -> Vec<(String, PathBuf)> {
     let crates_dir = tasty_doc_guards::repo_root().join("crates");
     let mut out = Vec::new();
+    let mut prefix_dirs = 0usize;
     for entry in std::fs::read_dir(&crates_dir).expect("crates 디렉토리 read_dir 실패") {
         let entry = entry.expect("crates dir entry 읽기 실패");
         let dir = entry.path();
@@ -60,12 +66,17 @@ fn bundled_plugin_dirs() -> Vec<(String, PathBuf)> {
         if !name.starts_with("tasty-plugin-") {
             continue;
         }
+        prefix_dirs += 1;
         if !dir.join("tasty-plugin.toml").exists() {
             continue;
         }
         out.push((name, dir));
     }
     out.sort_by(|a, b| a.0.cmp(&b.0));
+    assert!(
+        prefix_dirs >= MIN_PLUGIN_PREFIX_DIRS,
+        "플러그인 접두 폴더를 {prefix_dirs}개만 봤다(하한 {MIN_PLUGIN_PREFIX_DIRS}, 2026-11-27 측정 4개) — 경로/네이밍이 바뀌었는지 확인"
+    );
     out
 }
 
@@ -119,14 +130,10 @@ fn version_mismatches(pairs: &[Manifested]) -> Vec<String> {
 
 #[test]
 fn manifest_version_matches_cargo_version() {
-    let pairs = read_manifested(&bundled_plugin_dirs());
-    let checked = pairs.len();
+    let dirs = bundled_plugin_dirs();
+    let pairs = read_manifested(&dirs);
     let mismatches = version_mismatches(&pairs);
 
-    assert!(
-        checked > 0,
-        "스캔된 builtin plugin 이 0 개 — 경로/네이밍이 바뀌었는지 확인"
-    );
     assert!(
         mismatches.is_empty(),
         "플러그인 매니페스트와 Cargo 버전이 다르다. 버전을 함께 갱신하고 다시 서명한다:\n{}",
@@ -221,13 +228,8 @@ fn manifest_id_matches_the_plugin_id_constant() {
         })
         .collect();
 
-    let checked = plugins.len();
     let IdScan { blind, mismatches } = id_scan(&sources, &plugins);
 
-    assert!(
-        checked > 0,
-        "스캔된 builtin plugin 이 0 개 — 경로/네이밍이 바뀌었는지 확인"
-    );
     assert!(
         blind.is_empty(),
         "PLUGIN_ID 상수를 찾지 못한 플러그인이다. 상수 이름과 소스 수집 범위를 확인한다:\n{}",

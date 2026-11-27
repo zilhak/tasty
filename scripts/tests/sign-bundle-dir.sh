@@ -91,8 +91,8 @@ fi
 
 # 5. 다른 대상 지정과 함께 쓰면 사용법 오류다.
 rc=0
-bash "$sign" --key "$key" --dir "$stage" --all-builtins > "$work/out5" 2>&1 || rc=$?
-expect 2 "$rc" "--dir 와 --all-builtins 동시 지정"
+bash "$sign" --key "$key" --dir "$stage" --manifest "$stage/com.example.a/tasty-plugin.toml" > "$work/out5" 2>&1 || rc=$?
+expect 2 "$rc" "--dir 와 --manifest 동시 지정"
 
 if [ "$failures" -ne 0 ]; then
     echo "$failures 건 실패" >&2

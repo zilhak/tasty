@@ -92,14 +92,16 @@ const HOST_LANG_FLOOR: Floor = Floor {
     why_this_gap: "호스트 번역 en/ko/ja/zh-Hans 네 파일은 모두 필요해 여유를 두지 않았다. 지원 언어가 바뀌면 이 기준도 함께 검토한다.",
 };
 
-const PLUGIN_LANG_FLOOR: Floor = Floor {
-    min: 4,
-    measured: 4,
-    measured_on: "2026-11-21",
+/// crates 아래 toml 순회의 하한. 플러그인 번역 파일은 지금 0개라(공식 플러그인은 공식 레포로 옮겼고
+/// workspace의 시범 플러그인은 지웠다) 순회가 실제로 돌았는지를 crates 아래 toml 전체 수로 확인한다.
+const CRATES_TOML_FLOOR: Floor = Floor {
+    min: 80,
+    measured: 97,
+    measured_on: "2026-11-27",
     counted_on: tasty_doc_guards::floored_walk::CountedOn::Tree(
-        "e79de86fcc에서 공식 플러그인 사본을 지운 트리 — 번들 플러그인 lang의 toml 파일 4개(mesh-demo)를 셌다.",
+        "시범 플러그인 크레이트를 지운 트리 — git ls-files 로 센 crates 아래 toml 파일 97개(공식 플러그인 픽스처 40개 포함).",
     ),
-    why_this_gap: "공식 플러그인은 공식 레포로 옮겨 tasty에는 mesh-demo 하나만 남았다. mesh-demo의 en/ko/ja/zh-Hans 네 파일이 모두 필요해 여유를 두지 않았다. 더 줄면 실제 감소인지 수집 오류인지 확인한다.",
+    why_this_gap: "크레이트마다 Cargo.toml이 있고 픽스처 번역이 함께 세진다. 크레이트 몇 개를 합치거나 픽스처를 갱신해도 통과하도록 17개 여유를 둔다. 그보다 줄면 루트를 잘못 잡았거나 순회가 실패한 것이므로 재측정한다.",
 };
 
 type Surface = (String, String);
@@ -113,13 +115,17 @@ fn user_facing_files() -> Vec<Surface> {
         Descend::Everything,
         &|rel| rel.ends_with(".toml"),
     );
-    out.extend(collect(
-        &root.join("crates"),
-        &root,
-        &PLUGIN_LANG_FLOOR,
-        Descend::SkipBuildCaches,
-        &|rel| is_plugin_lang_surface(rel),
-    ));
+    out.extend(
+        collect(
+            &root.join("crates"),
+            &root,
+            &CRATES_TOML_FLOOR,
+            Descend::SkipBuildCaches,
+            &|rel| rel.ends_with(".toml"),
+        )
+        .into_iter()
+        .filter(|(rel, _)| is_plugin_lang_surface(rel)),
+    );
     out
 }
 
@@ -368,11 +374,12 @@ fn registrations_in_the_same_file_do_not_share_evidence() {
 
 #[test]
 fn the_population_holds_both_kinds_of_user_facing_file() {
-    // 호스트 번역 파일과 플러그인 번역 파일이 모두 수집됐는지 따로 확인한다.
+    // 호스트 번역 파일과 플러그인 번역 파일을 따로 센다. 플러그인 번역은 지금 0개가 정상이다
+    // (crates 순회 자체는 CRATES_TOML_FLOOR가 본다).
     let (host, plugin) = population_shape(&user_facing_files());
     assert!(
-        population_is_balanced((host, plugin), (HOST_LANG_FLOOR.min, PLUGIN_LANG_FLOOR.min)),
-        "번역 파일 수집이 부족하다: 호스트 {host}, 플러그인 {plugin}. 2026-11-08 측정은 각각 3개, 27개다."
+        population_is_balanced((host, plugin), (HOST_LANG_FLOOR.min, 0)),
+        "번역 파일 수집이 부족하다: 호스트 {host}, 플러그인 {plugin}. 2026-11-27 측정은 각각 4개, 0개다."
     );
 }
 

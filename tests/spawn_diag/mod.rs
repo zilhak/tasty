@@ -548,12 +548,7 @@ mod tests {
     fn every_official_plugin_must_be_staged_to_silence_the_note() {
         let probe = Scratch::new("bundle-staged");
         let dir = probe.path();
-        let synced: Vec<&str> = tasty_host_plugin::builtin::workspace_synced_plugin_ids().collect();
-        let official: Vec<&str> = tasty_host_plugin::official::OFFICIAL_PLUGIN_IDS
-            .iter()
-            .copied()
-            .filter(|id| !synced.contains(id))
-            .collect();
+        let official: Vec<&str> = tasty_host_plugin::official::OFFICIAL_PLUGIN_IDS.to_vec();
         assert!(
             official.len() >= 2,
             "공식 플러그인 목록이 너무 작다: {official:?}"
@@ -1320,12 +1315,9 @@ fn staged_bundle_note(bundle_dir: &std::path::Path, opted_in: bool) -> Option<St
     if !opted_in {
         return None;
     }
-    // 부팅이 workspace에서 동기화하는 플러그인은 미리 스테이징하지 않아도 되므로 뺀다.
-    let synced: Vec<&str> = tasty_host_plugin::builtin::workspace_synced_plugin_ids().collect();
     let missing: Vec<&str> = tasty_host_plugin::official::OFFICIAL_PLUGIN_IDS
         .iter()
         .copied()
-        .filter(|id| !synced.contains(id))
         .filter(|id| !bundle_dir.join(id).join("tasty-plugin.toml").is_file())
         .collect();
     if missing.is_empty() {

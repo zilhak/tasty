@@ -26,10 +26,6 @@ const ALLOWLIST_PATH_PREFIXES: &[(&str, &str)] = &[
         "crates/tasty-gallery/",
         "갤러리는 영어 예시를 표시하는 카탈로그다(i18n.md 공용 위젯 절).",
     ),
-    (
-        "crates/tasty-plugin-mesh-demo/",
-        "사용자에게 배포하지 않는 데모 플러그인이다.",
-    ),
     ("crates/tasty-tui-simulator/", "테스트용 TUI 시뮬레이터"),
     (
         "src/source_guards/",

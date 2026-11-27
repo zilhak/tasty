@@ -28,6 +28,24 @@ fn an_unknown_reserved_id_is_not_loaded_and_stays_out_of_the_rejected_list() {
     assert!(found.reserved[0].dir.ends_with("com.tasty.markdown"));
 }
 
+/// 지운 시범 플러그인의 설치 폴더가 홈에 남아 있으면 등록하지 않고 확인 필요 탭의 예약 id 항목으로 둔다.
+/// 폴더는 그대로이고, 지우는 것은 사용자가 그 탭에서 한다.
+#[test]
+fn a_leftover_install_of_the_removed_demo_plugin_is_reserved_not_loaded() {
+    let home = HomeEnvGuard::tasty_home();
+    write_plugin(home.path(), "com.tasty.mesh-demo", "com.tasty.mesh-demo");
+    let found = super::discover_all();
+    assert!(found.trusted.is_empty(), "{:?}", found.trusted);
+    let ids: Vec<&str> = found.reserved.iter().map(|b| b.id.as_str()).collect();
+    assert_eq!(ids, ["com.tasty.mesh-demo"]);
+    assert!(
+        home.path()
+            .join("plugins/com.tasty.mesh-demo/tasty-plugin.toml")
+            .is_file(),
+        "탐색이 남은 폴더를 지웠다"
+    );
+}
+
 /// debug 시험 실행에서 서명 판정은 우회되므로 다른 접두는 등록된다.
 #[cfg(debug_assertions)]
 #[test]

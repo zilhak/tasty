@@ -347,9 +347,9 @@ fn catalogs() -> Vec<Catalog> {
         .collect()
 }
 
-/// 2026-11-21 측정 2세트(루트1·mesh-demo1). 공식 플러그인 사본을 공식 레포로 옮긴 뒤 남은 둘 다 필요해
-/// 여유를 두지 않는다. 공식 플러그인 카탈로그는 공식 레포가 검사한다.
-const MIN_CATALOGS: usize = 2;
+/// 2026-11-27 측정 1세트(루트). 공식 플러그인 사본을 공식 레포로 옮기고 시범 플러그인을 지운 뒤
+/// 루트만 남아 여유를 두지 않는다. 공식 플러그인 카탈로그는 공식 레포가 검사한다.
+const MIN_CATALOGS: usize = 1;
 
 /// 2026-09-06 루트 키 1311개를 측정했다. 실제 요구 키 수가 아니라 평탄화 결과가 크게 줄었는지 보는 하한이다.
 const MIN_ROOT_KEYS: usize = 400;
@@ -361,7 +361,7 @@ fn every_catalog_carries_more_than_a_handful_of_keys() {
     let cats = catalogs();
     assert!(
         cats.len() >= MIN_CATALOGS,
-        "카탈로그를 {} 개만 찾았다(하한 {MIN_CATALOGS}, 2026-11-21 측정 2). lang_dirs의 수집 범위를 확인한다.",
+        "카탈로그를 {} 개만 찾았다(하한 {MIN_CATALOGS}, 2026-11-27 측정 1). lang_dirs의 수집 범위를 확인한다.",
         cats.len()
     );
     for cat in &cats {

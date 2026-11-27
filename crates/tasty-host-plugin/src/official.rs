@@ -19,7 +19,6 @@ pub const OFFICIAL_PLUGIN_IDS: &[&str] = &[
     "com.tasty.html",
     "com.tasty.image",
     "com.tasty.markdown",
-    "com.tasty.mesh-demo",
 ];
 
 /// 공식 목록에 없는 `com.tasty.*` id. 서명 상태와 관계없이 설치·등록하지 않는다.

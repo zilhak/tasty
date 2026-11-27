@@ -1,8 +1,8 @@
 //! Bundled manifest text, translation keys, and shipped catalogs move together.
 
-/// 번들 플러그인 매니페스트 수의 하한. 공식 플러그인 8개(픽스처)와 workspace의 mesh-demo다.
+/// 번들 플러그인 매니페스트 수의 하한. 공식 플러그인 8개(픽스처)다(workspace의 시범 플러그인은 2026-11-27에 지웠다).
 /// 구성원을 빼는 것은 명시적인 제품 변경이라 설명 없는 감소를 받지 않는다.
-const BUNDLED_MANIFESTS_FLOOR: usize = 9;
+const BUNDLED_MANIFESTS_FLOOR: usize = 8;
 
 #[test]
 fn every_bundled_cli_description_and_argument_has_a_catalog_key() {

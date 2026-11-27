@@ -93,7 +93,7 @@ git push origin release
 
 릴리스 단계에서 따로 서명하지 않는다. CI 정식 release의 번들 plugin은 크레이트가 아니라 잠금 파일의 공식 플러그인 산출물이고, 각 러너가 받은 폴더를 선택한 로컬 키로 `--dir` 서명한다([배포 패키지의 번들 플러그인](plugin-packaging.md#배포-패키지의-번들-플러그인)). 키가 없으면 생성하고 기존 개인키는 재사용한다. 로컬 release·dist 빌드도 스테이징한 사본에 서명한다([재서명 (로컬)](plugin-packaging.md#재서명-로컬)). dev/debug 빌드는 서명을 검증하지 않는다.
 
-`*.toml.sig`는 `.gitignore`로 제외된 빌드 산출물이라 커밋되지 않는다. 매니페스트 version bump 시 커밋되는 건 `tasty-plugin.toml` 자체뿐이다. `--all-builtins`는 크레이트 매니페스트 옆에만 서명을 쓰고 어떤 배포물에도 반영되지 않으므로 이 절차에 쓰지 않는다. 알고리즘·키 보관은 [plugin-packaging](plugin-packaging.md).
+`*.toml.sig`는 `.gitignore`로 제외된 빌드 산출물이라 커밋되지 않는다. 매니페스트 version bump 시 커밋되는 건 `tasty-plugin.toml` 자체뿐이다. 알고리즘·키 보관은 [plugin-packaging](plugin-packaging.md).
 
 ### 3. 사이트 갱신
 

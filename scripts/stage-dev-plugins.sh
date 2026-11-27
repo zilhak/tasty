@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 개발 번들 ${CARGO_TARGET_DIR:-target}[/<triple>]/<profile>/builtin-plugins/<id>/를 준비한다.
-# 공식 플러그인(bundle = false 포함)은 공식 플러그인 레포에서 얻고, mesh-demo는 이 workspace에서 빌드한다.
+# 공식 플러그인(bundle = false 포함)을 공식 플러그인 레포에서 얻는다.
 #   기본: 잠금 파일(official-plugins.lock.toml)의 릴리스 산출물을 받는다(fetch-official-plugins.sh --all).
 #   --from-checkout [DIR]: 공식 플러그인 레포 체크아웃(기본 ../tasty-official-plugins)의
 #     tasty-official-plugins/scripts/dev-bundle.sh로 빌드한다. 그 레포의 tasty 기준 커밋으로 빌드한다.
@@ -147,19 +147,6 @@ if [[ -z "$platform" ]]; then
         }
     fi
 fi
-case "$platform" in
-    windows-*) exe_ext=".exe" ;;
-    *) exe_ext="" ;;
-esac
-
-case "$profile" in
-    release) profile_flag=(--release) ;;
-    debug)   profile_flag=() ;;
-    *)       profile_flag=(--profile "$profile") ;;
-esac
-target_flag=()
-[[ -n "$target" ]] && target_flag=(--target "$target")
-
 # cargo와 같은 자리를 쓰도록 CARGO_TARGET_DIR를 호출 위치 기준 절대 경로로 고정한다.
 if [[ -n "${CARGO_TARGET_DIR:-}" ]]; then
     CARGO_TARGET_DIR="$(abs_path "$CARGO_TARGET_DIR")"
@@ -173,7 +160,6 @@ cd "$root"
 
 # 끝날 때 되돌리거나 지울 것. 교체 중인 폴더(pending_*)는 스테이징 폴더와 따로 다룬다.
 stage=""
-mesh_stage=""
 pending_old=""
 pending_dest=""
 pending_published=0
@@ -206,12 +192,9 @@ cleanup() {
     local rc=$run_lock_status
     trap - EXIT
     settle_pending || rc=1
-    local dir
-    for dir in "$stage" "$mesh_stage"; do
-        if [[ -n "$dir" ]] && ! rm -rf "$dir"; then
-            echo "Warning: could not remove $dir" >&2
-        fi
-    done
+    if [[ -n "$stage" ]] && ! rm -rf "$stage"; then
+        echo "Warning: could not remove $stage" >&2
+    fi
     run_lock_release || echo "Warning: could not remove $lock" >&2
     run_lock_finish "$rc"
 }
@@ -307,29 +290,4 @@ if [[ "$staged" -eq 0 ]]; then
     exit 1
 fi
 
-# mesh-demo는 이 workspace의 크레이트에서 빌드한다.
-mesh_crate="tasty-plugin-mesh-demo"
-mesh_src="$root/crates/$mesh_crate"
-mesh_id="com.tasty.mesh-demo"
-# Bash 3.2의 set -u는 빈 배열 전개를 오류로 보므로 비었을 때는 아무것도 펼치지 않는다.
-cargo build ${profile_flag[@]+"${profile_flag[@]}"} ${target_flag[@]+"${target_flag[@]}"} -p "$mesh_crate"
-mesh_bin="$profile_dir/$mesh_crate$exe_ext"
-if [[ ! -f "$mesh_bin" ]]; then
-    echo "Error: built binary missing at $mesh_bin" >&2
-    exit 1
-fi
-mesh_stage="$(mktemp -d "$profile_dir/.mesh-demo-stage.XXXXXX")"
-# mktemp -d는 소유자만 읽는 폴더를 만든다. 이 폴더가 번들의 플러그인 폴더가 되므로 보통 권한으로 맞춘다.
-chmod 755 "$mesh_stage"
-cp "$mesh_bin" "$mesh_stage/"
-cp "$mesh_src/tasty-plugin.toml" "$mesh_stage/"
-if [[ -d "$mesh_src/lang" ]]; then
-    cp -R "$mesh_src/lang" "$mesh_stage/lang"
-fi
-if [[ "$profile" != debug ]]; then
-    bash "$root/scripts/sign-bundle.sh" --key "$SIGN_KEY_PATH" --manifest "$mesh_stage/tasty-plugin.toml"
-fi
-replace_dir "$mesh_stage" "$bundle/$mesh_id" "$mesh_id"
-mesh_stage=""
-echo "✓ staged $mesh_id → $bundle/$mesh_id"
-echo "==> Development bundle ready: $bundle ($((staged + 1)) plugins)"
+echo "==> Development bundle ready: $bundle ($staged plugins)"

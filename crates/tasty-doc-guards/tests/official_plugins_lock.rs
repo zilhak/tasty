@@ -5,8 +5,7 @@
 //! 2. 계약 호환: 잠금 파일이 가리키는 릴리스가 빌드에 쓴 계약 값이 현재 tasty와 같다.
 //!    (a) host_api_version, (b) protocol 크레이트 버전, (c) manifest_version,
 //!    (d) Cargo.lock의 epaint 버전, (e) `HEAD:vendor/epaint` 트리 id.
-//! 3. 집합: 호스트 `BUILTINS`의 id 집합(두 cfg 판 모두)과 `OFFICIAL_PLUGIN_IDS`가 잠금 파일 전체 id에
-//!    tasty에 남는 mesh-demo를 더한 집합과 같다.
+//! 3. 집합: 호스트 `BUILTINS`의 id 집합과 `OFFICIAL_PLUGIN_IDS`가 잠금 파일 전체 id 집합과 같다.
 //! 4. 배포 집합: 배포 패키지 스크립트(`scripts/lib/bundled-plugins.sh`, `scripts/build-windows.ps1`)는
 //!    `fetch-official-plugins.sh`를 `--all` 없이 불러 잠금 파일의 `bundle = true` 항목만 받고, 개발 번들
 //!    (`scripts/stage-dev-plugins.sh`의 기본 경로)은 `--all`로 모두 받는다. Bash 스크립트는 스텁 fetch를 둔
@@ -32,9 +31,6 @@ use tasty_doc_guards::plugin_manifest_scan::{scan_text, top_level};
 use tasty_doc_guards::repo_root;
 #[cfg(unix)]
 use tasty_doc_guards::temp_scratch::Scratch;
-
-/// 공식 플러그인 레포로 옮기지 않고 tasty에 남는 시범 플러그인.
-const STAYS_IN_TASTY: &str = "com.tasty.mesh-demo";
 
 fn lock() -> Lock {
     let path = repo_root().join(LOCK_FILE);
@@ -594,8 +590,8 @@ fn default_staging_branch(text: &str) -> Option<String> {
     Some(lines[open + 1..close].join("\n"))
 }
 
-/// 배포 패키지가 싣는 집합은 잠금 파일의 `bundle = true` 항목이다. workspace 플러그인(mesh-demo)이
-/// `bundle = false`를 잃거나 true로 바꾸면 배포 대상이라고 선언하지만 패키지에는 들어가지 않으므로 실패한다.
+/// 배포 패키지가 싣는 집합은 잠금 파일의 `bundle = true` 항목이다. workspace에 매니페스트 플러그인 크레이트가
+/// 생겨 `bundle = false`를 적지 않으면 배포 대상이라고 선언하지만 패키지에는 들어가지 않으므로 실패한다.
 /// 스캐너가 awk로 돌므로 Unix에서만 실행한다. 매니페스트 원문은 OS마다 같아 Linux 실행으로 덮인다.
 #[cfg(unix)]
 #[test]
@@ -654,34 +650,23 @@ fn the_lock_matches_the_host_contract() {
 }
 
 #[test]
-fn builtins_are_the_locked_plugins_plus_mesh_demo() {
+fn builtins_are_the_locked_plugins() {
     let lock = lock();
-    let mut want = locked_ids(&lock);
-    want.insert(STAYS_IN_TASTY.to_string());
+    let want = locked_ids(&lock);
 
     let builtin = read("crates/tasty-host-plugin/src/builtin.rs");
     let sets = id_sets_in_const(&builtin, "BUILTINS");
     assert_eq!(
         sets.len(),
-        2,
-        "BUILTINS 정의가 두 cfg 판(windows, not windows)이 아니다. 판독 전제를 확인한다."
+        1,
+        "BUILTINS 정의가 하나가 아니다. 판독 전제를 확인한다."
     );
-    for (i, set) in sets.iter().enumerate() {
-        assert_eq!(
-            set,
-            &want,
-            "BUILTINS {}번째 정의의 id 집합이 잠금 파일 id + {STAYS_IN_TASTY}와 다르다",
-            i + 1
-        );
-    }
+    assert_eq!(sets[0], want, "BUILTINS의 id 집합이 잠금 파일 id와 다르다");
 
     let official = read("crates/tasty-host-plugin/src/official.rs");
     let sets = id_sets_in_const(&official, "OFFICIAL_PLUGIN_IDS");
     assert_eq!(sets.len(), 1, "OFFICIAL_PLUGIN_IDS 정의가 하나가 아니다");
-    assert_eq!(
-        sets[0], want,
-        "OFFICIAL_PLUGIN_IDS가 잠금 파일 id + {STAYS_IN_TASTY}와 다르다"
-    );
+    assert_eq!(sets[0], want, "OFFICIAL_PLUGIN_IDS가 잠금 파일 id와 다르다");
 }
 
 /// 배포 패키지는 잠금 파일의 `bundle = true` 항목만 싣고 개발 번들은 모두 싣는다. 받을 집합은

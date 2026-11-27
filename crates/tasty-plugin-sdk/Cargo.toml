@@ -47,6 +47,9 @@ tasty-utils = { path = "../tasty-utils", features = ["test-support"] }
 # egui-mesh 배너 시험이 공용 위젯을 실제 Theme 으로 그린다.
 tasty-themes = { path = "../tasty-themes" }
 tasty-type-appearance = { path = "../tasty-type-appearance" }
+# 시험 대상에서 egui-mesh를 켠다. workspace에 이 기능을 켜는 플러그인 크레이트가 없어
+# `cargo test`·`cargo clippy --all-targets`가 egui_surface 시험을 빠뜨리지 않게 한다.
+tasty-plugin-sdk = { path = ".", features = ["egui-mesh"] }
 
 [lints]
 workspace = true
