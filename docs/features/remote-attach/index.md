@@ -246,9 +246,11 @@ mirror 는 이 이름으로 로컬 surface 와 같게 동작한다: 앱별 Shift
 
 **서버가 프레임을 버리면 `Loss`로 알린다.** PTY 출력 일부를 놓친 client는 그 상태로
 계속 그리면 잘못된 화면을 보여줄 수 있다. 그래서 서버는 그 연결에서 버린 프레임 수를 `StreamControl::Loss{frames}` 로 되돌려
-준다. **받겠다고 선언한 연결에만** 간다(`ClientLossNotify` — GUI mirror · GUI bulk 전송 · CLI
+준다. 서버 송신 큐에서 쌓인 손실의 통지는 **받겠다고 선언한 연결에만** 간다(`ClientLossNotify` — GUI mirror · GUI bulk 전송 · CLI
 `tasty remote attach`·`tasty tool attach` 가 선언한다) — 선언 안 한 peer 의 바이트 열은 무변경이고, 이 통지를 못 읽는
-client 에게 "무시" 는 "손실 없음" 과 구별되지 않기 때문이다. 통지를 받은 client 는 **다시
+client 에게 "무시" 는 "손실 없음" 과 구별되지 않기 때문이다. 터미널 출력 구독이 넘친 경우는 다르다. 서버는 선언과
+무관하게 `Loss{frames:1}` 를 넣어 보고 그 연결을 끝낸다 — 선언한 client 는 이 통지를 받으면 다시 붙고, 선언하지 않은
+client 는 연결 끊김(EOF)만 본다. 통지를 받은 client 는 **다시
 attach 해 화면을 새로 받는다** — 서버가 터미널 snapshot 을 만드는 자리가 attach 하나뿐이라서다.
 GUI mirror 는 "원격 화면 일부를 놓쳤다" 경고 toast 를 띄운 뒤 스스로 다시 붙고(수동 attach 도
 같다), 그 사이 mirror 터미널의 출력 위치 표지(stream)가 바뀌어 공백을 건너 읽는 에이전트는

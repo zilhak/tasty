@@ -359,21 +359,27 @@ pub enum StreamControl {
     MeshError { surface_id: u32, reason: String },
     /// 서버→클라이언트: 이 연결에서 프레임이 유실됐다. 보내는 경로가 둘이고 조건이 다르다.
     /// - StreamHub 송신 큐의 누적 손실: ClientLossNotify를 선언한 연결에만 보내며 새 출력보다 먼저 큐에 넣는다.
-    ///   유실 뒤에 선언하면 그전의 누적 손실도 알린다.
-    /// - 터미널 구독 큐가 넘침: 선언과 무관하게 `Loss { frames: 1 }`를 넣고 그 연결의 구독 등록을 해제한다
-    ///   (`src/remote/subscription.rs`의 `poll_attach_subscriptions`). 선언하지 않은 client는 강제 EOF로 본다.
+    ///   유실 뒤에 선언하면 그전의 누적 손실도 알린다. `frames`는 직전 통지 뒤(첫 통지면 연결 뒤) 버린 프레임 수다.
+    /// - 터미널 구독 큐가 넘침: 선언과 무관하게 `Loss { frames: 1 }` 큐 삽입을 시도하고(삽입 결과는 보지 않는다)
+    ///   그 연결의 StreamHub 등록을 해제해 연결을 끝낸다(`src/remote/subscription.rs`의 `poll_attach_subscriptions`,
+    ///   `crates/tasty-ipc/src/stream_hub.rs`의 `unregister_bound`가 sink 전체를 지운다).
+    ///   큐에 들어간 통지도 writer가 꺼낼 때 binding 검사에서 건너뛸 수 있다. 이 경로의 `frames`는 늘 1이다.
+    ///   선언한 client는 Loss를 받으면 손실을 알고 다시 붙어 snapshot으로 복구하고, 선언하지 않은 client는 EOF만 본다.
     ///
+    /// 누적 `frames`의 정의와 선언 조건은 StreamHub 누적 통지 경로에만 적용된다.
     /// 여러 surface가 같은 연결을 쓰므로 surface ID는 없다.
     /// 복구는 PTY·상태·mesh·bulk 소비자가 각자의 규칙으로 처리한다.
     Loss {
-        /// Frames dropped for this connection since the previous `Loss` frame (or
-        /// since the connection opened, if this is the first). Counts frames, not
-        /// bytes — the sink is a frame queue and the bytes behind a dropped frame
-        /// are gone before anyone counts them.
+        /// On the StreamHub path: frames dropped for this connection since the
+        /// previous `Loss` frame (or since the connection opened, if this is the
+        /// first). On the terminal subscription overflow path it is always 1.
+        /// Counts frames, not bytes — the sink is a frame queue and the bytes
+        /// behind a dropped frame are gone before anyone counts them.
         frames: u64,
     },
     /// 클라이언트→서버: Loss 통지를 받을 수 있다고 선언한다. 반복해도 같고 해제 기능은 없다.
-    /// 선언 전에는 손실을 조용히 처리한다. 지원하지 않는 구 서버는 이 variant를 무시한다.
+    /// 선언 전에는 StreamHub 누적 손실을 알리지 않는다. 터미널 구독 넘침은 선언과 무관하게 연결을 끝낸다
+    /// ([`StreamControl::Loss`]). 지원하지 않는 구 서버는 이 variant를 무시한다.
     /// 서버 지원 여부는 system.info의 ipc.stream.loss-notify로 확인한다.
     /// STREAM_PROTO는 동등 비교이므로 이 추가 기능 때문에 버전을 올리지 않는다.
     ClientLossNotify {},
