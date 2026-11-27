@@ -200,7 +200,7 @@ crumb 사이 chevron 은 `fp-crumb-glyph-size`(13), footer 의 폴더 안내·�
 micro 대문자로 쓰고, 열 위치는 행과 같은 계산을 써서 값 바로 위에 선다. 문구는 파일 선택기 전용
 `filepicker.column.*` 키다. kit 의 열 이름(Name·Size·Modified)을 따르며, 탐색기 열 이름과
 따로 둔다. 선택한 행은 `surface-active` 로 채우고 왼쪽 한 변에만
-`selection-edge-width` 폭의 `accent-primary` 막대를 둔다. 헤더 제목은 모달 제목 크기(`font-size-max`, 14)다.
+`selection-edge-width` 폭의 `accent-primary-on-active` 막대를 둔다. 헤더 제목은 모달 제목 크기(`font-size-max`, 14)다.
 `layout_tests.rs`의 `the_list_head_names_the_columns_above_the_rows`,
 `the_list_head_has_one_separator_along_its_bottom`, `the_selected_row_has_one_edge_selection_bar`,
 `the_header_title_uses_the_modal_title_size`가 실제로 칠한 모양으로 이를 검사한다. 목록은 머리를 뺀

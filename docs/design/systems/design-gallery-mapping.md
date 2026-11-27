@@ -1278,7 +1278,7 @@ C 프레임보더) 중 **A 배지가 사용자 확정**되었다. 본체와 갤�
 | `FilePickerFrame pick` · `focusRow` · `hoverRow` prop | `Variant::picked` · `Variant::row_focus` · `Variant::row_hover` | `pick` 은 모든 모드의 선택 행을 바꾸고(`Some(None)` 은 선택 없음), 열기 모드 이름 칸 · 폴더 줄 · 폴더 모드 경로 · 안내도 그 행을 읽는다. 저장 모드 이름 칸 · Overwrite 는 `SaveState` 를 따른다 |
 | `overlays-windows.jsx` Spec `row-focus-and-list-keys` | `draw_row_focus`(`file_picker/row_focus.rs`) | Stage 2 카드(열기 · 저장) + View 8: `fp-row-focus-row-states`(여덟 행 상태 × 폴더 · 파일 상자, Mocha · Latte 바탕) · `entry` · `first-up` · `pointer` · `after-click` · `save-space-folder` · `folder-skip` · `folder-clear` + Meta(spec 표 중 그림에 닿는 줄) |
 
-본체 `src/adapters/ui/popup/file_picker.rs::entry_row`도 `FpRow`의 오른쪽 고정 열과
+본체 `src/adapters/ui/popup/file_picker/rows.rs::entry_row`도 `FpRow`의 오른쪽 고정 열과
 이름 가변 열 배치를 따른다. 고정 열 폭은 갤러리와 본체 모두 `fp_size_col_width()`·`fp_modified_col_width()`를 읽는다. 이름은 남은 열 폭에서 egui 단일 행 galley로 말줄임하며,
 선택·확정에 사용하는 원래 이름은 보존한다.
 
