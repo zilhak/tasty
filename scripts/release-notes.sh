@@ -19,8 +19,8 @@ strip=0
 
 git log -1 --format=%b "$commit" | awk -v strip="$strip" '
 function blank(s) { return s ~ /^[ \t]*$/ }
-# Git 의 공백 줄 판정(isspace). CR·FF·VT 도 공백으로 센다.
-function gblank(s) { return s ~ /^[ \t\r\f\v]*$/ }
+# Git 2.43 의 공백 줄 판정(isspace). Git 의 문자표는 스페이스·탭·CR·LF 만 공백으로 센다(FF·VT 는 공백이 아니다).
+function gblank(s) { return s ~ /^[ \t\r]*$/ }
 
 # 블록 하나(줄바꿈으로 이은 문자열)를 바꾼다. 스팬 짝이 GitHub 와 어긋날 수 있으면 블록 전체를 엔터티로 바꾼다.
 # 짝 없는 백틱 열이 있는 블록도 애매로 본다. GitHub(cmark-gfm)는 짝 없는 열 뒤에 오는 같은 길이의 스팬을
@@ -289,12 +289,12 @@ END {
         while (stop > 0 && (gblank(raw[stop]) || substr(raw[stop], 1, 1) == "#")) stop--
         start = stop
         while (start > 0 && !gblank(raw[start])) start--
-        # git interpret-trailers --parse 가 내는 줄(구분자 Key: 가 있는 트레일러)과 그 바로 뒤의 들여쓴 이어 줄만 뺀다.
+        # git interpret-trailers --parse --no-divider 가 내는 줄(구분자 Key: 가 있는 트레일러)과 그 바로 뒤의 들여쓴 이어 줄만 뺀다.
         # (cherry picked from commit ...) 줄은 Git 이 블록 판정에만 쓰고 트레일러로 내지 않으므로 남긴다.
         keep = 0; folded = 0
         for (k = start + 1; k <= stop; k++) {
             l = raw[k]
-            if (folded && l ~ /^[ \t\r\f\v]/) continue
+            if (folded && l ~ /^[ \t\r]/) continue
             folded = 0
             if (l ~ /^[A-Za-z0-9-]+[ \t]*:/) { folded = 1; continue }
             kept[++keep] = line[k]

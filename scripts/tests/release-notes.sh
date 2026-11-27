@@ -786,6 +786,19 @@ printf 'chore: bump version to 9.9.9\n\nFix it <s>.\n\nSigned-off-by: A <a@examp
 printf 'Fix it &lt;s&gt;.\n\n#\n' > "$w"
 check '공백만 있는 줄 앞의 주석 줄도 Git 처럼 건너뛰고 그 앞 트레일러를 뺀다' "$m" "$w"
 
+# Git 2.43 의 문자표에서 FF·VT 는 공백이 아니다. 그 글자로 시작하는 줄은 이어 줄이 아니므로 남는다.
+printf 'chore: bump version to 9.9.9\n\nKeep this.\n\nSigned-off-by: A <a@example.invalid>\n\fKeep this too.\n' > "$m"
+printf 'Keep this.\n\n\fKeep this too.\n' > "$w"
+check 'FF 로 시작하는 줄은 트레일러 이어 줄이 아니므로 남는다' "$m" "$w"
+
+printf 'chore: bump version to 9.9.9\n\nKeep this.\n\nSigned-off-by: A <a@example.invalid>\n\vKeep this too.\n' > "$m"
+printf 'Keep this.\n\n\vKeep this too.\n' > "$w"
+check 'VT 로 시작하는 줄은 트레일러 이어 줄이 아니므로 남는다' "$m" "$w"
+
+printf 'chore: bump version to 9.9.9\n\nIntro <s>.\n\nSigned-off-by: A <a@example.invalid>\n\f\nCo-Authored-By: B <b@example.invalid>\nKeep this line.\n' > "$m"
+printf 'Intro &lt;s&gt;.\n\n\f\nKeep this line.\n' > "$w"
+check 'FF 만 있는 줄은 빈 줄이 아니므로 트레일러 블록을 나누지 않는다' "$m" "$w"
+
 if [ "$failures" -ne 0 ]; then
     echo "실패 $failures 건" >&2
     exit 1
