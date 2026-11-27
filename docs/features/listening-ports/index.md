@@ -60,6 +60,7 @@ Port / Proto / Address / Process / Workspace / Tab / State.
 - 헤더 우측 컬럼 아이콘 버튼을 누르면 컬럼 목록 팝업이 열리고, 컬럼별 체크박스로 표시/숨김을 토글한다 (예: System scope 에서 의미가 옅은 Workspace / Tab 숨김).
 - **Port 는 식별 / 기본 정렬 컬럼이라 항상 표시**(체크박스 잠금) — 전부 숨김이 구조적으로 불가능하다.
 - 표시 상태는 `egui::Memory` 에 영속하여 팝업을 닫았다 열어도 유지된다. (per-column 값 필터가 아니라 컬럼 전체의 표시/숨김이다.)
+- 키: 체크박스는 Tab 순서에서 컬럼 버튼 바로 뒤, Refresh 앞에 든다. 잠긴 Port 체크박스와 팝업 영역 자체는 건너뛴다. 첫 Escape 는 팝업만 닫고 포커스를 컬럼 버튼으로 돌리며, 다음 Escape 가 창을 닫는다. 순서와 두 단계는 `port_scanner.rs` 시험 `tab_walks_the_header_and_the_column_chooser_in_screen_order`·`the_first_escape_closes_the_chooser_onto_columns_and_the_second_closes_the_scanner` 가 잰다.
 
 ### 상태 필터 (state filter, 기본 LISTEN-only)
 
@@ -82,6 +83,7 @@ Port / Proto / Address / Process / Workspace / Tab / State.
 ### 헤더 / footer 구성
 
 - **헤더**: leading 포트 아이콘 + 제목 + accent Tag(`{listening} listening` / `scanning…`) + 검색 입력 + 컬럼 chooser 아이콘 버튼 + Refresh 아이콘 버튼(상시 노출, 현재 scope 재스캔) + close(`×`).
+  - 오른쪽 묶음(검색 입력 · 컬럼 chooser · Refresh · close)은 크기를 지키며 먼저 오른쪽 끝에 놓이고, 화면 순서대로 Tab 이 지난다. 왼쪽 묶음(아이콘 · 제목 · Tag)은 남은 폭에 잘려 좁은 창에서 끝이 잘린다(말줄임 없음). 시험 `the_narrow_header_keeps_the_right_cluster_and_clips_the_left_group`.
 - **필터 행**: 좌측 `Show all (system-wide)` 체크박스 + 우측 상태 필터 funnel 버튼.
 - **footer**: 카운터(`{shown} of {total} ports`) + `Copy address`(행 미선택 시 disabled) + `Close`. popup 하단 고정.
 
