@@ -3318,6 +3318,7 @@ mod tests {
         left: Vec<(&'static str, egui::Rect)>,
         heading_drawn: egui::Rect,
         heading_visible: egui::Rect,
+        count_visible: egui::Rect,
     }
 
     fn header_rects(theme: &Theme, width: f32) -> HeaderRects {
@@ -3369,25 +3370,35 @@ mod tests {
             .unwrap_or_else(|| panic!("{width}: 포트 아이콘이 없다"));
         let (heading_clip, heading_drawn) = text(t("port_scanner.heading"));
         let count = t("port_scanner.header_tag_count").replace("{n}", "1");
-        let (count_clip, count_rect) = text(&count);
-        let pill = shapes
+        // 잘림 사각형 밖으로 완전히 나간 도형은 egui 가 버린다. 그때 그 요소의 보이는 영역은 없다.
+        let count_visible = shapes
+            .iter()
+            .find_map(|(clip, s)| match s {
+                egui::epaint::Shape::Text(t) if t.galley.text() == count => {
+                    Some(t.visual_bounding_rect().intersect(*clip))
+                }
+                _ => None,
+            })
+            .unwrap_or(egui::Rect::NOTHING);
+        let pill_visible = shapes
             .iter()
             .find_map(|(clip, s)| match s {
                 egui::epaint::Shape::Rect(r)
                     if r.fill == theme.accent_primary().to_egui()
-                        && r.rect.contains_rect(count_rect) =>
+                        && in_row(&r.rect)
+                        && r.rect.left() < filter.left() =>
                 {
-                    Some((*clip, r.rect))
+                    Some(r.rect.intersect(*clip))
                 }
                 _ => None,
             })
-            .unwrap_or_else(|| panic!("{width}: 개수 Tag 바탕이 없다"));
+            .unwrap_or(egui::Rect::NOTHING);
         let heading_visible = heading_drawn.intersect(heading_clip);
         let left = vec![
             ("port icon", port_icon.intersect(port_clip)),
             ("heading", heading_visible),
-            ("count", count_rect.intersect(count_clip)),
-            ("count pill", pill.1.intersect(pill.0)),
+            ("count", count_visible),
+            ("count pill", pill_visible),
         ];
         HeaderRects {
             filter,
@@ -3395,6 +3406,7 @@ mod tests {
             left,
             heading_drawn,
             heading_visible,
+            count_visible,
         }
     }
 
@@ -3447,6 +3459,10 @@ mod tests {
             }
             if width > 600.0 {
                 assert!(!cut, "{width}: 넓은 폭에서 제목이 잘렸다");
+                assert!(
+                    h.count_visible.width() > 0.0,
+                    "{width}: 넓은 폭에서 개수 Tag 가 보이지 않는다"
+                );
             }
         }
     }
