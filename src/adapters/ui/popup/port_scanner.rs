@@ -1159,7 +1159,24 @@ fn draw_header_row(ui: &mut egui::Ui, props: &PortScannerProps<'_>) -> Option<Po
         if resp.changed() && buf != props.filter.query {
             out = Some(PortScannerAction::SetQuery(buf));
         }
-        if let Some(a) = draw_column_chooser(ui, props) {
+        // egui 팝업처럼 선택기가 열린 동안은 같은 줄 버튼의 tooltip 을 붙이지 않는다(도우미는 egui 의 레이어 팝업
+        // 목록에 오르지 못한다).
+        let popup_id = ui.make_persistent_id(COLUMN_CHOOSER_POPUP_ID);
+        let open = ui.memory(|m| m.is_popup_open(popup_id));
+        let glyph = th.icon_glyph_size_md.value();
+        let button = |ui: &mut egui::Ui, icon: icons::Icon, hover: &str| {
+            let paint = |ui: &mut egui::Ui, rect, c| icon.image(glyph, c).paint_at(ui, rect);
+            let resp = IconButton::new()
+                .variant(IconButtonVariant::Ghost)
+                .show(ui, th, &paint);
+            if open {
+                resp
+            } else {
+                resp.on_hover_text(hover)
+            }
+        };
+        let columns = button(ui, icons::COLUMNS, props.label_columns_button);
+        if let Some(a) = draw_column_chooser(ui, props, &columns, popup_id) {
             out = Some(a);
         }
         use PortScannerAction::{Close, Refresh};
@@ -1168,10 +1185,7 @@ fn draw_header_row(ui: &mut egui::Ui, props: &PortScannerProps<'_>) -> Option<Po
             (icons::CLOSE, props.label_close, Close),
         ];
         for (icon, hover, action) in buttons {
-            let glyph = th.icon_glyph_size_md.value();
-            let paint = |ui: &mut egui::Ui, rect, c| icon.image(glyph, c).paint_at(ui, rect);
-            let button = IconButton::new().variant(IconButtonVariant::Ghost);
-            if button.show(ui, th, &paint).on_hover_text(hover).clicked() {
+            if button(ui, icon, hover).clicked() {
                 out = Some(action);
             }
         }
@@ -1205,7 +1219,7 @@ fn column_label<'a>(col: ColumnId, props: &PortScannerProps<'a>) -> &'a str {
     }
 }
 
-/// 헤더 우측 COLUMNS IconButton + 컬럼 표시/숨김 chooser 팝업.
+/// 헤더 우측 COLUMNS 버튼(`resp`)에 붙는 컬럼 표시/숨김 chooser 팝업.
 ///
 /// 팝업 본문은 컬럼별 [`checkbox`] 목록(전체폭). Port 는 식별/기본 정렬 컬럼이라
 /// 항상 표시(checkbox disabled). 토글 시 `SetColumnVisible` 액션을 반환한다. 팝업은
@@ -1213,20 +1227,11 @@ fn column_label<'a>(col: ColumnId, props: &PortScannerProps<'a>) -> &'a str {
 fn draw_column_chooser(
     ui: &mut egui::Ui,
     props: &PortScannerProps<'_>,
+    resp: &egui::Response,
+    popup_id: egui::Id,
 ) -> Option<PortScannerAction> {
     let th = props.theme;
     let mut out: Option<PortScannerAction> = None;
-
-    let resp = IconButton::new()
-        .variant(IconButtonVariant::Ghost)
-        .show(ui, th, &|ui, rect, c| {
-            icons::COLUMNS
-                .image(th.icon_glyph_size_md.value(), c)
-                .paint_at(ui, rect)
-        })
-        .on_hover_text(props.label_columns_button);
-
-    let popup_id = ui.make_persistent_id(COLUMN_CHOOSER_POPUP_ID);
     if resp.clicked() {
         ui.memory_mut(|m| m.toggle_popup(popup_id));
     }
@@ -1237,7 +1242,7 @@ fn draw_column_chooser(
         tasty_egui_theme::popup_below_widget_unfocused(
             ui,
             popup_id,
-            &resp,
+            resp,
             egui::PopupCloseBehavior::CloseOnClickOutside,
             |ui| {
                 ui.set_min_width(th.port_columns_menu_min_width().value());
@@ -3674,6 +3679,16 @@ mod tests {
         theme: &Theme,
         events: Vec<egui::Event>,
     ) -> Vec<egui::epaint::Shape> {
+        view_frame_at(ctx, theme, events, None)
+    }
+
+    /// [`view_frame`] 을 입력 시각 `time`(초)에 그린다. tooltip 지연처럼 시간이 흘러야 하는 동작을 잰다.
+    fn view_frame_at(
+        ctx: &egui::Context,
+        theme: &Theme,
+        events: Vec<egui::Event>,
+        time: Option<f64>,
+    ) -> Vec<egui::epaint::Shape> {
         let rows = [dummy_row(8080)];
         let full = ctx.run(
             egui::RawInput {
@@ -3682,6 +3697,7 @@ mod tests {
                     egui::vec2(720.0, 480.0),
                 )),
                 events,
+                time,
                 ..Default::default()
             },
             |ctx| {
@@ -3751,5 +3767,82 @@ mod tests {
                 "{name}: 열 선택기 제목 잉크가 text_muted_raised 가 아니다"
             );
         }
+    }
+
+    /// 열 선택기가 열린 동안 같은 줄 버튼(Columns·Refresh·Close)의 tooltip 은 그리지 않는다(egui 팝업이 같은 레이어
+    /// tooltip 을 숨기는 것과 같다). 닫혀 있으면 같은 hover 에서 그린다.
+    #[test]
+    fn header_tooltips_stay_hidden_while_the_column_chooser_is_open() {
+        let theme = test_theme();
+        let tips_shown = |open_chooser: bool| -> [bool; 3] {
+            let ctx = egui::Context::default();
+            let mut time = 0.0;
+            let mut frame = |events: Vec<egui::Event>| {
+                time += 0.1;
+                view_frame_at(&ctx, &theme, events, Some(time))
+            };
+            frame(Vec::new());
+            let texts: Vec<(String, egui::Rect)> = frame(Vec::new())
+                .into_iter()
+                .filter_map(|s| match s {
+                    egui::epaint::Shape::Text(t) => Some((
+                        t.galley.text().to_owned(),
+                        egui::Rect::from_min_size(t.pos, t.galley.size()),
+                    )),
+                    _ => None,
+                })
+                .collect();
+            let ids = header_ids(&ctx, &texts);
+            let center = |id| {
+                ctx.viewport(|vp| vp.prev_pass.widgets.get(id).map(|w| w.rect))
+                    .expect("머리 버튼 영역")
+                    .center()
+            };
+            let press = |pos, pressed| egui::Event::PointerButton {
+                pos,
+                button: egui::PointerButton::Primary,
+                pressed,
+                modifiers: egui::Modifiers::NONE,
+            };
+            if open_chooser {
+                let at = center(ids.columns);
+                frame(vec![egui::Event::PointerMoved(at)]);
+                frame(vec![press(at, true)]);
+                frame(vec![press(at, false)]);
+                assert!(
+                    ctx.memory(|m| m.any_popup_open()),
+                    "Columns 를 눌러 선택기가 열린다"
+                );
+            }
+            let buttons = [
+                (ids.columns, "port_scanner.columns_button"),
+                (ids.refresh, "port_scanner.refresh"),
+                (ids.close, "port_scanner.close"),
+            ];
+            // 같은 글자가 본문(예: 바닥 Close)에도 있을 수 있어, hover 전보다 그 글자가 늘었는지로 tooltip 을 본다.
+            let count = |shapes: &[egui::epaint::Shape], key| {
+                shapes
+                    .iter()
+                    .filter(
+                        |s| matches!(s, egui::epaint::Shape::Text(x) if x.galley.text() == t(key)),
+                    )
+                    .count()
+            };
+            buttons.map(|(id, key)| {
+                let before = count(&frame(Vec::new()), key);
+                frame(vec![egui::Event::PointerMoved(center(id))]);
+                (0..15).any(|_| count(&frame(Vec::new()), key) > before)
+            })
+        };
+        assert_eq!(
+            tips_shown(false),
+            [true; 3],
+            "선택기가 닫혀 있으면 머리 버튼 tooltip 이 보인다(이 시험의 대조)"
+        );
+        assert_eq!(
+            tips_shown(true),
+            [false; 3],
+            "선택기가 열린 동안 머리 버튼 tooltip 이 그려진다"
+        );
     }
 }
