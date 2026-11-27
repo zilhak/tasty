@@ -1112,10 +1112,8 @@ fn header_tag_text(props: &PortScannerProps<'_>) -> Option<String> {
 /// 정해 본문에서도 같은 id 를 읽는다.
 fn hover_text(resp: egui::Response, text: impl Into<egui::WidgetText>) -> egui::Response {
     let chooser = egui::Id::new(COLUMN_CHOOSER_POPUP_ID).with(resp.layer_id);
-    if resp.ctx.memory(|m| m.is_popup_open(chooser)) {
-        return resp;
-    }
-    resp.on_hover_text(text)
+    let open = resp.ctx.memory(|m| m.is_popup_open(chooser));
+    if open { resp } else { resp.on_hover_text(text) }
 }
 
 /// accent Tag pill 렌더 (pid 뱃지 패턴 재사용, accent 변형).
@@ -1709,7 +1707,7 @@ fn draw_favorite_row(
                 }
                 None => props.label_favorites_not_running.to_string(),
             };
-            ports_favorite_detail_and_state(
+            let (detail, _) = ports_favorite_detail_and_state(
                 ui,
                 th,
                 &detail,
@@ -1718,6 +1716,7 @@ fn draw_favorite_row(
                 pulse,
                 props.reduced_motion,
             );
+            detail.on_elided(hover_text);
         },
     );
     out
@@ -1967,7 +1966,9 @@ fn column_widths(visible: &[ColumnId], th: &Theme) -> Vec<TableColumnWidth> {
 fn draw_process_cell(ui: &mut egui::Ui, th: &Theme, row: &PortRowView, pid_tooltip: &str) {
     let name = row.process_name.as_deref().unwrap_or("—");
     let pid = row.pid.map(|p| p.to_string());
-    if let (Some(resp), Some(pid)) = (ports_process_cell(ui, th, name, pid.as_deref()), &pid) {
+    let (name, tag) = ports_process_cell(ui, th, name, pid.as_deref());
+    name.on_elided(hover_text);
+    if let (Some(resp), Some(pid)) = (tag, &pid) {
         hover_text(resp, pid_tooltip.replace("{pid}", pid));
     }
 }

@@ -70,11 +70,53 @@ impl PortsColumn {
     }
 }
 
+/// 말줄임 Label 의 응답. 잘렸을 때 egui 가 스스로 붙이는 전체 글자 tooltip 은 붙이지 않았다. 그 tooltip 을 같은
+/// 레이어 팝업이 열린 동안 숨길지는 호출부가 정하므로, 호출부가 [`ElidedLabel::on_elided`] 로 붙인다.
+pub struct ElidedLabel {
+    pub response: egui::Response,
+    /// 잘렸으면 전체 글자.
+    pub full: Option<String>,
+}
+
+impl ElidedLabel {
+    /// 잘렸을 때만 `attach(응답, 전체 글자)` 를 부른다. 판정이 필요 없으면 `egui::Response::on_hover_text` 를 넘긴다.
+    pub fn on_elided<R>(self, attach: impl FnOnce(egui::Response, String) -> R) -> Option<R> {
+        self.full.map(|full| attach(self.response, full))
+    }
+}
+
+/// `egui::Label::new(text).truncate()` 와 같게 놓고 그리되, 잘렸을 때 egui 가 붙이는 전체 글자 tooltip 은 붙이지
+/// 않는다(egui 0.31 Label 에는 이 tooltip 을 끄는 설정이 없다). 그리기는 egui `Label::ui` 의 비대화형 경로와 같다.
+fn truncated_label(ui: &mut egui::Ui, text: egui::RichText) -> ElidedLabel {
+    let (pos, galley, response) = egui::Label::new(text).truncate().layout_in_ui(ui);
+    let info =
+        || egui::WidgetInfo::labeled(egui::WidgetType::Label, ui.is_enabled(), galley.text());
+    response.widget_info(info);
+    let full = galley.elided.then(|| galley.text().to_owned());
+    if ui.is_rect_visible(response.rect) {
+        let color = ui.style().visuals.text_color();
+        let underline = if response.has_focus() || response.highlighted() {
+            egui::Stroke::new(1.0, color)
+        } else {
+            egui::Stroke::NONE
+        };
+        if ui.style().interaction.selectable_labels {
+            egui::text_selection::LabelSelectionState::label_text_selection(
+                ui, &response, pos, galley, color, underline,
+            );
+        } else {
+            let shape = egui::epaint::TextShape::new(pos, galley, color).with_underline(underline);
+            ui.painter().add(shape);
+        }
+    }
+    ElidedLabel { response, full }
+}
+
 /// 즐겨찾기 행에서 주소 뒤에 오는 상세와 상태 칸. 행의 남은 폭을 모두 차지한다.
 /// 상세는 주소에서 `spacing_md` 떨어져 왼쪽에 붙고 넘치면 말줄임한다. 상태 점과 라벨은 행
 /// 오른쪽 끝의 최소 폭(`port_favorites_state_min_width`) 칸 안에서 오른쪽에 붙으므로 상세가 길어도 점에
 /// 닿지 않는다.
-/// 상세 라벨과 상태 점의 응답을 차례로 돌려준다.
+/// 상세 라벨(잘렸는지 포함, [`ElidedLabel`])과 상태 점의 응답을 차례로 돌려준다.
 pub fn ports_favorite_detail_and_state(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -83,7 +125,7 @@ pub fn ports_favorite_detail_and_state(
     state: &str,
     pulse: bool,
     reduced_motion: bool,
-) -> (egui::Response, egui::Response) {
+) -> (ElidedLabel, egui::Response) {
     let (rect, _) = ui.allocate_exact_size(
         egui::vec2(
             ui.available_width(),
@@ -102,14 +144,10 @@ pub fn ports_favorite_detail_and_state(
             .max_rect(detail_rect)
             .layout(egui::Layout::left_to_right(egui::Align::Center)),
     );
-    let detail = detail_ui.add(
-        egui::Label::new(
-            egui::RichText::new(detail)
-                .color(theme.text_muted().to_egui())
-                .size(theme.font_size_caption.value()),
-        )
-        .truncate(),
-    );
+    let detail = egui::RichText::new(detail)
+        .color(theme.text_muted().to_egui())
+        .size(theme.font_size_caption.value());
+    let detail = truncated_label(&mut detail_ui, detail);
 
     let mut state_ui = ui.new_child(
         egui::UiBuilder::new()
@@ -144,31 +182,30 @@ pub fn ports_table<'a, K>(columns: Vec<TableColumn<'a, K>>, theme: &Theme) -> Ta
 }
 
 /// Process 셀: 프로세스 이름과 PID Tag. 이름과 Tag 사이는 `spacing_sm` 이다. 셀이 좁으면 이름만
-/// 말줄임하고 Tag 는 그대로 보인다. PID 가 있으면 Tag 의 응답을 돌려준다.
+/// 말줄임하고 Tag 는 그대로 보인다. 이름 라벨([`ElidedLabel`])과, PID 가 있으면 Tag 의 응답을 돌려준다.
 pub fn ports_process_cell(
     ui: &mut egui::Ui,
     theme: &Theme,
     name: &str,
     pid: Option<&str>,
-) -> Option<egui::Response> {
+) -> (ElidedLabel, Option<egui::Response>) {
     ui.horizontal(|ui| {
         let gap = theme.spacing_sm.value();
         ui.spacing_mut().item_spacing.x = gap;
         let tag_reserve = pid.map_or(0.0, |p| crate::tag_mono_width(ui, theme, p) + gap);
         let name_max = (ui.available_width() - tag_reserve).max(0.0);
         let name_fg = crate::table_cell_ink(ui, theme, theme.text_primary());
-        ui.scope(|ui| {
-            ui.set_max_width(name_max);
-            ui.add(
-                egui::Label::new(
-                    egui::RichText::new(name)
-                        .color(name_fg)
-                        .size(theme.font_size_body.value()),
-                )
-                .truncate(),
-            );
-        });
-        pid.map(|p| crate::tag_mono(ui, theme, p, TagVariant::Default, false))
+        let name = egui::RichText::new(name)
+            .color(name_fg)
+            .size(theme.font_size_body.value());
+        let name = ui
+            .scope(|ui| {
+                ui.set_max_width(name_max);
+                truncated_label(ui, name)
+            })
+            .inner;
+        let tag = pid.map(|p| crate::tag_mono(ui, theme, p, TagVariant::Default, false));
+        (name, tag)
     })
     .inner
 }
@@ -206,9 +243,9 @@ mod favorite_row_tests {
                             );
                             let row = egui::Rect::from_x_y_ranges(
                                 row_left..=row_left + width,
-                                d.rect.y_range(),
+                                d.response.rect.y_range(),
                             );
-                            out = Some((row, d.rect, s.rect));
+                            out = Some((row, d.response.rect, s.rect));
                         },
                     );
                 });
@@ -308,5 +345,82 @@ mod favorite_row_tests {
     fn the_state_column_floor_scales_with_ui_zoom() {
         assert_eq!(theme(1.0).port_favorites_state_min_width().value(), 112.0);
         assert_eq!(theme(1.2).port_favorites_state_min_width().value(), 134.0);
+    }
+}
+
+#[cfg(test)]
+mod elided_label_tests {
+    use super::*;
+
+    const LONG: &str = "a process name long enough to be cut in a narrow cell";
+
+    /// 폭 `width` 칸에 프로세스 이름 칸을 그리고, 이름 칸 위에 포인터를 둔 뒤 전체 글자 tooltip 이 그려지는지
+    /// 본다. `attach` 면 잘린 이름에 호출부가 `on_hover_text` 를 붙인다(갤러리 꼴). 돌려주는 값은
+    /// (잘렸을 때의 전체 글자, tooltip 이 그려졌는가).
+    fn hover_cell(name: &str, width: f32, attach: bool) -> (Option<String>, bool) {
+        let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
+        let ctx = egui::Context::default();
+        let mut time = 0.0;
+        // 한 프레임을 그리고 (이름 글자 도형 수, 이름 칸 영역, 잘렸을 때의 전체 글자)를 돌려준다.
+        let mut frame = |events: Vec<egui::Event>| {
+            time += 0.02;
+            let input = egui::RawInput {
+                events,
+                time: Some(time),
+                ..Default::default()
+            };
+            let mut cell = (egui::Rect::NOTHING, None);
+            let out = ctx.run(input, |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    ui.allocate_ui(egui::vec2(width, 40.0), |ui| {
+                        let (label, _) = ports_process_cell(ui, &theme, name, Some("42"));
+                        cell = (label.response.rect, label.full.clone());
+                        if attach {
+                            label.on_elided(egui::Response::on_hover_text);
+                        }
+                    });
+                });
+            });
+            let texts = out
+                .shapes
+                .iter()
+                .filter(|c| matches!(&c.shape, egui::Shape::Text(t) if t.galley.text() == name))
+                .count();
+            (texts, cell.0, cell.1)
+        };
+        frame(Vec::new());
+        let (before, rect, full) = frame(Vec::new());
+        // egui 는 짧은 간격의 위치 기록으로 포인터 이동 시각을 정하므로 두 걸음으로 옮긴다.
+        frame(vec![egui::Event::PointerMoved(
+            rect.center() + egui::vec2(3.0, 0.0),
+        )]);
+        frame(vec![egui::Event::PointerMoved(rect.center())]);
+        let shown = (0..75).any(|_| frame(Vec::new()).0 > before);
+        (full, shown)
+    }
+
+    #[test]
+    fn a_cut_name_reports_its_full_text_and_draws_no_tooltip_of_its_own() {
+        let (full, shown) = hover_cell(LONG, 120.0, false);
+        assert_eq!(
+            full.as_deref(),
+            Some(LONG),
+            "좁은 칸에서 이름이 잘렸다고 알리지 않는다"
+        );
+        assert!(
+            !shown,
+            "위젯이 잘린 이름에 egui 의 전체 글자 tooltip 을 스스로 그렸다"
+        );
+    }
+
+    #[test]
+    fn the_caller_attaching_the_full_text_shows_it_on_hover() {
+        assert_eq!(
+            hover_cell(LONG, 120.0, true),
+            (Some(LONG.to_owned()), true),
+            "호출부가 붙인 전체 글자 tooltip 이 hover 에 보이지 않는다"
+        );
+        // 대조: 잘리지 않은 이름은 전체 글자가 없고 tooltip 도 없다.
+        assert_eq!(hover_cell("node", 480.0, true), (None, false));
     }
 }

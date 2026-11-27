@@ -6,8 +6,10 @@
 /// 뺀다(egui 는 interactable Area 에 `Sense::click()` 을 주어 Area 가 한 칸의 포커스를 받는다). 안의 위젯은 버튼 바로
 /// 뒤의 Tab 순서에 그대로 든다. egui 판과 달리 부모 레이어의 열린 팝업 목록에는 올리지 않는다(egui 내부 상태라
 /// 바깥에서 쓸 수 없다). 그 목록은 같은 레이어의 tooltip 을 숨기는 데만 쓰이므로, 열린 동안 tooltip 을 숨기려면
-/// 호출부가 그 레이어의 모든 위젯(포트 창은 머리 버튼과 본문 별·PID Tag)에서 `popup_id` 가 열렸으면 hover text 를
-/// 붙이지 않는다. 본문도 같은 id 를 읽도록 호출부가 id 를 레이어로 정한다. Esc 로 닫으면 포커스를 버튼으로 돌린다(egui
+/// 호출부가 그 레이어의 모든 위젯에서 `popup_id` 가 열렸으면 hover text 를 붙이지 않는다. 포트 창은 머리 세 버튼,
+/// 본문 별 두 칸(즐겨찾기 행·표), PID Tag, 말줄임 두 자리(즐겨찾기 상세·프로세스 이름)다. egui 가 스스로 붙이는
+/// tooltip(잘린 `Label` 의 전체 글자 등)도 호출부가 끄고 같은 판정을 거쳐 다시 붙여야 한다. 본문도 같은 id 를 읽도록
+/// 호출부가 id 를 레이어로 정한다. Esc 로 닫으면 포커스를 버튼으로 돌린다(egui
 /// 는 Esc 에 포커스를 비운다). 메뉴 틀은 [`crate::with_popover_frame`] 클로저 안에서 불러야 입는다.
 pub fn popup_below_widget_unfocused<R>(
     parent_ui: &egui::Ui,

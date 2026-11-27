@@ -603,9 +603,12 @@ fn draw_favorites_section(ui: &mut egui::Ui, theme: &Theme, favorites: &[Favorit
                                     Some(false) => (StatusKind::Waiting, "CLOSE_WAIT", false),
                                     None => (StatusKind::Idle, "NONE", false),
                                 };
+                                // 본체와 같게 잘린 상세에 전체 글자 tooltip 을 붙인다.
                                 ports_favorite_detail_and_state(
                                     ui, theme, fav.detail, kind, state, pulse, false,
-                                );
+                                )
+                                .0
+                                .on_elided(egui::Response::on_hover_text);
                             },
                         );
                     }
@@ -680,7 +683,9 @@ fn cell(ui: &mut egui::Ui, theme: &Theme, row: &PortRow, col: Option<PortsColumn
         PortsColumn::Proto => text(ui, row.proto, true),
         PortsColumn::Address => text(ui, row.addr, true),
         PortsColumn::Process => {
-            ports_process_cell(ui, theme, row.proc, Some(row.pid));
+            ports_process_cell(ui, theme, row.proc, Some(row.pid))
+                .0
+                .on_elided(egui::Response::on_hover_text);
         }
         PortsColumn::Workspace | PortsColumn::Tab => {
             let value = if col == PortsColumn::Workspace {
