@@ -685,35 +685,37 @@ fn selected_topic_row_border_paints_the_design_token() {
     }
 }
 
-/// 마커 표본 칩 가운데 링·발광 칩이 정본(overlays-tutorial 마커 Meta)의 세 칩과 이름·용도·색이 같은지 본다.
+/// 마커 표본이 그린 "Tokens used" 칩 가운데 링·발광 세 칩이 정본(overlays-tutorial 마커 Meta)과 이름·용도
+/// 글자·스와치 색이 같은지 그린 결과로 본다.
 #[test]
 fn marker_token_chips_name_the_ring_and_both_glow_tokens() {
+    use crate::catalog::components::painted::paint;
     for (name, th) in marker_themes() {
-        let chips: Vec<(&str, &str, Option<egui::Color32>)> = super::marker_tokens(&th)
-            .iter()
-            .filter(|c| c.tok == "accent-primary" || c.tok.starts_with("tutorial-marker-glow"))
-            .map(|c| (c.tok, c.use_, c.color))
-            .collect();
-        assert_eq!(
-            chips,
-            vec![
-                (
-                    "accent-primary",
-                    "ring",
-                    Some(th.accent_primary().to_egui())
-                ),
-                (
-                    "tutorial-marker-glow-inner",
-                    "halo, 3px spread",
-                    Some(th.tutorial_marker_glow_inner().to_egui()),
-                ),
-                (
-                    "tutorial-marker-glow-outer",
-                    "halo, 16px blur",
-                    Some(th.tutorial_marker_glow_outer().to_egui()),
-                ),
-            ],
-            "{name}: 마커 칩"
-        );
+        let bed = th.surface_raised().to_egui();
+        let painted = paint(|ui| super::draw_marker(ui, &th));
+        for (use_, tok, ink) in [
+            ("— ring", "accent-primary", th.accent_primary().to_egui()),
+            (
+                "— halo, 3px spread",
+                "tutorial-marker-glow-inner",
+                th.tutorial_marker_glow_inner().to_egui(),
+            ),
+            (
+                "— halo, 16px blur",
+                "tutorial-marker-glow-outer",
+                th.tutorial_marker_glow_outer().to_egui(),
+            ),
+        ] {
+            let (chip, swatch) = painted.token_chip(bed, use_);
+            assert!(
+                painted.has_text_in(use_, chip),
+                "{name}: {use_:?} 칩 용도 글자"
+            );
+            assert!(
+                painted.has_text_in(tok, chip),
+                "{name}: {use_:?} 칩 이름은 {tok}"
+            );
+            assert_eq!(swatch, ink, "{name}: {use_:?} 칩 스와치");
+        }
     }
 }
