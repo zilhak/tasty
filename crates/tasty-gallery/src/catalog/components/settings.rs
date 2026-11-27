@@ -610,8 +610,7 @@ fn override_row(ui: &mut egui::Ui, theme: &Theme, field: &str, value: &str, defa
     });
 }
 
-/// 시안 테마 카드 — 상단 색 띠(높이 34) + 하단 라벨 바(bg-panel). active 시 accent border + ring.
-/// 프리셋 카드 색 띠: 그 프리셋의 앱 바탕·패널·primary·agent·success 역할.
+/// 프리셋 테마에서 카드 색 띠 다섯 칸(앱 바탕·패널·primary·agent·success 역할)을 읽는다.
 fn preset_swatches(preset: &Theme) -> [tasty_type_appearance::color::HexColor; 5] {
     [
         preset.bg_app(),
@@ -622,6 +621,7 @@ fn preset_swatches(preset: &Theme) -> [tasty_type_appearance::color::HexColor; 5
     ]
 }
 
+/// 시안 테마 카드 — 상단 색 띠(높이 34) + 하단 라벨 바(bg-panel). active 시 accent border + ring.
 fn theme_swatch(
     ui: &mut egui::Ui,
     theme: &Theme,
