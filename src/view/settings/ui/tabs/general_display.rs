@@ -216,10 +216,23 @@ mod tests {
                         ],
                     );
                 });
+                // Button은 채움과 테두리를 따로 그린다. 테두리 사각형과 같은 자리의 채움 사각형을 짝짓는다.
                 let frames: Vec<_> = p
                     .stroked_rects()
                     .into_iter()
-                    .map(|(_, fill, edge)| (fill, edge))
+                    .map(|(rect, _, edge)| {
+                        let fill = p
+                            .shapes
+                            .iter()
+                            .find_map(|s| match s {
+                                egui::Shape::Rect(r) if r.rect == rect && r.stroke.width == 0.0 => {
+                                    Some(r.fill)
+                                }
+                                _ => None,
+                            })
+                            .unwrap_or(egui::Color32::TRANSPARENT);
+                        (fill, edge)
+                    })
                     .collect();
                 assert_eq!(frames, vec![want], "{current}");
             }
