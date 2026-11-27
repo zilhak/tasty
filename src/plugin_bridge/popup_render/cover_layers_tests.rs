@@ -13,21 +13,51 @@ fn scope() -> egui::Rect {
     egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(400.0, 300.0))
 }
 
-/// 덮는 팝업 `shells`(아래에서 위 순서)를 그리는 패스 하나. `draw_plugin_popups`처럼 끝에서 올림을 적용하고,
+/// 패스 하나에 팝업이 그려지는 꼴.
+#[derive(Clone, Copy)]
+enum Shown {
+    /// 덮는 범위를 덮는 펼친 팝업. 셸은 Area 없이 칠한다.
+    Covering,
+    /// 덮지 않는 접힌 팝업. `display::draw_collapsed`처럼 셸 id로 보기 버튼 Area를 띄운다.
+    Collapsed,
+}
+
+/// 팝업 `popups`(아래에서 위 순서)를 그리는 패스 하나. `draw_plugin_popups`처럼 끝에서 올림을 적용하고,
 /// `press`이면 누름이 든 패스처럼 모든 레이어를 함께 올린다. 그린 레이어를 아래에서 위 순서로 돌려준다.
-fn draw_pass(ctx: &egui::Context, shells: &[egui::LayerId], press: bool) -> Vec<egui::LayerId> {
+fn draw_popups(
+    ctx: &egui::Context,
+    popups: &[(egui::LayerId, Shown)],
+    press: bool,
+) -> Vec<egui::LayerId> {
     let mut layers = Vec::new();
     // 그리기 출력은 이 시험이 보지 않는다. 레이어 순서는 패스 뒤 Memory에서 읽는다.
     let _ = ctx.run(Default::default(), |ctx| {
         layers.clear();
         let mut lift = PassLift::default();
-        for shell in shells {
-            push_popup_layers(ctx, &mut layers, &mut lift, *shell, Some(scope()));
-            ctx.layer_painter(*shell).rect_filled(
-                egui::Rect::from_min_size(egui::pos2(100.0, 100.0), egui::vec2(200.0, 80.0)),
-                0.0,
-                egui::Color32::DARK_GRAY,
-            );
+        for (shell, shown) in popups {
+            match shown {
+                Shown::Covering => {
+                    push_popup_layers(ctx, &mut layers, &mut lift, *shell, Some(scope()));
+                    ctx.layer_painter(*shell).rect_filled(
+                        egui::Rect::from_min_size(
+                            egui::pos2(100.0, 100.0),
+                            egui::vec2(200.0, 80.0),
+                        ),
+                        0.0,
+                        egui::Color32::DARK_GRAY,
+                    );
+                }
+                Shown::Collapsed => {
+                    push_popup_layers(ctx, &mut layers, &mut lift, *shell, None);
+                    egui::Area::new(shell.id)
+                        .order(egui::Order::Foreground)
+                        .fixed_pos(egui::pos2(300.0, 250.0))
+                        .interactable(true)
+                        .show(ctx, |ui| {
+                            ui.allocate_exact_size(egui::vec2(40.0, 20.0), egui::Sense::click());
+                        });
+                }
+            }
         }
         if press {
             lift.request();
@@ -35,6 +65,12 @@ fn draw_pass(ctx: &egui::Context, shells: &[egui::LayerId], press: bool) -> Vec<
         lift.apply(ctx, &layers);
     });
     layers
+}
+
+/// 덮는 팝업 `shells`(아래에서 위 순서)만 그리는 패스 하나.
+fn draw_pass(ctx: &egui::Context, shells: &[egui::LayerId], press: bool) -> Vec<egui::LayerId> {
+    let popups: Vec<_> = shells.iter().map(|s| (*s, Shown::Covering)).collect();
+    draw_popups(ctx, &popups, press)
 }
 
 /// 팝업을 그리지 않는 패스 하나(다른 워크스페이스를 보는 동안).
@@ -114,5 +150,30 @@ fn a_popup_that_shows_again_stays_below_a_later_popup() {
     assert!(
         stacked_in_order(&ctx, &layers),
         "A cover, A shell, B cover, B shell should stack in that order, got positions {at:?}"
+    );
+}
+
+/// Given 덮지 않고 접혀 셸 id의 보기 버튼 Area로 먼저 순서에 든 팝업 A와 그 위의 덮는 팝업 B, When A를 펼쳐
+/// 덮게 되면(막이가 셸 뒤에 처음 등록된다), Then 펼친 패스 하나만 순서가 틀리고 다음 패스부터 A 막이·A 셸·B 막이·
+/// B 셸 순서가 된다. 펼친 패스에는 egui가 처음 보인 막이 Area를 스스로 올려 되돌릴 수 없다.
+#[test]
+fn a_collapsed_popup_that_expands_to_cover_puts_its_cover_block_below_its_shell() {
+    let ctx = egui::Context::default();
+    let (a, b) = (shell(1), shell(2));
+    for _ in 0..2 {
+        draw_popups(&ctx, &[(a, Shown::Collapsed), (b, Shown::Covering)], false);
+    }
+    let mut wrong = Vec::new();
+    for pass in 0..6 {
+        let layers = draw_pass(&ctx, &[a, b], false);
+        if !stacked_in_order(&ctx, &layers) {
+            wrong.push(pass);
+        }
+    }
+    // 틀린 패스는 펼친 패스(0) 하나다.
+    assert_eq!(
+        wrong,
+        vec![0],
+        "only the expand pass may stack the cover block above its shell"
     );
 }
