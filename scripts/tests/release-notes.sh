@@ -634,6 +634,19 @@ printf 'chore: bump version to 9.9.9\n\n>\t[r]: /u\n> ===\n>     <s>\n\n  \ttab 
 printf '&gt;\t[r]: /u\n&gt; ===\n&gt;     &lt;s&gt;\n\n  \ttab &lt;code&gt; &amp; more\n' > "$w"
 check '탭이 있는 본문은 본문 전체를 엔터티로' "$m" "$w"
 
+# GitHub 는 VT·FF 가 칸 사이에 든 구분 행도 표로 읽는다. VT·FF 가 있는 본문은 본문 전체를 엔터티로 바꾼다.
+printf 'chore: bump version to 9.9.9\n\nPlain paragraph.\n\n`x | <s> | y`\n---\v|---\v|---\n' > "$m"
+printf 'Plain paragraph.\n\n`x | &lt;s&gt; | y`\n---\v|---\v|---\n' > "$w"
+check 'VT 가 든 구분 행이 있는 본문은 본문 전체를 엔터티로' "$m" "$w"
+
+printf 'chore: bump version to 9.9.9\n\nPlain paragraph.\n\n`x | <s> | y`\n---\f|---\f|---\n' > "$m"
+printf 'Plain paragraph.\n\n`x | &lt;s&gt; | y`\n---\f|---\f|---\n' > "$w"
+check 'FF 가 든 구분 행이 있는 본문은 본문 전체를 엔터티로' "$m" "$w"
+
+printf 'chore: bump version to 9.9.9\n\n| \\* `x | <s> | y` |\n---\v|---\v|---\n' > "$m"
+printf '| \\* `x | &lt;s&gt; | y` |\n---\v|---\v|---\n' > "$w"
+check '선행 | 와 백슬래시가 있는 머리 행 뒤 VT 구분 행도 본문 전체를 엔터티로' "$m" "$w"
+
 printf 'chore: bump version to 9.9.9\n\n`<s>\r\r`\n' > "$m"
 printf '`&lt;s&gt;\r\r`\n' > "$w"
 check '줄 끝이 아닌 CR 이 있는 본문은 본문 전체를 엔터티로' "$m" "$w"

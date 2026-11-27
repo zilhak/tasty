@@ -7,7 +7,7 @@
 # - 블록 구조는 CommonMark 를 따른다. 인용(>)과 목록 항목 안의 코드 블록은 그 항목의 내용 들여쓰기를 기준으로 보고,
 #   목록·인용이 끝나면 그 안의 코드 블록도 끝난다. 코드 스팬은 블록 하나 안에서만 짝짓는다.
 # - 본문에 아래 드문 표지가 하나라도 있으면 블록 구조를 읽지 않고 본문 전체의 <, >, & 를 엔터티로 바꾼다(코드 안 포함).
-#   각주 정의 꼴 [^이름]: 이 있는 줄, 탭, 줄 끝 CRLF 를 LF 로 바꾼 뒤에도 남는 CR, 4개 이상 이어진 백틱·물결표,
+#   각주 정의 꼴 [^이름]: 이 있는 줄, 탭, 줄 끝 CRLF 를 LF 로 바꾼 뒤에도 남는 CR, VT·FF, 4개 이상 이어진 백틱·물결표,
 #   표 구분 행 꼴 줄이 있는 블록(빈 줄 사이, 코드 펜스 안 줄은 빼고) 안의 백슬래시, 목록·인용 표지를 10개 이상 여는 줄.
 # 사용: release-notes.sh <커밋>
 set -eu -o pipefail
@@ -233,7 +233,8 @@ function rare(    k, t, o, j, tb, bs, c, u, fx, fc) {
     tb = 0; bs = 0
     for (k = 1; k <= nb + 1; k++) {
         t = (k <= nb) ? line[k] : ""
-        if (index(t, "\t") || index(t, "\r") || index(t, "````") || index(t, "~~~~")) return 1
+        # GitHub(cmark-gfm)는 표 구분 행의 칸 사이 공백으로 VT·FF 도 받으므로 VT·FF 도 표지로 본다.
+        if (index(t, "\t") || index(t, "\r") || index(t, "\v") || index(t, "\f") || index(t, "````") || index(t, "~~~~")) return 1
         if (k > nb || blank(t)) { if (tb && bs) return 1; tb = 0; bs = 0; continue }
         if ((j = index(t, "[^")) && index(substr(t, j), "]:")) return 1
         # 한 줄에서 여는 목록·인용 표지를 센다. GitHub(cmark-gfm)는 한 줄에서 여는 컨테이너 수에 한계가 있다.
