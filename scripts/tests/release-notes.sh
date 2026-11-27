@@ -625,8 +625,9 @@ printf 'chore: bump version to 9.9.9\n\n[^1]\n\n[^1]: x\n\n    <s>\n' > "$m"
 printf '[^1]\n\n[^1]: x\n\n    &lt;s&gt;\n' > "$w"
 check '각주 정의가 있는 본문은 본문 전체를 엔터티로' "$m" "$w"
 
-printf 'chore: bump version to 9.9.9\n\nFixed a crash[^1].\n\n- [^1]: Reported in the forum.\n\n    Run tasty --secs <s> to reproduce.\n' > "$m"
-printf 'Fixed a crash[^1].\n\n- [^1]: Reported in the forum.\n\n    Run tasty --secs &lt;s&gt; to reproduce.\n' > "$w"
+# 이어 줄은 목록 내용 들여쓰기(2칸) + 4칸이라 흔한 경로에서는 항목 안 코드 블록이 된다.
+printf 'chore: bump version to 9.9.9\n\nFixed a crash[^1].\n\n- [^1]: Reported in the forum.\n\n      Run tasty --secs <s> to reproduce.\n' > "$m"
+printf 'Fixed a crash[^1].\n\n- [^1]: Reported in the forum.\n\n      Run tasty --secs &lt;s&gt; to reproduce.\n' > "$w"
 check '목록 표지 뒤의 각주 정의도 표지로 본다' "$m" "$w"
 
 printf 'chore: bump version to 9.9.9\n\n>\t[r]: /u\n> ===\n>     <s>\n\n  \ttab <code> & more\n' > "$m"
