@@ -357,6 +357,7 @@ fn a_focus_that_keeps_a_popup_still_moves_the_selection_for_the_next_focus() {
         (&[N::Focus(B), N::Focus(A)][..], Some(A)),
         (&[N::Focus(B)][..], None),
         (&[N::Focus(A)][..], None),
+        (&[N::Focus(GONE), N::Focus(A)][..], None),
     ] {
         let (mut state, mut session) = two_surfaces();
         let engine = session.borrow_mut();
