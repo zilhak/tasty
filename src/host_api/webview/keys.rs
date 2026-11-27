@@ -1383,7 +1383,16 @@ mod tests {
         state.normalize_focus(engine.core);
         assert!(matches!(state.focus_node(engine.core), FocusNode::Popup(_)));
         press(&mut state, engine.core, 12);
-        assert_eq!(state.focus_node(engine.core), FocusNode::Surface(Some(12)));
+        assert_eq!(
+            state.focus_node(engine.core),
+            FocusNode::Surface(Some(12)),
+            "장면 1: 같은 surface 본문 누름이 검색 바 포커스를 놓지 않았다"
+        );
+        assert_eq!(
+            state.html_address.focused_surface(),
+            None,
+            "장면 1: 주소 띠는 그대로다"
+        );
         // 장면 2
         let (mut state, mut session) = two_surfaces();
         let engine = session.borrow_mut();
