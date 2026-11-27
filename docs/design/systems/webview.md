@@ -204,7 +204,7 @@ native 입력 대기열에 넣어 호스트 루프 회차 끝에 처리한다(`w
 
 | 메서드 | 역할 |
 |--------|------|
-| blocks_edit_key | 받은 surface가 키 쥘 곳이 아니거나 host 모달인 동안의 편집 키를 막는다(`WebViewKeyBridge::input_blocked`) |
+| blocks_edit_key | 받은 surface가 대기 알림 뒤 키 쥘 곳(`WebViewKeyBridge::holder_after_pending`)이 아니거나 host 모달인 동안의 편집 키를 막는다(`WebViewKeyBridge::input_blocked`) |
 | edit_action | 사용자 편집 바인딩이면 실행할 편집 명령을 반환한다 |
 | forward_key | host가 가져갈 조합을 대기열에 넣고 그 일련번호를 반환한다 |
 | note_press | 그 WebView의 실제 버튼 누름을 알린다 |
@@ -221,13 +221,29 @@ Windows key-down 판정 순서는 편집 키 차단 → 편집 명령 → host �
   - host 입력 경로를 쓰지 못한 view(옛 runtime 등)는 메시지 훅 대신 TASTY_WEBVIEW 창이 받는 자식 창 `WM_PARENTNOTIFY`(왼쪽 버튼 누름)로 누름을 알린다(등록·분배 `parent_press::dispatch`, 알림 `click_gesture::note_parent_notify`).
 
 native 입력 순서: 누름 알림과 host가 가져간 조합은 bridge의 대기열 하나에 도착 순서대로 쌓이고, 호스트 루프가
-그 순서로 소비한다(`webview_keys::consume_native_inputs`). 누름 한 건마다 창 누름 전이를 적용한다. 실제 누름이면 주소 띠의
-키 포커스를 놓고 선택을 그 surface로 옮긴 뒤, 정규화한 키 쥘 곳을 bridge에 게시한다(`webview_keys::press_and_publish`).
-누름 없는 포커스 획득은 주소 띠를 놓지 않는다. view를 지우면 그 surface의 대기열 항목을 지운다
-(`WebViewKeyBridge::retire_view`). host가 가져간 조합은 전달 키 처리(`forwarded_key_gate_open`)를 대기열 자리에서 받는다.
+그 순서로 소비한다(`webview_keys::consume_native_inputs`). 누름 한 건은 창 누름과 같은 누름 대상 전이
+(`MainViewState::apply_press_target`)를 받는다. 그 surface 경로를 덮는 덮개가 있으면 덮개를 누른 것과 같고(선택은 그대로),
+없으면 팝업 포커스와 주소 띠의 키 포커스를 놓고 선택을 그 surface로 옮긴다(`MainViewState::press_surface_body`). 누름 없는
+포커스 획득은 덮인 surface면 아무것도 하지 않고, 아니면 선택만 옮긴다(`webview_keys::apply_native_press`). 앞 입력이 탭을
+바꿔 그 surface가 표시되지 않거나(`MainViewState::surface_displayed`) 그 WebView를 교체해 binding이 맞지 않으면
+(`webview_sync::webview_binding_current`) 알림은 어떤 전이도 하지 않는다. 전이 뒤 정규화한 키 쥘 곳을 bridge에
+게시한다(`webview_keys::press_and_publish`). view를 지우면 그 surface의 대기열 항목을 지우고
+(`WebViewKeyBridge::retire_view`), 유지한 HTTP 세션이 새 문서로 바뀌면 옛 문서의 항목을 지우고 지운 키는 페이지로 다시
+넣지 않고 끝낸다(`WebViewKeyBridge::retire_page`). host가 가져간 조합은 전달 키 처리를 대기열 자리에서 받는다. 그
+WebView의 binding이 맞지 않으면 어느 단계보다 먼저 막고, 그 뒤 게이트(`forwarded_key_gate_open`)를 본다.
 소비하는 곳은 호스트 루프 회차 끝과, Linux에서 이벤트 한 건마다 소비하는 App의 GTK 펌프(`App::pump_gtk_events`)다. 소비
 중에 온 입력은 대기열 끝에 쌓이고 같은 소비가 이어서 처리한다(`WebViewKeyBridge::begin_consuming`). 그 밖의 GTK 펌프(halt
-펌프, view를 지울 때의 펌프 등)는 소비하지 않는다. halt 펌프는 키·포커스를 전달하지 않는다.
+펌프, 메뉴 종료 펌프, view를 지울 때의 펌프)는 대기열을 건마다 소비하지 않는다. halt 펌프는 키·포커스를 전달하지
+않고, 나머지 펌프가 한꺼번에 처리한 [누름, 편집 키]는 아래 대기 알림 예측이 판정한다. 남는 한계: 프레임 동기화는
+대기열 앞의 누름만 소비하므로 전달 키 뒤의 누름은 회차 끝 소비까지 적용되지 않는다(아래 [포커스](#포커스--회수는-조건부다)의
+보류와 재예약).
+
+대기 알림 예측: native 콜백은 host 상태를 읽지 못하고 게시값으로 편집 키를 판정한다. 키 쥘 곳을 바꿀 수 있는 자리마다
+키 쥘 곳과 함께 누름 알림 한 건의 surface별 결과표(`MainViewState::press_forecast`)를 게시하고
+(`key_release::publish_key_holder`, 자리 목록은 `webview_key_holder_publish_sites` 가드), 편집 키를 판정할 때 다리는
+게시된 키 쥘 곳에서 출발해 대기열의 누름 알림을 도착 순서대로 그 표로 적용한다(`press_forecast::holder_after_notices`).
+그래서 소비 전의 [B 누름, B 편집 키]는 B에서 실행되고 A 편집 키는 막힌다. 전달 키의 효과는 예측하지 않는다(그 키를
+소비한 자리의 게시가 정한다). 이 예측은 입력 순서 경계 설계(S6c)가 대체할 임시 장치다.
 
 backend는 Rc<dyn WebViewKeySink>만 받는다. 정책 교체와 큐 관리는 구체 bridge가 맡는다.
 callback은 main thread에서 실행하므로 Rc·RefCell을 사용한다.
@@ -366,9 +382,10 @@ host 모달이 열려 있거나 키를 받은 surface가 창의 키 쥘 곳(`key
 Ctrl/Shift+Insert, Shift+Delete, Ctrl+Z, Ctrl+Shift+Z, Ctrl+Y와 엔진 키 표의 Ctrl+Shift+V 서식 없는 붙여넣기,
 Windows의 Alt+Backspace·Alt+Shift+Backspace 실행 취소·다시 실행, Linux의 Ctrl+/ 전체 선택)를 실행하지도 페이지에
 보내지도 않는다(`WebViewKeySink::blocks_edit_key`). 이 추가 키는 막는 동안에만 쓰며 평소에는 엔진 처리에 그대로 둔다. macOS WKWebView는 Edit 메뉴 없이 Cmd 편집 키를 실행하지 않으므로 바인딩만 막는다.
-모달 상태는 모달을 열고 닫을 때(`set_active_modal`·`take_active_modal`), 키 쥘 곳은 프레임 동기화의 W2 판정 뒤와 native 누름
-알림 한 건을 소비할 때마다 bridge에 알린다(`WebViewKeyBridge::set_key_holder`, `webview_keys::press_and_publish`). 편집 키는 받은
-자리에서 그때 게시된 값으로 판정한다. 편집이 아닌 키는 이 판정과 무관하다.
+모달 상태는 모달을 열고 닫을 때(`set_active_modal`·`take_active_modal`), 키 쥘 곳과 대기 알림 결과표는 그 값을 바꿀 수 있는
+자리마다 bridge에 알린다(`key_release::publish_key_holder`, 자리는 위 대기 알림 예측). 편집 키는 받은 자리에서 그때 게시된 값과
+대기열의 누름 알림으로 판정한다. Linux 편집 명령은 확장의 순서 확인 뒤 같은 전달 게이트(`WebViewKeySink::edit_reply_blocked`:
+host 모달, 창 전체 차단, 그 surface를 덮는 덮개)로 다시 본다. 편집이 아닌 키는 이 판정과 무관하다.
 
 같은 조합이 여러 곳에 묶였을 때의 순서는 두 경로가 같다: 포커스 WebView의 편집 바인딩 > plugin 명령 > 그 밖의
 host 액션. native 경로는 `edit_action`을 `forward_key`보다 먼저 묻고 페이지 예약 조합과 같은 plugin 조합을 정책에서
@@ -540,7 +557,10 @@ host는 실제 focus가 해당 자식 안에 있을 때만 부모 winit 창으�
   판정 전에 대기열 앞의 아직 소비하지 않은 누름 알림을 알림 소비와 같은 전이로 먼저 소비한다
   (`key_release::release_after_native_focus_notices`). Windows는 winit이 누름 메시지와 다시 그리기를 한 회차 안에서
   차례로 처리하므로, 그러지 않으면 방금 누른 webview를 앞 포커스 노드로 판정해 회수하고 뒤따르는 글자 키를 잃는다.
-  전달 키 뒤에 입력이 남았으면 그 뒤 누름이 아직 적용되지 않았으므로 그 동기화는 회수하지 않는다.
+  전달 키 뒤에 남은 누름은 아직 적용되지 않았으므로(앞 키가 탭·덮개·포커스를 바꿀 수 있다) 그 누름의 surface만 회수를
+  보류하고 나머지는 회수한다. 이번 프레임에 숨는 webview(모드 `Hide`, overlay 열림)는 보류하지 않는다. 보류한 후보가 있으면
+  재판정 의무를 남기고, 대기열이 비면(소비, `retire_view`, 동기화의 선두 소비 어느 쪽이든) 동기화를 한 번 예약한다
+  (`key_release::release_retry_due`). 회수를 적용한 동기화는 의무를 지운다.
 - 탭·workspace 전환으로 surface가 활성 탭에서 빠질 때: 그 surface만 전이마다 한 번 회수한다.
   숨기기 전에 회수한다. 숨긴 뒤에는 backend가 focus가 이미 자식 밖에 있다고 판정할 수 있다.
   창이 비활성이면 창이 활성이 될 때까지 미루고, 그 사이 다시 활성 탭에 들어오거나 닫힌 surface는 뺀다.
