@@ -83,6 +83,20 @@ impl Painted {
             .collect()
     }
 
+    /// `rect`와 같은 사각형에 그린 획의 (획 쪽, 색), 그린 순서대로. Input 포커스 모양은 Inside 테두리와
+    /// 그 바깥에 붙은 Outside 링이다.
+    pub(crate) fn strokes_on(&self, rect: egui::Rect) -> Vec<(egui::StrokeKind, egui::Color32)> {
+        self.shapes
+            .iter()
+            .filter_map(|s| match s {
+                egui::Shape::Rect(r) if r.rect == rect && r.stroke.width > 0.0 => {
+                    Some((r.stroke_kind, r.stroke.color))
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
     /// `needle`을 담은 글자의 화면 사각형.
     pub(crate) fn text_rect(&self, needle: &str) -> egui::Rect {
         self.shapes

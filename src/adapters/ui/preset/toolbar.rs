@@ -348,8 +348,11 @@ mod tests {
     use super::*;
     use crate::painted_test_support::{paint_ctx, themes};
 
-    /// 이름 칸 상자의 채움·테두리 색. 칸 폭이 RENAME_W인 테두리 사각형을 읽는다.
-    fn field_look(theme: &Theme, focus: bool) -> (egui::Color32, egui::Color32) {
+    /// 이름 칸 상자의 채움 색과 그 상자에 그린 획(획 쪽, 색). 칸 폭이 RENAME_W인 Inside 테두리 사각형을 읽는다.
+    fn field_look(
+        theme: &Theme,
+        focus: bool,
+    ) -> (egui::Color32, Vec<(egui::StrokeKind, egui::Color32)>) {
         let ctx = egui::Context::default();
         let id = egui::Id::new("preset_name_field_test");
         if focus {
@@ -362,24 +365,31 @@ mod tests {
             });
         });
         let w = RENAME_W.value();
-        let edge = p
-            .stroked_rects()
-            .into_iter()
-            .find(|(r, _, _)| r.width() == w)
+        let rect = p
+            .shapes
+            .iter()
+            .find_map(|s| match s {
+                egui::Shape::Rect(r)
+                    if r.rect.width() == w
+                        && r.stroke.width > 0.0
+                        && r.stroke_kind == egui::StrokeKind::Inside =>
+                {
+                    Some(r.rect)
+                }
+                _ => None,
+            })
             .expect("칸 테두리");
         let fill = p
             .shapes
             .iter()
             .find_map(|s| match s {
-                egui::Shape::Rect(r)
-                    if r.rect == edge.0 && r.fill != egui::Color32::TRANSPARENT =>
-                {
+                egui::Shape::Rect(r) if r.rect == rect && r.fill != egui::Color32::TRANSPARENT => {
                     Some(r.fill)
                 }
                 _ => None,
             })
-            .unwrap_or(edge.1);
-        (fill, edge.2)
+            .expect("칸 채움");
+        (fill, p.strokes_on(rect))
     }
 
     /// 이름 바꾸기 중 칸 안쪽 가로 여백을 누르고 떼도 이름을 확정하지 않고 편집을 이어 간다.
@@ -449,19 +459,26 @@ mod tests {
         assert!(ctx.memory(|m| m.has_focus(id)), "여백 누름 뒤 포커스");
     }
 
-    /// 프리셋 이름 칸은 Input 칸 모양이다: 쉴 때 input-bg 채움과 input-border 테두리, 포커스면 input-border-focus.
+    /// 프리셋 이름 칸은 Input 칸 모양이다: 쉴 때 input-bg 채움과 input-border 테두리 하나, 포커스면
+    /// input-border-focus 테두리와 그 바깥 링.
     #[test]
     fn the_name_field_takes_the_input_field_look() {
+        let inside = egui::StrokeKind::Inside;
         for theme in themes() {
             assert_ne!(theme.input_border(), theme.input_border_focus());
-            let (fill, edge) = field_look(&theme, false);
+            let (fill, rest) = field_look(&theme, false);
             assert_eq!(fill, theme.input_bg().to_egui(), "채움");
-            assert_eq!(edge, theme.input_border().to_egui(), "테두리");
+            assert_eq!(
+                rest,
+                vec![(inside, theme.input_border().to_egui())],
+                "테두리"
+            );
             let (_, focused) = field_look(&theme, true);
+            let f = theme.input_border_focus().to_egui();
             assert_eq!(
                 focused,
-                theme.input_border_focus().to_egui(),
-                "포커스 테두리"
+                vec![(inside, f), (egui::StrokeKind::Outside, f)],
+                "포커스 테두리와 링"
             );
         }
     }

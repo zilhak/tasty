@@ -2144,7 +2144,7 @@ mod tests {
     use super::*;
 
     /// inline passkey 값 칸은 Input 칸 모양이다: 쉴 때 input-bg 채움과 input-border 테두리, 포커스면
-    /// input-border-focus 테두리.
+    /// input-border-focus 테두리와 바깥 링.
     #[test]
     fn the_inline_passkey_value_takes_the_input_field_look() {
         for th in crate::painted_test_support::themes() {
@@ -2171,22 +2171,15 @@ mod tests {
                         _ => None,
                     })
                     .expect("input-bg 채움");
-                let edges: Vec<_> = p
-                    .stroked_rects()
-                    .into_iter()
-                    .filter(|(r, _, _)| *r == bed)
-                    .map(|(_, _, c)| c)
-                    .collect();
+                let inside = egui::StrokeKind::Inside;
                 let want = if focus {
-                    th.input_border_focus()
+                    // 포커스는 input-border-focus 테두리와 그 바깥 링 둘이다.
+                    let f = th.input_border_focus().to_egui();
+                    vec![(inside, f), (egui::StrokeKind::Outside, f)]
                 } else {
-                    th.input_border()
+                    vec![(inside, th.input_border().to_egui())]
                 };
-                assert_eq!(
-                    edges.first(),
-                    Some(&want.to_egui()),
-                    "focus={focus}: {edges:?}"
-                );
+                assert_eq!(p.strokes_on(bed), want, "focus={focus}");
             }
         }
     }
