@@ -17,12 +17,14 @@ use crate::popup_decl::{
 
 /// plugin → host: 팝업 선언을 등록하거나 바꾼다. params는 [`PopupDeclareParams`], 응답은 빈 객체.
 ///
-/// tasty-plugin-protocol 0.2.16 다음 버전부터다. 0.2.16으로 릴리스된 host는 이 메서드를 모른다(develop은 버전이 0.2.16인 채 이미 지원한다).
+/// Tasty 0.14.1 host부터 처리한다(이 크레이트 버전은 0.2.16 그대로다). 같은 0.2.16인 Tasty 0.10.2~0.14.0 host는
+/// 이 메서드를 모르고 매니페스트의 `min_tasty_version`도 무시하므로, 그 host에서는 호출 실패를 처리하거나 호출을 건너뛴다.
 pub const METHOD_POPUP_DECLARE: &str = "popup.declare";
 /// plugin → host: 선언한 팝업의 인스턴스를 연다. params는 [`PopupShowParams`],
 /// 응답은 [`PopupShowResult`].
 ///
-/// tasty-plugin-protocol 0.2.16 다음 버전부터다. 0.2.16으로 릴리스된 host는 이 메서드를 모른다(develop은 버전이 0.2.16인 채 이미 지원한다).
+/// Tasty 0.14.1 host부터 처리한다(이 크레이트 버전은 0.2.16 그대로다). 같은 0.2.16인 Tasty 0.10.2~0.14.0 host는
+/// 이 메서드를 모르고 매니페스트의 `min_tasty_version`도 무시하므로, 그 host에서는 호출 실패를 처리하거나 호출을 건너뛴다.
 pub const METHOD_POPUP_SHOW: &str = "popup.show";
 
 /// plugin이 보내는 부분 선언. `scope_kind`와 `size`만 필수다.
