@@ -16,7 +16,7 @@ const B: u32 = 12;
 /// 엔진에 없는 surface(무효 알림).
 const GONE: u32 = 99;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 enum N {
     Click(u32),
     Focus(u32),
@@ -343,6 +343,44 @@ fn a_focus_notice_keeps_the_node_it_does_not_release() {
         let engine = session.borrow_mut();
         state.html_address.set_focused_for_test(A);
         assert_eq!(agree(&mut state, engine.core, notices, &|_| true), want);
+    }
+}
+
+/// 포커스 획득은 팝업을 놓지 못해도 선택을 옮긴다. Given 선택은 A 이고 B 범위 검색 바(덮지 않는 팝업)가 포커스다,
+/// When [B 포커스 획득, A 포커스 획득] 이 오면, Then B 포커스 획득은 검색 바를 남긴 채 선택을 B 로 옮기고, A 포커스
+/// 획득은 선택을 A 로 되돌려 경로 밖이 된 검색 바를 풀어 A 가 키 쥘 곳이 된다(예측과 실제 소비가 같다). 대조: B 포커스
+/// 획득만이면 검색 바가 남고, A 포커스 획득만이면 선택이 그대로라 검색 바가 남는다.
+#[test]
+fn a_focus_that_keeps_a_popup_still_moves_the_selection_for_the_next_focus() {
+    use crate::adapters::ui::search_bar::SEARCH_BAR_POPUP_ID;
+    for (notices, want) in [
+        (&[N::Focus(B), N::Focus(A)][..], Some(A)),
+        (&[N::Focus(B)][..], None),
+        (&[N::Focus(A)][..], None),
+    ] {
+        let (mut state, mut session) = two_surfaces();
+        let engine = session.borrow_mut();
+        state
+            .popups
+            .open_request(
+                &crate::intent::OpenRequest::new(SEARCH_BAR_POPUP_ID, PopupScope::Surface(B))
+                    .focused(),
+                true,
+            )
+            .expect("검색 바가 열린다");
+        let label = format!("{notices:?}");
+        assert_eq!(state.focused_surface_id(engine.core), Some(A), "{label}");
+        let bridge = published(&mut state, engine.core);
+        assert_eq!(
+            bridge.holder_after_pending(),
+            None,
+            "{label}: 검색 바가 키를 쥔다"
+        );
+        assert_eq!(
+            agree(&mut state, engine.core, notices, &|_| true),
+            want,
+            "{label}"
+        );
     }
 }
 

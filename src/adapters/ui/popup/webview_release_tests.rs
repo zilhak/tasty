@@ -680,6 +680,47 @@ fn a_pending_focus_that_cannot_take_the_keys_does_not_keep_the_release() {
     }
 }
 
+/// 보류 후보는 알림을 차례로 적용한 선택으로 고른다. Given 선택은 L 이고 R 범위 검색 바(덮지 않는 팝업)가 포커스이며
+/// L WebView 가 OS 키 포커스를 쥔다, When 키 뒤에 [R 포커스 획득, L 포커스 획득] 이 남았으면, Then R 포커스 획득이
+/// 검색 바를 남긴 채 선택을 R 로 옮기고 L 포커스 획득이 선택을 L 로 되돌려 검색 바를 풀므로 L 회수를 보류한다.
+/// 대조: R 포커스 획득만, 또는 L 포커스 획득만(선택이 그대로라 검색 바가 남는다)이면 L 을 바로 회수한다.
+#[test]
+fn a_focus_back_after_a_focus_that_kept_the_popup_keeps_the_release() {
+    use crate::adapters::ui::search_bar::SEARCH_BAR_POPUP_ID;
+    use crate::host_api::webview::keys::WebViewKeySink;
+    for (notices, released) in [
+        (&[SURFACE_R, SURFACE_L][..], 0),
+        (&[SURFACE_R][..], 1),
+        (&[SURFACE_L][..], 1),
+    ] {
+        let (mut state, mut session) = defs_scene();
+        state
+            .popups
+            .open_request(
+                &OpenRequest::new(SEARCH_BAR_POPUP_ID, PopupScope::Surface(SURFACE_R)).focused(),
+                true,
+            )
+            .expect("검색 바가 열린다");
+        let bridge = key_then(|bridge| {
+            for &sid in notices {
+                bridge.note_focus(sid);
+            }
+        });
+        let l = holding();
+        let engine = session.borrow_mut();
+        sync_with_notices(
+            &mut state,
+            &engine.read(),
+            &bridge,
+            OverlayMode::Opaque,
+            &[(SURFACE_L, &l)],
+        );
+        let label = format!("포커스 획득 {notices:?}");
+        assert_eq!(l.released.get(), released, "{label}");
+        assert_eq!(state.webview_release_due, released == 0, "{label}");
+    }
+}
+
 /// P4 정산: Given 키 뒤 R 누름 때문에 R 회수를 보류했다, When (a) 회차 끝 소비가 키만 처리한 뒤 R 의 view 를 지워
 /// (`retire_view`) 대기열이 비면, Then 의무가 한 번 다시 판정을 예약한다. When (b) 키만 처리된 뒤 다음 동기화가 남은
 /// R 누름을 선두에서 직접 소비하고 회수를 판정하면, Then 그 판정이 의무를 지워 대기열이 비어도 예약은 0번이다.

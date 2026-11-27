@@ -242,6 +242,8 @@ WebView의 binding이 맞지 않으면 어느 단계보다 먼저 막고, 그 �
 키 쥘 곳과 함께 누름 알림 한 건의 surface별 결과표(`MainViewState::press_forecast`)를 게시하고
 (`key_release::publish_key_holder`, 자리 목록은 `webview_key_holder_publish_sites` 가드), 편집 키를 판정할 때 다리는
 게시된 키 쥘 곳에서 출발해 대기열의 누름 알림을 도착 순서대로 그 표로 적용한다(`press_forecast::holder_after_notices`).
+적용은 실제 소비처럼 선택을 따라간다: 유효한 포커스 획득은 팝업을 놓지 못해도 선택을 그 surface로 옮기고, 팝업이 풀리는지는
+걸음 중의 선택이 바뀌고 팝업 범위가 그 surface 경로 밖인지로 판정한다(`normalize_focus`).
 표는 실제 소비와 같은 판정을 읽는다: 창 전체를 막는 노드(`MainViewState::window_blocks_pages`, 실제 소비도 이 판정으로
 알림을 버린다), 표시된 탭, 덮개, WebView binding(`webview_sync::webview_binding_current`, 맞지 않은 surface의 알림은
 무효다). 게시하는 키 쥘 곳도 같은 binding 판정을 따른다: 선택된 surface라도 binding이 맞지 않으면(엔진이 실행

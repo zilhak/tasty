@@ -73,13 +73,13 @@ impl MainViewState {
                 {
                     forecast.focus_valid.insert(sid);
                     // 포커스 획득은 팝업만 놓을 수 있다: 선택이 바뀌고 그 팝업 범위가 새 경로 밖일 때다(`normalize_focus`).
+                    // 선택이 바뀌는지는 알림을 차례로 적용하는 걸음이 판정한다.
                     if let FocusNode::Popup(popup) = node
-                        && selected != Some(sid)
                         && self
                             .node_logical_scope(popup)
                             .is_some_and(|scope| !path.contains(&scope))
                     {
-                        forecast.focus_releases_now.insert(sid);
+                        forecast.popup_off_path.insert(sid);
                     }
                 }
             }

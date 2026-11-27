@@ -28,9 +28,10 @@ pub struct PressForecast {
     /// 포커스 노드가 surface 이거나 경로 밖 팝업일 때, 포커스 획득이 키 쥘 곳을 그 surface 로 만든다(덮이지 않음).
     #[cfg(any(windows, target_os = "macos", test))]
     pub focus_valid: HashSet<u32>,
-    /// 지금 포커스 노드(팝업)가 그 surface 의 포커스 획득으로 풀린다.
+    /// 지금 포커스 노드가 팝업이고 그 범위가 그 surface 경로 밖이다(선택과 무관). 선택을 그 surface 로 바꾸는 포커스
+    /// 획득이 그 팝업을 푼다(`normalize_focus`).
     #[cfg(any(windows, target_os = "macos", test))]
-    pub focus_releases_now: HashSet<u32>,
+    pub popup_off_path: HashSet<u32>,
 }
 
 /// 앞 알림이 남긴 포커스 노드의 꼴.
@@ -102,17 +103,22 @@ fn walk_notices<'a>(
             }
             #[cfg(any(windows, target_os = "macos", test))]
             PressKind::Focus => {
-                let moves = forecast.focus_valid.contains(&sid)
-                    && match node {
-                        Node::Body => true,
-                        Node::Published => forecast.focus_releases_now.contains(&sid),
-                        // 덮개는 선택이 바뀔 때만 경로 밖이 되어 풀린다(`normalize_focus`).
-                        Node::Cover => selected != Some(sid),
-                    };
+                if !forecast.focus_valid.contains(&sid) {
+                    continue;
+                }
+                // 팝업·덮개는 선택이 바뀌고 그 범위가 새 경로 밖일 때만 풀린다(`normalize_focus`).
+                let moves = match node {
+                    Node::Body => true,
+                    Node::Published => {
+                        forecast.popup_off_path.contains(&sid) && selected != Some(sid)
+                    }
+                    Node::Cover => selected != Some(sid),
+                };
+                // 유효한 포커스 획득은 노드를 놓지 못해도 선택을 옮긴다(`focus_surface_by_id`).
+                selected = Some(sid);
                 if moves {
                     on_hold(sid);
                     holder = Some(sid);
-                    selected = Some(sid);
                     node = Node::Body;
                 }
             }
