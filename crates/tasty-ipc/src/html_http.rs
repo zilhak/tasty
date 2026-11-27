@@ -7,10 +7,12 @@ use serde::{Deserialize, Serialize};
 mod validation;
 pub use validation::decode_chunk;
 
-pub const CAPABILITY: &str = "ipc.stream.html-http-v1";
-pub const RELOAD_CAPABILITY: &str = "ipc.stream.html-http-reload-v1";
-pub const HTTPS_CAPABILITY: &str = "ipc.stream.html-https-v1";
+// 이름은 tasty-attach-protocol이 정의하고 이 경로로 다시 내보낸다.
 pub use crate::html_transfer::{AUTO_BYTES, CHUNK_BYTES, DOCUMENT_BYTES};
+pub use tasty_attach_protocol::{
+    HTML_HTTP_CAPABILITY as CAPABILITY, HTML_HTTP_RELOAD_CAPABILITY as RELOAD_CAPABILITY,
+    HTML_HTTPS_CAPABILITY as HTTPS_CAPABILITY,
+};
 pub const HEADER_BYTES: usize = 65_536;
 pub const HEADER_COUNT: usize = 256;
 pub const URL_BYTES: usize = 16_384;

@@ -13,8 +13,8 @@
 
 use serde::{Deserialize, Serialize};
 
-/// 서버가 원격 자식 에이전트 요청과 완료 통지를 지원한다는 capability 이름.
-pub const CAPABILITY: &str = "ipc.stream.agent-children";
+// 이름은 tasty-attach-protocol이 정의하고 이 경로로 다시 내보낸다.
+pub use tasty_attach_protocol::AGENT_CHILDREN_CAPABILITY as CAPABILITY;
 /// [`CAPABILITY`] 의 버전.
 pub const VERSION: u32 = 1;
 
@@ -275,5 +275,37 @@ mod tests {
         assert_eq!(parent_key(3), "attach:o3");
         assert!(is_attach_parent("attach:o3"));
         assert!(!is_attach_parent("codex:t1"));
+    }
+
+    /// 원격 자식 요청도 같은 값 형태를 쓰고, 모르는 값이 메시지 전체를 깨지 않는다.
+    #[test]
+    fn agent_calls_read_the_same_shapes() {
+        use serde_json::json;
+        let call = |inherit_cwd: serde_json::Value| {
+            let mut msg = json!({
+                "event": "agent_call_request", "call_id": 1, "namespace": "claude",
+                "method": "spawn", "anchor_surface_id": 3, "params": {},
+            });
+            if !inherit_cwd.is_null() {
+                msg["inherit_cwd"] = inherit_cwd;
+            }
+            match serde_json::from_value::<AgentClientMsg>(msg).expect("call") {
+                AgentClientMsg::AgentCallRequest { inherit_cwd, .. } => inherit_cwd,
+                other => panic!("not a call: {other:?}"),
+            }
+        };
+        assert_eq!(call(serde_json::Value::Null), None);
+        assert_eq!(
+            call(json!({"surface": 5})),
+            Some(crate::stream::InheritCwd::Surface(5))
+        );
+        assert_eq!(
+            call(json!("none")),
+            Some(crate::stream::InheritCwd::NoInherit)
+        );
+        assert_eq!(
+            call(json!(1)),
+            Some(crate::stream::InheritCwd::Unknown(json!(1)))
+        );
     }
 }

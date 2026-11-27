@@ -9,8 +9,8 @@
 
 use serde::{Deserialize, Serialize};
 
-/// 서버가 holder 의 원본 터미널 읽기를 받는다는 capability 이름.
-pub const CAPABILITY: &str = "ipc.stream.terminal-read";
+// 이름은 tasty-attach-protocol이 정의하고 이 경로로 다시 내보낸다.
+pub use tasty_attach_protocol::TERMINAL_READ_CAPABILITY as CAPABILITY;
 /// [`CAPABILITY`] 의 버전.
 pub const VERSION: u32 = 1;
 

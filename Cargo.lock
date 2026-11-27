@@ -5766,6 +5766,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "tasty-attach-protocol"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tasty-plugin-protocol",
+ "tasty-type-appearance",
+]
+
+[[package]]
 name = "tasty-cell-width"
 version = "0.1.0"
 
@@ -6031,6 +6041,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tasty-agent",
+ "tasty-attach-protocol",
  "tasty-memory",
  "tasty-plugin-manifest",
  "tasty-plugin-protocol",

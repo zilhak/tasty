@@ -2,9 +2,11 @@
 use crate::stream::{MAX_FRAME_LEN, StreamFrame, StreamTag};
 use serde::{Deserialize, Serialize};
 
-pub const CAPABILITY: &str = "ipc.stream.html-transfer-v1";
-pub const VIEWER_CAPABILITY: &str = "ipc.stream.html-entry-v1";
-pub const RESOURCE_CAPABILITY: &str = "ipc.stream.html-resources-v1";
+// 이름은 tasty-attach-protocol이 정의하고 이 경로로 다시 내보낸다.
+pub use tasty_attach_protocol::{
+    HTML_RESOURCE_CAPABILITY as RESOURCE_CAPABILITY, HTML_TRANSFER_CAPABILITY as CAPABILITY,
+    HTML_VIEWER_CAPABILITY as VIEWER_CAPABILITY,
+};
 pub const AUTO_BYTES: u64 = 100_000;
 pub const DOCUMENT_BYTES: u64 = 2_000_000;
 pub const CHUNK_BYTES: usize = 48 * 1024;

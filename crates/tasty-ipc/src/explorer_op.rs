@@ -7,9 +7,8 @@
 
 use serde::{Deserialize, Serialize};
 
-/// 서버가 원격 explorer 파일 작업을 받는다는 capability 이름. attach descriptor 의
-/// [`DESCRIPTOR_CAPABILITIES`](crate::stream::DESCRIPTOR_CAPABILITIES) 와 system.info 에 싣는다.
-pub const CAPABILITY: &str = "ipc.stream.explorer-write";
+// 이름은 tasty-attach-protocol이 정의하고 이 경로로 다시 내보낸다.
+pub use tasty_attach_protocol::EXPLORER_WRITE_CAPABILITY as CAPABILITY;
 /// [`CAPABILITY`] 의 버전.
 pub const VERSION: u32 = 1;
 

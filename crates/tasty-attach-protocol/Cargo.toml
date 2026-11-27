@@ -1,0 +1,20 @@
+[package]
+name = "tasty-attach-protocol"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Tasty attach stream control messages, capability names and workspace descriptor wire types"
+repository = "https://github.com/zilhak/tasty"
+
+# 다른 client가 데스크톱 의존 없이 쓰도록 serde 수준만 받는다.
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# MeshContext·MeshInput이 싣는 ThemeWire·RawInputWire. egui-mesh feature는 켜지 않는다.
+tasty-plugin-protocol = { path = "../tasty-plugin-protocol" }
+
+[dev-dependencies]
+tasty-type-appearance = { path = "../tasty-type-appearance" }
+
+[lints]
+workspace = true

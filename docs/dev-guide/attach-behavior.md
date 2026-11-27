@@ -254,7 +254,7 @@ mirror 키 입력은 서버 PTY에 그대로 들어가므로 수식키가 붙은
 - **client**: handshake에서 읽은 값을 연결의 `ConnectionSender`에 두고, `bind_mirror_input`이 mirror `Terminal::set_win32_console_input`으로 옮긴다. 재연결도 같은 함수를 거쳐 새 연결의 값으로 바뀐다. 키 디스패처는 focused terminal의 이 값으로 Shift+Enter·Ctrl+J 인코딩을 고른다([터미널 키보드 입력](../surfaces/terminal/index.md#키보드-입력)).
 - **구 서버**: 키가 없거나 모르는 값이면 `vt`로 읽는다. 구 Windows 서버에 붙은 mirror만 Shift+Enter·Ctrl+J를 VT로 보낸다.
 - **한계**: 앱별 Shift+Enter 규칙은 foreground 프로세스 이름으로 찾는데, mirror에는 로컬 PTY가 없고 서버가 이름을 보내지 않아 mirror에서는 적용되지 않는다. 플랫폼 기본 인코딩만 쓴다.
-- **시험**: `newline_keys_follow_the_target_console_encoding`(`src/view/main/keyboard.rs`), `a_mirror_takes_the_key_encoding_of_its_server`(`src/app/attach_client/resources.rs`), `a_descriptor_without_pty_input_reads_as_vt`(`crates/tasty-ipc/src/stream.rs`), `workspace_descriptor_announces_the_resize_ack_capability`(`src/remote/server/attach_resize.rs`).
+- **시험**: `newline_keys_follow_the_target_console_encoding`(`src/view/main/keyboard.rs`), `a_mirror_takes_the_key_encoding_of_its_server`(`src/app/attach_client/resources.rs`), `a_descriptor_without_pty_input_reads_as_vt`(`crates/tasty-attach-protocol/src/control_tests.rs`), `workspace_descriptor_announces_the_resize_ack_capability`(`src/remote/server/attach_resize.rs`).
 
 ## 프레임 전송 지연 (Nagle 금지)
 

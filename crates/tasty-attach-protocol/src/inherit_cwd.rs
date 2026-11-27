@@ -138,8 +138,8 @@ mod tests {
     }
 
     fn inherit_of(frame: &str) -> Option<InheritCwd> {
-        match serde_json::from_str::<crate::stream::StreamControl>(frame).expect("op frame") {
-            crate::stream::StreamControl::StructuralOp { op, .. } => op.inherit_cwd().cloned(),
+        match serde_json::from_str::<crate::StreamControl>(frame).expect("op frame") {
+            crate::StreamControl::StructuralOp { op, .. } => op.inherit_cwd().cloned(),
             other => panic!("not an op: {other:?}"),
         }
     }
@@ -176,7 +176,7 @@ mod tests {
                 params: serde_json::Value,
             },
         }
-        let op = crate::stream::StructuralOp::NewTab {
+        let op = crate::StructuralOp::NewTab {
             anchor_surface_id: 3,
             surface_kind: "terminal".into(),
             params: json!({}),
@@ -190,9 +190,9 @@ mod tests {
     /// 기준이 없으면 필드를 싣지 않는다. 옛 서버와 같은 바이트를 보낸다.
     #[test]
     fn an_absent_source_is_not_written() {
-        let op = crate::stream::StructuralOp::SplitPane {
+        let op = crate::StructuralOp::SplitPane {
             anchor_surface_id: 3,
-            direction: crate::stream::SplitAxis::Vertical,
+            direction: crate::SplitAxis::Vertical,
             surface_kind: "terminal".into(),
             params: json!({}),
             inherit_cwd: None,
@@ -203,29 +203,5 @@ mod tests {
                 .get("inherit_cwd")
                 .is_none()
         );
-    }
-
-    /// 원격 자식 요청도 같은 값 형태를 쓰고, 모르는 값이 메시지 전체를 깨지 않는다.
-    #[test]
-    fn agent_calls_read_the_same_shapes() {
-        let call = |inherit_cwd: serde_json::Value| {
-            let mut msg = json!({
-                "event": "agent_call_request", "call_id": 1, "namespace": "claude",
-                "method": "spawn", "anchor_surface_id": 3, "params": {},
-            });
-            if !inherit_cwd.is_null() {
-                msg["inherit_cwd"] = inherit_cwd;
-            }
-            match serde_json::from_value::<crate::agent_child::AgentClientMsg>(msg).expect("call") {
-                crate::agent_child::AgentClientMsg::AgentCallRequest { inherit_cwd, .. } => {
-                    inherit_cwd
-                }
-                other => panic!("not a call: {other:?}"),
-            }
-        };
-        assert_eq!(call(serde_json::Value::Null), None);
-        assert_eq!(call(json!({"surface": 5})), Some(InheritCwd::Surface(5)));
-        assert_eq!(call(json!("none")), Some(InheritCwd::NoInherit));
-        assert_eq!(call(json!(1)), Some(InheritCwd::Unknown(json!(1))));
     }
 }

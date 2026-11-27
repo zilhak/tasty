@@ -1,6 +1,6 @@
 # 아키텍처 개요
 
-Tasty는 본 바이너리(`src/`)와 53 개 크레이트(`crates/*`)로 구성된 Cargo workspace다. 도메인 로직은 GUI 없이 동작하고, GUI·IPC·OS 연동은 port와 adapter로 연결한다.
+Tasty는 본 바이너리(`src/`)와 54 개 크레이트(`crates/*`)로 구성된 Cargo workspace다. 도메인 로직은 GUI 없이 동작하고, GUI·IPC·OS 연동은 port와 adapter로 연결한다.
 
 ## 기술 스택
 
@@ -66,7 +66,7 @@ OS 호출은 `tasty-platform` 크레이트에 둬 본체 타입에 직접 의존
 
 셀 렌더링에서 반복 호출하는 tasty-cell-width, tasty-terminal-link, tasty-selection은 dev에서도 opt-level 3으로 빌드한다. workspace 멤버는 외부 의존용 별표 설정에 포함되지 않아 개별 등록이 필요하다. 선택 기준은 실행 시간 감소와 수정 후 재컴파일 시간 증가를 각각 비교하는 것이다. 폭 계산·링크 검출의 반복 비용 감소가 작은 추가 컴파일 비용보다 커 채택했다. 새 크레이트를 무조건 같은 수준으로 최적화하지는 않는다. 호출이 캐시되거나 해당 크레이트 수정 빈도가 늘면 번갈아 빌드·실행해 다시 비교한다.
 
-## 워크스페이스 크레이트 (53)
+## 워크스페이스 크레이트 (54)
 
 아래 목록은 낮은 계층부터 나열한다. 의존은 상위에서 하위로 향하며 순환을 허용하지 않는다. `architecture_layer_order_holds`가 매니페스트 의존과 순서를 대조한다. 크레이트 소속은 각 절 첫 문단에서 백틱 이름으로 시작하는 항목을 읽는다. 순서와 다른 의존을 발견하면 실제 의존과 문서의 계층 순서를 함께 확인한다.
 
@@ -169,7 +169,7 @@ mirror 이름·부제·설명·분류와 혼합 표시 순서는 비영속 App c
 `tasty-platform`은 본 바이너리가 사용하고 도메인-IO와 primitive 계층에만 의존한다. 네이티브 메뉴·트레이는 egui 위젯이 아니므로 본체·갤러리 공용 UI 계층과 구분한다.
 
 ### plugin protocol / SDK (프로토콜·프로세스 경계)
-`tasty-plugin-protocol`(호스트·plugin 전송 타입, → type-appearance/type-geometry) · `tasty-plugin-sdk`(외부 plugin SDK, → protocol/type-geometry/shm/utils/i18n) · `tasty-plugin-sdk-wasm`(WASM 타깃 SDK)
+`tasty-plugin-protocol`(호스트·plugin 전송 타입, → type-appearance/type-geometry) · `tasty-attach-protocol`(attach Control 메시지·capability 이름·workspace attach descriptor의 serde 타입. 프레임 코덱·소켓·세션은 tasty-ipc, → plugin-protocol) · `tasty-plugin-sdk`(외부 plugin SDK, → protocol/type-geometry/shm/utils/i18n) · `tasty-plugin-sdk-wasm`(WASM 타깃 SDK)
 
 이 계층은 protocol·SDK를 통해 호스트와 통신하며 도메인-IO에 직접 의존하지 않는다. 이 경계가 OS 샌드박스를 뜻하지는 않는다. **예외 하나** — `tasty-plugin-sdk` → `tasty-i18n`: 호스트와 SDK 가 설치·사용자 plugin 카탈로그 로딩을 공유한다.
 

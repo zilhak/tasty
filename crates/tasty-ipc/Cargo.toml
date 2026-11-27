@@ -20,6 +20,7 @@ tasty-utils = { path = "../tasty-utils" }
 tasty-memory = { path = "../tasty-memory" }
 tasty-telemetry = { path = "../tasty-telemetry" }
 tasty-agent = { path = "../tasty-agent" }
+tasty-attach-protocol = { path = "../tasty-attach-protocol" }
 tempfile = "3"
 
 [dev-dependencies]

@@ -405,8 +405,8 @@ pub fn whole_millis(left: Duration) -> Option<u64> {
     u64::try_from(left.as_millis()).ok().filter(|&ms| ms > 0)
 }
 
-/// [`crate::protocol::JsonRpcRequest::idempotency_key`] 를 서버가 읽는다는 선언의 이름.
-pub const IDEMPOTENCY_CAPABILITY: &str = "ipc.idempotency-key";
+// 이름은 tasty-attach-protocol이 정의하고 이 경로로 다시 내보낸다.
+pub use tasty_attach_protocol::IDEMPOTENCY_CAPABILITY;
 /// 서버가 멱등 키를 읽는 최소 버전. 메서드의 Kept.since에 따라 더 높은 버전이 필요할 수 있다.
 pub const IDEMPOTENCY_CAPABILITY_VERSION: u32 = crate::method_meta::KEY_KEPT_BY_ROUTER;
 
