@@ -1,5 +1,8 @@
 //! 편집 중인 Input의 상자 안쪽(가로 여백·아이콘 칸)을 눌러도 글자 칸 포커스가 풀리지 않는다.
 //! 편집 중이 아닐 때의 누름과 Tab 순서는 그대로다.
+
+// 이유: 테스트에서는 사용하지 않는 반환값을 버리는 것을 허용한다.
+#![allow(clippy::let_underscore_must_use)]
 use egui::{Event, Key, Modifiers, PointerButton, Pos2, RawInput, Rect, pos2, vec2};
 use tasty_ui_widgets::{AutoComplete, Input};
 
