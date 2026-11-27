@@ -95,18 +95,21 @@ impl PopupManager {
     }
 
     /// 열린 인스턴스 하나를 포커스 위치로 한다(열기·펼침·passive 승격). 포커스 위치는 창에 하나라 다른 팝업은
-    /// 저절로 포커스를 잃는다. 포커스를 받지 않는 인스턴스면 포커스 위치를 바꾸지 않는다.
-    pub(super) fn give_focus(&mut self, iid: PopupInstanceId) {
+    /// 저절로 포커스를 잃는다. 포커스를 받지 않는 인스턴스면 포커스 위치를 바꾸지 않는다. 포커스 위치나 passive 가
+    /// 바뀌었으면 참이다(그 팝업을 다시 그려야 한다).
+    pub(super) fn give_focus(&mut self, iid: PopupInstanceId) -> bool {
         let Some(p) = self
             .popups
             .iter_mut()
             .find(|p| p.open && p.instance == iid)
             .filter(|p| p.arrange.takes_focus)
         else {
-            return;
+            return false;
         };
-        p.passive = false;
-        self.focus = Some(PopupNode::Host(iid));
+        let promoted = std::mem::replace(&mut p.passive, false);
+        let node = Some(PopupNode::Host(iid));
+        let moved = std::mem::replace(&mut self.focus, node) != node;
+        promoted || moved
     }
 
     /// 그 노드를 누르면 포커스 위치가 그 노드로 바뀌는지(`focus_on_press`). 포커스를 받지 않는 host 팝업과 닫힌
@@ -123,12 +126,13 @@ impl PopupManager {
 
     /// 누름이 정한 포커스 위치. `target`은 누른 좌표의 포인터 대상인 팝업 노드(상자 또는 덮는 범위)이고, 팝업이
     /// 아니면 `None`이다. 팝업이면 그 팝업이 포커스 위치가 되고, 아니면 포커스 위치는 팝업이 아니게 된다(누른
-    /// surface·창 크롬). 포커스를 받지 않는 host 팝업(`keyboard = None`)을 누르면 바꾸지 않는다.
-    pub(crate) fn focus_on_press(&mut self, target: Option<PopupNode>) {
+    /// surface·창 크롬). 포커스를 받지 않는 host 팝업(`keyboard = None`)을 누르면 바꾸지 않는다. 포커스 위치나
+    /// passive 가 바뀌었으면 참이다.
+    pub(crate) fn focus_on_press(&mut self, target: Option<PopupNode>) -> bool {
         match target {
             Some(PopupNode::Host(iid)) => self.give_focus(iid),
-            Some(node @ PopupNode::Plugin(_)) => self.focus = Some(node),
-            None => self.focus = None,
+            Some(node @ PopupNode::Plugin(_)) => self.focus.replace(node) != Some(node),
+            None => self.focus.take().is_some(),
         }
     }
 

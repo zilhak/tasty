@@ -514,6 +514,57 @@ fn window_and_native_entries_reach_the_same_press_result() {
     }
 }
 
+/// Codex 4: native 누름 전이는 그린 것을 바꾸면 변경을 돌려준다(입구가 그 값으로 redraw 를 요청한다). 장면 1: 정규화로
+/// 이미 포커스 위치인 passive 덮개(A 범위, 창 범위)를 덮인 A 의 누름이 승격한다 → 참, passive 해제. 장면 2: 이미
+/// 선택된 A 의 말풍선 키보드 포커스를 A 누름이 끈다 → 참. 대조: 두 장면 모두 같은 누름을 한 번 더 하면 거짓이다.
+#[test]
+fn a_press_that_only_promotes_a_cover_or_drops_the_tutorial_focus_reports_a_change() {
+    const COVER: crate::adapters::ui::popup::PopupId = "press_change_cover";
+    for scope in [PopupScope::Surface(A), PopupScope::Window] {
+        let (mut state, mut session) = two_surfaces();
+        let engine = session.borrow_mut();
+        state.popups.register(PopupState::new(
+            COVER,
+            "cover".to_string(),
+            egui::vec2(120.0, 60.0),
+            scope.clone(),
+        ));
+        let mut request = crate::intent::OpenRequest::new(COVER, scope.clone());
+        request.covers_scope = Some(true);
+        let iid = state
+            .popups
+            .open_request(&request, false)
+            .expect("덮개가 열린다");
+        state.normalize_focus(engine.core);
+        let node = Some(crate::adapters::ui::popup::focus::PopupNode::Host(iid));
+        assert!(
+            state.popups.focus() == node && state.popups.is_passive(COVER),
+            "대조: 정규화가 passive 덮개를 포커스 위치로 했다 {scope:?}"
+        );
+        assert!(
+            state.press_surface_body(engine.core, A),
+            "passive 승격을 변경으로 알리지 않는다 {scope:?}"
+        );
+        assert!(!state.popups.is_passive(COVER), "passive 가 풀리지 않았다");
+        assert!(
+            !state.press_surface_body(engine.core, A),
+            "대조: 두 번째 누름은 바꾸지 않는다 {scope:?}"
+        );
+    }
+    let (mut state, mut session) = two_surfaces();
+    let engine = session.borrow_mut();
+    state.tutorial.keyboard_focus = true;
+    assert!(
+        state.press_surface_body(engine.core, A),
+        "말풍선 포커스 해제를 변경으로 알리지 않는다"
+    );
+    assert!(!state.tutorial.keyboard_focus);
+    assert!(
+        !state.press_surface_body(engine.core, A),
+        "대조: 두 번째 누름은 바꾸지 않는다"
+    );
+}
+
 /// P2: Given B 를 덮는 덮개가 포커스이고 B 의 회수 기록이 있다, When [B 누름(덮개가 가짐), B 포커스 획득]을 소비하면,
 /// Then 포커스 획득은 아무것도 바꾸지 않는다: 선택은 A, 포커스 노드는 덮개, B 회수 기록은 남는다. 대조: 덮개가 없으면
 /// B 포커스 획득이 선택을 B 로 옮기고 기록을 지운다.
