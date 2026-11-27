@@ -151,6 +151,72 @@ fn the_ring_hides_while_the_picker_lacks_key_focus() {
     assert_eq!(app.row_focus(), (some("c.txt"), true), "행 포커스는 남는다");
 }
 
+/// [Tab order · Enter · Space] Tab 은 목록 행에 위젯 포커스를 주지 않는다. 행이 Tab 포커스를 받으면 egui 가 목록 키
+/// 몫 밖에 남은 Enter(확정이 꺼졌을 때)·Space(위젯 포커스가 있을 때)를 그 행 클릭으로 바꿔, 이름이 빈 저장 모드에서
+/// Enter 가 파일 이름을 채운다.
+#[test]
+fn tab_never_gives_a_list_row_widget_focus() {
+    let (mut state, mut session) = crate::state::tests::two_pane_fixture();
+    let dir = tree(&[], &["c.txt", "d.txt"]);
+    open_picker(&mut state, &mut session.borrow_mut(), "save", dir.path());
+    let engine = session.borrow_mut();
+    let read = engine.read();
+    let mut app = App::new(&mut state, &read);
+    assert!(matches!(
+        instances::apply_to_current(
+            app.state,
+            app.read,
+            FilePickerAction::EditName(String::new())
+        ),
+        PopupAction::None
+    ));
+    app.frame();
+    let rows: Vec<egui::Id> = ["c.txt", "d.txt"]
+        .into_iter()
+        .map(|n| {
+            crate::adapters::ui::popup::window_input_test_support::click_widget_at(
+                &app.ctx,
+                app.at(n).center(),
+            )
+            .expect("행 위젯")
+        })
+        .collect();
+    let mut seen = Vec::new();
+    for _ in 0..16 {
+        app.input.key(
+            app.state,
+            app.read,
+            false,
+            egui::Event::Key {
+                key: egui::Key::Tab,
+                physical_key: Some(egui::Key::Tab),
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers::NONE,
+            },
+        );
+        let events = app.input.take_pass(app.state, &app.ctx);
+        app.texts = crate::adapters::ui::popup::window_input_test_support::layer_frame(
+            &app.ctx, app.state, app.read, events,
+        );
+        if let Some(id) = app.ctx.memory(|m| m.focused())
+            && !seen.contains(&id)
+        {
+            seen.push(id);
+        }
+    }
+    assert!(seen.len() >= 3, "Tab 이 위젯 사이를 돈다: {seen:?}");
+    assert!(
+        !seen.iter().any(|id| rows.contains(id)),
+        "Tab 이 행에 섰다: {seen:?} / 행 {rows:?}"
+    );
+    assert_eq!(
+        app.data().save_name.as_deref(),
+        Some(""),
+        "이름은 비어 있다"
+    );
+}
+
 impl App<'_> {
     fn rings(&mut self) -> Vec<egui::Rect> {
         rings(self)

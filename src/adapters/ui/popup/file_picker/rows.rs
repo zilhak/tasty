@@ -12,10 +12,12 @@ pub(super) fn entry_row(
     let selected = !inert && props.selected.iter().any(|s| s == &entry.name);
     let (rect, resp) = ui.allocate_exact_size(
         egui::vec2(ui.available_width(), row_height(th).value()),
+        // 행은 Tab 포커스를 받지 않는다(spec 'Tab order' 가 목록을 건너뛴다). 포커스 가능한 행이면 egui 가 그 행의
+        // Enter·Space 를 클릭으로 바꿔, 목록 키 몫 밖의 Enter 가 행을 고른다.
         if inert {
             egui::Sense::hover()
         } else {
-            egui::Sense::click()
+            egui::Sense::CLICK
         },
     );
     let state = tasty_ui_widgets::RowState::of(
