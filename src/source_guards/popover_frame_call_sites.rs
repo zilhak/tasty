@@ -7,11 +7,12 @@
 //! `|ui| {` 클로저 시작인지 텍스트로 확인한다. 리터럴 안의 언급은 세지 않는다. 래퍼를 다른 함수로 한 번 더 감싼 호출,
 //! `Frame::popup`을 직접 그리는 경로, egui 진입 호출을 `use`로 줄여 부른 형태, egui 진입의 `as` 별칭은 보지 않는다.
 //! tasty 도우미 `popup_below_widget_unfocused`는 이름이 따로 선 자리(앞뒤가 식별자 글자가 아니다)를 모두 본다. 그
-//! 자리는 정의(`fn` 뒤), `use` 경로의 끝(`;`·`,`·`}` 앞), 호출 셋 중 하나여야 한다. 호출은 이름 바로 뒤가 `(`
-//! 이거나, 이름 바로 뒤 turbofish `::<..>` 의 짝 맞는 `>` 다음(공백·주석은 건너뛴다)이 `(` 인 꼴이다. 호출은 경로
-//! 유무와 관계없이 세고, 맨 앞 `::` 까지 붙은 경로(`::` 앞뒤 공백·주석은 건너뛴다)를 포함해 래퍼 클로저의 첫 식인지
-//! 본다. 그 밖의 꼴(`as` 별칭 가져오기, 값으로 쓰기, turbofish 를 붙인 값, 인자로 넘기기, 이름과 `(`·`::` 사이에
-//! 공백·주석이 낀 꼴 등)은 세지 못하므로 실패로 막는다.
+//! 자리는 정의(`fn` 뒤), 가져오기, 호출 셋 중 하나여야 한다. 가져오기는 실제 `use` 선언(문장 머리의 `use`, 앞에
+//! 속성·`pub`·`pub(..)` 허용) 경로의 끝(`;`·`,`·`}` 앞)이다. 정밀 캡처 `use<>` 의 `use` 는 선언이 아니다. 호출은
+//! 이름 바로 뒤가 `(` 이거나, 이름 바로 뒤 turbofish `::<..>` 의 짝 맞는 `>` 다음(공백·주석은 건너뛴다)이 `(` 인
+//! 꼴이다. 호출은 경로 유무와 관계없이 세고, 맨 앞 `::` 까지 붙은 경로(`::` 앞뒤 공백·주석은 건너뛴다)를 포함해
+//! 래퍼 클로저의 첫 식인지 본다. 그 밖의 꼴(`as` 별칭 가져오기, 값으로 쓰기, turbofish 를 붙인 값, 인자로 넘기기,
+//! 이름과 `(`·`::` 사이에 공백·주석이 낀 꼴 등)은 세지 못하므로 실패로 막는다.
 //!
 //! 열린 ComboBox 목록의 행은 공용 옵션 행(`menu_option` · `menu_option_value`)으로 그린다. egui 기본
 //! 선택 행(`selectable_value` · `selectable_label`)은 현재 값을 accent 채움으로 칠하므로 디자인의 선택
@@ -79,7 +80,7 @@ fn path_start(code: &str, at: usize) -> usize {
 enum Mention {
     /// `fn` 정의.
     Definition,
-    /// `use` 경로의 끝(`;`·`,`·`}` 앞).
+    /// 실제 `use` 선언([`in_use_declaration`]) 경로의 끝(`;`·`,`·`}` 앞).
     Import,
     /// 호출(이름 바로 뒤가 `(`, 또는 turbofish `::<..>` 뒤가 `(`). 값은 앞에 붙은 경로의 시작.
     Call(usize),
@@ -96,13 +97,74 @@ fn word_at(code: &str, at: usize, word: &str) -> bool {
         && !code[at + word.len()..].chars().next().is_some_and(is_ident)
 }
 
-/// `at` 이 `use` 선언 안인가. `use` 선언은 `;` 로 끝나고 안에 `;` 가 없으므로, 마지막 `;` 뒤에 `use` 낱말이 있으면
-/// 그 선언 안이다(주석·리터럴은 가렸다).
+/// `at` 이 실제 `use` 선언의 경로 안인가(주석·리터럴은 가렸다). `use` 선언은 `;` 로 끝나고 안에 `;` 가 없으므로
+/// 마지막 `;` 뒤의 마지막 `use` 낱말을 본다. 그 낱말이 문장 머리([`starts_statement`])이고, 거기서 `at` 까지가
+/// 경로 글자(식별자·`::`·`{`·`}`·`,`·`*`·공백)뿐이어야 한다. 정밀 캡처 `impl Sized + use<>` 의 `use` 는 머리가 아니다.
 fn in_use_declaration(code: &str, at: usize) -> bool {
     let from = code[..at].rfind(';').map_or(0, |i| i + 1);
-    code[from..at]
+    let Some(word) = code[from..at]
         .match_indices("use")
-        .any(|(i, _)| word_at(code, from + i, "use"))
+        .map(|(i, _)| from + i)
+        .filter(|&i| word_at(code, i, "use"))
+        .last()
+    else {
+        return false;
+    };
+    let path = code[word + "use".len()..at]
+        .chars()
+        .all(|c| is_ident(c) || c.is_whitespace() || matches!(c, ':' | '{' | '}' | ',' | '*'));
+    path && starts_statement(code, word)
+}
+
+/// `at` 의 낱말이 문장 머리인가. 앞에는 속성(`#[..]`)과 가시성(`pub`·`pub(..)`)만 올 수 있고, 그 앞은 파일 처음이나
+/// `;`·`{`·`}` 다.
+fn starts_statement(code: &str, at: usize) -> bool {
+    let mut head = code[..at].trim_end();
+    loop {
+        if let Some(inner) = head.strip_suffix(']') {
+            let Some(open) = matching_open(inner, '[', ']') else {
+                return false;
+            };
+            let before = inner[..open].trim_end();
+            let Some(before) = before.strip_suffix('#').or(before.strip_suffix("#!")) else {
+                return false;
+            };
+            head = before.trim_end();
+            continue;
+        }
+        if let Some(inner) = head.strip_suffix(')') {
+            let Some(open) = matching_open(inner, '(', ')') else {
+                return false;
+            };
+            let before = inner[..open].trim_end();
+            if !(before.ends_with("pub") && word_at(code, before.len() - 3, "pub")) {
+                return false;
+            }
+            head = before[..before.len() - 3].trim_end();
+            continue;
+        }
+        if head.ends_with("pub") && word_at(code, head.len() - 3, "pub") {
+            head = head[..head.len() - 3].trim_end();
+            continue;
+        }
+        return head.is_empty() || head.ends_with([';', '{', '}']);
+    }
+}
+
+/// `inner` 끝에서 닫힌 괄호(`close`, 이미 떼었다)와 짝 맞는 `open` 의 위치.
+fn matching_open(inner: &str, open: char, close: char) -> Option<usize> {
+    let mut depth = 1usize;
+    for (i, c) in inner.char_indices().rev() {
+        if c == close {
+            depth += 1;
+        } else if c == open {
+            depth -= 1;
+            if depth == 0 {
+                return Some(i);
+            }
+        }
+    }
+    None
 }
 
 fn classify(code: &str, at: usize, name: &str) -> Mention {
@@ -327,6 +389,12 @@ fn the_guard_rejects_mentions_it_cannot_count() {
     let value = "let f = with_popover_frame(ui, th, |ui| {\n    tasty_egui_theme::popup_below_widget_unfocused::<()>\n});\nf(ui, id, &r, c, |ui| {});";
     assert_eq!(lines(value), vec![2]);
     assert_eq!(judge(value), (vec![], 0));
+    // 정밀 캡처 `use<>` 뒤의 값 쓰기. `use` 낱말이 앞에 있어도 `use` 선언이 아니다.
+    let capture = "fn draw(ui: &mut Ui) -> impl Sized + use<> {\n    let open = tasty_egui_theme::popup_below_widget_unfocused;\n    open(ui, id, &r, c, |_| ())\n}";
+    assert_eq!(lines(capture), vec![2]);
+    // 대조: 실제 `use` 선언은 가시성·속성 앞머리가 붙어도, 함수 본문 안이어도 가져오기다.
+    let imports = "use tasty_egui_theme::popup_below_widget_unfocused;\npub use tasty_egui_theme::popup_below_widget_unfocused;\npub(crate) use tasty_egui_theme::{popup_below_widget_unfocused, b};\n#[cfg(test)]\npub(in crate::a) use m::popup_below_widget_unfocused;\nfn f() {\n    use m::popup_below_widget_unfocused;\n}";
+    assert_eq!(lines(imports), Vec::<usize>::new());
     // 대조: 정의·use 경로·호출은 막지 않는다. turbofish 뒤 공백·주석·`->` 를 지나 `(` 가 오면 호출이다.
     let fine = "pub fn popup_below_widget_unfocused<R>() {}\npub use m::popup_below_widget_unfocused;\npopup_below_widget_unfocused::<()>(ui, id, &r, c, |ui| {});\npopup_below_widget_unfocused::<Box<dyn Fn() -> u8>> /* x */ (ui, id, &r, c, |ui| {});";
     assert_eq!(lines(fine), Vec::<usize>::new());
