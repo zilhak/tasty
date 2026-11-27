@@ -326,6 +326,13 @@ pub trait WebViewKeySink {
     /// 누름 없는 포커스 획득(Windows controller `GotFocus`, macOS `becomeFirstResponder`)을 알린다. Linux 는 누름만 알린다.
     #[cfg(any(windows, target_os = "macos", test))]
     fn note_focus(&self, surface_id: u32);
+
+    /// Linux 편집 키 응답의 재검사(L1). 받을 때 판정을 통과한 편집 키는 확장이 입력 순서대로 받았다고 답할 때, 창
+    /// 전체가 막혔거나(OS 모달, 게시된 결과표의 창 전체 차단) 그 surface 경로를 덮개가 덮었을 때만 버린다. 키 쥘 곳이
+    /// 다른 페이지로 옮겨 간 것만으로는 버리지 않는다(그 키는 이미 그 페이지의 입력 순서에 들었다). 그 페이지의
+    /// 포커스 이탈·숨김·문서 교체는 응답 쪽 수명 검사(`EditGuard::bump`)가 버린다.
+    #[cfg(any(target_os = "linux", test))]
+    fn edit_reply_blocked(&self, surface_id: u32) -> bool;
 }
 
 /// native 누름 알림의 종류.
@@ -656,6 +663,14 @@ impl WebViewKeySink for WebViewKeyBridge {
     #[cfg(any(windows, target_os = "macos", test))]
     fn note_focus(&self, surface_id: u32) {
         self.push_press(surface_id, PressKind::Focus);
+    }
+
+    #[cfg(any(target_os = "linux", test))]
+    fn edit_reply_blocked(&self, surface_id: u32) -> bool {
+        let forecast = self.forecast.borrow();
+        self.modal_open.get()
+            || forecast.window_blocked
+            || forecast.click_covered.contains(&surface_id)
     }
 }
 

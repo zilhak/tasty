@@ -213,3 +213,57 @@ fn a_window_blocking_node_keeps_every_notice_off_the_pages() {
         }
     }
 }
+
+/// L1: Given A 가 키 쥘 곳일 때 A 가 Ctrl+V 를 받아 판정을 통과했다(Linux 는 확장 응답 때 다시 묻는다), When 응답 전에
+/// 포커스 이탈 없이 키 쥘 곳만 B 로 옮겨 게시되면(host 쪽 포커스 이동), Then 응답 재검사는 A 의 붙여넣기를 버리지 않는다.
+/// 받은 키는 이미 A 의 입력 순서에 들었다. 대조: 같은 자리에서 받을 때 판정(`blocks_edit_key`)은 A 를 막는다.
+#[test]
+fn a_linux_edit_reply_after_the_holder_moved_runs_in_the_pressed_page() {
+    let (mut state, mut session) = two_surfaces();
+    let engine = session.borrow_mut();
+    let bridge = published(&mut state, engine.core);
+    assert!(paste_on(&bridge, A));
+    state.focus_surface_by_id(engine.core, B);
+    crate::app::webview_sync::key_release::publish_key_holder(&mut state, engine.core, &bridge);
+    assert!(
+        !bridge.edit_reply_blocked(A),
+        "키 쥘 곳만 옮겼는데 응답을 버린다"
+    );
+    assert!(!paste_on(&bridge, A), "대조: 받을 때 판정은 A 를 막는다");
+}
+
+/// L1 대조: 응답 전에 A 경로를 덮는 덮개가 열리거나, 창 전체를 막는 노드가 생기거나, OS 모달이 열리면 응답을 버린다.
+#[test]
+fn a_linux_edit_reply_under_a_new_cover_is_dropped() {
+    let (mut state, mut session) = two_surfaces();
+    let engine = session.borrow_mut();
+    let bridge = published(&mut state, engine.core);
+    assert!(!bridge.edit_reply_blocked(A), "대조: 막는 것이 없다");
+    open_cover(&mut state, PopupScope::Surface(A));
+    crate::app::webview_sync::key_release::publish_key_holder(&mut state, engine.core, &bridge);
+    assert!(
+        bridge.edit_reply_blocked(A),
+        "A 를 덮은 덮개 뒤 응답을 실행한다"
+    );
+    assert!(
+        !bridge.edit_reply_blocked(B),
+        "덮이지 않은 B 는 막지 않는다"
+    );
+    let (mut state, mut session) = two_surfaces();
+    let engine = session.borrow_mut();
+    let bridge = published(&mut state, engine.core);
+    state.settings_open_requested = true;
+    crate::app::webview_sync::key_release::publish_key_holder(&mut state, engine.core, &bridge);
+    assert!(
+        bridge.edit_reply_blocked(A),
+        "창 전체를 막는 노드 뒤 응답을 실행한다"
+    );
+    state.settings_open_requested = false;
+    crate::app::webview_sync::key_release::publish_key_holder(&mut state, engine.core, &bridge);
+    assert!(
+        !bridge.edit_reply_blocked(A),
+        "대조: 요청을 거두면 막지 않는다"
+    );
+    bridge.set_modal_open(true);
+    assert!(bridge.edit_reply_blocked(A), "OS 모달 뒤 응답을 실행한다");
+}

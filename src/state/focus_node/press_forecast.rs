@@ -20,11 +20,14 @@ impl MainViewState {
             selected,
             ..Default::default()
         };
-        if core.workspaces().is_empty()
-            || self.fullscreen_stage_active()
+        if core.workspaces().is_empty() {
+            return forecast;
+        }
+        if self.fullscreen_stage_active()
             || self.has_settings_open_request()
             || crate::adapters::ui::restore_notice::has_keyboard_focus(&self.popups)
         {
+            forecast.window_blocked = true;
             return forecast;
         }
         let node = self.focus_node(core);

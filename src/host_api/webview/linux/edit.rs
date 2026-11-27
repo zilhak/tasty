@@ -296,10 +296,7 @@ pub(super) fn on_view_message(
             {
                 note(command, "dropped (focus, pointer or document changed)");
             } else if (armed.blocked)() {
-                note(
-                    command,
-                    "dropped (host modal open or surface not the key holder)",
-                );
+                note(command, "dropped (window blocked or surface covered)");
             } else if copy_like && !range {
                 // 확장이 이 키를 막지 않아 엔진 기본 동작과 페이지 keydown으로 갔다.
                 note(

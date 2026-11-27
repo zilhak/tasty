@@ -13,6 +13,8 @@ use super::keys::{NativeInput, PressKind};
 /// 게시 시점 상태에서 알림 한 건의 결과. 표에 없는 surface 의 알림은 무효다(표시되지 않은 탭, 창 전체를 막는 노드).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct PressForecast {
+    /// 창 전체를 막는 노드(무대, 설정 열기 요청, 키를 가진 복원 안내)가 있다. 어느 알림도 surface 에 키를 주지 않는다.
+    pub window_blocked: bool,
     /// 엔진 선택 surface.
     pub selected: Option<u32>,
     /// 지금 포커스 노드가 surface 본문이다. 포커스 획득만으로 키 쥘 곳이 옮는다.
