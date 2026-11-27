@@ -780,6 +780,17 @@ fn split(
     let mut props = super::layout_tests::bare_props(&th, &entries, selected, mode);
     props.state = FpViewState::Loaded;
     let ctx = egui::Context::default();
+    if menu_open && let Some(menu) = ids.menu {
+        // 직전 프레임에 메뉴 popup 층에 메뉴 행 [`menu_row`] 이 그려졌다.
+        drop(ctx.run(egui::RawInput::default(), |ctx| {
+            egui::Area::new(menu)
+                .order(egui::Order::Foreground)
+                .show(ctx, |ui| {
+                    let rect = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(10.0, 10.0));
+                    drop(ui.interact(rect, menu_row(), egui::Sense::click()));
+                });
+        }));
+    }
     // 직전 프레임에 그 위젯이 있었던 것처럼 포커스를 둔다.
     if let Some(id) = focused {
         ctx.memory_mut(|m| m.request_focus(id));
@@ -839,9 +850,14 @@ fn save_mode(can_confirm: bool) -> FilePickerMode<'static> {
     }
 }
 
+/// 메뉴 popup 층에 그린 메뉴 행 위젯 id([`split`] 이 메뉴를 열 때).
+fn menu_row() -> egui::Id {
+    egui::Id::new("menu-row")
+}
+
 /// [priority] 이 피커의 `…` 메뉴가 열려 있으면 메뉴가 모든 키를 갖는다: 피커는 목록 키를 쓰지 않고 누름을 입력에 남겨
-/// 메뉴 행이 읽게 한다. `…` 버튼이 포커스면 그 버튼이 메뉴를 다시 토글하지 않게 Enter·Space 만 빼서 버린다. 메뉴 행이
-/// 그 키로 눌리는 것은 `menu_keys_app_tests` 가 본다.
+/// 메뉴 행이 읽게 한다. 위젯 포커스가 메뉴 행이 아니면(`…` 버튼·이름 칸·없음) 그 위젯이 눌리지 않게 Enter·Space 만 빼서
+/// 버린다. 메뉴 행이 그 키로 눌리는 것과 메뉴 밖 링크가 눌리지 않는 것은 `menu_keys_app_tests` 가 본다.
 #[test]
 fn an_open_menu_takes_every_key() {
     let presses = [
@@ -851,18 +867,13 @@ fn an_open_menu_takes_every_key() {
         (egui::Key::Backspace, NONE),
     ];
     let all: Vec<egui::Key> = presses.iter().map(|(k, _)| *k).collect();
-    for focused in [
-        ids().menu_button,
-        ids().name_field,
-        Some(egui::Id::new("menu-row")),
-        None,
-    ] {
+    for focused in [ids().menu_button, ids().name_field, Some(menu_row()), None] {
         let (owned, left) = split(save_mode(true), &[], focused, ids(), true, &presses);
         assert!(owned.is_empty(), "{focused:?}");
-        let want = if focused == ids().menu_button {
-            vec![egui::Key::ArrowDown, egui::Key::Backspace]
-        } else {
+        let want = if focused == Some(menu_row()) {
             all.clone()
+        } else {
+            vec![egui::Key::ArrowDown, egui::Key::Backspace]
         };
         assert_eq!(left, want, "{focused:?}: 메뉴가 읽을 키");
     }

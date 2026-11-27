@@ -133,3 +133,48 @@ fn root_label(dir: &std::path::Path) -> String {
     let ancestors = super::paths::path_ancestors(false, &dir);
     super::paths::crumb_label(false, &ancestors[0])
 }
+
+/// [priority] 열린 `…` 메뉴가 키를 갖는다: 메뉴가 열린 채 다른 패스의 Shift+Tab 으로 포커스가 메뉴 밖 루트 링크로 가도,
+/// 그 링크의 Enter·Space 는 실행하지 않는다(세 모드, 현재 경로 그대로·메뉴 행이 칠해진 채).
+#[test]
+fn enter_and_space_do_not_press_a_link_outside_the_open_menu() {
+    for mode in ["open", "save", "folder"] {
+        for k in [egui::Key::Enter, egui::Key::Space] {
+            let (mut state, mut session) = crate::state::tests::two_pane_fixture();
+            let root = tempfile::tempdir().unwrap();
+            let deep = deep_tree(root.path());
+            open_picker(&mut state, &mut session.borrow_mut(), mode, &deep);
+            let engine = session.borrow_mut();
+            let read = engine.read();
+            let mut app = App::new(&mut state, &read);
+            let dir_before = app.data().current_dir.clone();
+            let button = click_widget_at(&app.ctx, app.at("…").center()).expect("… 버튼");
+            let (label, _) = open_menu(&mut app);
+            app.ctx.memory_mut(|m| m.request_focus(button));
+            app.frame();
+            app.press_with(egui::Key::Tab, egui::Modifiers::SHIFT);
+            let link =
+                click_widget_at(&app.ctx, app.at(&root_label(&deep)).center()).expect("루트 링크");
+            assert_eq!(
+                app.ctx.memory(|m| m.focused()),
+                Some(link),
+                "{mode}: Shift+Tab 이 루트 링크로 간다"
+            );
+            assert!(
+                app.texts.iter().any(|(t, _)| *t == label),
+                "{mode}: 메뉴가 열려 있다"
+            );
+            app.press(k);
+            assert_eq!(
+                app.data().current_dir,
+                dir_before,
+                "{mode}: {k:?} 가 루트 링크를 누르지 않는다"
+            );
+            assert!(
+                app.texts.iter().any(|(t, _)| *t == label),
+                "{mode}: {k:?} 뒤에도 메뉴 행이 칠해진다"
+            );
+            load(app.state);
+        }
+    }
+}
