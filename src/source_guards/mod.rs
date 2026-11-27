@@ -716,6 +716,10 @@ mod edit_key_judgment_order;
 #[cfg(test)]
 mod webview_key_release_order;
 
+/// native 입력 대기열의 정리·재판정·binding 검사 자리(P5).
+#[cfg(test)]
+mod webview_input_retire_sites;
+
 /// 보류 검사는 창 입력 맨 앞 한 자리다.
 #[cfg(test)]
 mod window_input_hold_order;
