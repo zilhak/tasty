@@ -12,9 +12,9 @@
 //!    리터럴 안에서만 부른다.
 //! 3. egui 키 입력을 직접 읽는 파일은 아래 목록 중 하나다. 팝업 본문(문 안에서만 그려진다), 문·키 주인 버튼, 팝업
 //!    밖(이유와 함께), 공용 위젯(부른 쪽의 문을 따른다)으로 나눈다. 새 파일이 키를 읽으면 분류를 정해야 통과한다.
-//!    보는 범위는 폴더 뿌리 셋(`src/adapters/ui`, `crates/tasty-ui-widgets/src`, `src/view/file_chooser`)과 파일
-//!    둘(`src/view/file_chooser.rs`, `src/view/settings/ui.rs`)이다. 폴더 뿌리는 하한을 둔 순회로 모아, 뿌리가
-//!    없거나 비면 실패한다.
+//!    보는 범위는 폴더 뿌리 넷(`src/adapters/ui`, `crates/tasty-ui-widgets/src`, `crates/tasty-egui-theme/src`,
+//!    `src/view/file_chooser`)과 `FILES` 의 파일이다. 폴더 뿌리는 하한을 둔 순회로 모아, 뿌리가 없거나 비면 실패한다.
+//!    `crates/tasty-egui-theme/src` 는 팝오버 도우미가 키를 읽어 공용 위젯과 같게 본다.
 //! 4. 팝업 층 파일이 키를 읽는 공용 위젯 파일의 자유 함수(줄 머리 `pub fn`)를 부르는 (호출자 파일, 위젯 파일) 짝은
 //!    아래 목록과 같다. 공용 위젯은 3의 분류를 면제받으므로, 팝업 층에서 키를 읽는 위젯을 새로 부르면 이 목록에서
 //!    걸린다. 목록의 짝이 사라져도 실패한다.
@@ -363,8 +363,16 @@ const OUTSIDE_POPUPS: &[(&str, &str)] = &[
     ),
 ];
 
-/// 공용 위젯. 팝업 본문 안에서 그리면 그 본문의 문을 따르고, surface·창에서 그리면 그쪽 입력 규칙을 따른다.
-const SHARED_WIDGETS: &str = "crates/tasty-ui-widgets/src/";
+/// 공용 위젯. 팝업 본문 안에서 그리면 그 본문의 문을 따르고, surface·창에서 그리면 그쪽 입력 규칙을 따른다. 테마
+/// 크레이트의 팝오버 도우미(`popup_below_widget_unfocused`)도 같다.
+const SHARED_WIDGETS: [&str; 2] = [
+    "crates/tasty-ui-widgets/src/",
+    "crates/tasty-egui-theme/src/",
+];
+
+fn is_shared_widget(rel: &str) -> bool {
+    SHARED_WIDGETS.iter().any(|dir| rel.starts_with(dir))
+}
 
 const KEY_READS: [&str; 16] = [
     "key_pressed(",
@@ -432,7 +440,7 @@ fn shipped(code: &str) -> String {
 
 /// 폴더 뿌리와 하한. 측정은 develop에서 닿는 lane 기점 `fbdbca1914`의 `git ls-tree` `.rs` 수다. 그 뒤 lane 커밋이
 /// `src/adapters/ui`에 popup 키 파일 셋을 더해 시험 트리에서는 277개를 모은다.
-const ROOTS: [(&str, Floor); 3] = [
+const ROOTS: [(&str, Floor); 4] = [
     (
         "src/adapters/ui",
         Floor {
@@ -451,6 +459,16 @@ const ROOTS: [(&str, Floor); 3] = [
             measured_on: "2026-11-21",
             counted_on: CountedOn::Tree("fbdbca1914"),
             why_this_gap: "공용 위젯 파일은 위젯 통합으로 줄 수 있어 약 1할의 여유를 둔다. 뿌리 경로가 틀리거나 비면 0이라 이 하한에서 걸린다.",
+        },
+    ),
+    (
+        "crates/tasty-egui-theme/src",
+        Floor {
+            min: 2,
+            measured: 2,
+            measured_on: "2026-11-27",
+            counted_on: CountedOn::Tree("49a2911ad5"),
+            why_this_gap: "파일이 lib.rs와 overlay_edge.rs 둘뿐이라(그 뒤 lane 커밋이 unfocused_popup.rs 를 더해 시험 트리에서는 셋) 여유 없이 둘로 둔다. 뿌리 경로가 틀리거나 비면 이 하한에서 걸린다.",
         },
     ),
     (
@@ -580,7 +598,7 @@ fn every_direct_key_read_is_classified() {
         .collect();
     let unclassified: Vec<&String> = found
         .iter()
-        .filter(|f| !listed.contains(*f) && !f.starts_with(SHARED_WIDGETS))
+        .filter(|f| !listed.contains(*f) && !is_shared_widget(f))
         .collect();
     assert!(
         unclassified.is_empty(),
@@ -727,6 +745,11 @@ const WIDGET_CALLS: &[(&str, &str, &str)] = &[
         "crates/tasty-ui-widgets/src/restore_notice.rs",
         "복원 안내(keyboard None)는 카드 안쪽 포커스로 Esc 를 읽는다",
     ),
+    (
+        "src/adapters/ui/popup/port_scanner.rs",
+        "crates/tasty-egui-theme/src/unfocused_popup.rs",
+        "열 선택기가 열린 동안 자기 Esc 로 닫고 포커스를 Columns 버튼으로 돌린다. 본문 문 안에서 그려 키 주인이 아니면 Esc 가 입력에서 빠진다",
+    ),
 ];
 
 /// 팝업 층 파일 가운데 키를 읽어도 되는 파일. 키 통로 자체, 창의 입력 끊기, 시험 지원이다.
@@ -819,7 +842,7 @@ fn a_popup_layer_calls_no_key_reading_widget() {
     let sources = scanned_sources();
     let widgets: Vec<(String, Vec<String>)> = sources
         .iter()
-        .filter(|(rel, code)| rel.starts_with(SHARED_WIDGETS) && reads_keys(code))
+        .filter(|(rel, code)| is_shared_widget(rel) && reads_keys(code))
         .map(|(rel, code)| (rel.clone(), free_fns(&shipped(code))))
         .collect();
     let found: BTreeSet<(String, String)> = sources
