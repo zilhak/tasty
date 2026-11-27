@@ -20,10 +20,12 @@
 │ [⊕ 프로필 추가]            [⤓필터]│  add-bar (필터는 프로필 탭 전용)
 │ ▸ prod-box   user@host:22   [✎][⌫]│  목록 — 편집/삭제
 │ ▸ staging    …                   │
-│ ─── SSH 설정에 등록된 호스트    3│  읽기 전용 섹션 (프로필 탭 전용) · 헤더에 ~/.ssh/config 경로
+│ ─── SSH 설정에 등록된 호스트    4│  읽기 전용 섹션 (프로필 탭 전용) · 헤더에 ~/.ssh/config 경로
 │   host                            │  2줄 행 — alias
-│   deploy@10.0.0.5:2200 [+ 프로필 추가]│  우측 ghost 액션 하나
-│   prod-web / deploy@10.0.4.12 (등록됨)│  이미 등록됐으면 Tag
+│   maya@host.local:22 [+ 프로필 추가]│  우측 ghost 액션 하나
+│   db.internal / maya@db.internal:22 (등록됨)│  이미 등록됐으면 Tag
+│   edge / root@edge.example.com:22 [+ 프로필 추가]│
+│   eu-west-build-farm-bastion-01 / ci-runner@bastion-01.eu-west.build.example.com:2222 [+ 프로필 추가]│
 ├──────────────────────────────────┤
 │ 폼 (추가/편집):                    │
 │  name / host / user / port        │
