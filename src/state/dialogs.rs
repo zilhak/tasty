@@ -406,12 +406,17 @@ pub(crate) struct FpRowFocus {
     /// 링을 보인다. 행 키가 켜고 목록 클릭이 끈다.
     pub(crate) ring: bool,
     /// 다음 프레임 목록 스크롤 위치. 그리면서 꺼낸다.
-    pub(crate) scroll_to: Option<f32>,
+    pub(crate) scroll_to: Option<tasty_type_geometry::length::LogicalPx>,
 }
 
 impl FpRowFocus {
     /// 행 포커스를 `row` 에 두고 링 표시를 정한다. `scroll` 이 있으면 다음 프레임에 그 위치로 스크롤한다.
-    pub(crate) fn place(&mut self, row: String, ring: bool, scroll: Option<f32>) {
+    pub(crate) fn place(
+        &mut self,
+        row: String,
+        ring: bool,
+        scroll: Option<tasty_type_geometry::length::LogicalPx>,
+    ) {
         self.row = Some(row);
         self.ring = ring;
         if scroll.is_some() {
@@ -420,7 +425,7 @@ impl FpRowFocus {
     }
 
     /// 행 포커스가 있으면 링을 켜고 `scroll` 로 스크롤한다. 없으면 아무것도 하지 않는다.
-    pub(crate) fn show_ring(&mut self, scroll: f32) {
+    pub(crate) fn show_ring(&mut self, scroll: tasty_type_geometry::length::LogicalPx) {
         if self.row.is_some() {
             self.ring = true;
             self.scroll_to = Some(scroll);

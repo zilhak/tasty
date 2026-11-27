@@ -13,59 +13,71 @@ pub(super) enum MoveKey {
     PageDown,
 }
 
+use tasty_type_geometry::length::LogicalPx;
+
 /// 목록 view. 열 머리 아래 스크롤 영역의 위치와 높이다.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) struct ListView {
     /// 스크롤 위치(맨 위 0).
-    pub(super) offset: f32,
+    pub(super) offset: LogicalPx,
     /// 보이는 높이.
-    pub(super) height: f32,
+    pub(super) height: LogicalPx,
     /// 행 높이(모든 행이 같다).
-    pub(super) row_h: f32,
+    pub(super) row_h: LogicalPx,
 }
 
 /// 이동 결과: 새 행 포커스 index 와 그 행을 보이게 하는 스크롤 위치.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) struct Moved {
     pub(super) focus: usize,
-    pub(super) offset: f32,
+    pub(super) offset: LogicalPx,
 }
 
-/// 행 경계 비교 허용치(px). 부동소수 스크롤 위치가 행 경계에 거의 닿은 경우를 닿은 것으로 본다.
-const EPS: f32 = 0.5;
+/// 행 경계 비교 허용치. 부동소수 스크롤 위치가 행 경계에 거의 닿은 경우를 닿은 것으로 본다.
+const EPS: LogicalPx = LogicalPx(0.5);
 
 impl ListView {
-    fn max_offset(&self, rows: usize) -> f32 {
-        (rows as f32 * self.row_h - self.height).max(0.0)
+    /// `len` 에 행이 몇 개 들어가는지(소수 포함). 길이 둘의 비라 단위가 없다.
+    fn rows_in(&self, len: LogicalPx) -> f32 {
+        len.value() / self.row_h.value()
     }
 
-    fn at(self, offset: f32, rows: usize) -> Self {
+    /// `index` 행의 위 끝.
+    fn row_top(&self, index: usize) -> LogicalPx {
+        self.row_h * index as f32
+    }
+
+    fn max_offset(&self, rows: usize) -> LogicalPx {
+        (self.row_top(rows) - self.height).max(LogicalPx(0.0))
+    }
+
+    fn at(self, offset: LogicalPx, rows: usize) -> Self {
         Self {
-            offset: offset.clamp(0.0, self.max_offset(rows)),
+            offset: offset.clamp(LogicalPx(0.0), self.max_offset(rows)),
             ..self
         }
     }
 
     /// 온전히 보이는 행 범위(양끝 포함). 한 행도 온전히 들어가지 않으면 None.
     fn fully_visible(&self, rows: usize) -> Option<(usize, usize)> {
-        if rows == 0 || self.row_h <= 0.0 {
+        if rows == 0 || self.row_h <= LogicalPx(0.0) {
             return None;
         }
-        let first = ((self.offset - EPS) / self.row_h).ceil().max(0.0) as usize;
-        let end = ((self.offset + self.height + EPS) / self.row_h).floor() as usize;
+        let first = self.rows_in(self.offset - EPS).ceil().max(0.0) as usize;
+        let end = self.rows_in(self.offset + self.height + EPS).floor() as usize;
         let last = end.min(rows).checked_sub(1)?;
         (first <= last).then_some((first, last))
     }
 
     /// 한 페이지 = view 에 들어가는 행 수 − 1(최소 1).
     fn page_rows(&self) -> usize {
-        ((((self.height + EPS) / self.row_h).floor() as usize).saturating_sub(1)).max(1)
+        ((self.rows_in(self.height + EPS).floor() as usize).saturating_sub(1)).max(1)
     }
 }
 
 /// `index` 행 전체가 보이도록 가장 적게 움직인 스크롤 위치. 이미 보이면 그대로다.
-pub(super) fn reveal(view: ListView, rows: usize, index: usize) -> f32 {
-    let top = index as f32 * view.row_h;
+pub(super) fn reveal(view: ListView, rows: usize, index: usize) -> LogicalPx {
+    let top = view.row_top(index);
     let bottom = top + view.row_h;
     let offset = if top < view.offset - EPS {
         top
@@ -74,7 +86,7 @@ pub(super) fn reveal(view: ListView, rows: usize, index: usize) -> f32 {
     } else {
         view.offset
     };
-    offset.clamp(0.0, view.max_offset(rows))
+    offset.clamp(LogicalPx(0.0), view.max_offset(rows))
 }
 
 /// 행 포커스를 `key` 로 옮긴다. `selectable[i]` 가 거짓인 행(폴더 모드 파일)은 모든 키가 건너뛴다.
@@ -125,7 +137,7 @@ fn page_down(selectable: &[bool], from: usize, view: ListView) -> (usize, ListVi
     if let Some(i) = pick(view) {
         return (i, view);
     }
-    let paged = view.at(view.offset + view.page_rows() as f32 * view.row_h, rows);
+    let paged = view.at(view.offset + view.row_top(view.page_rows()), rows);
     match pick(paged) {
         Some(i) => (i, paged),
         None => match (from + 1..rows).find(|j| selectable[*j]) {
@@ -145,7 +157,7 @@ fn page_up(selectable: &[bool], from: usize, view: ListView) -> (usize, ListView
     if let Some(i) = pick(view) {
         return (i, view);
     }
-    let paged = view.at(view.offset - view.page_rows() as f32 * view.row_h, rows);
+    let paged = view.at(view.offset - view.row_top(view.page_rows()), rows);
     match pick(paged) {
         Some(i) => (i, paged),
         None => match (0..from).rev().find(|j| selectable[*j]) {

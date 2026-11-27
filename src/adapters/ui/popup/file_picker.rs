@@ -149,7 +149,7 @@ pub struct FilePickerProps<'a> {
     /// 상위 폴더로 갈 수 있다. Up 버튼과 상위 폴더 키가 이 값 하나를 읽는다([`up_enabled`]).
     pub up_enabled: bool,
     /// 이번 프레임에 목록을 이 위치로 스크롤한다(행 키가 예약한 값).
-    pub scroll_to: Option<f32>,
+    pub scroll_to: Option<LogicalPx>,
     pub mode: FilePickerMode<'a>,
 
     // i18n — 호출처가 t() 로 미리 해상해서 전달(file_handler_picker.rs 관례).
@@ -230,16 +230,16 @@ pub enum FilePickerAction {
     FocusRow {
         name: String,
         select: bool,
-        scroll: f32,
+        scroll: LogicalPx,
     },
     /// Space — 행 포커스 행을 클릭처럼 고르고 링을 켠다(다시 눌러도 선택을 풀지 않는다).
     PickRow {
         name: String,
-        scroll: f32,
+        scroll: LogicalPx,
     },
     /// 제자리 행 키(파일에서 →) — 행 포커스가 있으면 링을 켠다.
     ShowRing {
-        scroll: f32,
+        scroll: LogicalPx,
     },
     /// 열기·저장 모드 목록 빈 곳 클릭 — 선택·행 포커스는 두고 링만 숨긴다.
     HideRing,
@@ -516,14 +516,14 @@ fn draw_body(
                 .auto_shrink([false, true])
                 .drag_to_scroll(false);
             if let Some(offset) = props.scroll_to {
-                area = area.vertical_scroll_offset(offset);
+                area = area.vertical_scroll_offset(offset.value());
             }
-            let row_h = row_height(th).value();
+            let row_h = row_height(th);
             let scrolled = area.show_viewport(ui, |ui, viewport| {
                 // 온전히 보이는 행은 행을 배치한 이 viewport 로 센다(휠·스크롤바는 패스 끝에 반영된다).
                 list_view = Some(list_keys::ListView {
-                    offset: viewport.min.y,
-                    height: viewport.height(),
+                    offset: LogicalPx(viewport.min.y),
+                    height: LogicalPx(viewport.height()),
                     row_h,
                 });
                 // 행은 붙어 있고 높이는 `row_height`가 모두 정한다.

@@ -6,9 +6,9 @@ const ROWS: usize = 20;
 
 fn view(offset: f32) -> ListView {
     ListView {
-        offset,
-        height: 100.0,
-        row_h: ROW_H,
+        offset: LogicalPx(offset),
+        height: LogicalPx(100.0),
+        row_h: LogicalPx(ROW_H),
     }
 }
 
@@ -18,7 +18,7 @@ fn all() -> Vec<bool> {
 
 fn go(sel: &[bool], focus: Option<usize>, offset: f32, key: MoveKey) -> (usize, f32) {
     let m = step(sel, focus, view(offset), key).expect("고를 수 있는 행이 있다");
-    (m.focus, m.offset)
+    (m.focus, m.offset.value())
 }
 
 /// start: 행 포커스가 없으면 ↓·PageDown·Home 은 첫 행, ↑·PageUp·End 는 끝 행이다. inert 행은 건너뛴다.
@@ -105,9 +105,9 @@ fn moves_scroll_the_least_distance() {
     assert_eq!(go(&all(), Some(1), 20.0, MoveKey::Up), (0, 0.0));
     // 위치 10: 0행 위쪽과 5행 아래쪽이 잘려 온전히 보이는 행은 1..=4 다.
     assert_eq!(go(&all(), Some(1), 10.0, MoveKey::PageDown), (4, 10.0));
-    assert_eq!(reveal(view(10.0), ROWS, 0), 0.0);
-    assert_eq!(reveal(view(10.0), ROWS, 5), 20.0);
-    assert_eq!(reveal(view(10.0), ROWS, 3), 10.0);
+    assert_eq!(reveal(view(10.0), ROWS, 0), LogicalPx(0.0));
+    assert_eq!(reveal(view(10.0), ROWS, 5), LogicalPx(20.0));
+    assert_eq!(reveal(view(10.0), ROWS, 3), LogicalPx(10.0));
 }
 
 /// 행 포커스가 view 밖이면 다음 행 키가 먼저 최소 거리로 보이게 한 뒤 그 행에서 동작한다.
