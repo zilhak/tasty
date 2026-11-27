@@ -236,11 +236,15 @@ pub(crate) fn press_and_publish(
 
 /// 한 창의 native 입력을 도착 순서대로 소비하는 쪽. 제품은 `App` 이고, 순서 시험은 대역을 쓴다.
 pub(crate) trait NativeInputConsumer: ForwardedKeyConsumer {
-    /// 그 창 대기열의 입력을 모두 꺼낸다. 소비하는 동안 들어오는 키는 대기열이 비어 바로 판정된다.
-    fn take_native_inputs(
+    /// 그 창 대기열 소비를 시작한다(`WebViewKeyBridge::begin_consuming`). 이미 소비 중이면 false 다.
+    fn begin_native_inputs(&mut self, id: winit::window::WindowId) -> bool;
+    /// 그 창 대기열의 다음 입력을 꺼낸다. 남은 항목은 다리에 보이므로 처리하는 동안 들어온 입력은 그 뒤에 쌓인다.
+    fn next_native_input(
         &mut self,
         id: winit::window::WindowId,
-    ) -> Vec<crate::webview::NativeInput>;
+    ) -> Option<crate::webview::NativeInput>;
+    /// 그 창 대기열 소비를 마친다.
+    fn end_native_inputs(&mut self, id: winit::window::WindowId);
     /// 누름 알림 한 건의 전이와 게시(`press_and_publish`).
     fn native_press(
         &mut self,
@@ -258,7 +262,12 @@ pub(crate) fn consume_native_inputs(
     id: winit::window::WindowId,
 ) {
     use crate::webview::NativeInput;
-    for input in consumer.take_native_inputs(id) {
+    // 소비 안에서 돈 native 콜백이 다시 부른 소비는 아무것도 꺼내지 않는다. 그 사이 온 입력은 대기열 끝에 쌓이고 이
+    // 루프가 도착 순서대로 이어서 처리한다.
+    if !consumer.begin_native_inputs(id) {
+        return;
+    }
+    while let Some(input) = consumer.next_native_input(id) {
         match input {
             NativeInput::Press { surface_id, kind } => consumer.native_press(id, surface_id, kind),
             NativeInput::Forwarded(ev) => {
@@ -268,6 +277,7 @@ pub(crate) fn consume_native_inputs(
             }
         }
     }
+    consumer.end_native_inputs(id);
 }
 
 /// 키 하나를 처리하고, 그 키가 포커스를 주는 팝업을 열었으면 다음 입력 판정 전에 적용한다(winit 키와 같은 조기
@@ -283,16 +293,29 @@ fn dispatch_and_apply(
 }
 
 impl NativeInputConsumer for App {
-    fn take_native_inputs(
-        &mut self,
-        id: winit::window::WindowId,
-    ) -> Vec<crate::webview::NativeInput> {
+    fn begin_native_inputs(&mut self, id: winit::window::WindowId) -> bool {
         self.view
             .views
             .get(&id)
             .and_then(|w| w.as_main())
-            .map(|main| main.webview_key_bridge.take_inputs())
-            .unwrap_or_default()
+            .is_some_and(|main| main.webview_key_bridge.begin_consuming())
+    }
+
+    fn next_native_input(
+        &mut self,
+        id: winit::window::WindowId,
+    ) -> Option<crate::webview::NativeInput> {
+        self.view
+            .views
+            .get(&id)
+            .and_then(|w| w.as_main())
+            .and_then(|main| main.webview_key_bridge.pop_input())
+    }
+
+    fn end_native_inputs(&mut self, id: winit::window::WindowId) {
+        if let Some(main) = self.view.views.get(&id).and_then(|w| w.as_main()) {
+            main.webview_key_bridge.end_consuming();
+        }
     }
 
     fn native_press(
@@ -502,6 +525,7 @@ mod tests {
         sidebar_toggled: bool,
         log: Vec<String>,
         finished: Vec<(u64, bool)>,
+        pending: std::collections::VecDeque<crate::webview::NativeInput>,
     }
 
     impl Consumer {
@@ -513,6 +537,7 @@ mod tests {
                 sidebar_toggled: false,
                 log: Vec::new(),
                 finished: Vec::new(),
+                pending: Default::default(),
             }
         }
     }
@@ -558,10 +583,7 @@ mod tests {
 
     /// 대기열 대역: 전달 키 두 개만 든 한 창의 대기열을 내준다.
     impl super::NativeInputConsumer for Consumer {
-        fn take_native_inputs(
-            &mut self,
-            _id: winit::window::WindowId,
-        ) -> Vec<crate::webview::NativeInput> {
+        fn begin_native_inputs(&mut self, _id: winit::window::WindowId) -> bool {
             use winit::keyboard::{Key, ModifiersState};
             let key = |id, ch: &str| {
                 crate::webview::NativeInput::Forwarded(crate::webview::WebViewKeyEvent {
@@ -571,8 +593,18 @@ mod tests {
                     mods: ModifiersState::CONTROL,
                 })
             };
-            vec![key(1, "P"), key(2, "b")]
+            self.pending = vec![key(1, "P"), key(2, "b")].into();
+            true
         }
+
+        fn next_native_input(
+            &mut self,
+            _id: winit::window::WindowId,
+        ) -> Option<crate::webview::NativeInput> {
+            self.pending.pop_front()
+        }
+
+        fn end_native_inputs(&mut self, _id: winit::window::WindowId) {}
 
         fn native_press(
             &mut self,

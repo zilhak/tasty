@@ -208,12 +208,18 @@ impl ForwardedKeyConsumer for Window {
 
 /// 대기열에는 전달 키만 든다.
 impl NativeInputConsumer for Window {
-    fn take_native_inputs(
+    fn begin_native_inputs(&mut self, _id: winit::window::WindowId) -> bool {
+        true
+    }
+
+    fn next_native_input(
         &mut self,
         _id: winit::window::WindowId,
-    ) -> Vec<crate::webview::NativeInput> {
-        std::mem::take(&mut self.inputs)
+    ) -> Option<crate::webview::NativeInput> {
+        (!self.inputs.is_empty()).then(|| self.inputs.remove(0))
     }
+
+    fn end_native_inputs(&mut self, _id: winit::window::WindowId) {}
 
     fn native_press(
         &mut self,

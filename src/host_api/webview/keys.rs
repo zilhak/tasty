@@ -359,6 +359,8 @@ pub struct WebViewKeyBridge {
     next_key_id: std::cell::Cell<u64>,
     /// native 입력의 도착 순서 대기열([`NativeInput`]).
     inputs: RefCell<std::collections::VecDeque<NativeInput>>,
+    /// host 가 이 대기열을 소비하는 중이다(`begin_consuming`). 그동안 꺼낸 항목은 아직 처리 중이다.
+    consuming: std::cell::Cell<bool>,
     /// host 모달이 열려 있다. 모달을 열고 닫을 때 바로 바꾼다.
     modal_open: std::cell::Cell<bool>,
     /// 창의 키 쥘 곳(`key_focus::webview_key_holder_of`). 프레임 동기화에서 바꾼다.
@@ -399,18 +401,39 @@ impl WebViewKeyBridge {
         taken
     }
 
-    /// 소비하지 않은 native 입력이 있는지.
+    /// 소비하지 않은 native 입력이 있거나 소비 중인지.
     pub fn has_focus_requests(&self) -> bool {
-        !self.inputs.borrow().is_empty()
+        self.consuming.get() || !self.inputs.borrow().is_empty()
     }
 
-    /// 대기열의 native 입력을 도착 순서대로 꺼낸다.
+    /// 시험용: 대기열의 native 입력을 도착 순서대로 모두 꺼낸다.
+    #[cfg(test)]
     pub fn take_inputs(&self) -> Vec<NativeInput> {
         self.inputs.borrow_mut().drain(..).collect()
     }
 
+    /// host 가 이 대기열 소비를 시작한다. 이미 소비 중이면(소비 안에서 돈 native 콜백이 다시 부름) false 이고, 그
+    /// 호출은 아무것도 꺼내지 않는다. 남은 항목과 새로 온 항목은 바깥 소비가 도착 순서대로 이어서 처리한다.
+    pub fn begin_consuming(&self) -> bool {
+        !self.consuming.replace(true)
+    }
+
+    /// 소비 중인 대기열의 다음 입력을 꺼낸다. 남은 항목은 대기열에 그대로 보인다.
+    pub fn pop_input(&self) -> Option<NativeInput> {
+        self.inputs.borrow_mut().pop_front()
+    }
+
+    /// 소비를 마친다.
+    pub fn end_consuming(&self) {
+        self.consuming.set(false);
+    }
+
     /// 대기열 앞의 누름 알림만 꺼낸다. 첫 키 뒤의 입력은 남긴다(키는 host 단축키 처리가 있는 소비만 판정한다).
+    /// 소비 중이면(꺼낸 항목이 아직 처리 중) 아무것도 꺼내지 않는다.
     pub fn take_leading_presses(&self) -> Vec<(u32, PressKind)> {
+        if self.consuming.get() {
+            return Vec::new();
+        }
         let mut q = self.inputs.borrow_mut();
         let mut presses = Vec::new();
         while let Some(&NativeInput::Press { surface_id, kind }) = q.front() {

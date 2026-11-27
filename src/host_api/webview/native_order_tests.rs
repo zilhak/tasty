@@ -33,6 +33,9 @@ struct Turn<'a> {
     core: &'a crate::core::CoreState,
     bridge: &'a WebViewKeyBridge,
     log: Vec<String>,
+    /// 첫 host 단축키를 처리하는 동안 native 콜백으로 들어오는 사건(소비 안에서 돈 GTK 펌프·창 정리 모사). 넣은 뒤
+    /// 프레임 동기화의 선두 누름 소비와 같은 창 소비를 한 번씩 더 부른다.
+    nested: Vec<Native>,
 }
 
 impl ForwardedKeyConsumer for Turn<'_> {
@@ -41,6 +44,20 @@ impl ForwardedKeyConsumer for Turn<'_> {
         _id: winit::window::WindowId,
         ev: WebViewKeyEvent,
     ) -> ForwardedKeyOutcome {
+        let nested = std::mem::take(&mut self.nested);
+        if !nested.is_empty() {
+            for event in &nested {
+                send(self.bridge, *event, &mut self.log);
+            }
+            if crate::app::webview_keys::consume_native_focus_requests(
+                self.state,
+                self.core,
+                self.bridge,
+            ) {
+                self.log.push("sync took a press".into());
+            }
+            consume_native_inputs(self, winit::window::WindowId::from(1));
+        }
         self.state.normalize_focus(self.core);
         let blocked = crate::adapters::ui::input::key_nodes::received_key_blocked(
             self.state,
@@ -71,8 +88,16 @@ impl ForwardedKeyConsumer for Turn<'_> {
 }
 
 impl NativeInputConsumer for Turn<'_> {
-    fn take_native_inputs(&mut self, _id: winit::window::WindowId) -> Vec<NativeInput> {
-        self.bridge.take_inputs()
+    fn begin_native_inputs(&mut self, _id: winit::window::WindowId) -> bool {
+        self.bridge.begin_consuming()
+    }
+
+    fn next_native_input(&mut self, _id: winit::window::WindowId) -> Option<NativeInput> {
+        self.bridge.pop_input()
+    }
+
+    fn end_native_inputs(&mut self, _id: winit::window::WindowId) {
+        self.bridge.end_consuming();
     }
 
     fn native_press(&mut self, _id: winit::window::WindowId, surface_id: u32, kind: PressKind) {
@@ -91,6 +116,40 @@ enum Native {
 /// `events` 를 한 회차에 넣고(키는 backend 판정 `route_key_down`, 그 자리의 편집 실행은 기록) 회차 끝에 제품 소비
 /// 함수로 소비한다. 기록과 끝 포커스 surface 를 돌려준다.
 fn turn(holder: u32, events: &[Native]) -> (Vec<String>, Option<u32>) {
+    turn_with_nested(holder, events, &[])
+}
+
+/// 사건 하나를 backend 판정(`route_key_down`)으로 다리에 넣는다. 그 자리의 편집 실행과 판정 결과를 기록한다.
+fn send(bridge: &WebViewKeyBridge, event: Native, log: &mut Vec<String>) {
+    match event {
+        Native::Press(sid) => bridge.note_press(sid),
+        Native::Shortcut(sid) => {
+            let mut ran = None;
+            let route = route_key_down(
+                bridge,
+                sid,
+                Key::Named(NamedKey::F2),
+                unknown_physical(),
+                ModifiersState::empty(),
+                false,
+                |action| ran = Some(action),
+            );
+            if let Some(action) = ran {
+                log.push(format!("edit now {sid} {action:?}"));
+            }
+            if let KeyDownRoute::Forwarded(_) = route {
+                log.push(format!("held {sid}"));
+            }
+        }
+    }
+}
+
+/// `turn` 과 같고, 첫 host 단축키 처리 중에 `nested` 사건이 native 콜백으로 들어온다.
+fn turn_with_nested(
+    holder: u32,
+    events: &[Native],
+    nested: &[Native],
+) -> (Vec<String>, Option<u32>) {
     let (mut state, mut session) = two_surfaces();
     let engine = session.borrow_mut();
     if holder != 11 {
@@ -99,33 +158,14 @@ fn turn(holder: u32, events: &[Native]) -> (Vec<String>, Option<u32>) {
     let bridge = bridge(holder);
     let mut log = Vec::new();
     for event in events {
-        match *event {
-            Native::Press(sid) => bridge.note_press(sid),
-            Native::Shortcut(sid) => {
-                let mut ran = None;
-                let route = route_key_down(
-                    &bridge,
-                    sid,
-                    Key::Named(NamedKey::F2),
-                    unknown_physical(),
-                    ModifiersState::empty(),
-                    false,
-                    |action| ran = Some(action),
-                );
-                if let Some(action) = ran {
-                    log.push(format!("edit now {sid} {action:?}"));
-                }
-                if let KeyDownRoute::Forwarded(_) = route {
-                    log.push(format!("held {sid}"));
-                }
-            }
-        }
+        send(&bridge, *event, &mut log);
     }
     let mut consumer = Turn {
         state: &mut state,
         core: engine.core,
         bridge: &bridge,
         log,
+        nested: nested.to_vec(),
     };
     consume_native_inputs(&mut consumer, winit::window::WindowId::from(1));
     let log = consumer.log;
@@ -199,6 +239,32 @@ fn a_shortcut_before_a_press_is_judged_before_that_press() {
     assert_eq!(
         log,
         ["held 12", "shortcut 12 Handled", "forwarded 12 Handled"]
+    );
+    assert_eq!(focused, Some(11));
+}
+
+/// X2: Given A(11)가 키 쥘 곳이다, When 한 회차에 [B(12) 누름, B F2]가 들고 회차 끝 소비가 F2 를 처리하는 동안 native
+/// 콜백으로 [A 누름, A F2]가 들어와 프레임 동기화의 선두 누름 소비와 같은 창 소비가 다시 불리면, Then 둘 다 아무것도
+/// 꺼내지 않는다. 바깥 소비가 B F2 를 B 에서 처리한 뒤 A 누름 → A F2 를 도착 순서대로 한 번씩 처리하고, 끝 포커스는
+/// A 다.
+#[test]
+fn nested_gtk_input_stays_behind_the_active_native_queue() {
+    let (log, focused) = turn_with_nested(
+        11,
+        &[Native::Press(12), Native::Shortcut(12)],
+        &[Native::Press(11), Native::Shortcut(11)],
+    );
+    assert_eq!(
+        log,
+        [
+            "held 12",
+            "held 11",
+            "shortcut 12 Handled",
+            "forwarded 12 Handled",
+            "shortcut 11 Handled",
+            "forwarded 11 Handled",
+        ],
+        "중첩 입력이 바깥 소비에서 도착 순서대로 처리된다"
     );
     assert_eq!(focused, Some(11));
 }
