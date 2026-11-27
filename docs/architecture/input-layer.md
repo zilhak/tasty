@@ -176,8 +176,15 @@ Background에도 적용되는 것은 아니다. plugin이 자유 위치 오버�
 기본적으로 raw `layer_painter`를 쓴다. 전체 화면 scrim을 등록된 Foreground 위젯보다
 위에 그리기 위해 Area에 등록하지 않는다. 위젯 트리 없이 `collect_mesh_popup_input`이
 raw 이벤트를 plugin으로 전달하므로 host Area의 스크롤·hover 라우팅도 필요하지 않다.
-덮는 팝업은 셸 아래에 덮음 막이 Area를 둔다. 막이 Area는 다시 보인 패스에 egui가 혼자 맨 위로
-올리므로, 그 패스에는 셸도 함께 올려 막이가 셸 아래에 남게 한다(`popup_render/cover_layers.rs`).
+덮는 팝업은 셸 아래에 덮음 막이 Area를 둔다. 막이는 셸보다 늘 아래이고, `push_popup_layers`
+(`popup_render/cover_layers.rs`)가 이 순서를 지킨다. 덮는 팝업의 셸은 host popup이 없어도 처음
+그린 패스부터 막이 바로 뒤로 `Areas::order`에 등록된다. 막이 Area가 처음 보이거나 다시 보인 패스,
+누름이 든 패스에는 그 패스의 plugin 레이어를 모두 지금 순서대로 함께 올린다. 함께 올린 레이어끼리는
+순서가 그대로라 막이 < 셸과 plugin popup끼리의 순서가 남는다. 접힌 popup은 셸 id로 보기 버튼 Area를
+띄워 셸이 먼저 순서에 들므로, 덮지 않고 접혀 있던 popup을 펼쳐 덮게 되면 막이가 셸 뒤에 등록된다.
+막이가 셸 뒤에 있는 것을 본 패스에는 그 막이만 빼고 올려 셸 아래로 되돌린다. 펼친 패스에는 egui가 처음
+보인 막이를 스스로 올리므로 순서가 한 패스 틀리고, 다음 패스(그 막이를 누르는 패스면 누름이 없는 다음
+패스)에 바로잡힌다.
 
 이 popup을 Area에 등록하려면 상대 순서도 함께 정해야 한다. 등록만 하면 먼저 등록된
 Banner나 상태바보다 아래에 그려질 수 있다.
@@ -185,11 +192,18 @@ Banner나 상태바보다 아래에 그려질 수 있다.
 더 나중에 열리거나 클릭된 host popup(`file_picker` 등)은 예외다.
 `enforce_host_plugin_popup_z_order`(`src/gfx/gpu/egui_bridge.rs`)가 공유
 `z_seq`(`tasty_host_plugin::next_popup_z_seq()`)를 비교하고 `ctx.set_sublayer()`로
-host popup을 위에 배치한다. 부모는 아래 묶음에서 직전 패스 순서상 맨 위인 레이어 하나다.
-덮는 plugin popup은 막이와 셸 두 레이어라, 둘 다 부모로 걸면 (d)의 1단 제약처럼
-`end_pass`의 HashMap 순서에 따라 패스마다 결과가 달라진다. 이 호출은 parent와 child를
-모두 `Areas::order`에 등록한다. host popup이 없으면 기본 미등록 경로를 쓰고, plugin
-popup의 `z_seq`가 더 크면 같은 방식으로 plugin 묶음을 host 묶음 위에 둔다.
+host popup을 위에 배치한다. 부모는 아래 묶음에서 이번 패스까지 쌓인 순서 벡터
+(`Memory::layer_ids`)상 맨 뒤인 레이어 하나다. 덮는 plugin popup은 막이와 셸 두 레이어라,
+둘 다 부모로 걸면 (d)의 1단 제약처럼 `end_pass`의 HashMap 순서에 따라 패스마다 결과가 달라진다.
+순서에 없는 아래 레이어(Area 없는 일반 셸)는 egui가 순서 있는 레이어 뒤에 그리므로, 묶음 순서대로
+`move_to_top`해 순서에 넣고 그중 마지막을 부모로 한다. 이 호출은 parent와 child를 모두
+`Areas::order`에 등록한다. host popup이 없으면 일반 plugin 셸은 미등록 경로로 그리고(덮는 popup의
+셸은 위처럼 등록된다), plugin popup의 `z_seq`가 더 크면 같은 방식으로 plugin 묶음을 host 묶음 위에 둔다.
+부모 선택은 이번 패스에 이미 순서에 있는 레이어의 올림 예약(`move_to_top`)을 보지 못한다. 아래 묶음
+일부만 이번 패스에 올라가면(예: host가 아래일 때 host popup 본문을 누른 패스) 벡터 위치로 고른 부모가
+패스 끝 순서의 맨 위가 아닐 수 있어, 그 패스 하나는 위 묶음 일부가 아래 묶음 아래로 갈 수 있다.
+plugin이 아래일 때는 plugin 레이어를 모두 함께 올리므로, 셸 위에 있던 막이를 빼고 올려 되돌리는 패스
+말고는 이 경우가 생기지 않는다.
 자세한 규칙은 [popup.md의 Host ↔ Plugin popup z-order](../design/systems/popup.md#host--plugin-popup-z-order)를 따른다.
 
 ### `overlay_open` — 정의 3 개
