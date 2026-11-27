@@ -421,15 +421,14 @@ impl WebViewKeyBridge {
         (self.inputs.borrow().iter()).any(|input| matches!(input, NativeInput::Press { .. }))
     }
 
-    /// 대기열에 아직 소비하지 않은 누름 알림(surface, 종류)을 도착 순서대로. 그 알림이 키 쥘 곳을 만들 수 있으면 그
-    /// surface 의 OS 키 포커스 회수는 알림을 적용할 때까지 보류한다(`key_release::release_after_native_focus_notices`).
-    pub fn pending_presses(&self) -> Vec<(u32, PressKind)> {
-        (self.inputs.borrow().iter())
-            .filter_map(|input| match input {
-                NativeInput::Press { surface_id, kind } => Some((*surface_id, *kind)),
-                NativeInput::Forwarded(_) => None,
-            })
-            .collect()
+    /// 대기열에 남은 누름 알림을 도착 순서대로 `forecast` 로 적용할 때 키 쥘 곳이 되는 surface
+    /// (`press_forecast::holders_along`). 그 surface 의 OS 키 포커스 회수는 알림을 적용할 때까지 보류한다
+    /// (`key_release::release_after_native_focus_notices`).
+    pub fn pending_holders(
+        &self,
+        forecast: &super::PressForecast,
+    ) -> std::collections::BTreeSet<u32> {
+        super::press_forecast::holders_along(forecast, self.inputs.borrow().iter())
     }
 
     /// 시험용: 대기열의 native 입력을 도착 순서대로 모두 꺼낸다.

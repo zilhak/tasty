@@ -509,6 +509,14 @@ fn a_skipped_webview_release_retries_when_native_input_drains() {
 /// P4 대기열: L 이 키 쥘 곳인 다리에 [L 의 host 키(Ctrl+J), `press` 의 누름] 을 넣는다. 누름은 키 뒤라 동기화가 먼저
 /// 소비하지 못한다.
 fn key_then_press(press: u32) -> crate::webview::WebViewKeyBridge {
+    use crate::host_api::webview::keys::WebViewKeySink;
+    key_then(|bridge| bridge.note_press(press))
+}
+
+/// `key_then_press` 와 같되 키 뒤 알림을 `notices` 가 넣는다.
+fn key_then(
+    notices: impl FnOnce(&crate::webview::WebViewKeyBridge),
+) -> crate::webview::WebViewKeyBridge {
     use crate::host_api::webview::keys::{HostShortcutPolicy, ShortcutSources, WebViewKeySink};
     use winit::keyboard::{Key, ModifiersState, NativeKeyCode, PhysicalKey};
     let bridge = crate::webview::WebViewKeyBridge::default();
@@ -524,7 +532,7 @@ fn key_then_press(press: u32) -> crate::webview::WebViewKeyBridge {
         ModifiersState::CONTROL,
     );
     assert!(forwarded.is_some(), "키가 대기열에 든다");
-    bridge.note_press(press);
+    notices(&bridge);
     bridge
 }
 
@@ -638,6 +646,37 @@ fn a_pending_press_that_cannot_hold_does_not_keep_the_release() {
             assert_eq!(r.released.get(), released, "{label}");
             assert_eq!(state.webview_release_due, released == 0, "{label}");
         }
+    }
+}
+
+/// 보류는 남은 알림이 소비될 때 키 쥘 곳을 그 surface 로 만드는지로 고른다. Given L 의 주소 띠가 키를 쥐고 R WebView 가
+/// OS 키 포커스를 쥔다, When 키 뒤에 R 포커스 획득만 남았으면, Then 포커스 획득은 주소 띠를 놓지 못해 R 을 키 쥘 곳으로
+/// 만들지 못하므로 R 을 바로 회수하고 의무를 남기지 않는다. 대조: 키 뒤에 L 본문 누름이 먼저 있어 주소 띠를 놓으면 뒤
+/// R 포커스 획득이 R 을 키 쥘 곳으로 만들어 R 회수를 보류한다.
+#[test]
+fn a_pending_focus_that_cannot_take_the_keys_does_not_keep_the_release() {
+    use crate::host_api::webview::keys::WebViewKeySink;
+    for (body_press, released) in [(false, 1), (true, 0)] {
+        let (mut state, mut session) = defs_scene();
+        state.html_address.set_focused_for_test(SURFACE_L);
+        let bridge = key_then(|bridge| {
+            if body_press {
+                bridge.note_press(SURFACE_L);
+            }
+            bridge.note_focus(SURFACE_R);
+        });
+        let r = holding();
+        let engine = session.borrow_mut();
+        sync_with_notices(
+            &mut state,
+            &engine.read(),
+            &bridge,
+            OverlayMode::Opaque,
+            &[(SURFACE_R, &r)],
+        );
+        let label = format!("L 본문 누름 {body_press}");
+        assert_eq!(r.released.get(), released, "{label}");
+        assert_eq!(state.webview_release_due, released == 0, "{label}");
     }
 }
 

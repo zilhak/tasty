@@ -33,20 +33,6 @@ pub struct PressForecast {
     pub focus_releases_now: HashSet<u32>,
 }
 
-impl PressForecast {
-    /// 그 알림 한 건이 그 surface 를 키 쥘 곳으로 만들 수 있는지. 창 전체를 막는 노드, 덮개, 맞지 않은 binding,
-    /// 표시되지 않은 탭의 알림은 만들지 못한다. OS 키 포커스 회수의 보류가 이 값으로 후보를 센다
-    /// (`key_release::release_after_native_focus_notices`).
-    pub fn may_hold(&self, surface_id: u32, kind: PressKind) -> bool {
-        !self.window_blocked
-            && match kind {
-                PressKind::Click => self.click_holds.contains(&surface_id),
-                #[cfg(any(windows, target_os = "macos", test))]
-                PressKind::Focus => self.focus_valid.contains(&surface_id),
-            }
-    }
-}
-
 /// 앞 알림이 남긴 포커스 노드의 꼴.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Node {
@@ -65,6 +51,31 @@ pub(crate) fn holder_after_notices<'a>(
     holder: Option<u32>,
     inputs: impl IntoIterator<Item = &'a NativeInput>,
 ) -> Option<u32> {
+    walk_notices(forecast, holder, inputs, |_| {})
+}
+
+/// `inputs` 의 누름 알림을 `holder_after_notices` 와 같은 걸음으로 적용하는 동안 키 쥘 곳이 된 surface. 창 전체를
+/// 막는 노드, 덮개, 맞지 않은 binding, 표시되지 않은 탭의 알림과, 앞 노드(주소 띠·팝업)를 놓지 못하는 포커스 획득은
+/// 키 쥘 곳을 만들지 못해 들지 않는다. OS 키 포커스 회수의 보류가 이 값으로 후보를 고른다
+/// (`key_release::release_after_native_focus_notices`).
+pub(crate) fn holders_along<'a>(
+    forecast: &PressForecast,
+    inputs: impl IntoIterator<Item = &'a NativeInput>,
+) -> std::collections::BTreeSet<u32> {
+    let mut held = std::collections::BTreeSet::new();
+    walk_notices(forecast, None, inputs, |sid| {
+        held.insert(sid);
+    });
+    held
+}
+
+/// 알림을 차례로 적용하며 키 쥘 곳이 그 surface 가 될 때마다 `on_hold` 를 부른다.
+fn walk_notices<'a>(
+    forecast: &PressForecast,
+    holder: Option<u32>,
+    inputs: impl IntoIterator<Item = &'a NativeInput>,
+    mut on_hold: impl FnMut(u32),
+) -> Option<u32> {
     let mut holder = holder;
     let mut selected = forecast.selected;
     let mut node = if forecast.free {
@@ -80,6 +91,7 @@ pub(crate) fn holder_after_notices<'a>(
         match kind {
             PressKind::Click => {
                 if forecast.click_holds.contains(&sid) {
+                    on_hold(sid);
                     holder = Some(sid);
                     selected = Some(sid);
                     node = Node::Body;
@@ -98,6 +110,7 @@ pub(crate) fn holder_after_notices<'a>(
                         Node::Cover => selected != Some(sid),
                     };
                 if moves {
+                    on_hold(sid);
                     holder = Some(sid);
                     selected = Some(sid);
                     node = Node::Body;
