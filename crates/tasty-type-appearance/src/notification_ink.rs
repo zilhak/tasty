@@ -4,19 +4,19 @@
 //! raised 바탕 위 위험 글자와 글리프도 같은 방식으로 red 60% + neutral-1100 을 쓴다.
 
 use crate::color::HexColor;
-use crate::theme::{TEXT_ON_ACCENT_LIGHT, Theme, mix_srgb};
+use crate::theme::{TEXT_ON_ACCENT_LIGHT, Theme, mix_srgb_premultiplied};
 
-/// DTCG `semantic.notify-warning-fill`의 Latte color-mix 비율.
-const WARNING_FILL_RATIO: f32 = 0.5;
+/// DTCG `semantic.notify-warning-fill`의 Latte color-mix 퍼센트.
+const WARNING_FILL_PERCENT: u8 = 50;
 
-/// DTCG `semantic.accent-warning-glyph`의 Latte color-mix 비율.
-const WARNING_GLYPH_RATIO: f32 = 0.5;
+/// DTCG `semantic.accent-warning-glyph`의 Latte color-mix 퍼센트.
+const WARNING_GLYPH_PERCENT: u8 = 50;
 
-/// DTCG `semantic.accent-danger-raised`의 Latte color-mix 비율.
-const DANGER_RAISED_RATIO: f32 = 0.6;
+/// DTCG `semantic.accent-danger-raised`의 Latte color-mix 퍼센트.
+const DANGER_RAISED_PERCENT: u8 = 60;
 
 /// DTCG semantic.accent-success-ink: Latte green 60% toward primitive.color-black.
-const SUCCESS_INK_RATIO: f32 = 0.6;
+const SUCCESS_INK_PERCENT: u8 = 60;
 const SUCCESS_INK_BLACK: HexColor = crate::hex!("#000000");
 
 impl Theme {
@@ -24,7 +24,11 @@ impl Theme {
     #[inline]
     pub fn accent_success_ink(&self) -> HexColor {
         if self.is_light {
-            mix_srgb(self.accent_success(), SUCCESS_INK_RATIO, SUCCESS_INK_BLACK)
+            mix_srgb_premultiplied(
+                self.accent_success(),
+                SUCCESS_INK_PERCENT,
+                SUCCESS_INK_BLACK,
+            )
         } else {
             self.accent_success()
         }
@@ -34,9 +38,9 @@ impl Theme {
     #[inline]
     pub fn notify_warning_fill(&self) -> HexColor {
         if self.is_light {
-            mix_srgb(
+            mix_srgb_premultiplied(
                 self.accent_warning(),
-                WARNING_FILL_RATIO,
+                WARNING_FILL_PERCENT,
                 TEXT_ON_ACCENT_LIGHT,
             )
         } else {
@@ -48,9 +52,9 @@ impl Theme {
     #[inline]
     pub fn accent_warning_glyph(&self) -> HexColor {
         if self.is_light {
-            mix_srgb(
+            mix_srgb_premultiplied(
                 self.accent_warning(),
-                WARNING_GLYPH_RATIO,
+                WARNING_GLYPH_PERCENT,
                 self.text_primary(),
             )
         } else {
@@ -63,9 +67,9 @@ impl Theme {
     #[inline]
     pub fn accent_danger_raised(&self) -> HexColor {
         if self.is_light {
-            mix_srgb(
+            mix_srgb_premultiplied(
                 self.accent_danger(),
-                DANGER_RAISED_RATIO,
+                DANGER_RAISED_PERCENT,
                 self.text_primary(),
             )
         } else {
