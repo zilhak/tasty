@@ -110,7 +110,10 @@ git push origin release
 
 ### 4. 커밋 — body 가 곧 릴리스 노트
 
-`release` 브랜치에서 `Cargo.toml` + `Cargo.lock` 을 함께 커밋한다. **커밋 body에 변경 내용을 영어 평문으로 적는다** — 워크플로가 `git log -1 --format=%b` 로 추출해 GitHub Release 노트로 쓴다.
+`release` 브랜치에서 `Cargo.toml` + `Cargo.lock` 을 함께 커밋한다. **커밋 body에 변경 내용을 영어 평문으로 적는다** — 워크플로가 `scripts/release-notes.sh` 로 태그 커밋의 body를 GitHub Release 노트로 만든다.
+스크립트는 `git interpret-trailers` 가 찾은 끝의 트레일러 블록(`Co-Authored-By` 등)을 빼고, 코드 스팬과 코드 펜스 밖의 `<`·`>`·`&` 를 HTML 엔터티로 바꾼다. 그래서 `<s>` 같은 자리표시를 평문으로 적어도 GitHub가 HTML 태그로 읽지 않는다.
+body의 끝 문단이 `Word: text` 꼴의 줄로만 되어 있으면 Git이 트레일러로 보아 노트에서 빠진다. 4칸 들여쓴 줄은 코드로 보지 않으므로 코드는 백틱이나 코드 펜스로 감싼다.
+만들어질 노트는 버전 커밋에서 `bash scripts/release-notes.sh HEAD` 로 미리 본다. 동작은 `scripts/tests/release-notes.sh`(doc-guards `release_notes_script`가 실행)가 확인한다.
 
 ```
 chore: bump version to X.Y.Z
@@ -151,7 +154,7 @@ hotfix는 `main`에서 갈라 `main`에 반영하고, `main`에서 patch를 올�
 
 ### 6. 워크플로 (release.yml)
 
-1. **create-release** — 태그 커밋이 `origin/main`의 조상인지 확인 → 버전 검증 → draft release 생성(body = 릴리스 노트). `main`에 반영하지 않은 커밋의 태그면 여기서 실패한다.
+1. **create-release** — 태그 커밋이 `origin/main`의 조상인지 확인 → 버전 검증 → 릴리스 노트 생성([§4](#4-커밋--body-가-곧-릴리스-노트)의 `scripts/release-notes.sh`) → draft release 생성(body = 릴리스 노트). `main`에 반영하지 않은 커밋의 태그면 여기서 실패한다.
 2. **build-macos / build-windows / build-windows-arm64 / build-linux-x64 / build-linux-arm64** — 각 빌드 스크립트가 로컬 키를 준비해(Linux·macOS 는 `ensure-sign-key.sh`, Windows 는 `build-windows.ps1` 이 직접) 잠금 파일의 공식 플러그인 받기(GitHub Releases, SHA-256 대조) → 빌드(`--profile dist`) → 매니페스트 서명 → GUI 패키징 → 헤드리스 압축 파일(아래 "헤드리스 산출물") → 아티팩트 업로드. GitHub Secret 관여 없음(배경은 [plugin-packaging](plugin-packaging.md) "영구 release 키를 두지 않는 이유").
 3. **publish-release** — draft를 해제해 공개한다. 파일을 올리지 않는다. 사이트 게시는 [8. 사이트 게시](#8-사이트-게시)에서 한다.
 
