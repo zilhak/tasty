@@ -518,9 +518,16 @@ mod tests {
         (a.max(b) + 0.05) / (a.min(b) + 0.05)
     }
 
-    /// 말풍선을 그려 칠해진 글자와 그 색을 모은다. 새 Area는 첫 프레임에 크기만 재므로 두 번 그리고,
-    /// 페이드인 중간 알파가 섞이지 않게 애니메이션 시간을 0으로 둔다.
-    fn painted_texts(theme: &Theme) -> Vec<(String, egui::Color32)> {
+    /// 그린 순서대로 모은 글자와 채움 사각형(그림자 흐림은 뺀다).
+    #[derive(Debug)]
+    enum Drawn {
+        Text(String, egui::Rect, egui::Color32),
+        Fill(egui::Rect, egui::Color32),
+    }
+
+    /// 말풍선을 그려 칠해진 글자와 채움 사각형을 그린 순서로 모은다. 새 Area는 첫 프레임에 크기만
+    /// 재므로 두 번 그리고, 페이드인 중간 알파가 섞이지 않게 애니메이션 시간을 0으로 둔다.
+    fn painted_shapes(theme: &Theme) -> Vec<Drawn> {
         let ctx = egui::Context::default();
         ctx.style_mut(|s| s.animation_time = 0.0);
         let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0));
@@ -560,7 +567,7 @@ mod tests {
                     );
                 },
             );
-            fn collect(shape: &egui::Shape, out: &mut Vec<(String, egui::Color32)>) {
+            fn collect(shape: &egui::Shape, out: &mut Vec<Drawn>) {
                 match shape {
                     egui::Shape::Vec(v) => v.iter().for_each(|s| collect(s, out)),
                     egui::Shape::Text(t) => {
@@ -569,7 +576,14 @@ mod tests {
                             Some(c) if c != egui::Color32::PLACEHOLDER => c,
                             _ => t.fallback_color,
                         });
-                        out.push((t.galley.text().to_owned(), color));
+                        out.push(Drawn::Text(
+                            t.galley.text().to_owned(),
+                            t.visual_bounding_rect(),
+                            color,
+                        ));
+                    }
+                    egui::Shape::Rect(r) if r.blur_width == 0.0 => {
+                        out.push(Drawn::Fill(r.rect, r.fill));
                     }
                     _ => {}
                 }
@@ -590,12 +604,30 @@ mod tests {
         // Latte에서 panel 잉크와 raised 잉크가 갈려야 이 시험이 바탕을 가린다.
         assert_ne!(latte.button_ghost_fg(), latte.button_ghost_raised_fg());
         for (name, theme) in [("mocha", tasty_themes::mocha_fallback()), ("latte", latte)] {
-            let texts = painted_texts(&theme);
-            let drawn: Vec<_> = texts.iter().filter(|(s, _)| s == topics).collect();
-            assert_eq!(drawn.len(), 1, "{name}: {texts:?}");
-            let ink = drawn[0].1;
+            let shapes = painted_shapes(&theme);
+            let at: Vec<usize> = shapes
+                .iter()
+                .enumerate()
+                .filter(|(_, d)| matches!(d, Drawn::Text(s, _, _) if s == topics))
+                .map(|(i, _)| i)
+                .collect();
+            assert_eq!(at.len(), 1, "{name}: {shapes:?}");
+            let Drawn::Text(_, text_rect, ink) = &shapes[at[0]] else {
+                unreachable!()
+            };
+            let ink = *ink;
             assert_eq!(ink, theme.button_ghost_raised_fg().to_egui(), "{name}");
-            let ratio = contrast(ink, theme.surface_raised().to_egui());
+            // 글자 아래 바탕: 글자보다 먼저 그려졌고 글자 중심을 덮는 마지막 불투명 채움(말풍선 프레임).
+            let ground = shapes[..at[0]]
+                .iter()
+                .rev()
+                .find_map(|d| match d {
+                    Drawn::Fill(r, c) if c.a() == 255 && r.contains(text_rect.center()) => Some(*c),
+                    _ => None,
+                })
+                .unwrap_or_else(|| panic!("{name}: no fill under {topics}"));
+            assert_eq!(ground, theme.surface_raised().to_egui(), "{name}");
+            let ratio = contrast(ink, ground);
             assert!(ratio >= 4.5, "{name}: {topics} {ratio:.2}:1");
         }
     }
