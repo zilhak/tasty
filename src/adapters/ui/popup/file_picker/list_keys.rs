@@ -334,7 +334,8 @@ pub(super) fn take_keys(
     if menu_open {
         // 메뉴가 키를 갖는다: 피커는 목록 키를 쓰지 않고, 포커스한 메뉴 행이 Enter·Space 로 눌리게 입력에 둔다. 위젯
         // 포커스가 메뉴 행이 아니면(`…` 버튼, Shift+Tab 으로 간 루트 링크, 이름 칸, 없음) 그 위젯이 눌리지 않게 Enter·Space
-        // 를 빼서 버린다.
+        // 를 빼서 버린다. egui 는 수식키(Ctrl·Alt·Shift·Cmd)가 붙은 Enter·Space 도 포커스 위젯의 클릭으로 치므로, 목록
+        // 키맵이 아니라 수식키와 무관하게 두 키의 누름을 모두 뺀다.
         let in_menu = focused.zip(ids.menu).is_some_and(|(f, menu)| {
             ui.ctx().viewport(|v| {
                 v.this_pass
@@ -345,9 +346,10 @@ pub(super) fn take_keys(
             })
         });
         if !in_menu {
-            let dropped = keys.take_keymap_presses(classify, |op| {
-                matches!(op, ListKey::Confirm | ListKey::Pick)
-            });
+            let dropped = keys.take_keymap_presses(
+                |_, key| matches!(key, egui::Key::Enter | egui::Key::Space).then_some(key),
+                |_| true,
+            );
             drop(dropped);
         }
         return Taken::default();

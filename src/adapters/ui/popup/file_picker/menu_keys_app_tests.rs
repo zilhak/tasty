@@ -135,11 +135,19 @@ fn root_label(dir: &std::path::Path) -> String {
 }
 
 /// [priority] 열린 `…` 메뉴가 키를 갖는다: 메뉴가 열린 채 다른 패스의 Shift+Tab 으로 포커스가 메뉴 밖 루트 링크로 가도,
-/// 그 링크의 Enter·Space 는 실행하지 않는다(세 모드, 현재 경로 그대로·메뉴 행이 칠해진 채).
+/// 그 링크의 Enter·Space 는 수식키(Ctrl·Shift)가 붙어도 실행하지 않는다(세 모드, 현재 경로 그대로·메뉴 행이 칠해진 채).
 #[test]
 fn enter_and_space_do_not_press_a_link_outside_the_open_menu() {
+    use egui::{Key, Modifiers};
+    let presses = [
+        (Key::Enter, Modifiers::NONE),
+        (Key::Space, Modifiers::NONE),
+        (Key::Enter, Modifiers::CTRL),
+        (Key::Space, Modifiers::CTRL),
+        (Key::Enter, Modifiers::SHIFT),
+    ];
     for mode in ["open", "save", "folder"] {
-        for k in [egui::Key::Enter, egui::Key::Space] {
+        for (k, mods) in presses {
             let (mut state, mut session) = crate::state::tests::two_pane_fixture();
             let root = tempfile::tempdir().unwrap();
             let deep = deep_tree(root.path());
@@ -164,15 +172,15 @@ fn enter_and_space_do_not_press_a_link_outside_the_open_menu() {
                 app.texts.iter().any(|(t, _)| *t == label),
                 "{mode}: 메뉴가 열려 있다"
             );
-            app.press(k);
+            app.press_with(k, mods);
             assert_eq!(
                 app.data().current_dir,
                 dir_before,
-                "{mode}: {k:?} 가 루트 링크를 누르지 않는다"
+                "{mode}: {mods:?}+{k:?} 가 루트 링크를 누르지 않는다"
             );
             assert!(
                 app.texts.iter().any(|(t, _)| *t == label),
-                "{mode}: {k:?} 뒤에도 메뉴 행이 칠해진다"
+                "{mode}: {mods:?}+{k:?} 뒤에도 메뉴 행이 칠해진다"
             );
             load(app.state);
         }
