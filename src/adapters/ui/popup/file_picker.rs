@@ -23,6 +23,8 @@ pub(crate) mod instances;
 mod layout_tests;
 pub(crate) mod list_keys;
 mod location;
+#[cfg(test)]
+mod menu_keys_app_tests;
 mod path_bar;
 #[cfg(test)]
 mod pure_return_tests;

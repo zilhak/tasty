@@ -839,29 +839,32 @@ fn save_mode(can_confirm: bool) -> FilePickerMode<'static> {
     }
 }
 
-/// [priority] 이 피커의 `…` 메뉴가 열려 있으면 메뉴가 모든 키를 갖는다: 피커는 목록 키를 쓰지 않고, 부모 위젯(`…` 버튼·
-/// 이름 칸)도 그 키를 읽지 않게 입력에서 빼서 버린다.
+/// [priority] 이 피커의 `…` 메뉴가 열려 있으면 메뉴가 모든 키를 갖는다: 피커는 목록 키를 쓰지 않고 누름을 입력에 남겨
+/// 메뉴 행이 읽게 한다. `…` 버튼이 포커스면 그 버튼이 메뉴를 다시 토글하지 않게 Enter·Space 만 빼서 버린다. 메뉴 행이
+/// 그 키로 눌리는 것은 `menu_keys_app_tests` 가 본다.
 #[test]
 fn an_open_menu_takes_every_key() {
-    for focused in [ids().menu_button, ids().name_field, None] {
-        let (owned, left) = split(
-            save_mode(true),
-            &[],
-            focused,
-            ids(),
-            true,
-            &[
-                (egui::Key::Enter, NONE),
-                (egui::Key::Space, NONE),
-                (egui::Key::ArrowDown, NONE),
-                (egui::Key::Backspace, NONE),
-            ],
-        );
+    let presses = [
+        (egui::Key::Enter, NONE),
+        (egui::Key::Space, NONE),
+        (egui::Key::ArrowDown, NONE),
+        (egui::Key::Backspace, NONE),
+    ];
+    let all: Vec<egui::Key> = presses.iter().map(|(k, _)| *k).collect();
+    for focused in [
+        ids().menu_button,
+        ids().name_field,
+        Some(egui::Id::new("menu-row")),
+        None,
+    ] {
+        let (owned, left) = split(save_mode(true), &[], focused, ids(), true, &presses);
         assert!(owned.is_empty(), "{focused:?}");
-        assert!(
-            left.is_empty(),
-            "{focused:?}: 부모 위젯에 남지 않는다 {left:?}"
-        );
+        let want = if focused == ids().menu_button {
+            vec![egui::Key::ArrowDown, egui::Key::Backspace]
+        } else {
+            all.clone()
+        };
+        assert_eq!(left, want, "{focused:?}: 메뉴가 읽을 키");
     }
 }
 

@@ -279,8 +279,9 @@ pub(super) fn confirm_enabled(p: &super::FilePickerProps<'_>) -> bool {
 }
 
 /// 그리기 전에 이번 패스 피커 몫 키를 egui 입력에서 빼서 도착 순서대로 돌려준다. 몫 판정은 spec priority 순서다.
-/// - 이 인스턴스의 `…` 메뉴가 열려 있으면 메뉴가 모든 키를 갖는다: `…` 버튼이 포커스면 그 버튼이 메뉴를 다시 토글하지
-///   않게 Enter·Space 를 빼서 버리고, 나머지는 손대지 않는다. 다른 egui 팝업이 열려 있으면 아무것도 빼지 않는다.
+/// - 이 인스턴스의 `…` 메뉴가 열려 있으면 메뉴가 모든 키를 갖는다: 피커는 목록 키를 쓰지 않고 누름을 입력에 남겨 메뉴
+///   행(Enter·Space 로 고른다)과 egui 방향 이동이 읽게 한다. `…` 버튼이 포커스면 그 버튼이 메뉴를 다시 토글하지 않게
+///   Enter·Space 만 빼서 버린다. 다른 egui 팝업이 열려 있으면 아무것도 빼지 않는다.
 /// - Enter: `…` 버튼이 포커스면 위젯 몫(egui 가 메뉴를 연다)이고 그 뒤 키는 빼지 않는다(메뉴가 열린다). 그 밖에는 확정이
 ///   활성이거나, 이름 칸이 포커스이거나(칸이 Enter 로 포커스를 놓지 않게), 같은 패스에 앞선 행 키가 있으면 피커 몫이다.
 ///   확정 가능 여부는 적용 시점에 다시 본다. 셋 다 아니면 위젯 몫(egui 가 Tab 포커스 버튼을 누른다).
@@ -312,9 +313,14 @@ pub(super) fn take_keys(
         .menu
         .is_some_and(|id| ui.memory(|m| m.is_popup_open(id)));
     if menu_open {
-        // 메뉴가 열린 동안 부모 위젯(`…` 버튼·이름 칸·버튼)은 목록 키를 읽지 않는다. 뺀 누름은 버린다.
-        let dropped = keys.take_keymap_presses(classify, |_| true);
-        drop(dropped);
+        // 메뉴가 키를 갖는다: 피커는 목록 키를 쓰지 않고, 포커스한 메뉴 행이 Enter·Space 로 눌리게 입력에 둔다. `…`
+        // 버튼이 포커스일 때만 그 버튼이 메뉴를 다시 토글하지 않게 Enter·Space 를 빼서 버린다.
+        if menu_button_focus {
+            let dropped = keys.take_keymap_presses(classify, |op| {
+                matches!(op, ListKey::Confirm | ListKey::Pick)
+            });
+            drop(dropped);
+        }
         return Vec::new();
     }
     if ui.memory(|m| m.any_popup_open()) {
