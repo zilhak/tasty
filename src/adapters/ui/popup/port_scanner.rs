@@ -3299,7 +3299,9 @@ mod tests {
         heading_drawn: egui::Rect,
         heading_visible: egui::Rect,
         count_visible: egui::Rect,
+        icon_drawn: egui::Rect,
         pill_drawn: egui::Rect,
+        pill_visible: egui::Rect,
     }
 
     fn header_rects(theme: &Theme, width: f32) -> HeaderRects {
@@ -3364,10 +3366,9 @@ mod tests {
         let (pill_drawn, pill_visible) = shapes
             .iter()
             .find_map(|(clip, s)| match s {
+                // Tag 배경은 같은 줄의 accent 채움이다. 필터와의 위치로 거르지 않아 필터 위에 그려져도 찾는다.
                 egui::epaint::Shape::Rect(r)
-                    if r.fill == theme.accent_primary().to_egui()
-                        && in_row(&r.rect)
-                        && r.rect.left() < filter.left() =>
+                    if r.fill == theme.accent_primary().to_egui() && in_row(&r.rect) =>
                 {
                     Some((r.rect, r.rect.intersect(*clip)))
                 }
@@ -3388,7 +3389,9 @@ mod tests {
             heading_drawn,
             heading_visible,
             count_visible,
+            icon_drawn: port_icon,
             pill_drawn,
+            pill_visible,
         }
     }
 
@@ -3398,7 +3401,8 @@ mod tests {
     }
 
     /// 폭 390·480 에서 머리 요소의 그린 영역이 서로 겹치지 않는다. 오른쪽 묶음(필터 200·Columns·Refresh·Close)은
-    /// 크기를 지키고, 왼쪽 묶음(아이콘·제목·개수)은 남은 폭에서 끝이 잘린다. 넓은 폭에서는 잘리지 않는다.
+    /// 크기를 지키고, 왼쪽 묶음(아이콘·제목·개수)은 아이콘·제목·Tag 순서로 놓여 남은 폭에서 끝이 잘린다(제목 앞은
+    /// 남고, 480 에서는 Tag 앞부분이 보이고 끝이 잘린다). 넓은 폭에서는 잘리지 않는다.
     #[test]
     fn the_narrow_header_keeps_the_right_cluster_and_clips_the_left_group() {
         let theme = test_theme();
@@ -3431,6 +3435,41 @@ mod tests {
                         "{width}: 왼쪽 묶음 {name} {rect:?} 가 오른쪽 묶음 {r:?} 와 겹친다"
                     );
                 }
+            }
+            if width < 600.0 {
+                // 왼쪽 묶음은 왼쪽 끝부터 아이콘·제목·Tag 순서로 놓이고 끝(오른쪽)에서 잘린다. 앞은 잘리지 않는다.
+                assert!(
+                    (h.heading_visible.left() - h.heading_drawn.left()).abs() < 0.5,
+                    "{width}: 제목 앞이 잘렸다(보이는 왼쪽 {} · 그린 왼쪽 {})",
+                    h.heading_visible.left(),
+                    h.heading_drawn.left()
+                );
+                assert!(
+                    h.icon_drawn.left() < h.heading_drawn.left(),
+                    "{width}: 아이콘 {:?} 이 제목 {:?} 왼쪽에 없다",
+                    h.icon_drawn,
+                    h.heading_drawn
+                );
+                if h.pill_drawn.is_positive() {
+                    assert!(
+                        h.heading_drawn.left() < h.pill_drawn.left(),
+                        "{width}: 개수 Tag {:?} 가 제목 {:?} 오른쪽에 없다",
+                        h.pill_drawn,
+                        h.heading_drawn
+                    );
+                }
+            }
+            if (width - 480.0).abs() < 0.5 {
+                assert!(
+                    h.pill_visible.width() > 0.0,
+                    "480: 개수 Tag 가 통째로 보이지 않는다(잘림이 너무 일찍 시작한다)"
+                );
+                assert!(
+                    h.pill_visible.right() < h.pill_drawn.right() - 0.5,
+                    "480: 개수 Tag 끝이 잘리지 않았다(보이는 {:?} · 그린 {:?})",
+                    h.pill_visible,
+                    h.pill_drawn
+                );
             }
             let cut = h.heading_visible.width() < h.heading_drawn.width() - 0.5;
             if width < 400.0 {
