@@ -225,7 +225,6 @@ impl<'a> Input<'a> {
         self
     }
 
-    /// 기본은 왼쪽 정렬. 숫자를 비교하는 필드는 오른쪽 정렬을 사용할 수 있다.
     /// TextEdit을 바깥 상자 전체에 두고 가로 padding과 글자 줄 위아래 여백을 TextEdit 자기 margin으로
     /// 준다. 세로 margin은 egui가 정수로만 받아 (상자 높이 - 글자 줄 높이)/2를 내린 값이라, 상자와
     /// TextEdit 사이에 위아래 1pt 미만이 남고 그 틈은 egui 근접 판정(5) 안이다.
@@ -238,6 +237,7 @@ impl<'a> Input<'a> {
         self
     }
 
+    /// 기본은 왼쪽 정렬. 숫자를 비교하는 필드는 오른쪽 정렬을 사용할 수 있다.
     pub fn align(mut self, align: egui::Align) -> Self {
         self.align = align;
         self
