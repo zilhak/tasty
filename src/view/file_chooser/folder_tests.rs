@@ -176,3 +176,53 @@ fn alt_up_with_a_dropdown_open_does_nothing() {
         PathBuf::from("/fixture")
     );
 }
+
+/// 폴더 둘(`sub`·`sub2`)과 파일 하나를 읽은 폴더 선택기.
+fn two_folders() -> LocalFileChooser {
+    let mut ch = loaded(FileChooserMode::Folder);
+    let s = ch.session.as_mut().unwrap();
+    s.accept_read(Ok(["sub", "sub2"]
+        .into_iter()
+        .map(|name| DirEntryInfo {
+            name: name.into(),
+            is_dir: true,
+            ..Default::default()
+        })
+        .chain(std::iter::once(DirEntryInfo {
+            name: "file.txt".into(),
+            ..Default::default()
+        }))
+        .collect()));
+    ch
+}
+
+/// 고른 폴더를 다시 클릭해 선택을 풀면 행 포커스도 없다: 다음 → 는 무동작, ↓ 는 첫 폴더, ↑ 는 끝 폴더다(기점 동작).
+#[test]
+fn reclicking_the_selected_folder_leaves_keys_as_with_no_selection() {
+    for (k, want_dir, want_sel) in [
+        (egui::Key::ArrowRight, PathBuf::from("/fixture"), vec![]),
+        (
+            egui::Key::ArrowDown,
+            PathBuf::from("/fixture"),
+            vec!["sub".to_string()],
+        ),
+        (
+            egui::Key::ArrowUp,
+            PathBuf::from("/fixture"),
+            vec!["sub2".to_string()],
+        ),
+    ] {
+        let ctx = egui::Context::default();
+        let mut ch = two_folders();
+        frame(&mut ch, &ctx, egui::Key::ArrowDown);
+        frame(&mut ch, &ctx, egui::Key::ArrowDown);
+        let s = ch.session.as_mut().unwrap();
+        assert_eq!(s.selected, ["sub2"], "↓↓ 가 sub2 를 고른다");
+        s.apply(FilePickerAction::Select("sub2".into()));
+        assert!(s.selected.is_empty(), "재클릭이 선택을 푼다");
+        frame(&mut ch, &ctx, k);
+        let s = ch.session.as_ref().unwrap();
+        assert_eq!(s.current_dir, want_dir, "{k:?}");
+        assert_eq!(s.selected, want_sel, "{k:?}");
+    }
+}

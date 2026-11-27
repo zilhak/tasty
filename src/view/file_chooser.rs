@@ -392,8 +392,11 @@ impl ChooserSession {
                     if !self.is_dir_entry(&name) {
                         return None;
                     }
+                    // 고른 폴더를 다시 누르면 선택을 풀고 행 포커스도 지운다. 다음 → 는 무동작, ↓ 는 첫 폴더, ↑ 는 끝
+                    // 폴더다(선택을 풀던 기존 동작).
                     if self.selected.first() == Some(&name) {
                         self.selected.clear();
+                        self.row_focus = Default::default();
                         return None;
                     }
                 }
