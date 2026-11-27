@@ -68,6 +68,8 @@ pub(crate) struct SegmentAfterCut {
     before_transition: bool,
 }
 
+mod press_forecast;
+
 /// 시험이 읽는 몫 하나의 칸(`MainViewState::segment_slots`).
 #[cfg(test)]
 #[derive(Debug, Clone, PartialEq)]

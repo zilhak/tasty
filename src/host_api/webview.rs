@@ -30,6 +30,7 @@ pub(crate) mod overlay_host;
 mod page_mask;
 #[cfg(any(windows, test))]
 mod parent_press;
+pub(crate) mod press_forecast;
 #[cfg(any(windows, target_os = "linux", target_os = "macos", test))]
 mod process_end;
 #[cfg(any(windows, test))]
@@ -95,6 +96,7 @@ pub use keys::{
     HostShortcutPolicy, NativeInput, PressKind, ShortcutSources, WebViewEditAction,
     WebViewKeyBridge, WebViewKeyEvent,
 };
+pub use press_forecast::PressForecast;
 
 /// backend가 기록한 탐색 시도. user_gesture는 Linux·Windows 엔진의 보고값이고, macOS는 WebView가 받은 OS 클릭으로 정한다.
 /// 제스처 안에서 페이지 스크립트가 바꾼 목적지도 포함될 수 있어 목적지에 대한 별도 사용자 동의는 아니다.

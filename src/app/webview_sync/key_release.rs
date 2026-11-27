@@ -101,6 +101,9 @@ pub(crate) fn publish_key_holder(
     bridge: &crate::webview::WebViewKeyBridge,
 ) {
     bridge.set_key_holder(webview_key_holder(state, core));
+    // 키 쥘 곳과 같은 정규화 뒤 상태로 대기 알림의 결과표를 함께 게시한다(N1).
+    // TODO: S6c 입력 순서 경계 설계가 대체할 임시 장치.
+    bridge.set_press_forecast(state.press_forecast(core));
 }
 
 /// 다음 입력이 볼 키 쥘 곳. 포커스를 정규화한 뒤 포커스 노드와 복원 안내 안쪽 키 포커스로 대응표

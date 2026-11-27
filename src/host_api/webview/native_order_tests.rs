@@ -4,7 +4,7 @@
 
 use winit::keyboard::{Key, ModifiersState, NamedKey};
 
-use super::tests::{strings, two_surfaces, unknown_physical};
+use super::tests::{alt_mod, ch, strings, two_surfaces, unknown_physical};
 use crate::app::webview_keys::{
     ForwardedKeyConsumer, ForwardedKeyOutcome, NativeInputConsumer, consume_native_inputs,
     press_and_publish,
@@ -117,6 +117,8 @@ impl NativeInputConsumer for Turn<'_> {
 #[derive(Clone, Copy)]
 enum Native {
     Press(u32),
+    /// Alt+V
+    EditKey(u32),
     /// F2
     Shortcut(u32),
     /// 그 surface 의 view 를 지웠다(`WebViewKeyBridge::retire_view`).
@@ -141,14 +143,18 @@ fn send(bridge: &WebViewKeyBridge, event: Native, log: &mut Vec<String>) {
             crate::host_api::webview::parent_press::WM_PARENTNOTIFY,
             event as usize,
         ),
-        Native::Shortcut(sid) => {
+        Native::Shortcut(sid) | Native::EditKey(sid) => {
+            let (key, mods) = match event {
+                Native::EditKey(_) => (ch("v"), alt_mod()),
+                _ => (Key::Named(NamedKey::F2), ModifiersState::empty()),
+            };
             let mut ran = None;
             let route = route_key_down(
                 bridge,
                 sid,
-                Key::Named(NamedKey::F2),
+                key,
                 unknown_physical(),
-                ModifiersState::empty(),
+                mods,
                 false,
                 |action| ran = Some(action),
             );
@@ -173,7 +179,10 @@ fn turn_with_nested(
     if holder != 11 {
         state.focus_surface_by_id(engine.core, holder);
     }
-    let log = turn_on(&bridge(holder), &mut state, engine.core, events, nested);
+    let bridge = bridge(holder);
+    // 회차 앞 게시: 키 쥘 곳과 누름 알림 결과표(`key_release::publish_key_holder`).
+    crate::app::webview_sync::key_release::publish_key_holder(&mut state, engine.core, &bridge);
+    let log = turn_on(&bridge, &mut state, engine.core, events, nested);
     let focused = state.focused_surface_id(&engine.read());
     (log, focused)
 }
@@ -385,6 +394,48 @@ fn a_fallback_hwnd_press_without_got_focus_routes_the_next_shortcut() {
         log,
         ["held 12", "shortcut 12 Gated", "forwarded 12 Gated"],
         "알림 없는 B F2 가 동작했다"
+    );
+    assert_eq!(focused, Some(11));
+}
+
+/// C1·X1(N1): Given A(11)가 키 쥘 곳이다, When 한 회차에 [B(12) 누름, B 편집 키, A 편집 키]가 들고 누름 알림은 회차
+/// 끝에 소비되면, Then B 편집 키는 대기 누름을 적용한 키 쥘 곳(B)으로 판정돼 그 자리에서 B 에 한 번 실행되고 A 편집
+/// 키는 막힌다. 대조: 누름이 없으면 A 편집 키는 A 에 실행된다.
+#[test]
+fn a_press_and_an_edit_key_in_one_turn_edit_only_the_pressed_page() {
+    let (log, focused) = turn(
+        11,
+        &[Native::Press(12), Native::EditKey(12), Native::EditKey(11)],
+    );
+    assert_eq!(log, ["edit now 12 Paste"]);
+    assert_eq!(focused, Some(12));
+    let (log, _) = turn(11, &[Native::EditKey(11)]);
+    assert_eq!(log, ["edit now 11 Paste"], "대조: 누름이 없으면 A 다");
+}
+
+/// 옛 runtime(X 판단 2, N1): Given 훅 없는 B(12) view 의 창(0x200)을 누름 알림에 등록했고 A(11)가 키 쥘 곳으로
+/// 게시됐다, When B 창 프로시저가 왼쪽 누름 `WM_PARENTNOTIFY`(0x201)를 받고 소비 전에 B 붙여넣기 키가 오면, Then 대기
+/// 누름 하나로 B 가 키 쥘 곳이 되어 붙여넣기가 B 에서 그 자리에 한 번 실행된다. 대조: 알림이 없으면 막힌다.
+#[test]
+fn a_fallback_hwnd_press_without_got_focus_routes_the_next_paste() {
+    use std::rc::Rc;
+    let paste_after = |events: &[Native]| {
+        let (mut state, mut session) = two_surfaces();
+        let engine = session.borrow_mut();
+        let bridge = Rc::new(bridge(11));
+        crate::app::webview_sync::key_release::publish_key_holder(&mut state, engine.core, &bridge);
+        let _guard = crate::host_api::webview::parent_press::register(0x200, 12, bridge.clone());
+        let log = turn_on(&bridge, &mut state, engine.core, events, &[]);
+        let focused = state.focused_surface_id(&engine.read());
+        (log, focused)
+    };
+    let (log, focused) = paste_after(&[Native::ParentNotify(0x200, 0x201), Native::EditKey(12)]);
+    assert_eq!(log, ["edit now 12 Paste"]);
+    assert_eq!(focused, Some(12));
+    let (log, focused) = paste_after(&[Native::EditKey(12)]);
+    assert!(
+        log.is_empty(),
+        "알림 없는 B 붙여넣기 키가 실행됐다: {log:?}"
     );
     assert_eq!(focused, Some(11));
 }

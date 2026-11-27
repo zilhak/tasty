@@ -363,8 +363,10 @@ pub struct WebViewKeyBridge {
     consuming: std::cell::Cell<bool>,
     /// host 모달이 열려 있다. 모달을 열고 닫을 때 바로 바꾼다.
     modal_open: std::cell::Cell<bool>,
-    /// 창의 키 쥘 곳(`key_focus::webview_key_holder_of`). 프레임 동기화에서 바꾼다.
+    /// 창의 키 쥘 곳(`key_focus::webview_key_holder_of`). 게시 자리(`key_release::publish_key_holder`)에서 바꾼다.
     key_holder: std::cell::Cell<Option<u32>>,
+    /// 게시 시점 상태에서 누름 알림 한 건의 결과(`press_forecast`). 키 쥘 곳과 함께 게시한다.
+    forecast: RefCell<super::PressForecast>,
 }
 
 impl WebViewKeyBridge {
@@ -485,9 +487,26 @@ impl WebViewKeyBridge {
         self.key_holder.set(holder);
     }
 
-    /// OS 모달은 바로 막고, 그 밖에는 키를 받은 surface 가 프레임에 게시된 키 쥘 곳일 때만 연다.
+    /// 누름 알림 결과표를 게시한다(`key_release::publish_key_holder`).
+    pub fn set_press_forecast(&self, forecast: super::PressForecast) {
+        *self.forecast.borrow_mut() = forecast;
+    }
+
+    /// 다음 키가 볼 키 쥘 곳: 게시값에서 출발해 대기열에 남은 누름 알림을 도착 순서대로 결과표로 적용한 값
+    /// (`press_forecast::holder_after_notices`).
+    /// TODO: S6c 입력 순서 경계 설계가 대체할 임시 장치.
+    pub(crate) fn holder_after_pending(&self) -> Option<u32> {
+        super::press_forecast::holder_after_notices(
+            &self.forecast.borrow(),
+            self.key_holder.get(),
+            self.inputs.borrow().iter(),
+        )
+    }
+
+    /// OS 모달은 바로 막고, 그 밖에는 키를 받은 surface 가 대기 알림까지 적용한 키 쥘 곳(`holder_after_pending`)일
+    /// 때만 연다.
     fn input_blocked(&self, surface_id: u32) -> bool {
-        self.modal_open.get() || self.key_holder.get() != Some(surface_id)
+        self.modal_open.get() || self.holder_after_pending() != Some(surface_id)
     }
 
     /// host가 가져갈 조합인지만 판정한다. 큐는 바꾸지 않는다.
@@ -643,6 +662,10 @@ impl WebViewKeySink for WebViewKeyBridge {
 #[cfg(test)]
 #[path = "native_order_tests.rs"]
 mod native_order_tests;
+
+#[cfg(test)]
+#[path = "notice_holder_tests.rs"]
+mod notice_holder_tests;
 
 #[cfg(test)]
 mod tests {
