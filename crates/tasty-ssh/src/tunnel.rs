@@ -6,8 +6,39 @@ use super::*;
 /// 때까지는 다른 프로세스가 포트를 차지할 수 있다.
 pub(super) fn reserve_local_port() -> Result<(std::net::TcpListener, u16)> {
     let listener = std::net::TcpListener::bind("127.0.0.1:0")?;
+    #[cfg(all(test, windows))]
+    tasty_utils::socket_inherit::seam::created(SEAM_RESERVE, &listener, None);
+    // 호스트에서는 놓기 전에 다른 스레드가 std `Command`로 띄우는 자식이 예약 listener 를 쥐지 않게 한다.
+    // 곧 놓는 listener 라 끄지 못해도 예약은 그대로 하고 기록만 남긴다.
+    if let Err(e) = tasty_utils::socket_inherit::disable_inherit(&listener) {
+        tracing::debug!(%e, "ssh tunnel port reservation: keeping the listener out of child processes failed");
+    }
+    #[cfg(all(test, windows))]
+    tasty_utils::socket_inherit::seam::cleared(SEAM_RESERVE, &listener, None);
     let port = listener.local_addr()?.port();
     Ok((listener, port))
+}
+
+/// 시험 이음새(`tasty_utils::socket_inherit::seam`)의 자리 이름.
+#[cfg(all(test, windows))]
+const SEAM_RESERVE: &str = "ssh-tunnel.reserve";
+#[cfg(all(test, windows))]
+const SEAM_READY: &str = "ssh-tunnel.ready";
+
+/// 로컬 끝점이 연결을 받는지 한 번 본다. 연 소켓은 곧 닫지만, 그 사이 호스트의 다른 스레드가 띄우는 자식이
+/// 쥐지 않게 상속을 끈다. 끄지 못해도 연결이 됐다는 판정은 그대로다.
+fn local_end_accepts(port: u16) -> bool {
+    let Ok(stream) = TcpStream::connect(("127.0.0.1", port)) else {
+        return false;
+    };
+    #[cfg(all(test, windows))]
+    tasty_utils::socket_inherit::seam::created(SEAM_READY, &stream, None);
+    if let Err(e) = tasty_utils::socket_inherit::disable_inherit(&stream) {
+        tracing::debug!(%e, "ssh tunnel ready probe: keeping the socket out of child processes failed");
+    }
+    #[cfg(all(test, windows))]
+    tasty_utils::socket_inherit::seam::cleared(SEAM_READY, &stream, None);
+    true
 }
 
 /// ssh -L 자식의 수명을 관리한다. Drop에서 터널 자식을 종료·회수한다.
@@ -128,7 +159,7 @@ impl SshTunnel {
                      (Windows 는 시스템 OpenSSH 풀경로/agent 확인)"
                 );
             }
-            if TcpStream::connect(("127.0.0.1", self.local_port)).is_ok() {
+            if local_end_accepts(self.local_port) {
                 return Ok(());
             }
             if Instant::now() >= deadline {
@@ -306,3 +337,7 @@ mod tests {
         assert_eq!(relayed, "first line\nPermission denied (publickey).\n");
     }
 }
+
+#[cfg(all(test, windows))]
+#[path = "tunnel_inherit_tests.rs"]
+mod inherit_tests;

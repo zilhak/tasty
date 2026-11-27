@@ -19,5 +19,9 @@ tracing = "0.1"
 # Error handling
 anyhow = "1"
 
+[dev-dependencies]
+# Windows 상속 시험이 터널 준비 자리의 이음새(socket_inherit::seam)를 켠다.
+tasty-utils = { path = "../tasty-utils", features = ["test-support"] }
+
 [lints]
 workspace = true
