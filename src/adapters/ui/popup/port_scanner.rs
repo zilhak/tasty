@@ -3400,6 +3400,46 @@ mod tests {
         i.width() > 0.0 && i.height() > 0.0
     }
 
+    /// 좁은 폭(390·480)에서 왼쪽 묶음이 아이콘·제목·Tag 순서로 놓이고 앞이 아닌 끝에서 잘리는지 본다. 480 에서는
+    /// Tag 앞부분이 보이고 끝이 잘린다.
+    fn left_group_runs_in_order_and_is_cut_at_its_end(width: f32, h: &HeaderRects) {
+        if width < 600.0 {
+            // 왼쪽 묶음은 왼쪽 끝부터 아이콘·제목·Tag 순서로 놓이고 끝(오른쪽)에서 잘린다. 앞은 잘리지 않는다.
+            assert!(
+                (h.heading_visible.left() - h.heading_drawn.left()).abs() < 0.5,
+                "{width}: 제목 앞이 잘렸다(보이는 왼쪽 {} · 그린 왼쪽 {})",
+                h.heading_visible.left(),
+                h.heading_drawn.left()
+            );
+            assert!(
+                h.icon_drawn.left() < h.heading_drawn.left(),
+                "{width}: 아이콘 {:?} 이 제목 {:?} 왼쪽에 없다",
+                h.icon_drawn,
+                h.heading_drawn
+            );
+            if h.pill_drawn.is_positive() {
+                assert!(
+                    h.heading_drawn.left() < h.pill_drawn.left(),
+                    "{width}: 개수 Tag {:?} 가 제목 {:?} 오른쪽에 없다",
+                    h.pill_drawn,
+                    h.heading_drawn
+                );
+            }
+        }
+        if (width - 480.0).abs() < 0.5 {
+            assert!(
+                h.pill_visible.width() > 0.0,
+                "480: 개수 Tag 가 통째로 보이지 않는다(잘림이 너무 일찍 시작한다)"
+            );
+            assert!(
+                h.pill_visible.right() < h.pill_drawn.right() - 0.5,
+                "480: 개수 Tag 끝이 잘리지 않았다(보이는 {:?} · 그린 {:?})",
+                h.pill_visible,
+                h.pill_drawn
+            );
+        }
+    }
+
     /// 폭 390·480 에서 머리 요소의 그린 영역이 서로 겹치지 않는다. 오른쪽 묶음(필터 200·Columns·Refresh·Close)은
     /// 크기를 지키고, 왼쪽 묶음(아이콘·제목·개수)은 아이콘·제목·Tag 순서로 놓여 남은 폭에서 끝이 잘린다(제목 앞은
     /// 남고, 480 에서는 Tag 앞부분이 보이고 끝이 잘린다). 넓은 폭에서는 잘리지 않는다.
@@ -3436,41 +3476,7 @@ mod tests {
                     );
                 }
             }
-            if width < 600.0 {
-                // 왼쪽 묶음은 왼쪽 끝부터 아이콘·제목·Tag 순서로 놓이고 끝(오른쪽)에서 잘린다. 앞은 잘리지 않는다.
-                assert!(
-                    (h.heading_visible.left() - h.heading_drawn.left()).abs() < 0.5,
-                    "{width}: 제목 앞이 잘렸다(보이는 왼쪽 {} · 그린 왼쪽 {})",
-                    h.heading_visible.left(),
-                    h.heading_drawn.left()
-                );
-                assert!(
-                    h.icon_drawn.left() < h.heading_drawn.left(),
-                    "{width}: 아이콘 {:?} 이 제목 {:?} 왼쪽에 없다",
-                    h.icon_drawn,
-                    h.heading_drawn
-                );
-                if h.pill_drawn.is_positive() {
-                    assert!(
-                        h.heading_drawn.left() < h.pill_drawn.left(),
-                        "{width}: 개수 Tag {:?} 가 제목 {:?} 오른쪽에 없다",
-                        h.pill_drawn,
-                        h.heading_drawn
-                    );
-                }
-            }
-            if (width - 480.0).abs() < 0.5 {
-                assert!(
-                    h.pill_visible.width() > 0.0,
-                    "480: 개수 Tag 가 통째로 보이지 않는다(잘림이 너무 일찍 시작한다)"
-                );
-                assert!(
-                    h.pill_visible.right() < h.pill_drawn.right() - 0.5,
-                    "480: 개수 Tag 끝이 잘리지 않았다(보이는 {:?} · 그린 {:?})",
-                    h.pill_visible,
-                    h.pill_drawn
-                );
-            }
+            left_group_runs_in_order_and_is_cut_at_its_end(width, &h);
             let cut = h.heading_visible.width() < h.heading_drawn.width() - 0.5;
             if width < 400.0 {
                 assert!(
