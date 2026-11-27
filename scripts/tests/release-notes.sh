@@ -651,6 +651,20 @@ printf 'chore: bump version to 9.9.9\n\n|a\\\\|b|\n|-|-|\n2. ```<s>\n' > "$m"
 printf '|a\\\\|b|\n|-|-|\n2. ```&lt;s&gt;\n' > "$w"
 check '겹 백슬래시로 칸 경계가 애매한 표 뒤의 줄도 엔터티로' "$m" "$w"
 
+cat > "$m" <<'EOF'
+chore: bump version to 9.9.9
+
+| lone ` \\| `<s>` |
+| --- | --- |
+| a | b |
+EOF
+cat > "$w" <<'EOF'
+| lone ` \\| `&lt;s&gt;` |
+| --- | --- |
+| a | b |
+EOF
+check '머리 행에만 백슬래시가 있는 표도 본문 전체를 엔터티로' "$m" "$w"
+
 if [ "$failures" -ne 0 ]; then
     echo "실패 $failures 건" >&2
     exit 1
