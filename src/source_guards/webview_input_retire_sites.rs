@@ -52,7 +52,8 @@ fn every_webview_removal_and_page_swap_retires_its_queue_entries() {
 }
 
 /// 미룬 회수의 재판정(`release_retry_due`)은 창마다 대기열 소비 여부와 관계없이 본다. 대기열이 이미 비었다는 조기
-/// 반환 뒤에 두면 retire 나 동기화의 선두 소비가 비운 대기열의 의무가 남는다.
+/// 반환 뒤에 두면 retire 나 동기화의 선두 소비가 비운 대기열의 의무가 남는다. 참이면 그 창을 dirty 로 해 동기화를
+/// 한 번 예약한다(외부 다시 그리기를 기다리지 않는다).
 #[test]
 fn the_held_release_retry_runs_even_when_the_queue_is_already_empty() {
     let drain = body_of(
@@ -70,8 +71,8 @@ fn the_held_release_retry_runs_even_when_the_queue_is_already_empty() {
     );
     let retry = pos(
         &drain,
-        "key_release::release_retry_due(&mutmain.state,&main.webview_key_bridge,)",
-        "재판정",
+        "ifletSome(main)=self.view.views.get_mut(&id).and_then(|w|w.as_main_mut())&&crate::app::webview_sync::key_release::release_retry_due(&mutmain.state,&main.webview_key_bridge,){main.mark_dirty();}",
+        "재판정과 그 동기화 예약",
     );
     assert!(consume < retry, "재판정이 소비보다 앞이다");
 }
