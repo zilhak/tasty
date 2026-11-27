@@ -146,39 +146,39 @@ fn a_double_tap_during_the_settings_latch_does_nothing() {
     }
 }
 
-/// native WebView 가 넘긴 키: `pump_webview_key_events` 는 수집한 키를 `consume_forwarded_keys` 로만 소비하고, 그 루프는
-/// 키마다 처리 → 포커스 열기 적용 → 결과 알림 순서로 돈다. 제품 소비자(`App`)의 적용은 winit 키와 같은
-/// `apply_user_focus_opens` 다. 순서 자체는 `app::webview_keys` 의 소비 순서 시험이 잰다. 이 가드는 펌프가 루프를
+/// native WebView 가 넘긴 키: `pump_webview_key_events` 는 키를 따로 모으지 않고 창마다 native 입력 대기열 소비
+/// (`consume_webview_focus_requests` → `consume_native_inputs`)로만 처리한다. 그 루프는 전달 키마다 처리 → 포커스 열기
+/// 적용 → 결과 알림 순서로 돈다. 제품 소비자(`App`)의 적용은 winit 키와 같은 `apply_user_focus_opens` 다. 순서 자체는
+/// `app::webview_keys` 의 소비 순서 시험과 `host_api::webview::keys::native_order_tests` 가 잰다. 이 가드는 펌프가 루프를
 /// 거치지 않고 키를 처리하거나 제품 소비자의 적용이 다른 함수로 바뀌는 우회를 잡는다.
 #[test]
 fn forwarded_webview_keys_are_consumed_through_the_consumer_loop() {
     let src = read("src/app/webview_keys.rs");
     let pump = squeeze(&fn_body(&src, "fn pump_webview_key_events(").expect("pump"));
-    at(
-        &pump,
-        "consume_forwarded_keys(self,key_batch);",
-        "소비 루프",
-    );
+    at(&pump, "self.consume_webview_focus_requests();", "소비 루프");
     assert!(
         !pump.contains("dispatch_forwarded_webview_key(")
-            && !pump.contains("finish_forwarded_webview_key("),
+            && !pump.contains("finish_forwarded_webview_key(")
+            && !pump.contains("take_inputs("),
         "펌프가 소비 루프 밖에서 키를 처리한다"
     );
-    let consume = squeeze(&fn_body(&src, "fn consume_forwarded_keys(").expect("consume"));
-    let dispatch = at(&consume, "letoutcome=consumer.dispatch(id,ev);", "키 처리");
-    let apply = at(
-        &consume,
-        "consumer.apply_focus_opens(id);",
-        "포커스 열기 적용",
+    let drain =
+        squeeze(&fn_body(&src, "pub(crate) fn consume_webview_focus_requests(").expect("drain"));
+    at(
+        &drain,
+        "consume_native_inputs(self,id);",
+        "창마다 소비 루프",
     );
-    let finish = at(
+    let consume = squeeze(&fn_body(&src, "fn consume_native_inputs(").expect("consume"));
+    at(
         &consume,
-        "consumer.finish(id,surface_id,key_id,outcome);",
-        "결과 알림",
+        "letoutcome=dispatch_and_apply(consumer,id,ev);consumer.finish(id,surface_id,key_id,outcome);",
+        "전달 키: 처리·적용 뒤 결과 알림",
     );
-    assert!(
-        dispatch < apply && apply < finish,
-        "처리 → 적용 → 알림 순서가 아니다"
+    let one = squeeze(&fn_body(&src, "fn dispatch_and_apply(").expect("dispatch_and_apply"));
+    assert_eq!(
+        one, "{letoutcome=consumer.dispatch(id,ev);consumer.apply_focus_opens(id);outcome}",
+        "처리 → 포커스 열기 적용 순서가 아니다"
     );
     // 대역 소비자(시험 모듈)와 trait 선언에도 같은 이름이 있으므로 제품 소비자 impl 만 잘라 읽는다.
     let start = src
@@ -186,8 +186,8 @@ fn forwarded_webview_keys_are_consumed_through_the_consumer_loop() {
         .expect("제품 소비자");
     let end = start
         + src[start..]
-            .find("fn consume_forwarded_keys(")
-            .expect("소비 루프");
+            .find("pub(crate) enum ForwardedKeyOutcome")
+            .expect("결과 형");
     let consumer = &src[start..end];
     let applies = squeeze(&fn_body(consumer, "fn apply_focus_opens(").expect("apply"));
     assert_eq!(applies, "{self.apply_user_focus_opens(id);}");

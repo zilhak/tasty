@@ -1,4 +1,5 @@
-//! 제품 상태 시험: native WebView 가 넘긴 키 묶음을 제품 소비 루프(`consume_forwarded_keys`)로 소비하고 창 상태를 본다.
+//! 제품 상태 시험: native WebView 가 넘긴 키를 한 창 대기열에 넣고 제품 소비 루프(`consume_native_inputs`)로 소비한 뒤 창
+//! 상태를 본다.
 //! 시험 창이 제품 소비자 trait(`ForwardedKeyConsumer`)를 구현한다. 키 처리는 제품 디스패치(`App::dispatch_forwarded_webview_key`)
 //! 와 같은 순서로 게이트·plugin 단축키 단계(`forwarded_gate_and_plugin_steps`, `Gated`·`Handled` 결과값까지 제품과 같은
 //! 함수), 새로고침(`native_refresh_outcome`), 내장 단축키(`MainView::handle_keybinding_shortcuts`)를 부른다. 조기 적용은 제품과
@@ -22,7 +23,7 @@ use std::sync::Arc;
 use winit::keyboard::{Key, ModifiersState};
 
 use super::{
-    ForwardedKeyConsumer, ForwardedKeyOutcome, consume_forwarded_keys,
+    ForwardedKeyConsumer, ForwardedKeyOutcome, NativeInputConsumer, consume_native_inputs,
     forwarded_gate_and_plugin_steps, native_refresh_outcome,
 };
 use crate::adapters::ui::popup::command_palette::COMMAND_PALETTE_POPUP_ID;
@@ -49,6 +50,8 @@ struct Window {
     received: u32,
     /// 결과 알림에 건넨 (키 ID, 결과).
     finished: Vec<(u64, ForwardedKeyOutcome)>,
+    /// 소비할 대기열.
+    inputs: Vec<crate::webview::NativeInput>,
 }
 
 impl Window {
@@ -68,6 +71,7 @@ impl Window {
             proxy,
             received,
             finished: Vec::new(),
+            inputs: Vec::new(),
         }
     }
 
@@ -80,9 +84,13 @@ impl Window {
         }
     }
 
-    /// 한 번의 수집으로 받은 키 묶음을 제품 소비 루프로 소비하고 키마다의 결과를 돌려준다.
+    /// 한 창 대기열에 든 전달 키들을 제품 소비 루프로 소비하고 키마다의 결과를 돌려준다.
     fn consume(&mut self, keys: Vec<WebViewKeyEvent>) -> Vec<ForwardedKeyOutcome> {
-        consume_forwarded_keys(self, vec![(winit::window::WindowId::from(1), keys)]);
+        self.inputs = keys
+            .into_iter()
+            .map(crate::webview::NativeInput::Forwarded)
+            .collect();
+        consume_native_inputs(self, winit::window::WindowId::from(1));
         self.finished.iter().map(|(_, outcome)| *outcome).collect()
     }
 
@@ -195,6 +203,25 @@ impl ForwardedKeyConsumer for Window {
             "키 {key_id} 의 결과를 다른 WebView 에 알린다"
         );
         self.finished.push((key_id, outcome));
+    }
+}
+
+/// 대기열에는 전달 키만 든다.
+impl NativeInputConsumer for Window {
+    fn take_native_inputs(
+        &mut self,
+        _id: winit::window::WindowId,
+    ) -> Vec<crate::webview::NativeInput> {
+        std::mem::take(&mut self.inputs)
+    }
+
+    fn native_press(
+        &mut self,
+        _id: winit::window::WindowId,
+        _surface_id: u32,
+        _kind: crate::webview::PressKind,
+    ) {
+        unreachable!("대기열에 누름이 없다");
     }
 }
 

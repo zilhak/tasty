@@ -96,7 +96,7 @@ fn is_engine_extra_edit_key(key: &Key, mods: ModifiersState) -> bool {
         || (cfg!(target_os = "linux") && mods == ModifiersState::CONTROL && ch("/"))
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WebViewKeyEvent {
     /// 창 bridge 안에서 가져간 순서대로 늘어나는 일련번호. 처리 결과를 키를 가져간 WebView의 사본에 짝짓는다.
     pub id: u64,
@@ -338,12 +338,13 @@ pub enum PressKind {
     Focus,
 }
 
-/// 다리가 도착 순서대로 쌓는 native 입력 한 건. host 가 그 순서로 소비한다
-/// (`webview_keys::consume_native_focus_requests`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// 다리가 도착 순서대로 쌓는 native 입력 한 건. host 가 그 순서로 소비한다(`webview_keys::consume_native_inputs`).
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NativeInput {
     /// 그 surface 의 누름 또는 포커스 획득.
     Press { surface_id: u32, kind: PressKind },
+    /// host 가 그 자리에서 가져간 조합([`WebViewKeySink::forward_key`]).
+    Forwarded(WebViewKeyEvent),
 }
 
 /// 창의 WebView들이 Rc로 공유한다. RefCell 상태는 GUI 스레드에서만 접근해야 한다.
@@ -354,7 +355,6 @@ pub struct WebViewKeyBridge {
     address_surfaces: RefCell<std::collections::HashSet<u32>>,
     /// plugin이 소유한 WebView surface와 그 plugin ID. 없는 surface는 plugin surface가 아니다.
     surface_owners: RefCell<std::collections::HashMap<u32, String>>,
-    pending: RefCell<Vec<WebViewKeyEvent>>,
     /// 다음에 가져갈 키의 일련번호.
     next_key_id: std::cell::Cell<u64>,
     /// native 입력의 도착 순서 대기열([`NativeInput`]).
@@ -384,8 +384,19 @@ impl WebViewKeyBridge {
         *self.surface_owners.borrow_mut() = owners;
     }
 
+    /// 시험용: 대기열의 전달 키만 꺼낸다. 다른 입력은 순서대로 남긴다.
+    #[cfg(test)]
     pub fn take_pending(&self) -> Vec<WebViewKeyEvent> {
-        std::mem::take(&mut *self.pending.borrow_mut())
+        let mut q = self.inputs.borrow_mut();
+        let mut taken = Vec::new();
+        q.retain(|input| match input {
+            NativeInput::Forwarded(ev) => {
+                taken.push(ev.clone());
+                false
+            }
+            _ => true,
+        });
+        taken
     }
 
     /// 소비하지 않은 native 입력이 있는지.
@@ -396,6 +407,24 @@ impl WebViewKeyBridge {
     /// 대기열의 native 입력을 도착 순서대로 꺼낸다.
     pub fn take_inputs(&self) -> Vec<NativeInput> {
         self.inputs.borrow_mut().drain(..).collect()
+    }
+
+    /// 대기열 앞의 누름 알림만 꺼낸다. 첫 키 뒤의 입력은 남긴다(키는 host 단축키 처리가 있는 소비만 판정한다).
+    pub fn take_leading_presses(&self) -> Vec<(u32, PressKind)> {
+        let mut q = self.inputs.borrow_mut();
+        let mut presses = Vec::new();
+        while let Some(&NativeInput::Press { surface_id, kind }) = q.front() {
+            q.pop_front();
+            presses.push((surface_id, kind));
+        }
+        presses
+    }
+
+    /// 다음 키 일련번호를 꺼낸다.
+    fn next_id(&self) -> u64 {
+        let id = self.next_key_id.get();
+        self.next_key_id.set(id.wrapping_add(1));
+        id
     }
 
     /// 누름 알림을 대기열 끝에 넣는다. 바로 앞 입력과 같으면 넣지 않는다.
@@ -498,14 +527,16 @@ impl WebViewKeySink for WebViewKeyBridge {
         if !self.claims(surface_id, &key, mods) {
             return None;
         }
-        let id = self.next_key_id.get();
-        self.next_key_id.set(id.wrapping_add(1));
-        self.pending.borrow_mut().push(WebViewKeyEvent {
-            id,
-            surface_id,
-            key,
-            mods,
-        });
+        let id = self.next_id();
+        // 누름 알림과 같은 대기열에 도착 순서대로 넣는다. 그 앞 누름의 전이 뒤에 처리된다.
+        self.inputs
+            .borrow_mut()
+            .push_back(NativeInput::Forwarded(WebViewKeyEvent {
+                id,
+                surface_id,
+                key,
+                mods,
+            }));
         Some(id)
     }
 
@@ -569,15 +600,19 @@ impl WebViewKeySink for WebViewKeyBridge {
 }
 
 #[cfg(test)]
+#[path = "native_order_tests.rs"]
+mod native_order_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use winit::keyboard::{KeyCode, NamedKey, NativeKeyCode};
 
-    fn ch(c: &str) -> Key {
+    pub(super) fn ch(c: &str) -> Key {
         Key::Character(c.into())
     }
 
-    fn strings(v: &[&str]) -> Vec<String> {
+    pub(super) fn strings(v: &[&str]) -> Vec<String> {
         v.iter().map(|s| s.to_string()).collect()
     }
 
@@ -593,7 +628,7 @@ mod tests {
         })
     }
 
-    fn unknown_physical() -> PhysicalKey {
+    pub(super) fn unknown_physical() -> PhysicalKey {
         PhysicalKey::Unidentified(NativeKeyCode::Unidentified)
     }
 
@@ -608,7 +643,7 @@ mod tests {
         format!("{}+{}", mods.join("+"), key)
     }
 
-    fn alt_mod() -> ModifiersState {
+    pub(super) fn alt_mod() -> ModifiersState {
         if cfg!(target_os = "macos") {
             ModifiersState::SUPER
         } else {
@@ -1011,7 +1046,7 @@ mod tests {
     }
 
     /// 좌우 두 pane(surface 11·12)의 창 상태. 포커스는 왼쪽 11 이다.
-    fn two_surfaces() -> (
+    pub(super) fn two_surfaces() -> (
         crate::state::MainViewState,
         crate::runtime::engine_session::EngineSession,
     ) {

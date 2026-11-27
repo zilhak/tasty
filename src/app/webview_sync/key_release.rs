@@ -50,8 +50,9 @@ pub(crate) fn release_webview_key_focus<W: KeyFocusWebView>(
     holder
 }
 
-/// 프레임 동기화의 회수 판정. 아직 소비하지 않은 native 포커스 알림을 알림 소비와 같은 전이
+/// 프레임 동기화의 회수 판정. 대기열 앞의 아직 소비하지 않은 native 누름 알림을 알림 소비와 같은 전이
 /// (`webview_keys::consume_native_focus_requests`)로 먼저 소비한 뒤 회수를 판정한다(`release_webview_key_focus`).
+/// 전달 키가 남아 그 뒤 입력을 적용할 수 없으면 회수하지 않는다.
 /// Windows 는 winit 이 누름 메시지와 다시 그리기를 한 회차 안에서 차례로 처리하므로, 누름 알림 뒤 회차 끝 소비
 /// 전에 동기화가 올 수 있다. 그 동기화가 앞 포커스 노드로 판정하면 방금 누른 WebView 의 OS 키 포커스를 회수해
 /// 뒤따르는 글자 키가 그 페이지에 가지 않는다. 돌려준 값은 키 쥘 곳과, 알림으로 포커스가 바뀌었는지다.
@@ -64,6 +65,11 @@ pub(crate) fn release_after_native_focus_notices<W: KeyFocusWebView>(
     webviews: &[(u32, &W)],
 ) -> (Option<u32>, bool) {
     let changed = crate::app::webview_keys::consume_native_focus_requests(state, core, bridge);
+    // 전달 키 뒤에 입력이 남았으면 그 뒤의 누름이 아직 적용되지 않았다. 그 누름의 WebView 를 앞 포커스로 회수하지
+    // 않도록 이번 동기화는 회수하지 않고 기다린다(남은 입력은 회차 끝 소비 `App::consume_webview_focus_requests`).
+    if bridge.has_focus_requests() {
+        return (webview_key_holder(state, core), changed);
+    }
     let holder = release_webview_key_focus(state, core, overlay_mode, overlay_open, webviews);
     (holder, changed)
 }

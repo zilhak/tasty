@@ -37,25 +37,8 @@ impl App {
         #[cfg(target_os = "linux")]
         self.pump_gtk_events();
 
-        // 클릭으로 옮긴 포커스를 먼저 반영해야 단축키가 그 surface에 적용된다.
+        // 누름 알림·전달 키를 창마다 도착 순서대로 소비한다. 단축키는 그 앞 누름이 옮긴 포커스로 판정된다.
         self.consume_webview_focus_requests();
-
-        // 이후 dispatch가 self를 가변 대여하므로 view 순회 중에는 이벤트만 모은다.
-        let mut key_batch: Vec<(
-            winit::window::WindowId,
-            Vec<crate::webview::WebViewKeyEvent>,
-        )> = Vec::new();
-        for (id, w) in &self.view.views {
-            let Some(main) = w.as_main() else {
-                continue;
-            };
-            let keys = main.webview_key_bridge.take_pending();
-            if !keys.is_empty() {
-                key_batch.push((*id, keys));
-            }
-        }
-
-        consume_forwarded_keys(self, key_batch);
         needs_poll
     }
 
@@ -68,7 +51,8 @@ impl App {
         crate::system_tray::pump_gtk_events_each(|| self.consume_webview_focus_requests());
     }
 
-    /// 창마다 native 포커스 알림을 소비한다(`consume_native_focus_requests`). 알림으로 포커스가 바뀐 창은 다시 그린다.
+    /// 창마다 native 입력(누름 알림·전달 키)을 도착 순서대로 소비한다(`consume_native_inputs`). 누름으로 포커스가
+    /// 바뀐 창은 다시 그린다.
     pub(crate) fn consume_webview_focus_requests(&mut self) {
         let pending = self.view.views.values().any(|w| {
             w.as_main()
@@ -85,13 +69,7 @@ impl App {
             .map(|(id, _)| *id)
             .collect();
         for id in ids {
-            let Some((main, engine)) = engines_mut!(self).window_pair(id) else {
-                continue;
-            };
-            if consume_native_focus_requests(&mut main.state, engine.core, &main.webview_key_bridge)
-            {
-                main.mark_dirty();
-            }
+            consume_native_inputs(self, id);
         }
     }
 
@@ -181,7 +159,7 @@ impl App {
 }
 
 /// native WebView 가 넘긴 키 묶음을 키 하나씩 처리하는 쪽. 제품은 `App` 이고, 소비 순서 시험은 대역을 쓴다.
-trait ForwardedKeyConsumer {
+pub(crate) trait ForwardedKeyConsumer {
     /// 키 하나를 plugin·새로고침·host 단축키로 처리한다.
     fn dispatch(
         &mut self,
@@ -224,47 +202,118 @@ impl ForwardedKeyConsumer for App {
     }
 }
 
-/// 수집한 키 묶음을 창별로 사건 순서대로 소비한다. 수집(`take_pending`)은 view 를 빌린 채 하고, 소비는 그 뒤에
-/// 한다. 키마다 처리 → 포커스 열기 적용(`App::apply_user_focus_opens`) → 결과 알림 순서다.
-fn consume_forwarded_keys(
-    consumer: &mut impl ForwardedKeyConsumer,
-    batch: Vec<(
-        winit::window::WindowId,
-        Vec<crate::webview::WebViewKeyEvent>,
-    )>,
-) {
-    for (id, keys) in batch {
-        for ev in keys {
-            let (key_id, surface_id) = (ev.id, ev.surface_id);
-            let outcome = consumer.dispatch(id, ev);
-            // 이 키가 포커스를 주는 팝업을 열었으면 다음 키는 그 팝업의 게이트로 판정한다(winit 키와 같은 조기
-            // 적용). 결과와 관계없이 부른다. 대기열에 그런 요청이 없으면 아무것도 하지 않는다.
-            consumer.apply_focus_opens(id);
-            consumer.finish(id, surface_id, key_id, outcome);
-        }
-    }
-}
-
-/// 한 창의 native 누름 알림을 도착 순서대로 소비한다. 알림마다 누름 전이(`apply_native_press`)를 적용하고 그 전이
-/// 뒤의 키 쥘 곳(`key_release::webview_key_holder`)을 다리에 게시한다. 그래서 누른 직후의 편집 키는 다음 프레임 게시를
-/// 기다리지 않고 누른 페이지에서 처리되고, 연속 알림도 알림마다 같은 전이를 받는다. 포커스가 바뀌었으면 참이다.
+/// 한 창 대기열 앞의 native 누름 알림을 도착 순서대로 소비한다(`WebViewKeyBridge::take_leading_presses`). 첫 전달 키
+/// 뒤의 입력은 host 단축키 처리가 있는 소비(`consume_native_inputs`)에 남긴다. 알림마다 누름 전이와 게시
+/// (`press_and_publish`)를 적용한다. 포커스가 바뀌었으면 참이다.
 pub(crate) fn consume_native_focus_requests(
     state: &mut crate::state::MainViewState,
     core: &crate::core::CoreState,
     bridge: &crate::webview::WebViewKeyBridge,
 ) -> bool {
-    let inputs = bridge.take_inputs();
-    if inputs.is_empty() {
-        return false;
-    }
     let mut changed = false;
-    for crate::webview::NativeInput::Press { surface_id, kind } in inputs {
-        changed |= apply_native_press(state, core, surface_id, kind);
-        bridge.set_key_holder(crate::app::webview_sync::key_release::webview_key_holder(
-            state, core,
-        ));
+    for (surface_id, kind) in bridge.take_leading_presses() {
+        changed |= press_and_publish(state, core, bridge, surface_id, kind);
     }
     changed
+}
+
+/// 누름 알림 한 건의 전이(`apply_native_press`)를 적용하고 그 전이 뒤의 키 쥘 곳(`key_release::webview_key_holder`)을
+/// 다리에 게시한다. 그래서 누른 직후의 편집 키는 다음 프레임 게시를 기다리지 않고 누른 페이지에서 처리되고, 연속
+/// 알림도 알림마다 같은 전이를 받는다. 선택이 바뀌었으면 참이다.
+pub(crate) fn press_and_publish(
+    state: &mut crate::state::MainViewState,
+    core: &crate::core::CoreState,
+    bridge: &crate::webview::WebViewKeyBridge,
+    surface_id: u32,
+    kind: crate::webview::PressKind,
+) -> bool {
+    let changed = apply_native_press(state, core, surface_id, kind);
+    bridge.set_key_holder(crate::app::webview_sync::key_release::webview_key_holder(
+        state, core,
+    ));
+    changed
+}
+
+/// 한 창의 native 입력을 도착 순서대로 소비하는 쪽. 제품은 `App` 이고, 순서 시험은 대역을 쓴다.
+pub(crate) trait NativeInputConsumer: ForwardedKeyConsumer {
+    /// 그 창 대기열의 입력을 모두 꺼낸다. 소비하는 동안 들어오는 키는 대기열이 비어 바로 판정된다.
+    fn take_native_inputs(
+        &mut self,
+        id: winit::window::WindowId,
+    ) -> Vec<crate::webview::NativeInput>;
+    /// 누름 알림 한 건의 전이와 게시(`press_and_publish`).
+    fn native_press(
+        &mut self,
+        id: winit::window::WindowId,
+        surface_id: u32,
+        kind: crate::webview::PressKind,
+    );
+}
+
+/// 한 창의 native 입력을 도착 순서대로 소비한다. 누름은 전이와 게시를, 전달 키는 그 자리에서 키마다 처리 → 포커스
+/// 열기 적용(winit 키와 같은 조기 적용, 그 키가 포커스를 주는 팝업을 열었으면 다음 키는 그 팝업의 게이트로 판정한다)
+/// → 결과 알림을 받는다.
+pub(crate) fn consume_native_inputs(
+    consumer: &mut impl NativeInputConsumer,
+    id: winit::window::WindowId,
+) {
+    use crate::webview::NativeInput;
+    for input in consumer.take_native_inputs(id) {
+        match input {
+            NativeInput::Press { surface_id, kind } => consumer.native_press(id, surface_id, kind),
+            NativeInput::Forwarded(ev) => {
+                let (key_id, surface_id) = (ev.id, ev.surface_id);
+                let outcome = dispatch_and_apply(consumer, id, ev);
+                consumer.finish(id, surface_id, key_id, outcome);
+            }
+        }
+    }
+}
+
+/// 키 하나를 처리하고, 그 키가 포커스를 주는 팝업을 열었으면 다음 입력 판정 전에 적용한다(winit 키와 같은 조기
+/// 적용). 결과와 관계없이 적용을 부른다. 대기열에 그런 요청이 없으면 적용은 아무것도 하지 않는다.
+fn dispatch_and_apply(
+    consumer: &mut impl NativeInputConsumer,
+    id: winit::window::WindowId,
+    ev: crate::webview::WebViewKeyEvent,
+) -> ForwardedKeyOutcome {
+    let outcome = consumer.dispatch(id, ev);
+    consumer.apply_focus_opens(id);
+    outcome
+}
+
+impl NativeInputConsumer for App {
+    fn take_native_inputs(
+        &mut self,
+        id: winit::window::WindowId,
+    ) -> Vec<crate::webview::NativeInput> {
+        self.view
+            .views
+            .get(&id)
+            .and_then(|w| w.as_main())
+            .map(|main| main.webview_key_bridge.take_inputs())
+            .unwrap_or_default()
+    }
+
+    fn native_press(
+        &mut self,
+        id: winit::window::WindowId,
+        surface_id: u32,
+        kind: crate::webview::PressKind,
+    ) {
+        let Some((main, engine)) = engines_mut!(self).window_pair(id) else {
+            return;
+        };
+        if press_and_publish(
+            &mut main.state,
+            engine.core,
+            &main.webview_key_bridge,
+            surface_id,
+            kind,
+        ) {
+            main.mark_dirty();
+        }
+    }
 }
 
 /// native 누름 알림 한 건의 전이. 그 surface 의 회수 기록을 지우고(`note_native_webview_focus`), 실제 버튼 누름이면
@@ -288,7 +337,7 @@ fn apply_native_press(
 
 /// native WebView가 넘긴 키의 처리 결과.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ForwardedKeyOutcome {
+pub(crate) enum ForwardedKeyOutcome {
     /// Tasty 단축키가 동작했다. 키를 넘기지 않는다.
     Handled,
     /// 단축키가 동작하지 않았다. 키를 엔진·페이지로 넘긴다.
@@ -507,30 +556,41 @@ mod tests {
         }
     }
 
-    fn batch() -> Vec<(
-        winit::window::WindowId,
-        Vec<crate::webview::WebViewKeyEvent>,
-    )> {
-        use winit::keyboard::{Key, ModifiersState};
-        let key = |id, ch: &str| crate::webview::WebViewKeyEvent {
-            id,
-            surface_id: 7,
-            key: Key::Character(ch.into()),
-            mods: ModifiersState::CONTROL,
-        };
-        vec![(
-            winit::window::WindowId::from(1),
-            vec![key(1, "P"), key(2, "b")],
-        )]
+    /// 대기열 대역: 전달 키 두 개만 든 한 창의 대기열을 내준다.
+    impl super::NativeInputConsumer for Consumer {
+        fn take_native_inputs(
+            &mut self,
+            _id: winit::window::WindowId,
+        ) -> Vec<crate::webview::NativeInput> {
+            use winit::keyboard::{Key, ModifiersState};
+            let key = |id, ch: &str| {
+                crate::webview::NativeInput::Forwarded(crate::webview::WebViewKeyEvent {
+                    id,
+                    surface_id: 7,
+                    key: Key::Character(ch.into()),
+                    mods: ModifiersState::CONTROL,
+                })
+            };
+            vec![key(1, "P"), key(2, "b")]
+        }
+
+        fn native_press(
+            &mut self,
+            _id: winit::window::WindowId,
+            _surface_id: u32,
+            _kind: crate::webview::PressKind,
+        ) {
+            unreachable!("대기열에 누름이 없다");
+        }
     }
 
-    /// Given 한 번의 수집에 [명령 팔레트를 여는 키, sidebar 접기 키]가 들었을 때, When 소비하면, Then 키마다 처리 →
+    /// Given 한 창 대기열에 [명령 팔레트를 여는 키, sidebar 접기 키]가 들었을 때, When 소비하면, Then 키마다 처리 →
     /// 포커스 열기 적용 → 결과 알림 순서로 돌아, 둘째 키는 열린 팔레트의 게이트에 막히고(`Gated`) sidebar 가 바뀌지
     /// 않으며 페이지로 다시 넘기지 않는다.
     #[test]
     fn a_focused_popup_opened_by_a_forwarded_key_gates_the_next_key_of_the_batch() {
         let mut consumer = Consumer::new(true);
-        super::consume_forwarded_keys(&mut consumer, batch());
+        super::consume_native_inputs(&mut consumer, winit::window::WindowId::from(1));
         assert_eq!(
             consumer.log,
             [
@@ -550,7 +610,7 @@ mod tests {
     #[test]
     fn a_passive_open_by_a_forwarded_key_leaves_the_next_key_alone() {
         let mut consumer = Consumer::new(false);
-        super::consume_forwarded_keys(&mut consumer, batch());
+        super::consume_native_inputs(&mut consumer, winit::window::WindowId::from(1));
         assert!(consumer.sidebar_toggled);
         assert_eq!(consumer.finished, [(1, false), (2, false)]);
     }

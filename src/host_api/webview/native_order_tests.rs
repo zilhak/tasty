@@ -1,0 +1,204 @@
+//! native 입력 순서 경계(`webview_keys::consume_native_inputs`). Windows 메시지 훅·`AcceleratorKeyPressed` 는 판정
+//! 순서(`route_key_down`)로 키를 받고, 누름 알림과 host 가 가져간 조합은 다리 대기열에 도착 순서대로 쌓인 뒤 회차
+//! 끝에 소비된다. 이 대역은 그 순서로 사건을 넣고 회차 끝 소비를 제품 소비 함수로 돈다.
+
+use winit::keyboard::{Key, ModifiersState, NamedKey};
+
+use super::tests::{strings, two_surfaces, unknown_physical};
+use crate::app::webview_keys::{
+    ForwardedKeyConsumer, ForwardedKeyOutcome, NativeInputConsumer, consume_native_inputs,
+    press_and_publish,
+};
+use crate::host_api::webview::keys::{
+    HostShortcutPolicy, KeyDownRoute, NativeInput, PressKind, ShortcutSources, WebViewEditAction,
+    WebViewKeyBridge, WebViewKeyEvent, WebViewKeySink, route_key_down,
+};
+
+/// Alt+V 붙여넣기 바인딩과 host 조합 F2.
+fn bridge(holder: u32) -> WebViewKeyBridge {
+    let bridge = WebViewKeyBridge::new();
+    bridge.set_policy(HostShortcutPolicy::new(ShortcutSources {
+        host: strings(&["f2"]),
+        edit: vec![(WebViewEditAction::Paste, strings(&["alt+v"]))],
+        ..Default::default()
+    }));
+    bridge.set_key_holder(Some(holder));
+    bridge
+}
+
+/// 회차 끝 소비의 대역. 누름 전이와 게시는 제품 함수이고, host 단축키 처리는 제품 게이트와 같은 비교(정규화 뒤
+/// 받은 surface 가 키 쥘 곳인지, `key_nodes::received_key_blocked`)만 한다.
+struct Turn<'a> {
+    state: &'a mut crate::state::MainViewState,
+    core: &'a crate::core::CoreState,
+    bridge: &'a WebViewKeyBridge,
+    log: Vec<String>,
+}
+
+impl ForwardedKeyConsumer for Turn<'_> {
+    fn dispatch(
+        &mut self,
+        _id: winit::window::WindowId,
+        ev: WebViewKeyEvent,
+    ) -> ForwardedKeyOutcome {
+        self.state.normalize_focus(self.core);
+        let blocked = crate::adapters::ui::input::key_nodes::received_key_blocked(
+            self.state,
+            self.core,
+            ev.surface_id,
+        );
+        let outcome = if blocked {
+            ForwardedKeyOutcome::Gated
+        } else {
+            ForwardedKeyOutcome::Handled
+        };
+        self.log
+            .push(format!("shortcut {} {outcome:?}", ev.surface_id));
+        outcome
+    }
+
+    fn apply_focus_opens(&mut self, _id: winit::window::WindowId) {}
+
+    fn finish(
+        &mut self,
+        _id: winit::window::WindowId,
+        surface_id: u32,
+        _key_id: u64,
+        outcome: ForwardedKeyOutcome,
+    ) {
+        self.log.push(format!("forwarded {surface_id} {outcome:?}"));
+    }
+}
+
+impl NativeInputConsumer for Turn<'_> {
+    fn take_native_inputs(&mut self, _id: winit::window::WindowId) -> Vec<NativeInput> {
+        self.bridge.take_inputs()
+    }
+
+    fn native_press(&mut self, _id: winit::window::WindowId, surface_id: u32, kind: PressKind) {
+        press_and_publish(self.state, self.core, self.bridge, surface_id, kind);
+    }
+}
+
+/// 한 회차의 사건.
+#[derive(Clone, Copy)]
+enum Native {
+    Press(u32),
+    /// F2
+    Shortcut(u32),
+}
+
+/// `events` 를 한 회차에 넣고(키는 backend 판정 `route_key_down`, 그 자리의 편집 실행은 기록) 회차 끝에 제품 소비
+/// 함수로 소비한다. 기록과 끝 포커스 surface 를 돌려준다.
+fn turn(holder: u32, events: &[Native]) -> (Vec<String>, Option<u32>) {
+    let (mut state, mut session) = two_surfaces();
+    let engine = session.borrow_mut();
+    if holder != 11 {
+        state.focus_surface_by_id(engine.core, holder);
+    }
+    let bridge = bridge(holder);
+    let mut log = Vec::new();
+    for event in events {
+        match *event {
+            Native::Press(sid) => bridge.note_press(sid),
+            Native::Shortcut(sid) => {
+                let mut ran = None;
+                let route = route_key_down(
+                    &bridge,
+                    sid,
+                    Key::Named(NamedKey::F2),
+                    unknown_physical(),
+                    ModifiersState::empty(),
+                    false,
+                    |action| ran = Some(action),
+                );
+                if let Some(action) = ran {
+                    log.push(format!("edit now {sid} {action:?}"));
+                }
+                if let KeyDownRoute::Forwarded(_) = route {
+                    log.push(format!("held {sid}"));
+                }
+            }
+        }
+    }
+    let mut consumer = Turn {
+        state: &mut state,
+        core: engine.core,
+        bridge: &bridge,
+        log,
+    };
+    consume_native_inputs(&mut consumer, winit::window::WindowId::from(1));
+    let log = consumer.log;
+    let focused = state.focused_surface_id(&engine.read());
+    (log, focused)
+}
+
+/// 프레임 동기화는 대기열 앞 누름만 소비하고, 전달 키와 그 뒤 입력은 host 단축키 처리가 있는 소비에 남긴다
+/// (`consume_native_focus_requests`).
+#[test]
+fn the_frame_sync_consumes_only_the_presses_before_a_forwarded_key() {
+    let (mut state, mut session) = two_surfaces();
+    let engine = session.borrow_mut();
+    let bridge = bridge(11);
+    bridge.note_press(12);
+    assert!(
+        bridge
+            .forward_key(
+                12,
+                Key::Named(NamedKey::F2),
+                unknown_physical(),
+                ModifiersState::empty()
+            )
+            .is_some()
+    );
+    bridge.note_press(11);
+    assert!(crate::app::webview_keys::consume_native_focus_requests(
+        &mut state,
+        engine.core,
+        &bridge
+    ));
+    assert_eq!(state.focused_surface_id(&engine.read()), Some(12));
+    let left = bridge.take_inputs();
+    assert_eq!(left.len(), 2, "전달 키와 뒤 누름은 남는다: {left:?}");
+    assert!(matches!(left[0], NativeInput::Forwarded(_)));
+}
+
+/// X4 앞 문단(누름 뒤에 온 단축키): Given A(11)가 키 쥘 곳이다, When 한 회차에 [B(12) 누름, B F2, A 누름, B F2]가
+/// 들면, Then 첫 F2 는 B 누름 전이 뒤에 처리돼 동작하고(Handled), 둘째 F2 는 A 누름 뒤라 게이트에 막힌다(Gated).
+/// 끝 포커스는 A 다. 두 F2 모두 페이지로 다시 보내지 않는다.
+#[test]
+fn a_shortcut_after_a_press_is_judged_after_that_press() {
+    let (log, focused) = turn(
+        11,
+        &[
+            Native::Press(12),
+            Native::Shortcut(12),
+            Native::Press(11),
+            Native::Shortcut(12),
+        ],
+    );
+    assert_eq!(
+        log,
+        [
+            "held 12",
+            "held 12",
+            "shortcut 12 Handled",
+            "forwarded 12 Handled",
+            "shortcut 12 Gated",
+            "forwarded 12 Gated",
+        ]
+    );
+    assert_eq!(focused, Some(11));
+}
+
+/// X4 앞 문단(누름 앞에 온 단축키): Given B(12)가 키 쥘 곳이다, When 한 회차에 [B F2, A(11) 누름]이 들면, Then F2 는 도착 순서대로 A 누름보다 먼저 처리돼 B 에서 동작하고
+/// (Handled) 끝 포커스는 A 다.
+#[test]
+fn a_shortcut_before_a_press_is_judged_before_that_press() {
+    let (log, focused) = turn(12, &[Native::Shortcut(12), Native::Press(11)]);
+    assert_eq!(
+        log,
+        ["held 12", "shortcut 12 Handled", "forwarded 12 Handled"]
+    );
+    assert_eq!(focused, Some(11));
+}
