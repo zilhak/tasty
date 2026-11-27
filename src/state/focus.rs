@@ -177,6 +177,21 @@ impl RequestContext {
         surface
     }
 
+    /// 그 surface 가 활성 workspace 의 어느 pane 에서 지금 표시된 탭에 있는지. native 누름 알림은 표시된 surface 에만
+    /// 전이를 적용한다(`webview_keys::apply_native_press`).
+    pub(crate) fn surface_displayed(&self, engine: &CoreState, surface_id: u32) -> bool {
+        if engine.workspaces().is_empty() {
+            return false;
+        }
+        let ws = self.active_workspace(engine);
+        ws.pane_layout().all_pane_ids().into_iter().any(|pane_id| {
+            ws.pane_layout()
+                .find_pane(pane_id)
+                .and_then(|pane| pane.tabs.get(self.navigation.tab_index(pane)))
+                .is_some_and(|tab| tab.contains_surface(surface_id))
+        })
+    }
+
     /// Native input may focus a surface only in a currently displayed tab.
     pub fn focus_surface_by_id(&mut self, engine: &CoreState, surface_id: u32) -> bool {
         self.attach_pending.deselect();

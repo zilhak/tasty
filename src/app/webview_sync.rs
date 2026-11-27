@@ -34,6 +34,26 @@ mod overlay_settle;
 pub(crate) use overlay_host_settle::settle_overlay_host;
 use overlay_settle::{apply_reveal, settle_overlay};
 
+/// 그 surface 의 WebView 와 binding 이 지금 runtime surface 와 맞는지. 옛 HTTP 세션을 유지하며 교체를 기다리는
+/// WebView 는 surface 신원만 본다(`NativeWebviewBinding::current_surface`), 나머지는 세션까지 본다(`current`). 동기화가
+/// 맞지 않는 WebView 를 지우고, native 누름 알림 소비(`webview_keys::consume_native_focus_requests`,
+/// `NativeInputConsumer::native_press`)가 그 surface 의 누름을 건너뛴다.
+pub(crate) fn webview_binding_current(
+    webviews: &std::collections::HashMap<u32, crate::webview::PlatformWebView>,
+    runtime: &std::collections::HashMap<u32, super::html_runtime::NativeWebviewBinding>,
+    engine: &EngineRef<'_>,
+    surface: u32,
+) -> bool {
+    webviews.contains_key(&surface)
+        && runtime.get(&surface).is_some_and(|binding| {
+            #[cfg(any(target_os = "linux", target_os = "macos", windows))]
+            if webviews.get(&surface).is_some_and(|wv| wv.retaining_http()) {
+                return binding.current_surface(engine);
+            }
+            binding.current(engine)
+        })
+}
+
 pub(crate) fn synchronize(
     view: &mut MainView,
     engine: &mut EngineMut<'_>,
@@ -70,17 +90,12 @@ pub(crate) fn synchronize(
         .keys()
         .copied()
         .filter(|surface| {
-            !view.webview_runtime.get(surface).is_some_and(|binding| {
-                #[cfg(any(target_os = "linux", target_os = "macos", windows))]
-                if view
-                    .webviews
-                    .get(surface)
-                    .is_some_and(|wv| wv.retaining_http())
-                {
-                    return binding.current_surface(&engine.as_ref());
-                }
-                binding.current(&engine.as_ref())
-            })
+            !webview_binding_current(
+                &view.webviews,
+                &view.webview_runtime,
+                &engine.as_ref(),
+                *surface,
+            )
         })
         .collect();
     for surface in stale {
@@ -884,10 +899,13 @@ fn sync_webviews(
         planned.extend(reveal.then_some(*sid));
     }
     let webviews: Vec<_> = view.webviews.iter().map(|(sid, wv)| (*sid, wv)).collect();
+    let runtime = &view.webview_runtime;
+    let bound = |sid| webview_binding_current(&view.webviews, runtime, engine, sid);
     let (_holder, notice_moved_focus) = key_release::release_after_native_focus_notices(
         &mut view.state,
         engine.core,
         &view.webview_key_bridge,
+        &bound,
         overlay_mode,
         overlay_open,
         &webviews,

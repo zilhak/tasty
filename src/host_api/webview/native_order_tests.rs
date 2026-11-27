@@ -53,6 +53,7 @@ impl ForwardedKeyConsumer for Turn<'_> {
                 self.state,
                 self.core,
                 self.bridge,
+                &|_| true,
             ) {
                 self.log.push("sync took a press".into());
             }
@@ -232,7 +233,8 @@ fn the_frame_sync_consumes_only_the_presses_before_a_forwarded_key() {
     assert!(crate::app::webview_keys::consume_native_focus_requests(
         &mut state,
         engine.core,
-        &bridge
+        &bridge,
+        &|_| true
     ));
     assert_eq!(state.focused_surface_id(&engine.read()), Some(12));
     let left = bridge.take_inputs();

@@ -51,7 +51,7 @@ pub(crate) fn release_webview_key_focus<W: KeyFocusWebView>(
 }
 
 /// 프레임 동기화의 회수 판정. 대기열 앞의 아직 소비하지 않은 native 누름 알림을 알림 소비와 같은 전이
-/// (`webview_keys::consume_native_focus_requests`)로 먼저 소비한 뒤 회수를 판정한다(`release_webview_key_focus`).
+/// (`webview_keys::consume_native_focus_requests`, binding 이 맞지 않는 surface 의 알림은 `bound` 가 거른다)로 먼저 소비한 뒤 회수를 판정한다(`release_webview_key_focus`).
 /// 키 뒤에 누름이 남아 그 누름을 적용할 수 없으면 이번에는 회수하지 않고 재판정 의무를 남긴다
 /// (`MainViewState::webview_release_due`, `release_retry_due`). 키만 남았으면 그 키는 회수 결과를 바꾸지 않으므로
 /// 바로 회수한다.
@@ -62,11 +62,13 @@ pub(crate) fn release_after_native_focus_notices<W: KeyFocusWebView>(
     state: &mut MainViewState,
     core: &crate::core::CoreState,
     bridge: &crate::webview::WebViewKeyBridge,
+    bound: &dyn Fn(u32) -> bool,
     overlay_mode: OverlayMode,
     overlay_open: bool,
     webviews: &[(u32, &W)],
 ) -> (Option<u32>, bool) {
-    let changed = crate::app::webview_keys::consume_native_focus_requests(state, core, bridge);
+    let changed =
+        crate::app::webview_keys::consume_native_focus_requests(state, core, bridge, bound);
     // 키 뒤에 누름이 남았으면 그 누름이 아직 적용되지 않았다. 그 누름의 WebView 를 앞 포커스로 회수하지 않도록 이번
     // 동기화는 회수하지 않고, 회차 끝 소비(`App::consume_webview_focus_requests`)가 대기열을 비우면 다시 판정한다.
     if bridge.has_pending_press() {

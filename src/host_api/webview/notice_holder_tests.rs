@@ -47,7 +47,7 @@ fn agree(state: &mut MainViewState, core: &crate::core::CoreState, notices: &[N]
     let bridge = published(state, core);
     notify(&bridge, notices);
     let forecast = bridge.holder_after_pending();
-    crate::app::webview_keys::consume_native_focus_requests(state, core, &bridge);
+    crate::app::webview_keys::consume_native_focus_requests(state, core, &bridge, &|_| true);
     let real = crate::app::webview_sync::key_release::webview_key_holder(state, core);
     assert_eq!(forecast, real, "예측과 실제 소비 뒤 키 쥘 곳이 다르다");
     forecast

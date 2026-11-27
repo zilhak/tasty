@@ -229,15 +229,19 @@ impl ForwardedKeyConsumer for App {
 
 /// 한 창 대기열 앞의 native 누름 알림을 도착 순서대로 소비한다(`WebViewKeyBridge::take_leading_presses`). 첫 전달 키
 /// 뒤의 입력은 host 단축키 처리가 있는 소비(`consume_native_inputs`)에 남긴다. 알림마다 누름 전이와 게시
-/// (`press_and_publish`)를 적용한다. 포커스가 바뀌었으면 참이다.
+/// (`press_and_publish`)를 적용한다. WebView binding 이 지금 surface 와 맞지 않는 알림(`bound` 가 거짓,
+/// `webview_sync::webview_binding_current`)은 건너뛴다. 포커스가 바뀌었으면 참이다.
 pub(crate) fn consume_native_focus_requests(
     state: &mut crate::state::MainViewState,
     core: &crate::core::CoreState,
     bridge: &crate::webview::WebViewKeyBridge,
+    bound: &dyn Fn(u32) -> bool,
 ) -> bool {
     let mut changed = false;
     for (surface_id, kind) in bridge.take_leading_presses() {
-        changed |= press_and_publish(state, core, bridge, surface_id, kind);
+        if bound(surface_id) {
+            changed |= press_and_publish(state, core, bridge, surface_id, kind);
+        }
     }
     changed
 }
@@ -364,6 +368,15 @@ impl NativeInputConsumer for App {
         let Some((main, engine)) = engines_mut!(self).window_pair(id) else {
             return;
         };
+        // 앞 입력이 그 surface 의 WebView 를 교체했거나 지웠으면 그 누름은 옛 페이지의 것이다.
+        if !crate::app::webview_sync::webview_binding_current(
+            &main.webviews,
+            &main.webview_runtime,
+            &engine.as_ref(),
+            surface_id,
+        ) {
+            return;
+        }
         if press_and_publish(
             &mut main.state,
             engine.core,
@@ -376,7 +389,8 @@ impl NativeInputConsumer for App {
     }
 }
 
-/// native 누름 알림 한 건의 전이. 그 surface 의 회수 기록을 지운다(`note_native_webview_focus`). 실제 버튼 누름이면
+/// native 누름 알림 한 건의 전이. 표시되지 않은 탭의 surface 면 아무것도 하지 않는다(`MainViewState::surface_displayed`).
+/// 그 surface 의 회수 기록을 지운다(`note_native_webview_focus`). 실제 버튼 누름이면
 /// 창 누름과 같은 본문 누름 전이(`MainViewState::press_surface_body`: 덮개가 있으면 덮개가 누름을 가지고, 없으면 팝업
 /// 포커스와 주소 띠를 놓고 선택을 옮긴다)를 적용한다. 누름 없는 포커스 획득은 덮인 surface 면 아무것도 하지 않고(회수
 /// 기록도 그대로다), 아니면 선택만 옮긴다(주소 띠·팝업 포커스를 놓지 않는다). 경로 밖 팝업은 뒤따르는 게시의
@@ -387,6 +401,11 @@ fn apply_native_press(
     surface_id: u32,
     kind: crate::webview::PressKind,
 ) -> bool {
+    // 앞 입력이 탭·workspace 를 바꿔 그 surface 가 표시되지 않으면 그 알림은 어떤 전이도 하지 않는다(팝업 포커스·주소
+    // 띠·회수 기록 그대로).
+    if !state.surface_displayed(core, surface_id) {
+        return false;
+    }
     // 덮인 surface 의 포커스 획득은 덮개를 넘지 않는다: 선택·회수 기록 어느 것도 바꾸기 전에 거른다. 누름은 덮개가
     // 가진다(`press_surface_body`).
     #[cfg(any(windows, target_os = "macos", test))]

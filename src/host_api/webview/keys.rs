@@ -681,6 +681,10 @@ mod native_order_tests;
 mod notice_holder_tests;
 
 #[cfg(test)]
+#[path = "stale_press_tests.rs"]
+mod stale_press_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use winit::keyboard::{KeyCode, NamedKey, NativeKeyCode};
@@ -1188,7 +1192,8 @@ mod tests {
         assert!(crate::app::webview_keys::consume_native_focus_requests(
             &mut state,
             engine.core,
-            &bridge
+            &bridge,
+            &|_| true
         ));
         let phys = unknown_physical();
         assert!(!bridge.blocks_edit_key(12, &ch("v"), &phys, alt_mod()));
@@ -1231,6 +1236,7 @@ mod tests {
                 &mut state,
                 engine.core,
                 &bridge,
+                &|_| true,
             );
             (state.popups.focus(), state.focus_node(engine.core))
         };
@@ -1256,14 +1262,24 @@ mod tests {
         assert_eq!(state.focus_node(engine.core), FocusNode::HtmlAddress(11));
         let bridge = paste_bridge(11);
         bridge.note_focus(12);
-        crate::app::webview_keys::consume_native_focus_requests(&mut state, engine.core, &bridge);
+        crate::app::webview_keys::consume_native_focus_requests(
+            &mut state,
+            engine.core,
+            &bridge,
+            &|_| true,
+        );
         assert_eq!(
             state.focus_node(engine.core),
             FocusNode::HtmlAddress(11),
             "대조: 포커스 획득은 주소 띠를 놓지 않는다"
         );
         bridge.note_press(12);
-        crate::app::webview_keys::consume_native_focus_requests(&mut state, engine.core, &bridge);
+        crate::app::webview_keys::consume_native_focus_requests(
+            &mut state,
+            engine.core,
+            &bridge,
+            &|_| true,
+        );
         assert_eq!(state.focus_node(engine.core), FocusNode::Surface(Some(12)));
         assert_eq!(state.html_address.focused_surface(), None);
         let phys = unknown_physical();
@@ -1295,7 +1311,12 @@ mod tests {
         state.html_address.set_focused_for_test(11);
         let bridge = paste_bridge(11);
         bridge.note_press(12);
-        crate::app::webview_keys::consume_native_focus_requests(&mut state, engine.core, &bridge);
+        crate::app::webview_keys::consume_native_focus_requests(
+            &mut state,
+            engine.core,
+            &bridge,
+            &|_| true,
+        );
         assert_eq!(
             state.focus_node(engine.core),
             FocusNode::Popup(crate::adapters::ui::popup::focus::PopupNode::Host(cover))
@@ -1317,7 +1338,9 @@ mod tests {
         fn press(state: &mut crate::state::MainViewState, core: &crate::core::CoreState, sid: u32) {
             let bridge = paste_bridge(11);
             bridge.note_press(sid);
-            crate::app::webview_keys::consume_native_focus_requests(state, core, &bridge);
+            crate::app::webview_keys::consume_native_focus_requests(state, core, &bridge, &|_| {
+                true
+            });
         }
         // 장면 1
         let (mut state, mut session) = two_surfaces();
@@ -1403,7 +1426,12 @@ mod tests {
                 None => {}
             },
             || {
-                crate::app::webview_keys::consume_native_focus_requests(state, core, bridge);
+                crate::app::webview_keys::consume_native_focus_requests(
+                    state,
+                    core,
+                    bridge,
+                    &|_| true,
+                );
             },
         );
         judged
