@@ -188,9 +188,16 @@ function flush(    s, k, n, part) {
     if (np == 0) return
     s = pbody[1]
     for (k = 2; k <= np; k++) s = s "\n" pbody[k]
-    n = split(render(s, tcons), part, "\n")
+    n = split(render(s, tcons || defp()), part, "\n")
     for (k = 1; k <= np; k++) print phead[k] part[k]
     np = 0
+}
+# 열린 문단이 링크 참조 정의로 시작하는가([ 로 시작하고 ]: 가 있다). 레이블·제목이 여러 줄에 걸칠 수 있고,
+# GitHub 는 정의를 떼어 낸 뒤 남은 줄로 문단·밑줄을 다시 본다. 그런 문단은 애매로 보고 블록 전체를 엔터티로 바꾼다.
+function defp(    k) {
+    if (np == 0 || pbody[1] !~ /^ *\[/) return 0
+    for (k = 1; k <= np; k++) if (index(pbody[k], "]:")) return 1
+    return 0
 }
 function end_leaf() { flush(); leaf = "" }
 function close_to(d) { if (d < nc) { end_leaf(); nc = d } }
@@ -303,7 +310,8 @@ END {
                 match(r, /^#+/)
                 if (RLENGTH <= 6) { kind = "atx"; break }
             }
-            if (para_open && r ~ /^(=+|-+) *$/) { kind = "setext"; break }
+            # 참조 정의 문단 뒤의 밑줄 모양 줄은 제목 밑줄로 보지 않고 문단에 넣는다(뒤의 들여쓴 줄도 문단으로).
+            if (para_open && r ~ /^(=+|-+) *$/) { if (defp()) break; kind = "setext"; break }
             # 표의 구분 행. 문단의 끝 줄이 머리 행이 된다. GitHub 가 표로 볼지 확실하지 않으면(칸 수가 다르거나,
             # 머리 행에 | 가 없거나, 구분 행이 목록 표지로 시작하면) 다음 빈 줄까지 블록 전체를 엔터티로 바꾼다.
             if (para_open && r ~ /[|:]/ && r ~ /^\|?( *:?-+:? *\|)* *:?-+:? *\|? *$/) {

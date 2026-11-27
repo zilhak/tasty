@@ -446,6 +446,28 @@ Visit https://example.invalid/a and run `--secs <s>` as code.
 EOF
 check '공백 전까지 백틱을 삼키는 자동 링크(www., ://)가 있는 블록은 모두 엔터티로' "$m" "$w"
 
+cat > "$m" <<'EOF'
+chore: bump version to 9.9.9
+
+[ref
+name]: /url "`"
+Run --secs <s> `x`.
+
+[ref]: /url
+===
+    <s> & more
+EOF
+cat > "$w" <<'EOF'
+[ref
+name]: /url "`"
+Run --secs &lt;s&gt; `x`.
+
+[ref]: /url
+===
+    &lt;s&gt; &amp; more
+EOF
+check '참조 정의(여러 줄 레이블 포함)로 시작하는 문단과 그 뒤 밑줄 모양 줄·들여쓴 줄은 모두 엔터티로' "$m" "$w"
+
 if [ "$failures" -ne 0 ]; then
     echo "실패 $failures 건" >&2
     exit 1
