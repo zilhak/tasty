@@ -65,9 +65,11 @@ const DECLARATION_SITES: &[(&str, usize, &str)] = &[
         85,
         "스케일 자신 — 이 파일이 곧 size-* 의 정본이다",
     ),
+    // size-13이 스케일에 들어와 글자 크기 기본값 13(font_size_body · font_size_heading · tab_bar_label_font_size)이
+    // 잡힌다. 이 파일이 그 이름의 값표다.
     (
         "crates/tasty-type-appearance/src/theme.rs",
-        63,
+        66,
         "Theme 의 값표 — 다른 자리가 참조해야 할 이름(border_width 등)이 여기 산다",
     ),
 ];
