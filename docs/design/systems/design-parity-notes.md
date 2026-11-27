@@ -348,13 +348,15 @@ State 셀은 `status_dot`(점 `status_dot_size` 8 + `space-xs` 4 + caption 11px 
 
 ## color-mix(in srgb …) 재현 — lerp / alpha 헬퍼
 
-- **증상**: 디자인이 아바타·배너에 `color-mix(in srgb, C 18%, surface)`(불투명 블렌드)와
-  `color-mix(in srgb, C 11%, transparent)`(알파 감소)를 쓴다. egui 엔 color-mix 가 없다.
+- **증상**: 디자인이 플러그인 아바타 채움에 `color-mix(in srgb, accent-primary 18%, surface-raised)`(바탕과 섞기)를,
+  테두리에 `color-mix(in srgb, accent-primary 38%, transparent)`(알파 감소)를 쓴다. 배너 바탕 `banner-bg` 는
+  `surface-raised` 별칭이다. egui 엔 color-mix 가 없다.
 - **처방**: 두 케이스 모두 정본 color-mix 식 하나로 계산한다.
   `crates/tasty-type-appearance/src/theme.rs` 의 `mix_srgb_premultiplied(a, percent, b)` 다(비율이 가운데
   인자다 — `a` 를 정수 퍼센트만큼 `b` 에 섞는다). 결과 알파는 두 알파를 비율대로 섞은 값이고, 채널은 알파를
   곱한 값을 정수로 보간한 뒤 결과 알파로 나눠 반올림한다(.5는 올림). 섞은 알파가 0이면 투명 검정이다.
-  불투명 블렌드는 바탕 색을 `b` 로, transparent 믹스는 `b` 를 `CSS_TRANSPARENT`(`state_ink.rs`) 로 준다.
+  바탕과 섞을 때는 바탕 색을 `b` 로 준다(결과는 두 색이 불투명할 때만 불투명하다). transparent 믹스는 `b` 를
+  `CSS_TRANSPARENT`(`state_ink.rs`) 로 준다.
   transparent 믹스는 채널이 강조색 그대로이고 알파만 강조색 알파 × 비율이 된다.
 - **근거**: 호출자는 `theme.rs`(`plugin_avatar_*`·`preset_split_zone_bg`·`explorer_drop_target_bg`·
   `file_drop_overlay_*`)·`state_ink.rs`(`tint()`·`tint_border()` 포함)·`dag_mix.rs`·`notification_ink.rs`·
