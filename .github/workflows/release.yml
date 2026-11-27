@@ -44,8 +44,9 @@ jobs:
           fi
           echo "version=$TAG_VERSION" >> "$GITHUB_OUTPUT"
 
+      # 태그 커밋 본문에서 트레일러를 빼고 코드 표기 밖의 <, >, & 를 엔터티로 바꾼다.
       - name: Extract changelog from tag commit
-        run: git log -1 --format=%b > "$RUNNER_TEMP/release-notes.md"
+        run: bash scripts/release-notes.sh HEAD > "$RUNNER_TEMP/release-notes.md"
 
       - name: Create draft release
         env:
