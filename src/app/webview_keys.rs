@@ -348,10 +348,10 @@ impl NativeInputConsumer for App {
     }
 }
 
-/// native 누름 알림 한 건의 전이. 그 surface 의 회수 기록을 지우고(`note_native_webview_focus`), 실제 버튼 누름이면
-/// 주소 띠의 키 포커스를 놓은 뒤(native 페이지 누름은 egui 가 보지 않아 주소 띠 입력칸이 스스로 놓지 않는다) 그
-/// surface 로 선택을 옮긴다. 누름 없는 포커스 획득은 주소 띠를 놓지 않는다. 덮음과 경로 밖 팝업은 뒤따르는 게시의
-/// 정규화(`webview_key_holder`)가 정한다. 선택이 바뀌었으면 참이다.
+/// native 누름 알림 한 건의 전이. 그 surface 의 회수 기록을 지운다(`note_native_webview_focus`). 실제 버튼 누름이면
+/// 창 누름과 같은 본문 누름 전이(`MainViewState::press_surface_body`: 덮개가 있으면 덮개가 누름을 가지고, 없으면 팝업
+/// 포커스와 주소 띠를 놓고 선택을 옮긴다)를 적용한다. 누름 없는 포커스 획득은 선택만 옮긴다(주소 띠·팝업 포커스를
+/// 놓지 않는다). 덮음과 경로 밖 팝업은 뒤따르는 게시의 정규화(`webview_key_holder`)가 정한다. 바뀌었으면 참이다.
 fn apply_native_press(
     state: &mut crate::state::MainViewState,
     core: &crate::core::CoreState,
@@ -359,12 +359,11 @@ fn apply_native_press(
     kind: crate::webview::PressKind,
 ) -> bool {
     crate::app::webview_sync::key_release::note_native_webview_focus(state, surface_id);
-    let released =
-        kind == crate::webview::PressKind::Click && state.html_address.has_keyboard_focus();
-    if released {
-        state.html_address.release_focus();
+    match kind {
+        crate::webview::PressKind::Click => state.press_surface_body(core, surface_id),
+        #[cfg(any(windows, target_os = "macos", test))]
+        crate::webview::PressKind::Focus => state.focus_surface_by_id(core, surface_id),
     }
-    state.focus_surface_by_id(core, surface_id) || released
 }
 
 /// native WebView가 넘긴 키의 처리 결과.

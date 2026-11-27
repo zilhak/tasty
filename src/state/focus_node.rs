@@ -215,6 +215,25 @@ impl super::MainViewState {
         snapshot
     }
 
+    /// native 페이지 본문 누름 하나의 포커스 전이. 창 누름(`take_press_snapshot`)의 본문 갈래와 같은 규칙이다. 그
+    /// surface 경로를 덮는 덮개가 있으면 덮개가 누름을 가진다(포커스 위치는 덮개이고 밑 선택은 그대로다). 없으면 팝업
+    /// 포커스를 놓고(`focus_on_press(None)`), 주소 띠 키 포커스를 놓은 뒤(native 페이지 누름은 egui 가 보지 않아 주소 띠
+    /// 입력칸이 스스로 놓지 않는다) 그 surface 로 선택을 옮긴다. 포커스 위치나 선택이 바뀌었으면 참이다.
+    pub(crate) fn press_surface_body(&mut self, core: &CoreState, surface_id: u32) -> bool {
+        let before = (self.popups.focus(), self.html_address.has_keyboard_focus());
+        let path = path_of_scope(core, &PopupScope::Surface(surface_id));
+        if let Some(cover) = self.top_cover_over(&path, None) {
+            self.popups.set_focus(Some(cover));
+            self.normalize_focus(core);
+            return before != (self.popups.focus(), self.html_address.has_keyboard_focus());
+        }
+        self.popups.focus_on_press(None);
+        self.html_address.release_focus();
+        let moved = self.focus_surface_by_id(core, surface_id);
+        self.normalize_focus(core);
+        moved || before != (self.popups.focus(), self.html_address.has_keyboard_focus())
+    }
+
     /// 창이 받은 누름의 스냅샷을 그 누름을 처리할 그리기 몫에 남긴다. 한 몫에는 첫 누름만 남긴다. 입력을 끊었으면
     /// (`cut_key_frame`) 마지막으로 끊은 뒤 몫의 것이다.
     pub(crate) fn keep_press_snapshot(&mut self, snapshot: PressSnapshot) {
