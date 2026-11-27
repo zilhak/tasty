@@ -7,10 +7,11 @@
 //! `|ui| {` 클로저 시작인지 텍스트로 확인한다. 리터럴 안의 언급은 세지 않는다. 래퍼를 다른 함수로 한 번 더 감싼 호출,
 //! `Frame::popup`을 직접 그리는 경로, egui 진입 호출을 `use`로 줄여 부른 형태, egui 진입의 `as` 별칭은 보지 않는다.
 //! tasty 도우미 `popup_below_widget_unfocused`는 이름이 따로 선 자리(앞뒤가 식별자 글자가 아니다)를 모두 본다. 그
-//! 자리는 정의(`fn` 뒤), `use` 경로의 끝(`;`·`,`·`}` 앞), 호출(이름 바로 뒤가 `(` 또는 turbofish `::<`) 셋 중
-//! 하나여야 한다. 호출은 경로 유무와 관계없이 세고, 맨 앞 `::` 까지 붙은 경로(`::` 앞뒤 공백·주석은 건너뛴다)를
-//! 포함해 래퍼 클로저의 첫 식인지 본다. 그 밖의 꼴(`as` 별칭 가져오기, 값으로 쓰기, 인자로 넘기기, 이름과 `(`·`::`
-//! 사이에 공백·주석이 낀 꼴 등)은 세지 못하므로 실패로 막는다.
+//! 자리는 정의(`fn` 뒤), `use` 경로의 끝(`;`·`,`·`}` 앞), 호출 셋 중 하나여야 한다. 호출은 이름 바로 뒤가 `(`
+//! 이거나, 이름 바로 뒤 turbofish `::<..>` 의 짝 맞는 `>` 다음(공백·주석은 건너뛴다)이 `(` 인 꼴이다. 호출은 경로
+//! 유무와 관계없이 세고, 맨 앞 `::` 까지 붙은 경로(`::` 앞뒤 공백·주석은 건너뛴다)를 포함해 래퍼 클로저의 첫 식인지
+//! 본다. 그 밖의 꼴(`as` 별칭 가져오기, 값으로 쓰기, turbofish 를 붙인 값, 인자로 넘기기, 이름과 `(`·`::` 사이에
+//! 공백·주석이 낀 꼴 등)은 세지 못하므로 실패로 막는다.
 //!
 //! 열린 ComboBox 목록의 행은 공용 옵션 행(`menu_option` · `menu_option_value`)으로 그린다. egui 기본
 //! 선택 행(`selectable_value` · `selectable_label`)은 현재 값을 accent 채움으로 칠하므로 디자인의 선택
@@ -80,7 +81,7 @@ enum Mention {
     Definition,
     /// `use` 경로의 끝(`;`·`,`·`}` 앞).
     Import,
-    /// 호출(이름 바로 뒤가 `(` 또는 `::<`). 값은 앞에 붙은 경로의 시작.
+    /// 호출(이름 바로 뒤가 `(`, 또는 turbofish `::<..>` 뒤가 `(`). 값은 앞에 붙은 경로의 시작.
     Call(usize),
     /// `use … as 다른이름`. 그 이름의 호출은 세지 못한다.
     Aliased,
@@ -123,10 +124,35 @@ fn classify(code: &str, at: usize, name: &str) -> Mention {
         }
         return Mention::Unknown;
     }
-    if tail.starts_with('(') || tail.starts_with("::<") {
+    let called = match tail.strip_prefix("::<") {
+        Some(args) => after_type_args(args).is_some_and(|rest| rest.trim_start().starts_with('(')),
+        None => tail.starts_with('('),
+    };
+    if called {
         return Mention::Call(path_start(code, at));
     }
     Mention::Unknown
+}
+
+/// turbofish `::<` 뒤 `args` 에서 짝 맞는 `>` 다음 글자부터. `->` 의 `>` 는 짝으로 세지 않는다. 짝이 없으면 없다.
+fn after_type_args(args: &str) -> Option<&str> {
+    let mut depth = 1usize;
+    let mut prev = ' ';
+    for (i, c) in args.char_indices() {
+        match c {
+            '<' => depth += 1,
+            '>' if prev != '-' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(&args[i + 1..]);
+                }
+            }
+            ';' | '{' | '}' => return None,
+            _ => {}
+        }
+        prev = c;
+    }
+    None
 }
 
 /// 진입 이름이 따로 선(앞뒤가 식별자 글자가 아닌) 자리와 그 꼴. 주석과 리터럴을 함께 가린 소스에서 찾는다.
@@ -297,8 +323,12 @@ fn the_guard_rejects_mentions_it_cannot_count() {
         lines("popup_below_widget_unfocused (ui, id, &r, c, |ui| {});"),
         vec![1]
     );
-    // 대조: 정의·use 경로·호출은 막지 않는다.
-    let fine = "pub fn popup_below_widget_unfocused<R>() {}\npub use m::popup_below_widget_unfocused;\npopup_below_widget_unfocused::<()>(ui, id, &r, c, |ui| {});";
+    // turbofish 를 붙인 값 쓰기. 래퍼 클로저 첫 식에 값으로 두고 밖에서 부르면 메뉴 틀 없이 열린다.
+    let value = "let f = with_popover_frame(ui, th, |ui| {\n    tasty_egui_theme::popup_below_widget_unfocused::<()>\n});\nf(ui, id, &r, c, |ui| {});";
+    assert_eq!(lines(value), vec![2]);
+    assert_eq!(judge(value), (vec![], 0));
+    // 대조: 정의·use 경로·호출은 막지 않는다. turbofish 뒤 공백·주석·`->` 를 지나 `(` 가 오면 호출이다.
+    let fine = "pub fn popup_below_widget_unfocused<R>() {}\npub use m::popup_below_widget_unfocused;\npopup_below_widget_unfocused::<()>(ui, id, &r, c, |ui| {});\npopup_below_widget_unfocused::<Box<dyn Fn() -> u8>> /* x */ (ui, id, &r, c, |ui| {});";
     assert_eq!(lines(fine), Vec::<usize>::new());
 }
 
