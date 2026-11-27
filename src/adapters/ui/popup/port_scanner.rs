@@ -3834,8 +3834,9 @@ mod tests {
         let tips_shown = |open_chooser: bool| -> [bool; 3] {
             let ctx = egui::Context::default();
             let mut time = 0.0;
+            // egui 는 짧은 간격의 위치 기록으로 포인터 이동 시각을 정하므로 프레임 간격을 짧게 둔다.
             let mut frame = |events: Vec<egui::Event>| {
-                time += 0.1;
+                time += 0.02;
                 view_frame_at(&ctx, &theme, events, Some(time))
             };
             frame(Vec::new());
@@ -3870,6 +3871,11 @@ mod tests {
                     ctx.memory(|m| m.any_popup_open()),
                     "Columns 를 눌러 선택기가 열린다"
                 );
+                // egui 는 마지막 누름이 마지막 포인터 이동보다 0.1 초 넘게 앞서지 않으면 tooltip 을 숨긴다. 누름 뒤
+                // 시간을 흘리고 포인터를 옮겨, 그 조건이 아니라 열린 선택기 때문에 숨는지 잰다.
+                for _ in 0..30 {
+                    frame(Vec::new());
+                }
             }
             let buttons = [
                 (ids.columns, "port_scanner.columns_button"),
@@ -3887,8 +3893,14 @@ mod tests {
             };
             buttons.map(|(id, key)| {
                 let before = count(&frame(Vec::new()), key);
-                frame(vec![egui::Event::PointerMoved(center(id))]);
-                (0..15).any(|_| count(&frame(Vec::new()), key) > before)
+                // 두 걸음으로 옮겨 egui 가 포인터 이동으로 센다(누른 Columns 가운데와도 다른 점이다).
+                frame(vec![egui::Event::PointerMoved(
+                    center(id) + egui::vec2(3.0, 3.0),
+                )]);
+                frame(vec![egui::Event::PointerMoved(
+                    center(id) + egui::vec2(1.0, 1.0),
+                )]);
+                (0..75).any(|_| count(&frame(Vec::new()), key) > before)
             })
         };
         assert_eq!(
