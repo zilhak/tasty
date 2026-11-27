@@ -203,15 +203,16 @@ fn paint_marker(p: &egui::Painter, rect: egui::Rect, theme: &Theme, glow: bool) 
     let accent = theme.accent_primary();
     let radius = theme.corner_radius.value();
     if glow {
-        // 반투명 링 두 겹으로 정적인 발광 효과를 만든다.
-        for (grow, alpha) in [(5.0_f32, 60u8), (2.5, 110)] {
+        // 반투명 링 두 겹으로 정적인 발광 효과를 만든다. 두 겹은 정본 box-shadow 두 항의 합성(링 바로 밖이
+        // 더 밝다)을 근사하므로 바깥 겹이 glow-inner, 안쪽 겹이 glow-outer 다.
+        for (grow, color) in [
+            (5.0_f32, theme.tutorial_marker_glow_inner()),
+            (2.5, theme.tutorial_marker_glow_outer()),
+        ] {
             p.rect_stroke(
                 rect.expand(grow),
                 radius + grow,
-                egui::Stroke::new(
-                    theme.focus_ring_width.value() + grow,
-                    accent.with_alpha(alpha).to_egui(),
-                ),
+                egui::Stroke::new(theme.focus_ring_width.value() + grow, color.to_egui()),
                 egui::StrokeKind::Outside,
             );
         }
@@ -393,13 +394,8 @@ fn topic_row(
     sel: bool,
     done: bool,
 ) {
-    // 선택된 토픽 테두리 — accent 의 40% alpha. 대응 토큰 없음.
-    const SELECTED_BORDER_ALPHA: u8 = 102;
     let border = if sel {
-        theme
-            .accent_primary()
-            .with_alpha(SELECTED_BORDER_ALPHA)
-            .to_egui()
+        theme.tutorial_topic_selected_border().to_egui()
     } else {
         egui::Color32::TRANSPARENT
     };

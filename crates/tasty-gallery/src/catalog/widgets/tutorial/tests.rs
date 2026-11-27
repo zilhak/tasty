@@ -595,3 +595,92 @@ fn callout_specimen_stacks_the_body_above_the_button_row() {
         assert_eq!(bodies, 4, "{name}: 표본 본문 수");
     }
 }
+
+/// 반투명 accent 의 알파. 정본 식은 accent 알파에 비율을 곱하므로, 불투명 accent 에서는 같은 값이 되는
+/// 고정 알파 리터럴(40% = 102)도 이 테마에서는 갈린다.
+const TRANSLUCENT_ACCENT_ALPHA: u8 = 128;
+
+/// Mocha·Latte 와 accent 만 반투명인 Mocha.
+fn marker_themes() -> Vec<(&'static str, tasty_type_appearance::theme::Theme)> {
+    use crate::catalog::components::painted::mocha_latte;
+    let mut colors = tasty_themes::mocha_fallback_colors();
+    colors.blue = colors.blue.with_alpha(TRANSLUCENT_ACCENT_ALPHA);
+    let translucent = tasty_type_appearance::theme::Theme::with_colors_and_zoom(colors, false, 1.0);
+    assert_eq!(translucent.accent_primary().a(), TRANSLUCENT_ACCENT_ALPHA);
+    let mut themes = mocha_latte().to_vec();
+    themes.push(("translucent accent", translucent));
+    themes
+}
+
+fn stroked_rects(shapes: &[egui::Shape]) -> Vec<&egui::epaint::RectShape> {
+    shapes
+        .iter()
+        .filter_map(|s| match s {
+            egui::Shape::Rect(r) if r.stroke.width > 0.0 => Some(r),
+            _ => None,
+        })
+        .collect()
+}
+
+/// 마커 표본의 발광 두 겹이 정본 토큰 색인지 그린 도형으로 본다. 링(accent, 안쪽 stroke)을 기준으로 바깥에
+/// 그린 stroke 가 발광이고, 링에서 더 멀리 벌린 겹이 glow-inner, 가까운 겹이 glow-outer 다(정본 box-shadow
+/// 합성의 근사, `paint_marker`). 발광은 "glow + spotlight" 예제 하나에만 있다.
+#[test]
+fn marker_glow_layers_paint_the_design_glow_tokens() {
+    use crate::catalog::components::painted::paint;
+    for (name, th) in marker_themes() {
+        let painted = paint(|ui| super::draw_marker(ui, &th));
+        let strokes = stroked_rects(&painted.shapes);
+        let accent = th.accent_primary().to_egui();
+        let rings: Vec<egui::Rect> = strokes
+            .iter()
+            .filter(|r| r.stroke.color == accent && r.stroke_kind == egui::StrokeKind::Inside)
+            .map(|r| r.rect)
+            .collect();
+        assert_eq!(rings.len(), 2, "{name}: 마커 링 수");
+        // 링과 중심이 같고 더 큰 바깥 stroke 를 그 링의 발광 겹으로 본다. 벌린 폭은 0.1px 단위로 읽는다.
+        let mut glows: Vec<(f32, egui::Color32)> = Vec::new();
+        for s in strokes
+            .iter()
+            .filter(|r| r.stroke_kind == egui::StrokeKind::Outside)
+        {
+            for ring in &rings {
+                let grow = ((s.rect.width() - ring.width()) / 2.0 * 10.0).round() / 10.0;
+                let same_center = (s.rect.center() - ring.center()).length() < 0.01;
+                let same_grow = ((s.rect.height() - ring.height()) / 2.0 - grow).abs() < 0.05;
+                if same_center && same_grow && grow > 0.0 {
+                    glows.push((grow, s.stroke.color));
+                }
+            }
+        }
+        glows.sort_by(|a, b| a.0.total_cmp(&b.0));
+        assert_eq!(
+            glows,
+            vec![
+                (2.5, th.tutorial_marker_glow_outer().to_egui()),
+                (5.0, th.tutorial_marker_glow_inner().to_egui()),
+            ],
+            "{name}: 발광 겹(벌린 폭, 색)"
+        );
+    }
+}
+
+/// 선택한 주제 행(surface-active 채움)의 테두리가 정본 토큰 색인지 그린 도형으로 본다.
+#[test]
+fn selected_topic_row_border_paints_the_design_token() {
+    use crate::catalog::components::painted::paint;
+    for (name, th) in marker_themes() {
+        let active = th.surface_active().to_egui();
+        let selected = paint(|ui| super::topic_row(ui, &th, 1, "T", "D", true, false));
+        let frames: Vec<_> = stroked_rects(&selected.shapes)
+            .into_iter()
+            .filter(|r| r.fill == active)
+            .map(|r| r.stroke.color)
+            .collect();
+        assert_eq!(
+            frames,
+            vec![th.tutorial_topic_selected_border().to_egui()],
+            "{name}: 선택 행 테두리"
+        );
+    }
+}
