@@ -292,6 +292,76 @@ Escaped \\`<s>` stays code.
 EOF
 check '스팬은 목록 항목·제목·밑줄·인용·표 칸을 넘어 짝짓지 않는다' "$m" "$w"
 
+cat > "$m" <<'EOF'
+chore: bump version to 9.9.9
+
+- Example
+  ~~~sh
+  echo hi
+
+Outside --secs <s>.
+
+> ~~~
+> a <s>
+After the quote <s>.
+
+10. Example
+    ```
+    a <b> & c
+    ```
+
+# Heading
+    --path <path> & more
+
+- Run:
+
+      a <s> && b
+
+```sh
+x
+```
+    after <fence>
+
+Text <s>.
+
+  	tab <code> & more
+ 	still <code>
+EOF
+cat > "$w" <<'EOF'
+- Example
+  ~~~sh
+  echo hi
+
+Outside --secs &lt;s&gt;.
+
+> ~~~
+> a <s>
+After the quote &lt;s&gt;.
+
+10. Example
+    ```
+    a <b> & c
+    ```
+
+# Heading
+    --path <path> & more
+
+- Run:
+
+      a <s> && b
+
+```sh
+x
+```
+    after <fence>
+
+Text &lt;s&gt;.
+
+  	tab <code> & more
+ 	still <code>
+EOF
+check '목록·인용 안 코드 블록은 컨테이너와 함께 끝나고, 제목 뒤·탭 들여쓴 코드는 그대로' "$m" "$w"
+
 if [ "$failures" -ne 0 ]; then
     echo "실패 $failures 건" >&2
     exit 1

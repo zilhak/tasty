@@ -4,8 +4,8 @@
 #   그 접힌 이어 줄을 뺀다. Git 은 트레일러가 섞인 문장 줄도 같은 블록으로 보므로 그 줄은 남긴다.
 # - 코드 펜스(``` ·~~~), 들여쓴 코드 블록, 백틱 코드 스팬 밖의 <, >, & 를 HTML 엔터티로 바꾼다.
 #   GitHub 가 <s> 같은 자리표시를 HTML 태그로 읽지 않게 한다. 코드 표기 안은 엔터티가 글자로 보이므로 그대로 둔다.
-# - 블록 구조는 CommonMark 를 따른다. 목록 항목·제목·setext 밑줄·주제 구분선·인용·표 행이 문단을 끊고,
-#   코드 스팬은 블록 하나 안에서만 짝짓는다. 들여쓴 코드 블록은 목록 밖에서 빈 줄 뒤의 4칸(또는 탭) 들여쓴 줄에서 시작한다.
+# - 블록 구조는 CommonMark 를 따른다. 인용(>)과 목록 항목 안의 코드 블록은 그 항목의 내용 들여쓰기를 기준으로 보고,
+#   목록·인용이 끝나면 그 안의 코드 블록도 끝난다. 탭은 4칸 탭 정지로 센다. 코드 스팬은 블록 하나 안에서만 짝짓는다.
 # 사용: release-notes.sh <커밋>
 set -eu -o pipefail
 commit="${1:?사용: release-notes.sh <커밋>}"
@@ -79,13 +79,13 @@ function entity(c) {
     return c
 }
 
-# 줄의 탭을 4칸으로 펼쳐 X 에 둔다. cmap[열] 은 그 열을 차지한 원래 글자의 위치다.
+# 줄의 탭을 4칸 탭 정지로 펼쳐 X 에 둔다. cmap[열] 은 그 열을 차지한 원래 글자의 위치다.
 function expand(l,    i, n, c, col, w) {
     X = ""; col = 0; n = length(l)
     for (i = 1; i <= n; i++) {
         c = substr(l, i, 1)
         if (c == "\t") {
-            for (w = 4; w > 0; w--) { X = X " "; cmap[++col] = i }
+            for (w = 4 - col % 4; w > 0; w--) { X = X " "; cmap[++col] = i }
         } else { X = X c; cmap[++col] = i }
     }
     cmap[col + 1] = n + 1
@@ -143,24 +143,31 @@ END {
                 if (s > 3 || substr(X, p + s, 1) != ">") break
                 p += s + 1
                 if (substr(X, p, 1) == " ") p++
-            } else if (substr(X, p) !~ /^ *$/) {
+            } else if (substr(X, p) ~ /^ *$/) {
+                # 내용 없이 시작한 항목은 빈 줄에서 끝난다.
+                if (cempty[d]) break
+            } else {
                 if (s < cwidth[d]) break
                 p += cwidth[d]
             }
             matched++
         }
+        if (substr(X, p) !~ /^ *$/) for (d = 1; d <= matched; d++) cempty[d] = 0
         all = (matched == nc)
         if (leaf == "fence") {
-            print l
-            s = indent(p); r = substr(X, p + s)
-            if (s <= 3 && r ~ /^(`+|~+) *$/) {
-                sub(/ +$/, "", r)
-                if (substr(r, 1, 1) == fchar && length(r) >= flen) leaf = ""
+            if (all) {
+                print l
+                s = indent(p); r = substr(X, p + s)
+                if (s <= 3 && r ~ /^(`+|~+) *$/) {
+                    sub(/ +$/, "", r)
+                    if (substr(r, 1, 1) == fchar && length(r) >= flen) leaf = ""
+                }
+                continue
             }
-            continue
+            leaf = ""
         }
         if (leaf == "code") {
-            if (substr(X, p) ~ /^ *$/ || indent(p) >= 4) { print l; continue }
+            if (all && (substr(X, p) ~ /^ *$/ || indent(p) >= 4)) { print l; continue }
             leaf = ""
         }
         # 새 블록의 시작을 찾는다. 문단이 열린 채 컨테이너가 다 이어지면(para_open) 문단을 끊을 수 있는 것만 본다.
@@ -171,7 +178,7 @@ END {
             if (s >= 4) break
             if (substr(r, 1, 1) == ">") {
                 end_leaf(); close_to(matched)
-                ctype[++nc] = "q"; matched = nc; started = 1; para_open = 0
+                ctype[++nc] = "q"; cempty[nc] = 0; matched = nc; started = 1; para_open = 0
                 p += s + 1
                 if (substr(X, p, 1) == " ") p++
                 continue
@@ -203,7 +210,7 @@ END {
                     gap = indent(p + s + mlen)
                     w = s + mlen + ((empty || gap >= 5) ? 1 : gap)
                     end_leaf(); close_to(matched)
-                    ctype[++nc] = "l"; cwidth[nc] = w; matched = nc; started = 1; para_open = 0
+                    ctype[++nc] = "l"; cwidth[nc] = w; cempty[nc] = empty; matched = nc; started = 1; para_open = 0
                     p += w
                     continue
                 }
@@ -232,7 +239,7 @@ END {
         if (rest_blank) { end_leaf(); print l; continue }
         # 표는 빈 줄이나 다른 블록의 시작에서 끝난다. 들여쓴 줄도 행으로 보고 엔터티로 바꾼다.
         if (leaf == "table") { print head(l, p) escape_row(body(l, p)); continue }
-        if (s >= 4 && leaf != "para" && nc == 0 && (i == 1 || blank(line[i - 1]))) { end_leaf(); leaf = "code"; print l; continue }
+        if (s >= 4 && leaf != "para") { end_leaf(); leaf = "code"; print l; continue }
         # 문단을 끊는 HTML 블록 시작(<div>, <!-- 등)으로 보이는 줄은 앞 줄과 스팬을 짝짓지 않는다.
         if (leaf == "para" && html_start(substr(X, p + s))) flush()
         para_line(l, p)
