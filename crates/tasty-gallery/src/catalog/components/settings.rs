@@ -446,7 +446,7 @@ fn content(ui: &mut egui::Ui, theme: &Theme, h: f32) {
             cw,
             "Catppuccin Mocha",
             true,
-            &preset_swatches(&tasty_themes::mocha_fallback()),
+            &preset_swatches(&mocha_preset()),
         );
         theme_swatch(
             ui,
@@ -610,6 +610,16 @@ fn override_row(ui: &mut egui::Ui, theme: &Theme, field: &str, value: &str, defa
     });
 }
 
+/// 내장 Mocha 테마 파일을 읽은 프리셋 테마. Latte 카드의 `latte_theme`과 같은 방식이다.
+fn mocha_preset() -> Theme {
+    let file = tasty_themes::ThemeFile::parse(tasty_themes::MOCHA_TOML_TEXT)
+        .expect("builtin mocha.toml ships valid");
+    let (partial, is_light) = file.to_partial();
+    let mut colors = tasty_themes::mocha_fallback_colors();
+    colors.apply_partial(&partial);
+    Theme::with_colors(colors, is_light.unwrap_or(false))
+}
+
 /// 프리셋 테마에서 카드 색 띠 다섯 칸(앱 바탕·패널·primary·agent·success 역할)을 읽는다.
 fn preset_swatches(preset: &Theme) -> [tasty_type_appearance::color::HexColor; 5] {
     [
@@ -750,7 +760,7 @@ mod tests {
     #[test]
     fn preset_cards_paint_each_preset_roles_under_either_page_theme() {
         let presets = [
-            preset_swatches(&tasty_themes::mocha_fallback()),
+            preset_swatches(&mocha_preset()),
             preset_swatches(&crate::host_shell::latte_theme()),
         ];
         // 두 프리셋의 띠가 달라야 카드가 자기 프리셋을 읽는지 가를 수 있다.
