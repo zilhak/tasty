@@ -762,8 +762,8 @@ pub(super) fn up_enabled(
         .is_none_or(|id| engine.find_workspace_index_for_id(id).is_some())
 }
 
-/// 상태에서 화면 입력을 만들고 사용자 동작을 반영한다.
-/// 원격 피커의 프레임마다 바뀌는 값: 세션 소실 · 호스트 글자 · 응답 시간 초과.
+/// 원격 피커의 프레임마다 바뀌는 값을 갱신한다: 출처 mirror 가 사라지면 세션 소실 오류로, 호스트 글자는 mirror 위치
+/// 값에서, 원격 읽기가 응답 제한을 넘으면 시간 초과 오류로.
 fn refresh_remote(
     data: &mut crate::state::FilePickerData,
     engine: &crate::runtime::engine_read::EngineRead<'_>,
@@ -797,6 +797,7 @@ fn refresh_remote(
     }
 }
 
+/// 상태에서 화면 입력을 만들고 사용자 동작을 반영한다.
 pub fn draw_file_picker(
     ui: &mut egui::Ui,
     state: &mut MainViewState,
