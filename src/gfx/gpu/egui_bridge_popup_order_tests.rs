@@ -44,6 +44,24 @@ fn show_host(ctx: &egui::Context, layer: egui::LayerId, frame: egui::Rect) {
         });
 }
 
+/// 이번 패스에 `upper`의 각 레이어가 `lower` 중 정확히 한 레이어에만 sublayer로 달렸는가. egui는 sublayer 관계를
+/// 패스 끝에 비우므로 패스 안에서 본다. 부모가 둘 이상이면 패스 끝 순서가 HashMap 순회 순서를 따른다.
+fn hangs_under_one_parent(
+    ctx: &egui::Context,
+    upper: &[egui::LayerId],
+    lower: &[egui::LayerId],
+) -> bool {
+    ctx.memory(|m| {
+        upper.iter().all(|child| {
+            lower
+                .iter()
+                .filter(|parent| m.areas().child_layers(**parent).any(|c| c == *child))
+                .count()
+                == 1
+        })
+    })
+}
+
 /// 직전 패스까지 정해진 순서에서 `layer`의 자리. 순서에 없으면 egui가 순서 있는 레이어 뒤에 그리므로 맨 위로 본다.
 fn position(ctx: &egui::Context, layer: egui::LayerId) -> usize {
     ctx.memory(|m| m.layer_ids().position(|l| l == layer))
@@ -93,15 +111,18 @@ impl Scene {
         });
     }
 
-    /// host 팝업이 plugin 팝업 위인 패스 하나.
-    fn host_on_top_pass(&self, ctx: &egui::Context) {
+    /// host 팝업이 plugin 팝업 위인 패스 하나. host 두 레이어가 plugin 레이어 하나에만 달렸는지 돌려준다.
+    fn host_on_top_pass(&self, ctx: &egui::Context) -> bool {
+        let mut one_parent = false;
         run_pass(ctx, |ctx| {
             show_cover(ctx, self.cover, self.scope);
             paint_shell(ctx, self.shell, self.frame);
             show_host(ctx, self.host[0], self.scope);
             show_host(ctx, self.host[1], self.host_frame);
             enforce_host_plugin_popup_z_order(ctx, &self.host, &[self.cover, self.shell], true);
+            one_parent = hangs_under_one_parent(ctx, &self.host, &[self.cover, self.shell]);
         });
+        one_parent
     }
 }
 
@@ -124,14 +145,21 @@ fn host_popup_layers_stay_above_both_plugin_cover_layers_every_pass() {
         let ctx = egui::Context::default();
         scene.start(&ctx, start);
         let mut wrong = Vec::new();
+        let mut parents = Vec::new();
         for pass in 0..PASSES {
-            scene.host_on_top_pass(&ctx);
+            if !scene.host_on_top_pass(&ctx) {
+                parents.push(pass);
+            }
             let plugin_top = position(&ctx, scene.cover).max(position(&ctx, scene.shell));
             let host_bottom = scene.host.iter().map(|l| position(&ctx, *l)).min();
             if host_bottom.is_none_or(|h| h <= plugin_top) {
                 wrong.push(pass);
             }
         }
+        assert!(
+            parents.is_empty(),
+            "{start:?}: host popup hung under more than one plugin layer in passes {parents:?}"
+        );
         assert!(
             wrong.is_empty(),
             "{start:?}: host popup was not above every plugin layer in passes {wrong:?}"
@@ -149,6 +177,7 @@ fn pointer_over_a_host_popup_reaches_it_after_the_cover_rose_above_the_shell() {
     let point = scene.host_frame.center();
     let mut lost = Vec::new();
     for pass in 0..PASSES {
+        // 부모 수는 host_popup_layers_stay_above_both_plugin_cover_layers_every_pass가 본다.
         scene.host_on_top_pass(&ctx);
         if ctx.layer_id_at(point) != Some(scene.host[1]) {
             lost.push(pass);
@@ -171,14 +200,20 @@ fn plugin_popup_layers_stay_above_both_host_layers_every_pass() {
         show_host(ctx, scene.host[0], scene.scope);
     });
     let mut wrong = Vec::new();
+    let mut parents = Vec::new();
     for pass in 0..PASSES {
+        let mut one_parent = false;
         run_pass(&ctx, |ctx| {
             show_host(ctx, scene.host[1], scene.host_frame);
             show_host(ctx, scene.host[0], scene.scope);
             show_cover(ctx, scene.cover, scene.scope);
             paint_shell(ctx, scene.shell, scene.frame);
             enforce_host_plugin_popup_z_order(ctx, &scene.host, &[scene.cover, scene.shell], false);
+            one_parent = hangs_under_one_parent(ctx, &[scene.cover, scene.shell], &scene.host);
         });
+        if !one_parent {
+            parents.push(pass);
+        }
         let host_top = scene
             .host
             .iter()
@@ -190,6 +225,10 @@ fn plugin_popup_layers_stay_above_both_host_layers_every_pass() {
             wrong.push(pass);
         }
     }
+    assert!(
+        parents.is_empty(),
+        "plugin popup hung under more than one host layer in passes {parents:?}"
+    );
     assert!(
         wrong.is_empty(),
         "plugin popup was not above every host layer in passes {wrong:?}"
