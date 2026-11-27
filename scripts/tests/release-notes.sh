@@ -362,6 +362,38 @@ Text &lt;s&gt;.
 EOF
 check '목록·인용 안 코드 블록은 컨테이너와 함께 끝나고, 제목 뒤·탭 들여쓴 코드는 그대로' "$m" "$w"
 
+cat > "$m" <<'EOF'
+chore: bump version to 9.9.9
+
+Fix the reported issue.
+
+Signed-off-by: Fixture <fixture@example.invalid>
+
+# Notes
+EOF
+cat > "$w" <<'EOF'
+Fix the reported issue.
+
+# Notes
+EOF
+check '트레일러 뒤에 주석(#) 줄이 있어도 Git 이 찾은 트레일러 문단을 뺀다' "$m" "$w"
+
+cat > "$m" <<'EOF'
+chore: bump version to 9.9.9
+
+Fix the reported issue.
+
+Signed-off-by: Fixture <fixture@example.invalid>
+(cherry picked from commit 0123456789abcdef0123456789abcdef01234567)
+  Keep this indented note.
+EOF
+cat > "$w" <<'EOF'
+Fix the reported issue.
+
+  Keep this indented note.
+EOF
+check 'cherry-pick 줄 뒤의 들여쓴 산문은 이어 줄이 아니므로 남긴다' "$m" "$w"
+
 if [ "$failures" -ne 0 ]; then
     echo "실패 $failures 건" >&2
     exit 1

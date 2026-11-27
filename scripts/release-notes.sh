@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # 커밋 본문으로 GitHub 릴리스 노트를 만들어 stdout 에 쓴다. release.yml 의 create-release 잡이 태그 커밋에 부른다.
-# - git interpret-trailers 가 메시지에서 트레일러를 찾으면 본문의 끝 문단(트레일러 블록)에서 트레일러 줄과
-#   그 접힌 이어 줄을 뺀다. Git 은 트레일러가 섞인 문장 줄도 같은 블록으로 보므로 그 줄은 남긴다.
+# - git interpret-trailers 가 메시지에서 트레일러를 찾으면 Git 과 같은 규칙으로 트레일러 블록을 찾아 트레일러 줄과
+#   그 접힌 이어 줄을 뺀다. 블록은 끝의 주석(#) 줄·빈 줄을 건너뛴 마지막 문단이다. 섞인 문장 줄은 남긴다.
 # - 코드 펜스(``` ·~~~), 들여쓴 코드 블록, 백틱 코드 스팬 밖의 <, >, & 를 HTML 엔터티로 바꾼다.
 #   GitHub 가 <s> 같은 자리표시를 HTML 태그로 읽지 않게 한다. 코드 표기 안은 엔터티가 글자로 보이므로 그대로 둔다.
 # - 블록 구조는 CommonMark 를 따른다. 인용(>)과 목록 항목 안의 코드 블록은 그 항목의 내용 들여쓰기를 기준으로 보고,
@@ -116,20 +116,41 @@ END {
     last = count
     while (last > 0 && blank(line[last])) last--
     if (strip == 1) {
-        start = last
+        # Git 의 트레일러 블록: 가위 줄 앞에서, 끝의 주석(#) 줄·빈 줄·옛 Conflicts: 블록을 건너뛴 마지막 문단.
+        cut = count
+        for (k = 1; k <= count; k++) if (line[k] == "# ------------------------ >8 ------------------------") { cut = k - 1; break }
+        boc = 0; conflicts = 0
+        for (k = 1; k <= cut; k++) {
+            if (substr(line[k], 1, 1) == "#" || line[k] == "") { if (!boc) boc = k }
+            else if (line[k] == "Conflicts:") { conflicts = 1; if (!boc) boc = k }
+            else if (conflicts && substr(line[k], 1, 1) == "\t") { }
+            else if (boc) { boc = 0; conflicts = 0 }
+        }
+        stop = boc ? boc - 1 : cut
+        while (stop > 0 && blank(line[stop])) stop--
+        start = stop
         while (start > 0 && !blank(line[start])) start--
-        keep = 0; in_trailer = 0
-        for (k = start + 1; k <= last; k++) {
+        # Git 처럼 구분자(Key:)가 있는 줄 바로 뒤의 들여쓴 줄만 그 트레일러의 이어 줄로 본다.
+        keep = 0; folded = 0
+        for (k = start + 1; k <= stop; k++) {
             l = line[k]
-            if (in_trailer && l ~ /^[ \t]/) continue
-            if (l ~ /^[A-Za-z0-9-]+[ \t]*:/ || l ~ /^\(cherry picked from commit /) { in_trailer = 1; continue }
-            in_trailer = 0
+            if (folded && l ~ /^[ \t]/) continue
+            folded = 0
+            if (l ~ /^[A-Za-z0-9-]+[ \t]*:/) { folded = 1; continue }
+            if (l ~ /^\(cherry picked from commit /) continue
             kept[++keep] = l
         }
-        last = start
-        for (k = 1; k <= keep; k++) line[++last] = kept[k]
+        n = 0
+        for (k = 1; k <= start; k++) out[++n] = line[k]
+        for (k = 1; k <= keep; k++) out[++n] = kept[k]
+        tail = stop + 1
+        if (keep == 0) while (tail <= count && blank(line[tail])) tail++
+        for (k = tail; k <= count; k++) out[++n] = line[k]
+        for (k = 1; k <= n; k++) line[k] = out[k]
+        last = n
         while (last > 0 && blank(line[last])) last--
     }
+
     # 열린 컨테이너: ctype[d] 는 q(인용) 또는 l(목록 항목), cwidth[d] 는 목록 항목의 내용 들여쓰기.
     # 열린 잎 블록 leaf 는 para·code(들여쓴 코드)·fence 중 하나이고 늘 가장 안쪽 컨테이너에 속한다.
     nc = 0; leaf = ""; np = 0
