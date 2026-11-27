@@ -260,6 +260,7 @@ fn draw_plugin_popups_with_keys(
             ui_zoom: _engine.settings.appearance.ui_scale_factor(),
         }
     };
+    let mut lift = cover_layers::PassLift::default();
     for (idx, (snap, rect)) in placed.iter().enumerate() {
         let rect = *rect;
         let scope_rect = scrim_rects[idx];
@@ -273,6 +274,7 @@ fn draw_plugin_popups_with_keys(
         cover_layers::push_popup_layers(
             ctx,
             &mut state.plugin_popup_layers,
+            &mut lift,
             layer_id,
             snap.covers().then_some(scope_rect),
         );
@@ -562,13 +564,12 @@ fn draw_plugin_popups_with_keys(
 
     send_undrawn_releases(ctx, state, &live_plugins, &collected, &keys, &key_routes);
 
-    // egui는 누른 영역(덮는 범위를 막는 레이어)을 맨 위로 올린다. 모든 레이어를 함께 올려 막는 레이어가 팝업
-    // 아래에 남게 한다. 함께 올린 레이어끼리는 egui가 기존 순서를 유지한다.
+    // egui는 누른 영역(덮는 범위를 막는 레이어)과 다시 보인 막이를 맨 위로 올린다. 그런 패스에는 모든 레이어를
+    // 함께 올려 막는 레이어가 팝업 아래에 남게 한다. 함께 올린 레이어끼리는 egui가 기존 순서를 유지한다.
     if press.is_some() {
-        for layer in &state.plugin_popup_layers {
-            ctx.move_to_top(*layer);
-        }
+        lift.request();
     }
+    lift.apply(ctx, &state.plugin_popup_layers);
 }
 
 /// 누름을 팝업에 나눈다. 상자 안이면 앞으로 가져오고, 상자 밖이면 host와 같은 범위 규칙(`press::outside_press`)대로
