@@ -108,10 +108,10 @@ git push origin release
 
 기획서를 읽을 수 없거나 tasty-page `develop`의 CI가 실패하면 태그를 만들지 않고 사용자에게 알린다. 태그 뒤 승격에서 tasty-page `release` 검사가 실패하면 게시를 멈추고, 원인이 Tasty `release`의 변경이면 tasty-page를 고친 뒤 다시 승격한다.
 
-### 4. 커밋 — body 가 곧 릴리스 노트
+### 4. 커밋 — body 로 릴리스 노트를 만든다
 
 `release` 브랜치에서 `Cargo.toml` + `Cargo.lock` 을 함께 커밋한다. **커밋 body에 변경 내용을 영어 평문으로 적는다** — 워크플로가 `scripts/release-notes.sh` 로 태그 커밋의 body를 GitHub Release 노트로 만든다.
-스크립트는 `git interpret-trailers` 가 찾은 끝의 트레일러 블록에서 트레일러 줄(`Co-Authored-By` 등)을 빼고, 코드 표기(코드 스팬, 코드 펜스, 들여쓴 코드 블록) 밖의 `<`·`>`·`&` 를 HTML 엔터티로 바꾼다. 그래서 `<s>` 같은 자리표시를 평문으로 적어도 GitHub가 HTML 태그로 읽지 않는다.
+스크립트는 `git interpret-trailers` 가 찾은 끝의 트레일러 블록에서 트레일러 줄(`Co-Authored-By` 등)을 빼고, 코드 표기(코드 스팬, 코드 펜스, 들여쓴 코드 블록) 밖의 `<`·`>`·`&` 를 HTML 엔터티로 바꾼다. 코드 표기는 GitHub처럼 목록·인용 안에서도 찾고, 코드 스팬은 블록(문단, 목록 항목, 제목, 표 칸) 하나 안에서만 짝짓는다. 링크 목적지·제목이나 참조 정의 안에 백틱이 있는 블록처럼 GitHub와 스팬 짝이 어긋날 수 있는 블록은 코드 안까지 모두 엔터티로 바꾼다. 그래서 `<s>` 같은 자리표시를 평문으로 적어도 GitHub가 HTML 태그로 읽지 않는다.
 본문의 `&` 도 적은 글자 그대로 보이므로 `&amp;` 같은 HTML 엔터티를 쓰지 않는다. 쓰면 엔터티 철자가 그대로 보인다.
 body의 끝 문단이 `Word: text` 꼴의 줄로만 되어 있으면 Git이 트레일러로 보아 노트에서 빠진다.
 트레일러 블록은 Git처럼 끝의 `#` 줄과 빈 줄을 건너뛴 마지막 문단이고, `Key:` 줄 바로 뒤의 들여쓴 줄만 그 트레일러의 이어 줄로 함께 빠진다. 판정은 릴리스 러너의 기본 Git 설정을 가정한다(`trailer.separators` 같은 설정은 보지 않는다).
@@ -156,7 +156,7 @@ hotfix는 `main`에서 갈라 `main`에 반영하고, `main`에서 patch를 올�
 
 ### 6. 워크플로 (release.yml)
 
-1. **create-release** — 태그 커밋이 `origin/main`의 조상인지 확인 → 버전 검증 → 릴리스 노트 생성([§4](#4-커밋--body-가-곧-릴리스-노트)의 `scripts/release-notes.sh`) → draft release 생성(body = 릴리스 노트). `main`에 반영하지 않은 커밋의 태그면 여기서 실패한다.
+1. **create-release** — 태그 커밋이 `origin/main`의 조상인지 확인 → 버전 검증 → 릴리스 노트 생성([§4](#4-커밋--body-로-릴리스-노트를-만든다)의 `scripts/release-notes.sh`) → draft release 생성(body = 릴리스 노트). `main`에 반영하지 않은 커밋의 태그면 여기서 실패한다.
 2. **build-macos / build-windows / build-windows-arm64 / build-linux-x64 / build-linux-arm64** — 각 빌드 스크립트가 로컬 키를 준비해(Linux·macOS 는 `ensure-sign-key.sh`, Windows 는 `build-windows.ps1` 이 직접) 잠금 파일의 공식 플러그인 받기(GitHub Releases, SHA-256 대조) → 빌드(`--profile dist`) → 매니페스트 서명 → GUI 패키징 → 헤드리스 압축 파일(아래 "헤드리스 산출물") → 아티팩트 업로드. GitHub Secret 관여 없음(배경은 [plugin-packaging](plugin-packaging.md) "영구 release 키를 두지 않는 이유").
 3. **publish-release** — draft를 해제해 공개한다. 파일을 올리지 않는다. 사이트 게시는 [8. 사이트 게시](#8-사이트-게시)에서 한다.
 
