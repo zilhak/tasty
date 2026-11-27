@@ -65,10 +65,13 @@ pub(super) fn path_bar(ui: &mut egui::Ui, theme: &Theme, v: Variant) -> Option<H
             .layout(egui::Layout::right_to_left(egui::Align::Center)),
     );
     child.spacing_mut().item_spacing.x = theme.fp_section_gap().value();
-    for glyph in [icons::REFRESH, icons::CHEVRON_UP] {
+    // 세션 소실(원격 error-conn)에는 Up 을 끈다 — 정본 FilePickerFrame `sessionLost`, 앱 `up_enabled`.
+    let session_lost = v.remote && v.state == super::FpState::ErrorConn;
+    for (glyph, enabled) in [(icons::REFRESH, true), (icons::CHEVRON_UP, !session_lost)] {
         IconButton::new()
             .variant(IconButtonVariant::Ghost)
             .size(ControlSize::Sm)
+            .enabled(enabled)
             .show(&mut child, theme, &|ui, rect, c| {
                 glyph.image(rect.height(), c).paint_at(ui, rect)
             });

@@ -149,3 +149,64 @@ fn each_remote_state_card_draws_the_app_body_of_its_state() {
         &["filepicker.error_conn.session_lost"],
     );
 }
+
+/// 카드 한 장의 경로 막대 Up 이 눌리는지(클릭 감지). 경로 막대의 두 Sm 정사각 버튼 중 왼쪽이 Up, 오른쪽이 Refresh 다.
+fn up_and_refresh_clickable(v: Variant) -> (bool, bool) {
+    let theme = crate::host_shell::latte_theme();
+    let side = tasty_ui_widgets::ControlSize::Sm.height(&theme);
+    let ctx = egui::Context::default();
+    for _ in 0..2 {
+        drop(ctx.run(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| card(ui, &theme, v));
+        }));
+    }
+    let mut squares: Vec<(egui::Rect, bool)> = ctx.viewport(|vp| {
+        vp.prev_pass
+            .widgets
+            .layers()
+            .flat_map(|(_, rects)| rects.iter())
+            .filter(|w| (w.rect.width() - side).abs() < 0.5 && (w.rect.height() - side).abs() < 0.5)
+            .map(|w| (w.rect, w.sense.senses_click()))
+            .collect()
+    });
+    // 경로 막대는 서로 다른 자리의 Sm 정사각 버튼 둘이 한 줄에 선 유일한 줄이다(머리 ✕ 는 한 자리에 위젯이 겹쳐 둘로
+    // 잡히고, 로딩 표시 등은 다른 줄).
+    squares.sort_by(|a, b| a.0.top().total_cmp(&b.0.top()));
+    let rows: Vec<Vec<(egui::Rect, bool)>> = squares
+        .chunk_by(|a, b| (a.0.top() - b.0.top()).abs() < 0.5)
+        .filter(|row| row.len() == 2 && (row[0].0.left() - row[1].0.left()).abs() > 1.0)
+        .map(<[_]>::to_vec)
+        .collect();
+    assert_eq!(rows.len(), 1, "두 버튼이 선 줄 하나: {rows:?}");
+    let mut bar = rows[0].clone();
+    bar.sort_by(|a, b| a.0.left().total_cmp(&b.0.left()));
+    (bar[0].1, bar[1].1)
+}
+
+/// 세션 소실 카드(이름 있는 원격·빈 호스트)는 Up 이 꺼지고, 응답 시간 초과와 로딩 카드는 켜져 있다. Refresh 는 모두 켜져
+/// 있다(정본 fe45514 FilePickerFrame `sessionLost`, 앱 path_bar `up_enabled`).
+#[test]
+fn a_session_lost_card_disables_up() {
+    for (label, v, lost) in [
+        (
+            "named session lost",
+            state_card("connection lost (remote)"),
+            true,
+        ),
+        (
+            "no-profile session lost",
+            no_profile_card("connection lost — session lost (remote, no profile name)"),
+            true,
+        ),
+        (
+            "no-profile timeout",
+            no_profile_card("connection lost — timeout (remote, no profile name)"),
+            false,
+        ),
+        ("named loading", state_card("loading (remote)"), false),
+    ] {
+        let (up, refresh) = up_and_refresh_clickable(v);
+        assert_eq!(up, !lost, "{label}: Up");
+        assert!(refresh, "{label}: Refresh");
+    }
+}
