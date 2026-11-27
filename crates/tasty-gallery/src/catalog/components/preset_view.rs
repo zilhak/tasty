@@ -679,8 +679,9 @@ fn detail_column(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, st: &mut Wi
 }
 
 /// 편집 중 이름 입력 — 시안 `<input>`: 150 × 26, Input 칸 모양(input-bg 채움, input-border 테두리,
-/// input-fg 글자), radius, 13px, 좌우 8.
+/// input-fg 글자), radius, 13px, 좌우 8. 포커스면 input-border-focus 테두리와 바깥 링(앱 Input과 같다).
 fn name_input(ui: &mut egui::Ui, theme: &Theme, buf: &mut String) {
+    let id = ui.make_persistent_id(NAME_INPUT_ID);
     let (rect, _) = ui.allocate_exact_size(
         egui::vec2(NAME_INPUT_W.value(), NAME_INPUT_H.value()),
         egui::Sense::hover(),
@@ -688,27 +689,69 @@ fn name_input(ui: &mut egui::Ui, theme: &Theme, buf: &mut String) {
     let radius = theme.corner_radius.value();
     ui.painter()
         .rect_filled(rect, radius, theme.input_bg().to_egui());
-    ui.painter().rect_stroke(
-        rect,
-        radius,
-        egui::Stroke::new(theme.border_width.value(), theme.input_border().to_egui()),
-        egui::StrokeKind::Inside,
-    );
     let inner = rect.shrink2(egui::vec2(theme.spacing_sm.value(), 0.0));
     let mut field = child(ui, inner, egui::Layout::left_to_right(egui::Align::Center));
-    field.add(
+    let resp = field.add(
         egui::TextEdit::singleline(buf)
+            .id(id)
             .frame(false)
             .margin(egui::Margin::ZERO)
             .desired_width(inner.width())
             .font(egui::FontId::proportional(theme.font_size_body.value()))
             .text_color(theme.input_fg().to_egui()),
     );
+    // 포커스를 안 뒤에 테두리를 그린다.
+    let focused = resp.has_focus();
+    let edge = if focused {
+        theme.input_border_focus()
+    } else {
+        theme.input_border()
+    };
+    ui.painter().rect_stroke(
+        rect,
+        radius,
+        egui::Stroke::new(theme.border_width.value(), edge.to_egui()),
+        egui::StrokeKind::Inside,
+    );
+    if focused {
+        tasty_ui_widgets::paint_field_ring(
+            ui.painter(),
+            theme,
+            rect,
+            radius,
+            theme.input_border_focus().to_egui(),
+        );
+    }
 }
+
+/// 편집 중 이름 입력의 TextEdit id 소금.
+const NAME_INPUT_ID: &str = "preset_view_name_input";
 
 #[cfg(test)]
 mod tests {
-    /// 편집 중 이름 칸은 Input 칸 모양이다: input-bg 채움과 input-border 테두리.
+    use tasty_type_appearance::theme::Theme;
+
+    /// 이름 칸을 그리고 칸 크기 사각형들을 돌려준다. `focus`면 그 TextEdit에 포커스를 준 뒤 그린다.
+    fn name_field_rects(theme: &Theme, focus: bool) -> Vec<egui::epaint::RectShape> {
+        let p = crate::catalog::components::painted::paint(|ui| {
+            if focus {
+                let id = ui.make_persistent_id(super::NAME_INPUT_ID);
+                ui.memory_mut(|m| m.request_focus(id));
+            }
+            let mut buf = "Dev".to_owned();
+            super::name_input(ui, theme, &mut buf);
+        });
+        let size = egui::vec2(super::NAME_INPUT_W.value(), super::NAME_INPUT_H.value());
+        p.shapes
+            .iter()
+            .filter_map(|s| match s {
+                egui::Shape::Rect(r) if r.rect.size() == size => Some(r.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// 편집 중 이름 칸은 Input 칸 모양이다: input-bg 채움과 input-border 테두리, 링 없음.
     #[test]
     fn the_name_field_reads_the_input_field_tokens() {
         for theme in [
@@ -716,26 +759,45 @@ mod tests {
             crate::host_shell::latte_theme(),
         ] {
             assert_ne!(theme.input_border(), theme.border_default());
-            let p = crate::catalog::components::painted::paint(|ui| {
-                let mut buf = "Dev".to_owned();
-                super::name_input(ui, &theme, &mut buf);
-            });
-            let size = egui::vec2(super::NAME_INPUT_W.value(), super::NAME_INPUT_H.value());
-            let field = p
-                .shapes
-                .iter()
-                .filter_map(|s| match s {
-                    egui::Shape::Rect(r) if r.rect.size() == size => Some(r.clone()),
-                    _ => None,
-                })
-                .collect::<Vec<_>>();
+            let field = name_field_rects(&theme, false);
             let fill = field
                 .iter()
                 .find(|r| r.fill != egui::Color32::TRANSPARENT)
                 .expect("채움");
-            let edge = field.iter().find(|r| r.stroke.width > 0.0).expect("테두리");
+            let edges: Vec<_> = field.iter().filter(|r| r.stroke.width > 0.0).collect();
             assert_eq!(fill.fill, theme.input_bg().to_egui(), "채움");
-            assert_eq!(edge.stroke.color, theme.input_border().to_egui(), "테두리");
+            assert_eq!(edges.len(), 1, "쉴 때는 테두리 하나: {edges:?}");
+            assert_eq!(
+                edges[0].stroke.color,
+                theme.input_border().to_egui(),
+                "테두리"
+            );
+        }
+    }
+
+    /// 포커스면 Input 포커스 모양이다: 안쪽 input-border-focus 테두리와 그 바깥에 붙은 같은 색 링.
+    #[test]
+    fn the_focused_name_field_takes_the_input_focus_edge_and_ring() {
+        for theme in [
+            tasty_themes::mocha_fallback(),
+            crate::host_shell::latte_theme(),
+        ] {
+            assert_ne!(theme.input_border(), theme.input_border_focus());
+            let focus = theme.input_border_focus().to_egui();
+            let field = name_field_rects(&theme, true);
+            let stroke = |kind| {
+                field
+                    .iter()
+                    .filter(|r| r.stroke.width > 0.0 && r.stroke_kind == kind)
+                    .map(|r| r.stroke.color)
+                    .collect::<Vec<_>>()
+            };
+            assert_eq!(
+                stroke(egui::StrokeKind::Inside),
+                vec![focus],
+                "포커스 테두리"
+            );
+            assert_eq!(stroke(egui::StrokeKind::Outside), vec![focus], "바깥 링");
         }
     }
 
