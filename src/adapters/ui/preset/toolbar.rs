@@ -404,8 +404,9 @@ mod tests {
     const KIND: PresetKind = PresetKind::Tab;
     const META_ID: &str = "preset_name_press_meta";
 
-    /// 이름 칸 하나를 띄운 툴바. 초안에 프리셋이 없어 확정하면 이름 바꾸기가 실패한다.
-    /// 편집 툴바는 실패 toast로, 보기 툴바는 `rename`이 `None`이 되는 것으로 확정을 읽는다.
+    /// 이름 칸 하나를 띄운 툴바. 편집 툴바는 빈 초안이라 확정하면 이름 바꾸기가 실패하고, 그 실패
+    /// toast로 확정을 읽는다. 보기 툴바는 초안에 Tab 프리셋 "Dev"가 있어 확정하면 이름이 바뀐다.
+    /// `rename`이 `None`이 되는 것으로 확정(취소 포함)을, 초안의 이름과 `selected`로 저장을 읽는다.
     struct NameHarness {
         path: NamePath,
         ctx: egui::Context,
@@ -427,6 +428,7 @@ mod tests {
         fn zoomed(path: NamePath, zoom: f32) -> Self {
             let ctx = egui::Context::default();
             let mut rename = None;
+            let mut store = PresetDrafts::default();
             match path {
                 NamePath::Edit => {
                     ctx.memory_mut(|m| m.request_focus(Self::id_of(path)));
@@ -442,6 +444,15 @@ mod tests {
                     });
                 }
                 NamePath::View => {
+                    store
+                        .queue_tab(tasty_presets::TabPreset {
+                            name: "Dev".to_owned(),
+                            tab: tasty_presets::PresetTab {
+                                explicit_name: None,
+                                layout: super::super::minimal_surface(),
+                            },
+                        })
+                        .expect("초안에 Dev");
                     rename = Some(RenameState {
                         kind: KIND,
                         original: "Dev".to_owned(),
@@ -458,7 +469,7 @@ mod tests {
                     false,
                     zoom,
                 ),
-                store: PresetDrafts::default(),
+                store,
                 selected: None,
                 toasts: ToastManager::new(),
                 rename,
@@ -715,7 +726,7 @@ mod tests {
     }
 
     /// 여백 누름과 같은 패스의 글자 키는 TextEdit에 들어가고(캐럿이 처음으로 간 뒤라 앞에 붙는다),
-    /// 다음 패스 Enter가 확정한다.
+    /// 다음 패스 Enter가 확정한다. 보기 툴바는 Enter로 초안의 "Dev"가 "xDev 2"로 바뀌고 선택된다.
     #[test]
     fn a_key_typed_with_a_padding_press_goes_in_and_enter_then_commits() {
         for path in PATHS {
@@ -735,6 +746,11 @@ mod tests {
             }]);
             h.frame(Vec::new());
             assert!(h.committed(), "{path:?} Enter가 확정하지 않았다");
+            if path == NamePath::View {
+                assert!(h.store.get_tab("xDev 2").is_some(), "새 이름으로 저장");
+                assert!(h.store.get_tab("Dev").is_none(), "옛 이름이 남았다");
+                assert_eq!(h.selected.as_deref(), Some("xDev 2"), "선택");
+            }
         }
     }
 
