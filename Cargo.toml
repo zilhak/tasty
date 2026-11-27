@@ -429,6 +429,10 @@ required-features = ["gui"]
 # 포크가 담은 패치와 상류 반영 후 교체 조건: docs/dev-guide/dep-issues.md
 [patch.crates-io]
 winit = { git = "https://github.com/zilhak/winit-ime-fix.git", rev = "83d620da3b15518fd9b6371138957a6da85964ab" }
+# egui 포크(패스 사이에 닫힌 modal 하한을 그 패스 안에서 내리는 Memory::sync_top_modal_layer)는 커밋으로 고정한다.
+# Tasty가 포크 전용 API를 호출하므로 패치만 걷으면 컴파일이 실패한다.
+# 포크가 담은 패치와 상류 반영 후 교체 조건: docs/dev-guide/dep-issues.md
+egui = { git = "https://github.com/zilhak/egui.git", rev = "5f4480c8d453c12347274ebcf790ea4639f4d196" }
 # 413 응답 뒤 남은 본문을 읽지 않고 닫도록 패치한 사본이다.
 # 패치 범위와 상류 버전으로 돌아갈 조건: vendor/tiny_http/PATCHES.md
 tiny_http = { path = "vendor/tiny_http" }
@@ -438,6 +442,13 @@ epaint = { path = "vendor/epaint" }
 # 파서 상태를 읽는 함수를 더한 사본이다. attach 효과 소유자의 시퀀스 끝을 판정한다.
 # 패치 범위와 상류 버전으로 돌아갈 조건: vendor/vtparse/PATCHES.md
 vtparse = { path = "vendor/vtparse" }
+
+# 포크의 egui가 같은 워크스페이스 경로로 가리키는 epaint·emath·ecolor를 crates.io 판(epaint는 위 사본)으로 돌린다.
+# 한 벌만 남아 egui-wgpu·egui-winit과 타입이 같아진다.
+[patch."https://github.com/zilhak/egui.git"]
+epaint = { path = "vendor/epaint" }
+emath = "0.31.1"
+ecolor = "0.31.1"
 
 [lints]
 workspace = true

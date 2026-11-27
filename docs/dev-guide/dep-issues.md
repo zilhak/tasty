@@ -122,6 +122,26 @@ vtparse = { path = "vendor/vtparse" }
 
 <a id="은퇴-egui_commonmark--egui-버전-lockstep"></a>
 
+## `egui` — 개인 포크 핀 (패스 사이에 닫힌 modal 하한)
+
+`Cargo.toml` 의 `[patch.crates-io]` 가 egui 를 개인 포크 `zilhak/egui` 의 `tasty/modal-floor-20261127` 브랜치에 공개된 커밋에 핀:
+
+```toml
+egui = { git = "https://github.com/zilhak/egui.git", rev = "5f4480c8d453c12347274ebcf790ea4639f4d196" }
+```
+
+- **포크가 담은 패치**: 상류 egui 0.31.1(`1669e52a7c`, 포크의 `tasty/0.31.1` 브랜치) 위에 커밋 하나를 얹었다. 다른 동작 변화는 없다.
+  - `Memory::sync_top_modal_layer(Option<LayerId>)`. egui 가 한 패스 동안 읽는 modal 하한은 지난 패스 끝에 등록된 값이고, 상류에는 이를 바꾸는 공개 API 가 없다. 그래서 패스 사이(그리기 밖의 명령, `close_orphans`)에 닫힌 창 전체 덮개의 하한이 다음 패스의 첫 Tab 을 막는다. Tasty 는 패스 첫머리 `PopupManager::release_closed_focus`(`src/adapters/ui/popup/focus.rs`)에서 그 하한을 지금 덮개의 하한으로 내린다. Tasty 가 이 API 를 직접 호출하므로 `[patch.crates-io]` 를 걷으면 컴파일이 실패한다.
+- **같은 워크스페이스 crate**: 포크의 egui 는 epaint·emath·ecolor 를 포크 워크스페이스 경로로 가리킨다. 그대로 두면 이 세 crate 가 두 벌(포크와 crates.io·`vendor/epaint`)이 되어 egui-wgpu·egui-winit 과 타입이 갈린다. `Cargo.toml` 의 `[patch."https://github.com/zilhak/egui.git"]` 가 이들을 crates.io 판(epaint 는 `vendor/epaint` 사본)으로 돌려 한 벌만 남긴다. `Cargo.lock` 에서 바뀌는 것은 egui 의 출처뿐이다.
+- **적용 범위**: `tasty-official-plugins` 는 자기 workspace 로 빌드하고 이 API 를 쓰지 않으므로 상류 egui 0.31.1 그대로 둔다. 패치는 epaint wire 형식을 바꾸지 않는다([egui 버전 호환](#egui-버전-호환)).
+- **왜 `rev` 핀인가**: winit 항목과 같다. 고정 commit 에 핀해 빌드 입력을 동결하고, 갱신이 필요하면 `rev` 를 의도적으로 바꾼다.
+- **리스크**: 핀한 커밋을 가리키는 `tasty/modal-floor-20261127` 브랜치를 보존한다. 포크 rev 를 바꿀 때는 새 커밋이 원격 브랜치에 push 된 뒤 바꾼다(그 전에는 새 clone 의 `--locked` 빌드가 fetch 에 실패한다). egui 를 올릴 때는 이 패치를 새 버전 위로 옮긴다.
+
+### 점검 / 전환 트리거
+
+- 전환 조건: 상류 egui 에 패스 안에서 modal 하한을 바꾸거나 닫힌 modal 레이어의 하한을 그 패스에 풀어 주는 공개 API(또는 동작)가 들어오면, `release_closed_focus` 의 호출을 그 API 로 바꾸고 `[patch.crates-io]` 의 egui 항목과 `[patch."https://github.com/zilhak/egui.git"]` 절을 제거한다.
+- 상류 API 가 없으면 egui 를 올릴 때 이 패치를 새 버전으로 옮긴다. 옮긴 뒤 `the_first_tab_after_closing_the_chooser_with_a_focused_crumb_moves_in_the_window`(`src/view/settings/ui/file_chooser_popup_tests.rs`)를 돌린다.
+
 ## egui 버전 호환
 
 markdown 본문은 WebView로 그리지만 대용량 파일·파일 열기 확인 팝업은 egui-mesh를 쓴다.

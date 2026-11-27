@@ -190,27 +190,35 @@ impl PopupManager {
             .filter(|(_, scope, _)| matches!(scope, PopupScope::Window))
             .max_by_key(|(_, _, z)| *z)
             .and_then(|(iid, _, _)| self.instance(iid))
-            .map(|p| {
-                let block =
-                    super::draw::area_id_of(p.id, p.instance).with(super::draw::COVER_BLOCK);
-                egui::LayerId::new(egui::Order::Foreground, block)
-            })
+            .map(|p| cover_block_layer(p.id, p.instance))
     }
 
     /// egui 패스마다 위젯을 그리기 전(`run_input_pass`가 패스 콜백 첫머리에서) 부른다. 닫힘 기록(그리기 밖의 명령·
     /// `close_orphans` 닫기)의 레이어에 egui 포커스가 있으면 놓는다. egui 는 패스 시작에서 Tab 방향을 정하고, 포커스
     /// 위젯이 그 패스에 그려지지 않으면 Tab 이 어느 위젯에도 가지 않는다. 그래서 닫힌 레이어의 포커스를 위젯 탐색 전에
     /// 놓아, 닫은 뒤 첫 Tab 이 포커스 없음에서 출발하게 한다. 역방향 탐색이 예약해 이 패스 시작에 옮겨진 포커스도 같다.
-    /// 기록은 지우지 않는다(패스 끝이 지운다).
+    /// egui 의 창 하한은 지난 패스 끝에 등록한 값이다. 그 하한이 이번 패스 전에 닫힌 덮개의 막이 레이어면, 위젯 탐색
+    /// 전에 지금 덮개의 하한(`window_cover_floor`, 지난 패스에 보인 레이어만, 없으면 하한 없음)으로 내린다
+    /// (`egui::Memory::sync_top_modal_layer`, 포크 패치). 그래서 닫은 뒤 첫 Tab 이 닫힌 덮개 아래 창 위젯으로 간다. 올리는
+    /// 쪽(새로 연 덮개)은 지난 패스 순서표에 없어 바꾸지 않는다. 기록은 지우지 않는다(패스 끝이 지운다).
     pub(crate) fn release_closed_focus(&self, ctx: &egui::Context) {
         if let Some(focused) = self.closed_layer_focus(ctx, &self.closed_this_pass) {
             ctx.memory_mut(|m| m.surrender_focus(focused));
+        }
+        let floor_closed = ctx.memory(|m| m.top_modal_layer()).is_some_and(|floor| {
+            (self.closed_this_pass.iter()).any(|(id, iid, _)| floor == cover_block_layer(id, *iid))
+        });
+        if floor_closed {
+            let floor = (self.window_cover_floor())
+                .filter(|layer| ctx.memory(|m| m.areas().visible_last_frame(layer)));
+            ctx.memory_mut(|m| m.sync_top_modal_layer(floor));
         }
     }
 
     /// 창마다 패스 끝 한 곳(그 패스의 닫기를 모두 적용한 뒤, `end_pass` 전)에서 부른다. 닫힘 기록의 레이어에 egui
     /// 포커스가 있으면 놓고(그리기 중 닫힘), 기록을 비운다. 창 하한(`window_cover_floor`)이 있으면 egui에 등록한다.
-    /// egui는 등록한 다음 패스부터 하한을 적용하고, 등록이 없는 패스 뒤에는 하한을 비운다.
+    /// egui는 등록한 다음 패스부터 하한을 적용하고, 등록이 없는 패스 뒤에는 하한을 비운다(패스 사이에 닫힌 덮개의 하한은
+    /// 다음 패스 첫머리 `release_closed_focus`가 내린다).
     pub(crate) fn finish_pass_focus(&mut self, ctx: &egui::Context) {
         let closed = std::mem::take(&mut self.closed_this_pass);
         if let Some(focused) = self.closed_layer_focus(ctx, &closed) {
@@ -270,4 +278,10 @@ impl PopupManager {
             .iter()
             .any(|p| p.id == id && p.open && p.scope_visible && p.passive)
     }
+}
+
+/// 덮개 인스턴스의 덮음 막이 레이어(그 덮개가 세우는 창 하한).
+fn cover_block_layer(id: PopupId, instance: PopupInstanceId) -> egui::LayerId {
+    let block = super::draw::area_id_of(id, instance).with(super::draw::COVER_BLOCK);
+    egui::LayerId::new(egui::Order::Foreground, block)
 }
