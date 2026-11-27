@@ -135,7 +135,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ui,
         theme,
         "The body tab strip (src/adapters/ui/tab_bar/tab.rs) tints the icon with the label \
-         colour; this spec draws the kit text-muted icon.",
+         colour; this spec draws the kit icon, text-secondary on an active tab (with its \
+         close) and text-muted on the others.",
     );
 }
 
@@ -198,10 +199,13 @@ fn draw_tab(
         egui::pos2(rect.left() + theme.spacing_md.value(), cy - icon * 0.5),
         egui::vec2(icon, icon),
     );
-    // 시안 `.tasty-tab__icon` 은 상태와 무관하게 text-muted 다.
-    tab.icon
-        .image(icon, egui::Color32::from(theme.text_muted()))
-        .paint_at(ui, icon_rect);
+    // 활성 탭의 아이콘·닫기는 시안 Tab.active 계약의 text-secondary다. 비활성 탭은 text-muted 그대로다.
+    let glyph_ink = if tab.active {
+        egui::Color32::from(theme.text_secondary())
+    } else {
+        egui::Color32::from(theme.text_muted())
+    };
+    tab.icon.image(icon, glyph_ink).paint_at(ui, icon_rect);
 
     // 오른쪽 끝부터 닫기 · 점 순서로 자리를 잡는다. 닫기는 활성 탭에서만 보인다(hover 는 정적 예제에서 생략).
     let close = theme.tab_close_size().value();
@@ -211,12 +215,10 @@ fn draw_tab(
     );
     if tab.active {
         let glyph = theme.icon_glyph_size_xs.value();
-        CLOSE
-            .image(glyph, egui::Color32::from(theme.text_muted()))
-            .paint_at(
-                ui,
-                egui::Rect::from_center_size(close_rect.center(), egui::vec2(glyph, glyph)),
-            );
+        CLOSE.image(glyph, glyph_ink).paint_at(
+            ui,
+            egui::Rect::from_center_size(close_rect.center(), egui::vec2(glyph, glyph)),
+        );
     }
     let mut label_right = close_rect.left() - gap;
     if tab.busy || tab.attached {
@@ -302,6 +304,16 @@ mod tests {
                 ACTIVE_ATTENTION.len(),
                 "{name} {}: {rests:?}",
                 REST_TAB.label
+            );
+            // 활성 탭 셋(첫 줄 build.sh와 둘째 Stage 둘)의 아이콘·닫기는 text-secondary, 나머지 아이콘은 text-muted다.
+            assert_ne!(th.text_secondary(), th.text_muted(), "{name}");
+            let tints = |c: egui::Color32| painted.glyphs.iter().filter(|(_, t)| *t == c).count();
+            let active = 1 + ACTIVE_ATTENTION.len();
+            assert_eq!(tints(th.text_secondary().into()), active * 2, "{name}");
+            assert_eq!(
+                tints(th.text_muted().into()),
+                TABS.len() - 1 + ACTIVE_ATTENTION.len(),
+                "{name}"
             );
             let caps = ACTIVE_ATTENTION.map(|(cap, _, _)| cap);
             for cap in caps {
