@@ -404,6 +404,34 @@ Already written &amp;amp; and &amp;lt;path&amp;gt; and &amp;#60; show as typed.
 EOF
 check '이미 쓴 엔터티도 적은 글자 그대로 보이게 & 를 바꾼다' "$m" "$w"
 
+cat > "$m" <<'EOF'
+chore: bump version to 9.9.9
+
+See [the guide](https://example.invalid/a "`") then --secs <s> `x`.
+
+[ref]: https://example.invalid/b '`'
+Run <s> `y`.
+
+| Flag ` |
+| --- | --- |
+| <s> ` |
+
+Keep [the guide](https://example.invalid/a) and `--secs <s>` as code.
+EOF
+cat > "$w" <<'EOF'
+See [the guide](https://example.invalid/a "`") then --secs &lt;s&gt; `x`.
+
+[ref]: https://example.invalid/b '`'
+Run &lt;s&gt; `y`.
+
+| Flag ` |
+| --- | --- |
+| &lt;s&gt; ` |
+
+Keep [the guide](https://example.invalid/a) and `--secs <s>` as code.
+EOF
+check '링크 목적지·제목, 참조 정의, 칸 수가 다른 표처럼 스팬 짝이 애매한 블록은 모두 엔터티로' "$m" "$w"
+
 if [ "$failures" -ne 0 ]; then
     echo "실패 $failures 건" >&2
     exit 1

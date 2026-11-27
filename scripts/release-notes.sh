@@ -17,9 +17,68 @@ strip=0
 git log -1 --format=%b "$commit" | awk -v strip="$strip" '
 function blank(s) { return s ~ /^[ \t]*$/ }
 
-# 문단 하나(줄바꿈으로 이은 문자열)에서 코드 스팬 밖의 <, >, & 를 바꾼다.
+# 블록 하나(줄바꿈으로 이은 문자열)를 바꾼다. 스팬 짝이 GitHub 와 어긋날 수 있으면 블록 전체를 엔터티로 바꾼다.
+function render(s, cons,    o) {
+    o = escape_text(s, cons)
+    if (!cons && index(o, "`") && risky(o)) o = escape_text(s, 1)
+    return o
+}
+# 스팬 짝을 GitHub 와 다르게 볼 수 있는 블록인가: 링크 목적지·제목 안의 백틱, 링크 참조 정의 줄,
+# 참조 링크 [글][이름], 판마다 HTML 블록 여부가 다른 태그로 시작하는 줄.
+function risky(o,    n, k, ln, t, j, e, z) {
+    n = split(o, ln, "\n")
+    for (k = 1; k <= n; k++) {
+        t = tolower(ln[k]); sub(/^[ \t]+/, "", t)
+        if (k > 1 && t ~ /^<\/?search([^a-z0-9]|$)/) return 1
+        if (substr(t, 1, 1) == "[" && index(t, "]:")) return 1
+    }
+    if (HAS_DEF && index(o, "][")) return 1
+    j = 0
+    while ((e = index(substr(o, j + 1), "](")) > 0) {
+        j += e + 1
+        z = link_end(o, j)
+        if (z && index(substr(o, j, z - j + 1), "`")) return 1
+    }
+    return 0
+}
+# o 의 j 자리 ( 에서 인라인 링크의 목적지와 제목을 읽어 닫는 ) 의 자리를 낸다. 링크가 아니면 0.
+function link_end(o, j,    n, k, c, depth, q) {
+    n = length(o); k = j + 1
+    while (k <= n && substr(o, k, 1) ~ /[ \t\n]/) k++
+    if (substr(o, k, 1) == "<") {
+        for (k++; k <= n; k++) {
+            c = substr(o, k, 1)
+            if (c == "\\") { k++; continue }
+            if (c == ">") break
+            if (c == "<" || c == "\n") return 0
+        }
+        if (k > n) return 0
+        k++
+    } else {
+        depth = 0
+        for (; k <= n; k++) {
+            c = substr(o, k, 1)
+            if (c == "\\") { k++; continue }
+            if (c == "(") depth++
+            else if (c == ")") { if (depth == 0) break; depth-- }
+            else if (c ~ /[ \t\n]/) break
+        }
+        if (depth) return 0
+    }
+    while (k <= n && substr(o, k, 1) ~ /[ \t\n]/) k++
+    c = substr(o, k, 1)
+    if (c == "\"" || c == "\047" || c == "(") {
+        q = (c == "(") ? ")" : c
+        for (k++; k <= n && substr(o, k, 1) != q; k++) if (substr(o, k, 1) == "\\") k++
+        if (k > n) return 0
+        k++
+        while (k <= n && substr(o, k, 1) ~ /[ \t\n]/) k++
+    }
+    return substr(o, k, 1) == ")" ? k : 0
+}
+# 코드 스팬 밖의 <, >, & 를 바꾼다. all 이면 스팬 안도 바꾼다.
 # 백틱 n 개로 연 스팬은 다음에 오는 정확히 n 개짜리 백틱 열에서 닫힌다. 닫는 열이 없으면 백틱은 글자다.
-function escape_text(p,    out, i, n, c, d, k, j, m, stop) {
+function escape_text(p, all,    out, i, n, c, d, k, j, m, stop) {
     out = ""; i = 1; n = length(p)
     while (i <= n) {
         c = substr(p, i, 1)
@@ -44,7 +103,7 @@ function escape_text(p,    out, i, n, c, d, k, j, m, stop) {
                 if (k - j == m) { stop = k; break }
                 j = k
             }
-            if (stop) { out = out substr(p, i, stop - i); i = stop }
+            if (stop) { out = out (all ? escape_all(substr(p, i, stop - i)) : substr(p, i, stop - i)); i = stop }
             else { out = out substr(p, i, m); i += m }
             continue
         }
@@ -53,16 +112,32 @@ function escape_text(p,    out, i, n, c, d, k, j, m, stop) {
     }
     return out
 }
+function escape_all(t,    out, i) {
+    out = ""
+    for (i = 1; i <= length(t); i++) out = out entity(substr(t, i, 1))
+    return out
+}
+# 표의 칸 수. \| 가 아닌 | 로 나누고 앞뒤의 | 는 세지 않는다. | 가 없으면 0.
+function cells(s,    t, n, i, c, bars) {
+    t = s; sub(/^[ \t]+/, "", t); sub(/[ \t]+$/, "", t)
+    n = 1; bars = 0
+    for (i = 1; i <= length(t); i++) {
+        c = substr(t, i, 1)
+        if (c == "\\") { i++; continue }
+        if (c == "|") { n++; bars++; if (i == 1 || i == length(t)) n-- }
+    }
+    return bars ? n : 0
+}
 # 표의 행은 칸마다 따로 바꾼다. GitHub 는 \| 가 아닌 | 에서 칸을 나누고 코드 스팬은 칸을 넘지 못한다.
 function escape_row(s,    out, cell, i, n, c) {
     out = ""; cell = ""; n = length(s)
     for (i = 1; i <= n; i++) {
         c = substr(s, i, 1)
         if (c == "\\" && i < n) { cell = cell c substr(s, i + 1, 1); i++; continue }
-        if (c == "|") { out = out escape_text(cell) "|"; cell = ""; continue }
+        if (c == "|") { out = out render(cell, 0) "|"; cell = ""; continue }
         cell = cell c
     }
-    return out escape_text(cell)
+    return out render(cell, 0)
 }
 # 문단을 끊을 수 있는 HTML 블록(CommonMark 1~6종)의 시작인가. 태그 이름은 여러 판의 목록을 합쳐 넉넉히 본다.
 function html_start(r,    t, c) {
@@ -101,7 +176,7 @@ function flush(    s, k, n, part) {
     if (np == 0) return
     s = pbody[1]
     for (k = 2; k <= np; k++) s = s "\n" pbody[k]
-    n = split(escape_text(s), part, "\n")
+    n = split(render(s, tcons), part, "\n")
     for (k = 1; k <= np; k++) print phead[k] part[k]
     np = 0
 }
@@ -111,7 +186,8 @@ function para_line(l, p) { np++; phead[np] = head(l, p); pbody[np] = body(l, p);
 
 { line[++count] = $0 }
 END {
-    HTML_TAGS = " address article aside base basefont blockquote body caption center col colgroup dd details dialog dir div dl dt fieldset figcaption figure footer form frame frameset h1 h2 h3 h4 h5 h6 head header hr html iframe legend li link main menu menuitem meta nav noframes ol optgroup option p param pre script search section source style summary table tbody td textarea tfoot th thead title tr track ul "
+    HTML_TAGS = " address article aside base basefont blockquote body caption center col colgroup dd details dialog dir div dl dt fieldset figcaption figure footer form frame frameset h1 h2 h3 h4 h5 h6 head header hr html iframe legend li link main menu menuitem nav noframes ol optgroup option p param pre script section source style summary table tbody td textarea tfoot th thead title tr track ul "
+    for (k = 1; k <= count; k++) if (index(line[k], "]:")) HAS_DEF = 1
     PUNCT = "!\"#$%&\047()*+,-./:;<=>?@[\\]^_`{|}~"
     last = count
     while (last > 0 && blank(line[last])) last--
@@ -216,8 +292,13 @@ END {
                 if (RLENGTH <= 6) { kind = "atx"; break }
             }
             if (para_open && r ~ /^(=+|-+) *$/) { kind = "setext"; break }
-            # 표의 구분 행. 문단의 끝 줄이 머리 행이 된다.
-            if (para_open && r ~ /[|:]/ && r ~ /^\|?( *:?-+:? *\|)* *:?-+:? *\|? *$/) { kind = "table"; break }
+            # 표의 구분 행. 문단의 끝 줄이 머리 행이 된다. GitHub 가 표로 볼지 확실하지 않으면(칸 수가 다르거나,
+            # 머리 행에 | 가 없거나, 구분 행이 목록 표지로 시작하면) 다음 빈 줄까지 블록 전체를 엔터티로 바꾼다.
+            if (para_open && r ~ /[|:]/ && r ~ /^\|?( *:?-+:? *\|)* *:?-+:? *\|? *$/) {
+                if (r !~ /^[-*+] / && cells(pbody[np]) && cells(pbody[np]) == cells(r)) { kind = "table"; break }
+                tcons = 1
+                if (r !~ /^[-*+] /) break
+            }
             t = r; gsub(/ /, "", t)
             if (t ~ /^(---+|\*\*\*+|___+)$/) { kind = "hr"; break }
             if (match(r, /^([-*+]|[0-9]+[.)])( |$)/)) {
@@ -247,7 +328,7 @@ END {
         }
         close_to(matched)
         if (kind == "fence") { end_leaf(); leaf = "fence"; print l; continue }
-        if (kind == "atx") { end_leaf(); print head(l, p) escape_text(body(l, p)); continue }
+        if (kind == "atx") { end_leaf(); print head(l, p) render(body(l, p), 0); continue }
         if (kind == "setext" || kind == "hr") { end_leaf(); print l; continue }
         if (kind == "table") {
             hh = phead[np]; hb = pbody[np]; np--
@@ -257,7 +338,7 @@ END {
             leaf = "table"
             continue
         }
-        if (rest_blank) { end_leaf(); print l; continue }
+        if (rest_blank) { end_leaf(); tcons = 0; print l; continue }
         # 표는 빈 줄이나 다른 블록의 시작에서 끝난다. 들여쓴 줄도 행으로 보고 엔터티로 바꾼다.
         if (leaf == "table") { print head(l, p) escape_row(body(l, p)); continue }
         if (s >= 4 && leaf != "para") { end_leaf(); leaf = "code"; print l; continue }
