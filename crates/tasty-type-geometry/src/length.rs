@@ -187,6 +187,14 @@ impl std::ops::Div<f32> for LogicalPx {
     }
 }
 
+/// 길이 둘의 비. 단위가 없는 수다(예: 높이에 행이 몇 개 들어가는지).
+impl std::ops::Div for LogicalPx {
+    type Output = f32;
+    fn div(self, rhs: Self) -> f32 {
+        self.0 / rhs.0
+    }
+}
+
 impl std::ops::Neg for LogicalPx {
     type Output = Self;
     fn neg(self) -> Self {
@@ -264,6 +272,12 @@ mod tests {
         assert_eq!(DIFF, A - B);
         assert_eq!(QUAD, B * 4.0);
         assert_eq!(PHYS, (PhysicalPx(9.0) + PhysicalPx(1.0)) * 2.0);
+    }
+
+    #[test]
+    fn a_length_over_a_length_is_a_plain_ratio() {
+        let ratio: f32 = LogicalPx(90.0) / LogicalPx(24.0);
+        assert_eq!(ratio, 3.75);
     }
 
     #[test]

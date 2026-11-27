@@ -39,7 +39,7 @@ const EPS: LogicalPx = LogicalPx(0.5);
 impl ListView {
     /// `len` 에 행이 몇 개 들어가는지(소수 포함). 길이 둘의 비라 단위가 없다.
     fn rows_in(&self, len: LogicalPx) -> f32 {
-        len.value() / self.row_h.value()
+        len / self.row_h
     }
 
     /// `index` 행의 위 끝.
