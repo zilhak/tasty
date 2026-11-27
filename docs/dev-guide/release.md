@@ -111,8 +111,8 @@ git push origin release
 ### 4. 커밋 — body 가 곧 릴리스 노트
 
 `release` 브랜치에서 `Cargo.toml` + `Cargo.lock` 을 함께 커밋한다. **커밋 body에 변경 내용을 영어 평문으로 적는다** — 워크플로가 `scripts/release-notes.sh` 로 태그 커밋의 body를 GitHub Release 노트로 만든다.
-스크립트는 `git interpret-trailers` 가 찾은 끝의 트레일러 블록(`Co-Authored-By` 등)을 빼고, 코드 스팬과 코드 펜스 밖의 `<`·`>`·`&` 를 HTML 엔터티로 바꾼다. 그래서 `<s>` 같은 자리표시를 평문으로 적어도 GitHub가 HTML 태그로 읽지 않는다.
-body의 끝 문단이 `Word: text` 꼴의 줄로만 되어 있으면 Git이 트레일러로 보아 노트에서 빠진다. 4칸 들여쓴 줄은 코드로 보지 않으므로 코드는 백틱이나 코드 펜스로 감싼다.
+스크립트는 `git interpret-trailers` 가 찾은 끝의 트레일러 블록에서 트레일러 줄(`Co-Authored-By` 등)을 빼고, 코드 표기(코드 스팬, 코드 펜스, 들여쓴 코드 블록) 밖의 `<`·`>`·`&` 를 HTML 엔터티로 바꾼다. 그래서 `<s>` 같은 자리표시를 평문으로 적어도 GitHub가 HTML 태그로 읽지 않는다.
+body의 끝 문단이 `Word: text` 꼴의 줄로만 되어 있으면 Git이 트레일러로 보아 노트에서 빠진다.
 만들어질 노트는 버전 커밋에서 `bash scripts/release-notes.sh HEAD` 로 미리 본다. 동작은 `scripts/tests/release-notes.sh`(doc-guards `release_notes_script`가 실행)가 확인한다.
 
 ```
@@ -137,7 +137,7 @@ git tag vX.Y.Z          # 'v' 접두사 + Cargo.toml 버전과 정확히 일치 
 git push --atomic origin release main vX.Y.Z
 ```
 
-릴리스 노트는 태그 커밋의 본문이므로 태그는 merge 커밋이 아니라 버전 커밋에 붙인다. `main`에 `release`에 없는 hotfix가 있어 fast-forward가 되지 않으면, 먼저 `main`을 `release`에 역병합하고 그 위에서 §1~§4의 버전 커밋을 다시 만든다. `release.yml`은 태그 커밋이 `origin/main`의 조상이 아니면 실패한다.
+릴리스 노트는 태그 커밋의 본문에서 만들므로 태그는 merge 커밋이 아니라 버전 커밋에 붙인다. `main`에 `release`에 없는 hotfix가 있어 fast-forward가 되지 않으면, 먼저 `main`을 `release`에 역병합하고 그 위에서 §1~§4의 버전 커밋을 다시 만든다. `release.yml`은 태그 커밋이 `origin/main`의 조상이 아니면 실패한다.
 
 이 push 뒤에는 태그로 시작한 release.yml 실행이 끝날 때까지 `develop`·`release`·`main` 어느 브랜치에도 push 하지 않는다. 브랜치 push 의 CI 가 같은 self-hosted 러너(특히 Windows arm64 전용 러너 `tasty-win-arm64`)를 먼저 잡으면 릴리스 빌드가 그만큼 늦게 시작한다. 이 push 에 포함된 `release`·`main` push 도 브랜치 CI 를 시작하므로 태그 실행과 같은 러너를 나눠 쓴다. 두 실행이 겹칠 때의 지연은 미측정이다. 실행이 끝났는지는 `gh run list --workflow=release.yml --limit 1` 의 상태나 `gh run watch <run-id>` 로 확인한다.
 
