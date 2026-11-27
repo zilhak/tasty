@@ -666,6 +666,99 @@ cat > "$w" <<'EOF'
 EOF
 check '머리 행에만 백슬래시가 있는 표도 본문 전체를 엔터티로' "$m" "$w"
 
+# 표 백슬래시 표지는 구분 행 꼴 줄이 있는 블록만 보고, 코드 펜스 안의 줄은 세지 않는다.
+cat > "$m" <<'EOF'
+chore: bump version to 9.9.9
+
+Run the suite and keep the log:
+
+```sh
+cargo test --workspace 2>&1 \
+  | tee test.log
+```
+EOF
+cat > "$w" <<'EOF'
+Run the suite and keep the log:
+
+```sh
+cargo test --workspace 2>&1 \
+  | tee test.log
+```
+EOF
+check '펜스 안 셸 이어 줄과 파이프는 표 표지가 아니다' "$m" "$w"
+
+cat > "$m" <<'EOF'
+chore: bump version to 9.9.9
+
+Paths look like C:\\Users and the line is
+wrapped here
+| and a pipe at the line start.
+
+Run `--secs <s>` as code.
+EOF
+cat > "$w" <<'EOF'
+Paths look like C:\\Users and the line is
+wrapped here
+| and a pipe at the line start.
+
+Run `--secs <s>` as code.
+EOF
+check '구분 행이 없는 블록의 줄 머리 파이프와 백슬래시는 표 표지가 아니다' "$m" "$w"
+
+cat > "$m" <<'EOF'
+chore: bump version to 9.9.9
+
+~~~sh
+printf '%s\n' '<s>' \
+  | sort
+~~~
+EOF
+cat > "$w" <<'EOF'
+~~~sh
+printf '%s\n' '<s>' \
+  | sort
+~~~
+EOF
+check '물결표 펜스 안 셸 예시도 표 표지가 아니다' "$m" "$w"
+
+cat > "$m" <<'EOF'
+chore: bump version to 9.9.9
+
+```text
+a \| b
+--- | ---
+<s>
+```
+EOF
+cat > "$w" <<'EOF'
+```text
+a \| b
+--- | ---
+<s>
+```
+EOF
+check '펜스 안의 구분 행 꼴 줄과 백슬래시는 표 표지가 아니다' "$m" "$w"
+
+cat > "$m" <<'EOF'
+chore: bump version to 9.9.9
+
+ ```
+x
+```
+|a\\|b|
+|-|-|
+2. ```<s>
+EOF
+cat > "$w" <<'EOF'
+ ```
+x
+```
+|a\\|b|
+|-|-|
+2. ```&lt;s&gt;
+EOF
+check '들여쓴 펜스 꼴 줄이 있으면 펜스를 따라가지 않고 모든 줄을 센다' "$m" "$w"
+
 deep="$(printf '1. %.0s' $(seq 100))"
 printf 'chore: bump version to 9.9.9\n\n%s```<s>\n' "$deep" > "$m"
 printf '%s```&lt;s&gt;\n' "$deep" > "$w"
