@@ -112,6 +112,7 @@ git push origin release
 
 `release` 브랜치에서 `Cargo.toml` + `Cargo.lock` 을 함께 커밋한다. **커밋 body에 변경 내용을 영어 평문으로 적는다** — 워크플로가 `scripts/release-notes.sh` 로 태그 커밋의 body를 GitHub Release 노트로 만든다.
 스크립트는 `git interpret-trailers` 가 찾은 끝의 트레일러 블록에서 트레일러 줄(`Co-Authored-By` 등)을 빼고, 코드 표기(코드 스팬, 코드 펜스, 들여쓴 코드 블록) 밖의 `<`·`>`·`&` 를 HTML 엔터티로 바꾼다. 그래서 `<s>` 같은 자리표시를 평문으로 적어도 GitHub가 HTML 태그로 읽지 않는다.
+본문의 `&` 도 적은 글자 그대로 보이므로 `&amp;` 같은 HTML 엔터티를 쓰지 않는다. 쓰면 엔터티 철자가 그대로 보인다.
 body의 끝 문단이 `Word: text` 꼴의 줄로만 되어 있으면 Git이 트레일러로 보아 노트에서 빠진다.
 트레일러 블록은 Git처럼 끝의 `#` 줄과 빈 줄을 건너뛴 마지막 문단이고, `Key:` 줄 바로 뒤의 들여쓴 줄만 그 트레일러의 이어 줄로 함께 빠진다. 판정은 릴리스 러너의 기본 Git 설정을 가정한다(`trailer.separators` 같은 설정은 보지 않는다).
 만들어질 노트는 버전 커밋에서 `bash scripts/release-notes.sh HEAD` 로 미리 본다. 동작은 `scripts/tests/release-notes.sh`(doc-guards `release_notes_script`가 실행)가 확인한다.

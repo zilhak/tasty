@@ -394,6 +394,16 @@ Fix the reported issue.
 EOF
 check 'cherry-pick 줄 뒤의 들여쓴 산문은 이어 줄이 아니므로 남긴다' "$m" "$w"
 
+cat > "$m" <<'EOF'
+chore: bump version to 9.9.9
+
+Already written &amp; and &lt;path&gt; and &#60; show as typed.
+EOF
+cat > "$w" <<'EOF'
+Already written &amp;amp; and &amp;lt;path&amp;gt; and &amp;#60; show as typed.
+EOF
+check '이미 쓴 엔터티도 적은 글자 그대로 보이게 & 를 바꾼다' "$m" "$w"
+
 if [ "$failures" -ne 0 ]; then
     echo "실패 $failures 건" >&2
     exit 1
