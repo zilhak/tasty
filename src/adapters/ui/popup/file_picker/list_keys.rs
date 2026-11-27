@@ -340,31 +340,8 @@ pub(super) fn take_keys(
     if ui.memory(|m| m.any_popup_open()) {
         return Taken::default();
     }
-    // 같은 패스에서 Tab 뒤에 온 키 누름. egui 는 그 Tab 의 포커스 이동을 위젯을 그리면서 반영하므로, 패스 시작에 읽은
-    // 위젯 포커스는 그 누름의 포커스가 아니다.
-    let after_tab: Vec<bool> = ui.input(|i| {
-        let mut tab = false;
-        i.events
-            .iter()
-            .filter_map(|e| match e {
-                egui::Event::Key {
-                    key: egui::Key::Tab,
-                    pressed: true,
-                    ..
-                } => {
-                    tab = true;
-                    None
-                }
-                egui::Event::Key {
-                    key,
-                    pressed: true,
-                    modifiers,
-                    ..
-                } if classify(*modifiers, *key).is_some() => Some(tab),
-                _ => None,
-            })
-            .collect()
-    });
+    // 같은 패스에서 Tab 뒤에 온 키 누름. 패스 시작에 읽은 위젯 포커스는 그 누름의 포커스가 아니다.
+    let after_tab = keys.keymap_presses_after_tab(classify);
     let mut press = 0;
     let mut enter_after_tab = false;
     let confirm = confirm_enabled(p);

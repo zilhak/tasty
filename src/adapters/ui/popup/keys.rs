@@ -380,6 +380,41 @@ impl PopupKeys {
         taken
     }
 
+    /// 노드 키맵 누름마다(`classify` 가 맞추는 누름, 도착 순서) 같은 패스에서 그보다 먼저 Tab 누름이 왔는지. egui 는 Tab
+    /// 의 포커스 이동을 위젯을 그리면서 반영하므로, 그 뒤 누름은 패스 시작에 읽은 위젯 포커스의 누름이 아니다. 지우지
+    /// 않는다.
+    pub(crate) fn keymap_presses_after_tab<T>(
+        &self,
+        classify: impl Fn(egui::Modifiers, egui::Key) -> Option<T>,
+    ) -> Vec<bool> {
+        if !self.receives {
+            return Vec::new();
+        }
+        self.ctx.input(|i| {
+            let mut tab = false;
+            i.events
+                .iter()
+                .filter_map(|e| match e {
+                    egui::Event::Key {
+                        key: egui::Key::Tab,
+                        pressed: true,
+                        ..
+                    } => {
+                        tab = true;
+                        None
+                    }
+                    egui::Event::Key {
+                        key,
+                        pressed: true,
+                        modifiers,
+                        ..
+                    } => classify(*modifiers, *key).map(|_| tab),
+                    _ => None,
+                })
+                .collect()
+        })
+    }
+
     /// 입력에 화살표 누름이 남아 있는지. 노드가 키맵 누름을 가져간 뒤 egui 위젯 몫으로 남은 화살표가 있는지 본다.
     pub(crate) fn has_arrow_press(&self) -> bool {
         self.receives
