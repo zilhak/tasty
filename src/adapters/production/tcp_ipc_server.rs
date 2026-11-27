@@ -33,6 +33,10 @@ mod first_line;
 mod inherit_seam;
 #[cfg(all(test, windows))]
 mod inherit_tests;
+
+/// 시험 이음새(`tasty_utils::socket_inherit::seam`)의 listener 자리 이름.
+#[cfg(all(test, windows))]
+const SEAM_LISTENER: &str = "ipc-server.listener";
 mod response_wait;
 mod stream_writer;
 
@@ -240,6 +244,15 @@ impl TcpIpcServer {
         connections: Arc<ConnectionStats>,
     ) -> Result<Self> {
         let listener = TcpListener::bind("127.0.0.1:0")?;
+        #[cfg(all(test, windows))]
+        tasty_utils::socket_inherit::seam::created(SEAM_LISTENER, &listener, None);
+        // 이 뒤에 std `Command` 로 뜨는 자식이 IPC listener 를 쥐지 않게 한다. 끄지 못해도 서버는 그대로 열고
+        // 경고만 남긴다.
+        if let Err(e) = tasty_utils::socket_inherit::disable_inherit(&listener) {
+            tracing::warn!("IPC server: keeping the listener out of child processes failed: {e}");
+        }
+        #[cfg(all(test, windows))]
+        tasty_utils::socket_inherit::seam::cleared(SEAM_LISTENER, &listener, None);
         let port = listener.local_addr()?.port();
 
         tracing::info!("IPC server listening on 127.0.0.1:{}", port);

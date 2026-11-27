@@ -1,4 +1,4 @@
-//! 서버가 accept한 연결의 소켓과 reader 복제는 상속 플래그가 꺼져 있다(Windows).
+//! 서버 listener, 서버가 accept한 연결의 소켓과 reader 복제는 상속 플래그가 꺼져 있다(Windows).
 //! 실제 accept 루프를 거친다. accept 직후 상속을 일부러 켜서(`inherit_seam`), 루프의 끄는 호출이 빠지거나
 //! 슬롯 분기 뒤로 가거나 그 결과를 버리면 std가 돌려준 값과 상관없이 실패한다.
 
@@ -51,6 +51,22 @@ fn connect(running: &Running) -> TcpStream {
     let client = TcpStream::connect(("127.0.0.1", running.server.port)).expect("connect");
     client.set_read_timeout(Some(WAIT)).expect("read timeout");
     client
+}
+
+/// listener 는 bind 직후 이음새(`tasty_utils::socket_inherit::seam`)가 상속을 켜고, 서버가 끈 뒤의 값을 본다.
+#[test]
+fn the_listener_is_kept_out_of_child_processes() {
+    use tasty_utils::socket_inherit::seam::{self, Scope};
+    let listener_seam = seam::arm(super::SEAM_LISTENER, Scope::Thread);
+    let _running = start();
+    let (created, cleared) = (listener_seam.created(), listener_seam.cleared());
+    assert!(
+        !created.is_empty()
+            && created.iter().all(|seen| seen.inheritable)
+            && !cleared.is_empty()
+            && cleared.iter().all(|seen| !seen.inheritable),
+        "listener set {created:?}, after clearing {cleared:?}"
+    );
 }
 
 #[test]
