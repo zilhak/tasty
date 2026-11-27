@@ -156,7 +156,9 @@ zone 상단에 고정되고 `set_clip_rect(zone)`에 잘리므로 상태바와 �
 |---|--------|---------|------------|
 | 1 | 모달/오버레이(`overlay_open`) | 해당 없음 | 별도 OS 창. rename 다이얼로그는 popup 경로(#2) |
 | 2 | Popup | Foreground | `egui::Area` 등록 |
-| 2 (예외) | `plugin_bridge/popup_render.rs` mesh popup | Foreground | 기본 미등록. host popup과 z-order를 비교할 때 조건부 등록(아래 절) |
+| 2 (예외) | `plugin_bridge/popup_render.rs` mesh popup | Foreground | 펼친 덮지 않는 셸은 기본 미등록. host popup과 z-order를 비교할 때 조건부 등록(아래 절) |
+| 2 (예외) | 덮는 mesh popup의 셸·덮음 막이 | Foreground | 막이는 `egui::Area`. 셸은 Area가 아니지만 host popup이 없어도 처음 그린 패스부터 막이 바로 뒤로 `Areas::order`에 등록(아래 절) |
+| 2 (예외) | 접힌 mesh popup의 보기 버튼 | Foreground | 셸 id로 `egui::Area` 등록(`display::draw_collapsed`). 처음 보이거나 다시 보인 패스에 egui가 이 Area만 올린다 |
 | 2b | Modifier-hint·복원 안내 | Foreground | 팝업 관리자가 `egui::Area` 등록(포커스를 받지 않는 팝업) |
 | 4 | 사이드바·탭바·상태바 | 혼재 | SidePanel은 Background 미등록. 탭바·상태바는 Foreground 등록 |
 | 5 | Banner | Foreground | 등록됨. `enforce_foreground_z_order`가 탭바·상태바 아래로 배치 |
@@ -176,15 +178,26 @@ Background에도 적용되는 것은 아니다. plugin이 자유 위치 오버�
 기본적으로 raw `layer_painter`를 쓴다. 전체 화면 scrim을 등록된 Foreground 위젯보다
 위에 그리기 위해 Area에 등록하지 않는다. 위젯 트리 없이 `collect_mesh_popup_input`이
 raw 이벤트를 plugin으로 전달하므로 host Area의 스크롤·hover 라우팅도 필요하지 않다.
-덮는 팝업은 셸 아래에 덮음 막이 Area를 둔다. 막이는 셸보다 늘 아래이고, `push_popup_layers`
-(`popup_render/cover_layers.rs`)가 이 순서를 지킨다. 덮는 팝업의 셸은 host popup이 없어도 처음
+덮는 팝업은 셸 아래에 덮음 막이 Area를 두고, `push_popup_layers`·`PassLift`
+(`popup_render/cover_layers.rs`)가 막이 < 셸 순서를 맞춘다. 덮는 팝업의 셸은 host popup이 없어도 처음
 그린 패스부터 막이 바로 뒤로 `Areas::order`에 등록된다. 막이 Area가 처음 보이거나 다시 보인 패스,
 누름이 든 패스에는 그 패스의 plugin 레이어를 모두 지금 순서대로 함께 올린다. 함께 올린 레이어끼리는
 순서가 그대로라 막이 < 셸과 plugin popup끼리의 순서가 남는다. 접힌 popup은 셸 id로 보기 버튼 Area를
 띄워 셸이 먼저 순서에 들므로, 덮지 않고 접혀 있던 popup을 펼쳐 덮게 되면 막이가 셸 뒤에 등록된다.
-막이가 셸 뒤에 있는 것을 본 패스에는 그 막이만 빼고 올려 셸 아래로 되돌린다. 펼친 패스에는 egui가 처음
-보인 막이를 스스로 올리므로 순서가 한 패스 틀리고, 다음 패스(그 막이를 누르는 패스면 누름이 없는 다음
-패스)에 바로잡힌다.
+막이가 자기 셸 뒤에 있는 것을 본 패스에는, 이번 패스까지 쌓인 순서 벡터(`Memory::layer_ids`)에서 그 셸
+자리부터 뒤에 있는 plugin 레이어를 그 막이만 빼고 올린다. 셸 앞 레이어와 막이가 제자리라 막이가 셸 바로
+아래로 오고, 펼친 popup이 아래든 위든 다른 popup과의 순서는 그대로다. 한 패스에 막이 하나를 되돌린다.
+
+막이 < 셸이 틀리는 패스는 다음과 같다.
+
+- 펼친 패스. egui가 처음 보인 막이 Area를 스스로 올려, 그 패스에는 되돌릴 수 없다.
+- 되돌릴 패스에 누름이나 다른 막이의 다시 보임이 겹친 패스. 모두 함께 올리는 쪽을 따르고 막이도 함께
+  올리므로 막이가 셸 위에 남는다(막이를 빼고 모두 올리면 막이가 plugin 레이어 맨 아래로 가 다른 popup의
+  셸 아래에 남는다).
+- 막이를 누른 패스. egui가 눌린 Area인 막이를 다시 올린다.
+
+그래서 "다음 패스에 바로잡힌다"는 펼친 다음 패스에 누름·다시 보임·막이 누름이 없을 때만 맞고, 그런 일이
+이어지면 그런 일이 없는 첫 패스에 바로잡힌다.
 
 이 popup을 Area에 등록하려면 상대 순서도 함께 정해야 한다. 등록만 하면 먼저 등록된
 Banner나 상태바보다 아래에 그려질 수 있다.
@@ -202,8 +215,13 @@ host popup을 위에 배치한다. 부모는 아래 묶음에서 이번 패스�
 부모 선택은 이번 패스에 이미 순서에 있는 레이어의 올림 예약(`move_to_top`)을 보지 못한다. 아래 묶음
 일부만 이번 패스에 올라가면(예: host가 아래일 때 host popup 본문을 누른 패스) 벡터 위치로 고른 부모가
 패스 끝 순서의 맨 위가 아닐 수 있어, 그 패스 하나는 위 묶음 일부가 아래 묶음 아래로 갈 수 있다.
-plugin이 아래일 때는 plugin 레이어를 모두 함께 올리므로, 셸 위에 있던 막이를 빼고 올려 되돌리는 패스
-말고는 이 경우가 생기지 않는다.
+plugin이 아래일 때 plugin 레이어 일부만 오르는 패스는 다음 둘이다.
+
+- 막이를 셸 아래로 되돌리는 패스. 셸 자리부터 뒤만 올리고 막이는 제자리라, 벡터 맨 뒤 레이어가 올리지 않은
+  막이면 그 패스 하나는 위 묶음 일부가 plugin 레이어 아래로 간다.
+- 접힌 popup의 보기 버튼 Area가 처음 보이거나 다시 보인 패스. egui가 그 Area만 올리고 `PassLift`는 올림을
+  걸지 않는다. 예: `[A셸(접힘), B막이, B셸, H]`에서 A만 숨었다 다시 보이면 B셸을 부모로 골라
+  `[B막이, B셸, H, A셸]`이 되어, 그 패스 하나는 접힌 A가 host popup H 위에 그려진다.
 자세한 규칙은 [popup.md의 Host ↔ Plugin popup z-order](../design/systems/popup.md#host--plugin-popup-z-order)를 따른다.
 
 ### `overlay_open` — 정의 3 개
