@@ -1244,7 +1244,7 @@ Misc L1 의 두 번째 L2 서브탭 "Task pipeline" — 작업 그래프 report 
 - 목록 머리는 `fp-list-head-pad-y`(4)와 `font-size-micro` 라벨 한 줄, 행은 `fp-row-pad-y`(4)와 아이콘(16)·이름 줄 중 높은 쪽으로 높이가 정해진다. 줄 높이는 디자인 기본 줄 높이 `line-height-ui`(1.4)를 글꼴 크기에 곱한 값이라 행은 4 + 13 × 1.4 + 4 = 26.2다. 글꼴 행 높이로 재지 않으므로 갤러리와 본체의 글꼴 구성이 달라도 높이가 같다.
 - 푸터는 위아래 `fp-footer-pad-y`(8)다. 라벨 폭은 `fp-footer-label-width`(64)다. 필터 칩 높이는 `fp-filter-height`(28), 최대 폭은 `fp-filter-max-width`(160)다.
 
-본체도 목록 머리(NAME/SIZE/MODIFIED)와 선택 행 좌측 bar를 그린다. 열 위치는 행과 목록 머리가 같은 계산(`cols`)을 쓴다. 선택 bar 폭은 `selection-edge-width`, 색은 `accent-primary`다. 헤더 제목은 `font-size-max`(14)에 `strong`이다(egui는 semibold를 고르지 못한다). 필터 칩은 본체와 갤러리가 공용 `tasty_ui_widgets::filter_readout`(`filter_readout_label` · `filter_readout_width`)을 부른다. 호출자 필터가 없으면 칩을 그리지 않고, 이름 칸이 칩 폭과 간격을 뺀 나머지를 갖는다.
+본체도 목록 머리(NAME/SIZE/MODIFIED)와 선택 행 좌측 bar를 그린다. 열 위치는 행과 목록 머리가 같은 계산(`cols`)을 쓴다. 선택 bar 폭은 `selection-edge-width`, 색은 `accent-primary-on-active`다(`file_picker/rows.rs`). 헤더 제목은 `font-size-max`(14)에 `strong`이다(egui는 semibold를 고르지 못한다). 필터 칩은 본체와 갤러리가 공용 `tasty_ui_widgets::filter_readout`(`filter_readout_label` · `filter_readout_width`)을 부른다. 호출자 필터가 없으면 칩을 그리지 않고, 이름 칸이 칩 폭과 간격을 뺀 나머지를 갖는다.
 
 640×480 단일 컴포넌트가 로컬/원격 두 모드를 겸한다 — 차이는 헤더 host indicator 뿐이고,
 브레드크럼 root 는 두 모드 모두 경로의 뿌리(`/` 또는 `C:\`)다. 레이아웃은 불변.
