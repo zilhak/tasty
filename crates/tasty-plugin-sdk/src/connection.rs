@@ -20,6 +20,12 @@ pub(crate) const AUTH_ACK_TIMEOUT: Duration = Duration::from_secs(5);
 /// 정상 메시지 루프에서의 read timeout. `try_recv` 패턴을 흉내내기 위해 짧게.
 const RUN_READ_TIMEOUT: Duration = Duration::from_millis(50);
 
+/// 시험 이음새(`tasty_utils::socket_inherit::seam`)의 자리 이름.
+#[cfg(all(test, windows))]
+const SEAM_CONNECT: &str = "plugin-sdk.connect";
+#[cfg(all(test, windows))]
+const SEAM_WRITER: &str = "plugin-sdk.writer";
+
 pub struct Connection {
     writer: TcpStream,
     reader: BufReader<TcpStream>,
@@ -44,12 +50,20 @@ impl Connection {
                 source,
             }
         })?;
+        #[cfg(all(test, windows))]
+        tasty_utils::socket_inherit::seam::created(SEAM_CONNECT, &stream, None);
+        // 이 뒤에 plugin이 std `Command`로 띄우는 자식이 호스트 연결을 쥐지 않게 한다.
+        tasty_utils::socket_inherit::disable_inherit(&stream)?;
+        #[cfg(all(test, windows))]
+        tasty_utils::socket_inherit::seam::cleared(SEAM_CONNECT, &stream, None);
         // 작은 메시지를 보낼 때의 전송 지연을 줄이기 위해 Nagle을 끈다.
         // 설정 실패는 경고로 남기고 연결을 계속 사용한다.
         if let Err(e) = stream.set_nodelay(true) {
             tracing::warn!("plugin: TCP_NODELAY on the host channel failed: {e}");
         }
-        let writer = stream.try_clone()?;
+        let writer = tasty_utils::socket_inherit::try_clone_uninherited(&stream)?;
+        #[cfg(all(test, windows))]
+        tasty_utils::socket_inherit::seam::cleared(SEAM_WRITER, &writer, None);
         Ok(Self {
             reader: BufReader::new(stream),
             writer,
@@ -456,5 +470,40 @@ mod tests {
             "expected Json error, got {err:?}"
         );
         handle.join().expect("fake host thread");
+    }
+
+    /// 호스트 연결 원본(이음새가 연결 직후 상속을 일부러 켠다)과 writer 복제(복제 이음새가 끄기 전에
+    /// 켠다)는 끈 뒤 상속 플래그가 꺼져 있다. 끄는 호출이 빠지거나 평범한 `try_clone()` 으로 돌아가면
+    /// std 가 돌려준 값과 상관없이 실패한다.
+    #[cfg(windows)]
+    #[test]
+    fn the_host_channel_sockets_are_not_inheritable() {
+        use tasty_utils::socket_inherit::is_inheritable;
+        use tasty_utils::socket_inherit::seam::{self, CLONE, Scope, Seen};
+        let set_then_cleared = |created: &[Seen], cleared: &[Seen]| {
+            !created.is_empty()
+                && created.iter().all(|seen| seen.inheritable)
+                && !cleared.is_empty()
+                && cleared.iter().all(|seen| !seen.inheritable)
+        };
+        let connect_seam = seam::arm(SEAM_CONNECT, Scope::Thread);
+        let clone_seam = seam::arm(CLONE, Scope::Thread);
+        let writer_seam = seam::arm(SEAM_WRITER, Scope::Thread);
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let port = listener.local_addr().expect("addr").port();
+        let conn = Connection::connect(&env_for(port)).expect("connect");
+        let (_host, _) = listener.accept().expect("accept");
+        let reader = is_inheritable(conn.reader.get_ref()).expect("reader");
+        let writer = is_inheritable(&conn.writer).expect("writer");
+        let connect_seen = (connect_seam.created(), connect_seam.cleared());
+        let writer_seen = (clone_seam.created(), writer_seam.cleared());
+        assert!(
+            !reader
+                && !writer
+                && set_then_cleared(&connect_seen.0, &connect_seen.1)
+                && set_then_cleared(&writer_seen.0, &writer_seen.1),
+            "reader {reader}, writer {writer}, connect {connect_seen:?}, \
+             writer (clone seam, cleared) {writer_seen:?}"
+        );
     }
 }

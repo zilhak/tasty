@@ -42,6 +42,8 @@ windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Storage
 
 [dev-dependencies]
 tempfile = "3"
+# Windows 상속 시험이 연결 자리의 이음새(socket_inherit::seam)를 켠다.
+tasty-utils = { path = "../tasty-utils", features = ["test-support"] }
 # egui-mesh 배너 시험이 공용 위젯을 실제 Theme 으로 그린다.
 tasty-themes = { path = "../tasty-themes" }
 tasty-type-appearance = { path = "../tasty-type-appearance" }
