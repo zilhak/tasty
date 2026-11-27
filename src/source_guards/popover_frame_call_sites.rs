@@ -6,8 +6,9 @@
 //! 주석을 가린 본체·크레이트 소스에서 네 진입 호출을 찾고, 바로 앞 코드가 래퍼 호출의 `|ui| {` 클로저
 //! 시작인지 텍스트로 확인한다. 래퍼를 다른 함수로 한 번 더 감싼 호출, `Frame::popup`을 직접 그리는 경로,
 //! egui 진입 호출을 `use`로 줄여 부른 형태, `as` 별칭으로 바꾼 이름은 보지 않는다. tasty 도우미
-//! `popup_below_widget_unfocused`는 경로 없이 부른 호출도 센다(정의 `fn` 과 다른 이름의 꼬리는 빼고, 앞에 붙은
-//! 경로까지 포함해 래퍼 클로저의 첫 식인지 본다).
+//! `popup_below_widget_unfocused`는 이름 뒤가 `(` 나 turbofish `::<` 인 호출을 경로 유무와 관계없이 센다(정의 `fn` 과
+//! 다른 이름의 꼬리는 빼고, 맨 앞 `::` 까지 붙은 경로를 포함해 래퍼 클로저의 첫 식인지 본다). 이 도우미를 `as` 로
+//! 다른 이름에 가져오면 그 이름의 호출을 셀 수 없으므로 별칭 가져오기 자체를 실패로 막는다.
 //!
 //! 열린 ComboBox 목록의 행은 공용 옵션 행(`menu_option` · `menu_option_value`)으로 그린다. egui 기본
 //! 선택 행(`selectable_value` · `selectable_label`)은 현재 값을 accent 채움으로 칠하므로 디자인의 선택
@@ -26,8 +27,9 @@ const ENTRIES: &[&str] = &[
     "egui::popup::popup_above_or_below_widget(",
     "egui::ComboBox::from_id_salt(",
 ];
-/// 경로 없이도 세는 진입 이름. `use` 로 가져와 짧은 이름으로 부른 호출이 래퍼 밖에 있으면 걸린다.
-const NAMED_ENTRIES: &[&str] = &["popup_below_widget_unfocused("];
+/// 경로 없이도 세는 진입 이름. `use` 로 가져와 짧은 이름으로 부른 호출이 래퍼 밖에 있으면 걸린다. 이름 뒤가
+/// `(` 또는 turbofish `::<` 이면 호출이다.
+const NAMED_ENTRIES: &[&str] = &["popup_below_widget_unfocused"];
 /// 기본 둘레 래퍼와 둘레를 받는 래퍼. 어느 쪽이든 메뉴 틀을 정한다.
 const WRAPPERS: &[&str] = &["with_popover_frame(", "with_popover_frame_ring("];
 const GUARD_DIR: &str = "src/source_guards/";
@@ -48,7 +50,7 @@ fn opened_inside_the_wrapper(code: &str, at: usize) -> bool {
     })
 }
 
-/// `at` 의 이름 앞에 붙은 경로(`a::b::`)의 시작.
+/// `at` 의 이름 앞에 붙은 경로(`a::b::`, 맨 앞 `::` 포함)의 시작.
 fn path_start(code: &str, at: usize) -> usize {
     let mut start = at;
     while let Some(head) = code[..start].strip_suffix("::") {
@@ -59,11 +61,34 @@ fn path_start(code: &str, at: usize) -> usize {
             .map(char::len_utf8)
             .sum();
         if ident == 0 {
-            break;
+            return head.len();
         }
         start = head.len() - ident;
     }
     start
+}
+
+/// `code` 에서 이름 `name` 이 따로 선 자리(앞이 식별자 글자가 아니다)와 그 뒤 꼬리.
+fn named_at<'c>(code: &'c str, name: &str) -> impl Iterator<Item = (usize, &'c str)> {
+    code.match_indices(name).filter_map(move |(at, _)| {
+        let named = !code[..at].chars().next_back().is_some_and(is_ident);
+        named.then(|| (at, &code[at + name.len()..]))
+    })
+}
+
+/// 진입 이름을 `as` 로 다른 이름에 가져온 줄 번호. 그 이름의 호출은 세지 못하므로 가져오기를 막는다.
+fn aliased_imports(src: &str) -> Vec<usize> {
+    let code = tasty_doc_guards::source_text::mask_comments_aligned(src);
+    NAMED_ENTRIES
+        .iter()
+        .flat_map(|name| named_at(&code, name))
+        .filter(|(_, tail)| {
+            tail.trim_start()
+                .strip_prefix("as")
+                .is_some_and(|rest| rest.starts_with(char::is_whitespace))
+        })
+        .map(|(at, _)| code[..at].matches('\n').count() + 1)
+        .collect()
 }
 
 /// 감싸지 않은 진입 호출의 줄 번호와 검사한 진입 호출 수.
@@ -74,10 +99,10 @@ fn judge(src: &str) -> (Vec<usize>, usize) {
         .flat_map(|entry| code.match_indices(entry).map(|(at, _)| at))
         .collect();
     for name in NAMED_ENTRIES {
-        sites.extend(code.match_indices(name).filter_map(|(at, _)| {
-            let named = !code[..at].chars().next_back().is_some_and(is_ident);
+        sites.extend(named_at(&code, name).filter_map(|(at, tail)| {
+            let call = tail.starts_with('(') || tail.starts_with("::<");
             let start = path_start(&code, at);
-            (named && !code[..start].trim_end().ends_with("fn")).then_some(start)
+            (call && !code[..start].trim_end().ends_with("fn")).then_some(start)
         }));
     }
     let bare = sites
@@ -91,6 +116,7 @@ fn judge(src: &str) -> (Vec<usize>, usize) {
 #[test]
 fn every_button_popover_opens_inside_the_menu_frame_wrapper() {
     let mut bare = Vec::new();
+    let mut aliased = Vec::new();
     let mut seen = 0;
     for (rel, src) in rust_sources() {
         let rel = rel.to_string_lossy().replace('\\', "/");
@@ -100,7 +126,18 @@ fn every_button_popover_opens_inside_the_menu_frame_wrapper() {
         let (lines, n) = judge(&src);
         seen += n;
         bare.extend(lines.into_iter().map(|l| format!("{rel}:{l}")));
+        aliased.extend(
+            aliased_imports(&src)
+                .into_iter()
+                .map(|l| format!("{rel}:{l}")),
+        );
     }
+    assert!(
+        aliased.is_empty(),
+        "`popup_below_widget_unfocused` 를 `as` 로 다른 이름에 가져왔다. 이 검사는 그 이름의 호출을 세지 못하므로 \
+         원래 이름으로 부른다:\n{}",
+        aliased.join("\n")
+    );
     assert!(
         seen >= MIN_SITES,
         "팝오버 진입 호출을 {seen}곳만 찾았다(하한 {MIN_SITES}). 순회 범위와 진입 문자열을 확인한다."
@@ -143,9 +180,25 @@ fn the_judge_counts_the_unfocused_popup_helper_by_its_bare_name() {
     // `use` 로 줄여 래퍼 밖에서 부르면 걸린다.
     let bare = "use tasty_egui_theme::popup_below_widget_unfocused;\nlet x = 1;\npopup_below_widget_unfocused(ui, id, &r, c, |ui| {});";
     assert_eq!(judge(bare), (vec![3], 1));
-    // 정의와 다른 이름의 꼬리는 호출이 아니다.
-    let defs = "pub fn popup_below_widget_unfocused<R>(\n) {}\nfn popup_below_widget_unfocused(\n) {}\nmy_popup_below_widget_unfocused(ui);";
+    // 정의와 다른 이름의 꼬리, 호출이 아닌 가져오기는 호출이 아니다.
+    let defs = "pub fn popup_below_widget_unfocused<R>(\n) {}\nfn popup_below_widget_unfocused(\n) {}\nmy_popup_below_widget_unfocused(ui);\nuse tasty_egui_theme::popup_below_widget_unfocused;";
     assert_eq!(judge(defs), (vec![], 0));
+    // turbofish 호출도 센다. 래퍼 밖이면 걸리고 래퍼 첫 식이면 통과한다.
+    let turbofish = "let x = 1;\npopup_below_widget_unfocused::<()>(ui, id, &r, c, |ui| {});";
+    assert_eq!(judge(turbofish), (vec![2], 1));
+    let wrapped_turbofish = "with_popover_frame(ui, th, |ui| {\n    tasty_egui_theme::popup_below_widget_unfocused::<()>(ui, id, &r, c, |ui| {})\n});";
+    assert_eq!(judge(wrapped_turbofish), (vec![], 1));
+    // 맨 앞 `::` 로 시작하는 경로도 래퍼 첫 식이다.
+    let rooted = "with_popover_frame(ui, th, |ui| {\n    ::tasty_egui_theme::popup_below_widget_unfocused(ui, id, &r, c, |ui| {})\n});";
+    assert_eq!(judge(rooted), (vec![], 1));
+}
+
+#[test]
+fn the_guard_rejects_an_aliased_import_of_the_unfocused_popup_helper() {
+    let aliased = "use tasty_egui_theme::popup_below_widget_unfocused as open_chooser;\nuse tasty_egui_theme::{\n    popup_below_widget_unfocused\n        as other,\n};";
+    assert_eq!(aliased_imports(aliased), vec![1, 3]);
+    let plain = "use tasty_egui_theme::popup_below_widget_unfocused;\nlet asked = popup_below_widget_unfocused(ui, id, &r, c, |ui| {});\n// use x::popup_below_widget_unfocused as y;";
+    assert_eq!(aliased_imports(plain), Vec::<usize>::new());
 }
 
 /// egui 기본 선택 행. 열린 ComboBox 목록 안에서는 쓰지 않는다.
