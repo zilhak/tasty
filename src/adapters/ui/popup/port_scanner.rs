@@ -1264,7 +1264,7 @@ fn draw_column_chooser(
                 ui.set_min_width(th.port_columns_menu_min_width().value());
                 ui.label(
                     egui::RichText::new(props.label_columns_menu_title)
-                        .color(th.text_muted())
+                        .color(th.text_muted_raised())
                         .size(th.font_size_caption.value())
                         .strong(),
                 );
@@ -3678,5 +3678,90 @@ mod tests {
         );
         escape_frame(&ctx, &mut state, &read);
         assert!(!scanner_open(&state, iid), "둘째 Esc 에 스캐너가 닫힌다");
+    }
+
+    /// 본문을 `events` 한 프레임으로 그리고 그 프레임의 평탄화한 도형을 돌려준다.
+    fn view_frame(
+        ctx: &egui::Context,
+        theme: &Theme,
+        events: Vec<egui::Event>,
+    ) -> Vec<egui::epaint::Shape> {
+        let rows = [dummy_row(8080)];
+        let full = ctx.run(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(720.0, 480.0),
+                )),
+                events,
+                ..Default::default()
+            },
+            |ctx| {
+                egui::CentralPanel::default()
+                    .frame(egui::Frame::NONE)
+                    .show(ctx, |ui| {
+                        let view_state = PortScannerViewState::Ready {
+                            rows: &rows,
+                            total: rows.len(),
+                            listening: rows.len(),
+                        };
+                        draw_port_scanner_view(ui, &i18n_props(theme, view_state));
+                    });
+            },
+        );
+        let mut shapes = Vec::new();
+        for clipped in full.shapes {
+            flatten_shape(clipped.shape, &mut shapes);
+        }
+        shapes
+    }
+
+    /// 열 선택기 제목은 raised 메뉴 위라 text_muted_raised 로 칠한다(Mocha·Latte).
+    #[test]
+    fn the_column_chooser_title_is_text_muted_raised() {
+        let file = tasty_themes::ThemeFile::parse(tasty_themes::LATTE_TOML_TEXT).expect("latte");
+        let (partial, is_light) = file.to_partial();
+        let mut colors = tasty_themes::mocha_fallback_colors();
+        colors.apply_partial(&partial);
+        let latte = Theme::with_colors(colors, is_light.unwrap_or(true));
+        for (name, theme) in [("mocha", test_theme()), ("latte", latte)] {
+            let ctx = egui::Context::default();
+            view_frame(&ctx, &theme, Vec::new());
+            let texts = {
+                let shapes = view_frame(&ctx, &theme, Vec::new());
+                shapes
+                    .into_iter()
+                    .filter_map(|s| match s {
+                        egui::epaint::Shape::Text(t) => Some((
+                            t.galley.text().to_owned(),
+                            egui::Rect::from_min_size(t.pos, t.galley.size()),
+                        )),
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>()
+            };
+            let ids = header_ids(&ctx, &texts);
+            let at = ctx
+                .viewport(|vp| vp.prev_pass.widgets.get(ids.columns).map(|w| w.rect))
+                .expect("Columns 버튼 영역")
+                .center();
+            let button = |pressed| egui::Event::PointerButton {
+                pos: at,
+                button: egui::PointerButton::Primary,
+                pressed,
+                modifiers: egui::Modifiers::NONE,
+            };
+            view_frame(&ctx, &theme, vec![egui::Event::PointerMoved(at)]);
+            view_frame(&ctx, &theme, vec![button(true)]);
+            view_frame(&ctx, &theme, vec![button(false)]);
+            let shapes = view_frame(&ctx, &theme, Vec::new());
+            let title = text_shape(&shapes, t("port_scanner.columns_menu_title"));
+            let ink = title.galley.job.sections[0].format.color;
+            assert_eq!(
+                ink,
+                theme.text_muted_raised().to_egui(),
+                "{name}: 열 선택기 제목 잉크가 text_muted_raised 가 아니다"
+            );
+        }
     }
 }
