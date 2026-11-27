@@ -21,8 +21,8 @@ use crate::theme::Theme;
 use tasty_portscan::PortState;
 use tasty_ui_widgets::tokens::{STRUCT_GAP_1, STRUCT_GAP_2, STRUCT_GAP_4, TAG_PILL_CORNER_RADIUS};
 use tasty_ui_widgets::{
-    Button, ButtonVariant, IconButton, IconButtonVariant, Input, PortsColumn, StatusKind,
-    TableAlign, TableColumn, TableColumnWidth, TableSortDir, checkbox, hspace,
+    Button, ButtonVariant, ControlSize, IconButton, IconButtonVariant, Input, PortsColumn,
+    StatusKind, TableAlign, TableColumn, TableColumnWidth, TableSortDir, checkbox, hspace,
     in_selected_table_row, margin_sym, ports_favorite_detail_and_state, ports_process_cell,
     ports_star_column_width, ports_table, status_dot, table_cell_ink, vspace,
 };
@@ -1124,35 +1124,49 @@ fn draw_header_count_tag(ui: &mut egui::Ui, th: &Theme, text: &str) {
 }
 
 /// 1줄 헤더: 좌측 포트 아이콘 + heading + accent count Tag, 우측 search +
-/// Refresh + close.
+/// Columns + Refresh + close.
+///
+/// 오른쪽 묶음은 크기를 지키며 먼저 줄 오른쪽 끝에 자리를 잡고, 왼쪽에서 오른쪽 순서로 만든다(Tab 순서가
+/// 화면 순서와 같다). 왼쪽 묶음은 남은 폭에 잘라 그려 좁은 창에서 끝이 잘린다.
 fn draw_header_row(ui: &mut egui::Ui, props: &PortScannerProps<'_>) -> Option<PortScannerAction> {
     let th = props.theme;
     let mut out: Option<PortScannerAction> = None;
     // 헤더 글자 선택이 창 드래그를 막지 않도록 헤더 안에서만 텍스트 선택을 끈다.
     ui.style_mut().interaction.selectable_labels = false;
-    ui.horizontal(|ui| {
-        ui.add(icons::PORT.image(th.icon_glyph_size_md.value(), th.text_muted().into()));
-        ui.label(
-            egui::RichText::new(props.label_heading)
-                .color(th.text_primary())
-                .size(th.font_size_max.value())
-                .strong(),
-        );
-        if let Some(tag) = header_tag_text(props) {
-            draw_header_count_tag(ui, th, &tag);
-        }
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if IconButton::new()
-                .variant(IconButtonVariant::Ghost)
-                .show(ui, th, &|ui, rect, c| {
-                    icons::CLOSE
-                        .image(th.icon_glyph_size_md.value(), c)
+    let gap = ui.spacing().item_spacing.x;
+    let filter_width = 200.0;
+    let button_side = ControlSize::Md.height(th);
+    let cluster_width = filter_width + 3.0 * (gap + button_side);
+    let row_height = th.input_height().value().max(button_side);
+    let (row, _) = ui.allocate_exact_size(
+        egui::vec2(ui.available_width(), row_height),
+        egui::Sense::hover(),
+    );
+    let cluster =
+        egui::Rect::from_min_max(egui::pos2(row.right() - cluster_width, row.top()), row.max);
+    let left = egui::Rect::from_min_max(
+        row.min,
+        egui::pos2((cluster.left() - gap).max(row.left()), row.bottom()),
+    );
+    let row_layout = egui::Layout::left_to_right(egui::Align::Center);
+    ui.scope_builder(
+        egui::UiBuilder::new().max_rect(cluster).layout(row_layout),
+        |ui| {
+            let mut buf = props.filter.query.to_string();
+            let resp = Input::new()
+                .placeholder(props.label_search_placeholder)
+                .width(filter_width)
+                .icon(&|ui, rect, c| {
+                    icons::SEARCH
+                        .image(th.icon_glyph_size_row_action.value(), c)
                         .paint_at(ui, rect)
                 })
-                .on_hover_text(props.label_close)
-                .clicked()
-            {
-                out = Some(PortScannerAction::Close);
+                .show(ui, th, &mut buf);
+            if resp.changed() && buf != props.filter.query {
+                out = Some(PortScannerAction::SetQuery(buf));
+            }
+            if let Some(a) = draw_column_chooser(ui, props) {
+                out = Some(a);
             }
             if IconButton::new()
                 .variant(IconButtonVariant::Ghost)
@@ -1166,24 +1180,36 @@ fn draw_header_row(ui: &mut egui::Ui, props: &PortScannerProps<'_>) -> Option<Po
             {
                 out = Some(PortScannerAction::Refresh);
             }
-            if let Some(a) = draw_column_chooser(ui, props) {
-                out = Some(a);
-            }
-            let mut buf = props.filter.query.to_string();
-            let resp = Input::new()
-                .placeholder(props.label_search_placeholder)
-                .width(200.0)
-                .icon(&|ui, rect, c| {
-                    icons::SEARCH
-                        .image(th.icon_glyph_size_row_action.value(), c)
+            if IconButton::new()
+                .variant(IconButtonVariant::Ghost)
+                .show(ui, th, &|ui, rect, c| {
+                    icons::CLOSE
+                        .image(th.icon_glyph_size_md.value(), c)
                         .paint_at(ui, rect)
                 })
-                .show(ui, th, &mut buf);
-            if resp.changed() && buf != props.filter.query {
-                out = Some(PortScannerAction::SetQuery(buf));
+                .on_hover_text(props.label_close)
+                .clicked()
+            {
+                out = Some(PortScannerAction::Close);
             }
-        });
-    });
+        },
+    );
+    ui.scope_builder(
+        egui::UiBuilder::new().max_rect(left).layout(row_layout),
+        |ui| {
+            ui.set_clip_rect(left.intersect(ui.clip_rect()));
+            ui.add(icons::PORT.image(th.icon_glyph_size_md.value(), th.text_muted().into()));
+            ui.label(
+                egui::RichText::new(props.label_heading)
+                    .color(th.text_primary())
+                    .size(th.font_size_max.value())
+                    .strong(),
+            );
+            if let Some(tag) = header_tag_text(props) {
+                draw_header_count_tag(ui, th, &tag);
+            }
+        },
+    );
     out
 }
 
@@ -3208,6 +3234,211 @@ mod tests {
                 theme.glyph_dim().to_egui(),
                 "{name}: 빈 즐겨찾기 별 {rect:?} 의 tint 가 glyph_dim 이 아니다"
             );
+        }
+    }
+
+    // ---- 좁은 폭 머리(오른쪽 묶음 먼저, 왼쪽 묶음 clip). 문구는 i18n 으로 읽는다. ----
+
+    /// 머리와 선택기가 쓰는 문구를 i18n 값으로 바꾼 props.
+    fn i18n_props<'a>(
+        theme: &'a Theme,
+        view_state: PortScannerViewState<'a>,
+    ) -> PortScannerProps<'a> {
+        crate::i18n::init("en");
+        PortScannerProps {
+            label_heading: t("port_scanner.heading"),
+            label_search_placeholder: t("port_scanner.search_placeholder"),
+            label_header_tag_scanning: t("port_scanner.header_tag_scanning"),
+            label_header_tag_count: t("port_scanner.header_tag_count"),
+            label_close: t("port_scanner.close"),
+            label_refresh: t("port_scanner.refresh"),
+            label_columns_button: t("port_scanner.columns_button"),
+            label_columns_menu_title: t("port_scanner.columns_menu_title"),
+            label_column_port: t("port_scanner.column_port"),
+            label_column_proto: t("port_scanner.column_proto"),
+            label_column_address: t("port_scanner.column_address"),
+            label_column_process: t("port_scanner.column_process"),
+            label_column_workspace: t("port_scanner.column_workspace"),
+            label_column_tab: t("port_scanner.column_tab"),
+            label_column_state: t("port_scanner.column_state"),
+            ..default_props(theme, view_state, "", false)
+        }
+    }
+
+    /// 너비 `width` 화면에 본문을 세 번 그린 마지막 프레임의 도형(잘림 사각형과 함께). 아이콘은 SVG 그림이라
+    /// 로더를 깐다.
+    fn painted_header_at(theme: &Theme, width: f32) -> Vec<(egui::Rect, egui::epaint::Shape)> {
+        let ctx = egui::Context::default();
+        egui_extras::install_image_loaders(&ctx);
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(width, 480.0));
+        let rows = [dummy_row(8080)];
+        let mut shapes = Vec::new();
+        for _ in 0..3 {
+            let full = ctx.run(
+                egui::RawInput {
+                    screen_rect: Some(screen),
+                    ..Default::default()
+                },
+                |ctx| {
+                    egui::CentralPanel::default()
+                        .frame(egui::Frame::NONE)
+                        .show(ctx, |ui| {
+                            let view_state = PortScannerViewState::Ready {
+                                rows: &rows,
+                                total: rows.len(),
+                                listening: rows.len(),
+                            };
+                            draw_port_scanner_view(ui, &i18n_props(theme, view_state));
+                        });
+                },
+            );
+            shapes.clear();
+            for clipped in full.shapes {
+                let mut flat = Vec::new();
+                flatten_shape(clipped.shape, &mut flat);
+                shapes.extend(flat.into_iter().map(|s| (clipped.clip_rect, s)));
+            }
+        }
+        shapes
+    }
+
+    /// 머리 요소의 그린 영역. 왼쪽 묶음은 잘림 사각형과 겹친 보이는 부분이다.
+    struct HeaderRects {
+        filter: egui::Rect,
+        buttons: Vec<egui::Rect>,
+        left: Vec<(&'static str, egui::Rect)>,
+        heading_drawn: egui::Rect,
+        heading_visible: egui::Rect,
+    }
+
+    fn header_rects(theme: &Theme, width: f32) -> HeaderRects {
+        let shapes = painted_header_at(theme, width);
+        let text = |wanted: &str| {
+            shapes
+                .iter()
+                .find_map(|(clip, s)| match s {
+                    egui::epaint::Shape::Text(t) if t.galley.text() == wanted => {
+                        Some((*clip, t.visual_bounding_rect()))
+                    }
+                    _ => None,
+                })
+                .unwrap_or_else(|| panic!("{width}: `{wanted}` 글자 도형이 없다"))
+        };
+        let (_, placeholder) = text(t("port_scanner.search_placeholder"));
+        let filter = shapes
+            .iter()
+            .filter_map(|(_, s)| match s {
+                egui::epaint::Shape::Rect(r)
+                    if r.stroke.width > 0.0 && r.rect.contains_rect(placeholder) =>
+                {
+                    Some(r.rect)
+                }
+                _ => None,
+            })
+            .min_by(|a, b| a.area().total_cmp(&b.area()))
+            .unwrap_or_else(|| panic!("{width}: 필터 칸 테두리가 없다"));
+        let glyph = theme.icon_glyph_size_md.value();
+        let in_row = |r: &egui::Rect| r.center().y > filter.top() && r.center().y < filter.bottom();
+        let mut icons: Vec<(egui::Rect, egui::Rect)> = shapes
+            .iter()
+            .filter_map(|(clip, s)| match s {
+                egui::epaint::Shape::Mesh(m) => Some((*clip, m.calc_bounds())),
+                egui::epaint::Shape::Rect(r) if r.brush.is_some() => Some((*clip, r.rect)),
+                _ => None,
+            })
+            .filter(|(_, r)| (r.width() - glyph).abs() < 0.5 && in_row(r))
+            .collect();
+        icons.sort_by(|a, b| a.1.left().total_cmp(&b.1.left()));
+        let buttons: Vec<egui::Rect> = icons
+            .iter()
+            .filter(|(_, r)| r.left() >= filter.right())
+            .map(|(_, r)| *r)
+            .collect();
+        let (port_clip, port_icon) = *icons
+            .first()
+            .filter(|(_, r)| r.left() < filter.left())
+            .unwrap_or_else(|| panic!("{width}: 포트 아이콘이 없다"));
+        let (heading_clip, heading_drawn) = text(t("port_scanner.heading"));
+        let count = t("port_scanner.header_tag_count").replace("{n}", "1");
+        let (count_clip, count_rect) = text(&count);
+        let pill = shapes
+            .iter()
+            .find_map(|(clip, s)| match s {
+                egui::epaint::Shape::Rect(r)
+                    if r.fill == theme.accent_primary().to_egui()
+                        && r.rect.contains_rect(count_rect) =>
+                {
+                    Some((*clip, r.rect))
+                }
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("{width}: 개수 Tag 바탕이 없다"));
+        let heading_visible = heading_drawn.intersect(heading_clip);
+        let left = vec![
+            ("port icon", port_icon.intersect(port_clip)),
+            ("heading", heading_visible),
+            ("count", count_rect.intersect(count_clip)),
+            ("count pill", pill.1.intersect(pill.0)),
+        ];
+        HeaderRects {
+            filter,
+            buttons,
+            left,
+            heading_drawn,
+            heading_visible,
+        }
+    }
+
+    fn overlaps(a: egui::Rect, b: egui::Rect) -> bool {
+        let i = a.intersect(b);
+        i.width() > 0.0 && i.height() > 0.0
+    }
+
+    /// 폭 390·480 에서 머리 요소의 그린 영역이 서로 겹치지 않는다. 오른쪽 묶음(필터 200·Columns·Refresh·Close)은
+    /// 크기를 지키고, 왼쪽 묶음(아이콘·제목·개수)은 남은 폭에서 끝이 잘린다. 넓은 폭에서는 잘리지 않는다.
+    #[test]
+    fn the_narrow_header_keeps_the_right_cluster_and_clips_the_left_group() {
+        let theme = test_theme();
+        for width in [390.0, 480.0, 660.0] {
+            let h = header_rects(&theme, width);
+            assert_eq!(
+                h.buttons.len(),
+                3,
+                "{width}: 필터 오른쪽 아이콘 버튼이 셋이 아니다"
+            );
+            assert!(
+                (h.filter.width() - 200.0).abs() < 0.5,
+                "{width}: 필터 폭 {} 이 200 이 아니다",
+                h.filter.width()
+            );
+            let mut right = vec![h.filter];
+            right.extend(h.buttons.iter().copied());
+            for (i, a) in right.iter().enumerate() {
+                for b in &right[i + 1..] {
+                    assert!(
+                        !overlaps(*a, *b),
+                        "{width}: 오른쪽 묶음 {a:?} 와 {b:?} 가 겹친다"
+                    );
+                }
+            }
+            for (name, rect) in &h.left {
+                for r in &right {
+                    assert!(
+                        !overlaps(*rect, *r),
+                        "{width}: 왼쪽 묶음 {name} {rect:?} 가 오른쪽 묶음 {r:?} 와 겹친다"
+                    );
+                }
+            }
+            let cut = h.heading_visible.width() < h.heading_drawn.width() - 0.5;
+            if width < 400.0 {
+                assert!(
+                    cut,
+                    "{width}: 제목이 잘리지 않았다(이 폭은 잘리는 경우를 잰다)"
+                );
+            }
+            if width > 600.0 {
+                assert!(!cut, "{width}: 넓은 폭에서 제목이 잘렸다");
+            }
         }
     }
 }
