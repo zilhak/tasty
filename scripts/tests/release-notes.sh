@@ -505,6 +505,27 @@ Fetch `https://example.invalid/?a=1&b=2` or `www.example.invalid/?c=3&d=4` then 
 EOF
 check '코드 스팬 안의 URL 은 자동 링크로 보지 않아 스팬이 그대로' "$m" "$w"
 
+cat > "$m" <<'EOF'
+chore: bump version to 9.9.9
+
+Fix the reported issue <s>.
+
+Signed-off-by: Fixture <fixture@example.invalid>
+# ------------------------ >8 ------------------------
+Co-Authored-By: Someone <someone@example.invalid>
+EOF
+cat > "$w" <<'EOF'
+Fix the reported issue &lt;s&gt;.
+
+# ------------------------ &gt;8 ------------------------
+Co-Authored-By: Someone &lt;someone@example.invalid&gt;
+EOF
+check '가위 줄 앞의 트레일러만 빼고, Git 이 보지 않는 가위 줄 아래는 남긴다' "$m" "$w"
+
+printf 'chore: bump version to 9.9.9\n\nFix the reported issue <s>.\n\nSigned-off-by: Fixture <fixture@example.invalid>\n\nConflicts:\n\tsrc/a <b>.rs\n' > "$m"
+printf 'Fix the reported issue &lt;s&gt;.\n\nConflicts:\n\tsrc/a &lt;b&gt;.rs\n' > "$w"
+check '끝의 Conflicts: 꼬리를 건너뛴 앞 문단의 트레일러만 뺀다' "$m" "$w"
+
 if [ "$failures" -ne 0 ]; then
     echo "실패 $failures 건" >&2
     exit 1
