@@ -233,6 +233,11 @@ pub const TINT_FILL_ALPHA: f32 = 0.12;
 /// 같은 강조색을 사용하는 테두리의 공통 비율.
 pub const TINT_BORDER_ALPHA: f32 = 0.36;
 
+/// 0~1 비율 상수(`TINT_FILL_ALPHA` 등)를 color-mix의 정수 퍼센트로 읽는다. 정본 비율은 정수 퍼센트다.
+pub(crate) fn whole_percent(fraction: f32) -> u8 {
+    (fraction * 100.0).round() as u8
+}
+
 /// 불투명한 두 색의 CSS color-mix(in srgb)에 맞춰 RGB 채널을 보간한다.
 /// 반환값의 alpha는 b를 그대로 사용한다.
 #[allow(clippy::disallowed_methods)] // reason: 불투명 color-mix 식의 f32 구현부(정수로 알파까지 따르는 식은 mix_srgb_premultiplied)
