@@ -18,9 +18,11 @@ git log -1 --format=%b "$commit" | awk -v strip="$strip" '
 function blank(s) { return s ~ /^[ \t]*$/ }
 
 # 블록 하나(줄바꿈으로 이은 문자열)를 바꾼다. 스팬 짝이 GitHub 와 어긋날 수 있으면 블록 전체를 엔터티로 바꾼다.
-function render(s, cons,    o) {
-    o = escape_text(s, cons)
-    if (!cons && index(o, "`") && risky(o, escape_text(s, 2))) o = escape_text(s, 1)
+# 짝 없는 백틱 열이 있는 블록도 애매로 본다. GitHub(cmark-gfm)는 짝 없는 열 뒤에 오는 같은 길이의 스팬을
+# 첫 하나만 짝짓는 등 CommonMark 명세와 다르게 짝지을 수 있다.
+function render(s, cons,    o, u) {
+    o = escape_text(s, cons); u = UNM
+    if (!cons && (u || (index(o, "`") && risky(o, escape_text(s, 2))))) o = escape_text(s, 1)
     return o
 }
 # 스팬 짝을 GitHub 와 다르게 볼 수 있는 블록인가: 링크 목적지·제목 안의 백틱, 링크 참조 정의 줄,
@@ -90,9 +92,9 @@ function link_end(o, j,    n, k, c, depth, q) {
     return substr(o, k, 1) == ")" ? k : 0
 }
 # 코드 스팬 밖의 <, >, & 를 바꾼다. all 이 1 이면 스팬 안도 바꾸고, 2 이면 스팬을 여는 백틱만 두고 안을 공백으로 가린다.
-# 백틱 n 개로 연 스팬은 다음에 오는 정확히 n 개짜리 백틱 열에서 닫힌다. 닫는 열이 없으면 백틱은 글자다.
+# 백틱 n 개로 연 스팬은 다음에 오는 정확히 n 개짜리 백틱 열에서 닫힌다. 닫는 열이 없으면 백틱은 글자이고 UNM 을 켠다.
 function escape_text(p, all,    out, i, n, c, d, k, j, m, stop, seg) {
-    out = ""; i = 1; n = length(p)
+    out = ""; i = 1; n = length(p); UNM = 0
     while (i <= n) {
         c = substr(p, i, 1)
         if (c == "\\" && i < n && index(PUNCT, substr(p, i + 1, 1))) {
@@ -122,7 +124,7 @@ function escape_text(p, all,    out, i, n, c, d, k, j, m, stop, seg) {
                 else if (all) seg = escape_all(seg)
                 out = out seg; i = stop
             }
-            else { out = out substr(p, i, m); i += m }
+            else { out = out substr(p, i, m); i += m; UNM = 1 }
             continue
         }
         out = out entity(c)

@@ -604,6 +604,24 @@ Text `
 EOF
 check '둘째 줄 이후에 HTML 블록 시작 꼴 줄(div·주석·script·?·CDATA·DOCTYPE)이 있는 문단·인용·목록 항목은 모두 엔터티로' "$m" "$w"
 
+cat > "$m" <<'EOF'
+chore: bump version to 9.9.9
+
+Wrap with `` and use `foo` or `--secs <s>`.
+
+`` `>` `<s>`
+
+Keep `--secs <s>` and `a & b` as code.
+EOF
+cat > "$w" <<'EOF'
+Wrap with `` and use `foo` or `--secs &lt;s&gt;`.
+
+`` `&gt;` `&lt;s&gt;`
+
+Keep `--secs <s>` and `a & b` as code.
+EOF
+check '짝 없는 백틱 열이 있는 블록은 GitHub 가 스팬을 다르게 짝지을 수 있으므로 모두 엔터티로' "$m" "$w"
+
 if [ "$failures" -ne 0 ]; then
     echo "실패 $failures 건" >&2
     exit 1
