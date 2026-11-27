@@ -1,8 +1,8 @@
 //! Input 상자 가로 여백 누름.
 //! - 맨 Input(기본): 글자 칸은 padding 안쪽만 덮는다. 글자 칸 바로 바깥(egui 근접 판정 안) 누름은
 //!   캐럿을 옮기고 드래그 선택을 시작하며, 더 바깥 여백 누름은 칸 밖 누름이라 포커스를 푼다.
-//! - `text_covers_padding`: 글자 칸이 상자 전체를 덮어 여백 누름이 글자 칸 안 누름이다.
-//!   그린 모양은 맨 Input과 같다.
+//! - `text_covers_padding`: 글자 칸이 상자 전체(가로 padding·글자 줄 위아래)를 덮어 여백 누름이
+//!   글자 칸 누름이다. 그린 모양은 맨 Input과 같다.
 
 // 이유: 테스트에서는 사용하지 않는 반환값을 버리는 것을 허용한다.
 #![allow(clippy::let_underscore_must_use)]
@@ -10,6 +10,7 @@ use egui::text::CCursor;
 use egui::text_edit::TextEditState;
 use egui::text_selection::CCursorRange;
 use egui::{Event, Key, Modifiers, PointerButton, Pos2, RawInput, Rect, pos2, vec2};
+use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::Input;
 
 /// 한 줄에 놓은 Input 두 개: 맨 칸, 여백까지 덮는 칸.
@@ -21,6 +22,8 @@ enum Field {
 
 const FIELDS: [Field; 2] = [Field::Plain, Field::Covers];
 const VALUE: &str = "value";
+/// 지원 배율(1·1.2)과 그보다 큰 1.5.
+const ZOOMS: [f32; 3] = [1.0, 1.2, 1.5];
 
 #[derive(Default)]
 struct Frame {
@@ -31,6 +34,7 @@ struct Frame {
 
 struct Harness {
     ctx: egui::Context,
+    theme: Theme,
     bufs: [String; 2],
 }
 
@@ -40,14 +44,20 @@ fn field_id(field: Field) -> egui::Id {
 
 impl Harness {
     fn new() -> Self {
+        Self::zoomed(1.0)
+    }
+
+    /// UI 배율 `zoom`의 Mocha 테마로 그린다.
+    fn zoomed(zoom: f32) -> Self {
         Self {
             ctx: egui::Context::default(),
+            theme: Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, zoom),
             bufs: std::array::from_fn(|_| VALUE.to_owned()),
         }
     }
 
     fn frame(&mut self, focus: Option<Field>, events: Vec<Event>) -> Frame {
-        let theme = tasty_themes::mocha_fallback();
+        let theme = &self.theme;
         let mut frame = Frame::default();
         let out = self.ctx.run(
             RawInput {
@@ -63,7 +73,7 @@ impl Harness {
                                 .id(field_id(*field))
                                 .text_covers_padding(*field == Field::Covers)
                                 .width(200.0)
-                                .show(ui, &theme, buf);
+                                .show(ui, theme, buf);
                             if focus == Some(*field) {
                                 resp.request_focus();
                             }
@@ -200,12 +210,12 @@ fn a_covering_input_takes_padding_presses_as_text_presses() {
 }
 
 /// 여백까지 덮는 칸도 쉴 때·포커스일 때 그린 모양(글자 galley·커서·테두리·링)이 맨 칸과 같다.
-/// 두 칸을 따로 그려 도형 목록을 상자 위치만큼 옮겨 비교한다.
+/// 배율마다 두 칸을 따로 그려 도형 목록을 상자 위치만큼 옮겨 비교한다.
 #[test]
 fn a_covering_input_draws_the_same_shapes_as_a_plain_one() {
-    for focus in [false, true] {
+    for (zoom, focus) in ZOOMS.into_iter().flat_map(|z| [(z, false), (z, true)]) {
         let shapes = |field: Field| {
-            let mut h = Harness::new();
+            let mut h = Harness::zoomed(zoom);
             h.bufs = std::array::from_fn(|_| VALUE.to_owned());
             if focus {
                 h.focus_at_three(field);
@@ -229,8 +239,50 @@ fn a_covering_input_draws_the_same_shapes_as_a_plain_one() {
         assert_eq!(
             shapes(Field::Covers),
             shapes(Field::Plain),
-            "focus={focus} 그린 모양"
+            "zoom={zoom} focus={focus} 그린 모양"
         );
+    }
+}
+
+/// 여백까지 덮는 칸: 배율마다 상자 윗변·아랫변 0.5 안쪽 누름(왼쪽 여백·가운데)이 누름·뗌이 다른
+/// 패스든 한 패스든 포커스를 지킨다. 맨 칸은 배율 1.2·1.5에서 같은 누름이 egui 근접 판정(5) 밖이라
+/// 포커스를 푼다(TextEdit이 글자 줄과 위아래 margin 2만 덮는다).
+#[test]
+fn a_covering_input_takes_presses_just_inside_its_top_and_bottom_edges() {
+    for zoom in ZOOMS {
+        for field in FIELDS {
+            let spots = |rect: Rect, pad: f32| {
+                [rect.min.x + pad / 2.0, rect.center().x]
+                    .into_iter()
+                    .flat_map(move |x| [pos2(x, rect.min.y + 0.5), pos2(x, rect.max.y - 0.5)])
+            };
+            let mut h = Harness::zoomed(zoom);
+            let rect = h.focus_at_three(field);
+            let pad = h.theme.input_padding_x().value();
+            for at in spots(rect, pad) {
+                let mut h = Harness::zoomed(zoom);
+                h.focus_at_three(field);
+                let lost = press_drag_release(&mut h, field, at, None);
+
+                let mut once = Harness::zoomed(zoom);
+                once.focus_at_three(field);
+                once.frame(None, vec![Event::PointerMoved(at)]);
+                let f = once.frame(None, vec![button(at, true), button(at, false)]);
+                let lost_once = f.boxes.iter().find(|b| b.0 == field).unwrap().3;
+                once.frame(None, vec![]);
+
+                if field == Field::Covers {
+                    assert!(!lost, "zoom={zoom} {at:?} 누름에 포커스를 잃었다");
+                    assert!(
+                        !lost_once,
+                        "zoom={zoom} {at:?} 한 패스 누름·뗌에 포커스를 잃었다"
+                    );
+                    assert_eq!(once.focused(), Some(field_id(field)));
+                } else if zoom > 1.0 {
+                    assert!(lost, "zoom={zoom} 맨 칸 {at:?} 누름은 칸 밖 누름이다");
+                }
+            }
+        }
     }
 }
 

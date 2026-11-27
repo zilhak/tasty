@@ -21,7 +21,7 @@ pub(super) struct ToolbarEditingOutcome {
 }
 
 /// 프리셋 이름·이름 바꾸기 칸. 공용 Input이라 input-bg 채움, input-border 테두리, Input 포커스 모양이다.
-/// 글자 칸이 가로 여백까지 덮어, 편집 중 여백 누름이 포커스를 풀어 이름을 확정하지 않는다.
+/// 글자 칸이 상자 전체(가로 padding·글자 줄 위아래)를 덮어, 편집 중 여백 누름이 포커스를 풀어 이름을 확정하지 않는다.
 fn name_field(ui: &mut egui::Ui, theme: &Theme, buf: &mut String, id: egui::Id) -> egui::Response {
     tasty_ui_widgets::Input::new()
         .id(id)
@@ -420,6 +420,11 @@ mod tests {
 
     impl NameHarness {
         fn new(path: NamePath) -> Self {
+            Self::zoomed(path, 1.0)
+        }
+
+        /// UI 배율 `zoom`의 Mocha 테마로 그린다.
+        fn zoomed(path: NamePath, zoom: f32) -> Self {
             let ctx = egui::Context::default();
             let mut rename = None;
             match path {
@@ -448,7 +453,11 @@ mod tests {
             let mut h = Self {
                 path,
                 ctx,
-                theme: tasty_themes::mocha_fallback(),
+                theme: Theme::with_colors_and_zoom(
+                    tasty_themes::mocha_fallback_colors(),
+                    false,
+                    zoom,
+                ),
                 store: PresetDrafts::default(),
                 selected: None,
                 toasts: ToastManager::new(),
@@ -621,6 +630,50 @@ mod tests {
                     h.ctx.memory(|m| m.has_focus(h.id())),
                     "{path:?} dx={dx} 한 패스 포커스"
                 );
+            }
+        }
+    }
+
+    /// 배율 1·1.2·1.5에서 상자 윗변·아랫변 0.5 안쪽 누름(왼쪽 여백·가운데)도 누름·뗌이 다른 패스든
+    /// 한 패스든 이름을 확정하지 않고 편집을 이어 간다.
+    #[test]
+    fn pressing_just_inside_the_name_field_top_and_bottom_keeps_editing() {
+        for path in PATHS {
+            for zoom in [1.0, 1.2, 1.5] {
+                let field = NameHarness::zoomed(path, zoom).field;
+                let pad = NameHarness::zoomed(path, zoom)
+                    .theme
+                    .input_padding_x()
+                    .value();
+                for x in [field.min.x + pad / 2.0, field.center().x] {
+                    for y in [field.min.y + 0.5, field.max.y - 0.5] {
+                        let at = egui::pos2(x, y);
+                        let mut h = NameHarness::zoomed(path, zoom);
+                        assert_eq!(h.field, field, "{path:?} zoom={zoom} 상자 자리");
+                        h.frame(vec![egui::Event::PointerMoved(at)]);
+                        h.frame(vec![button(at, true)]);
+                        h.frame(vec![button(at, false)]);
+                        h.frame(Vec::new());
+                        assert!(!h.committed(), "{path:?} zoom={zoom} {at:?} 확정했다");
+                        assert!(
+                            h.ctx.memory(|m| m.has_focus(h.id())),
+                            "{path:?} zoom={zoom} {at:?} 포커스"
+                        );
+
+                        let mut h = NameHarness::zoomed(path, zoom);
+                        h.frame(vec![egui::Event::PointerMoved(at)]);
+                        h.frame(vec![button(at, true), button(at, false)]);
+                        h.frame(Vec::new());
+                        assert!(
+                            !h.committed(),
+                            "{path:?} zoom={zoom} {at:?} 한 패스 누름·뗌에 확정했다"
+                        );
+                        assert!(
+                            h.ctx.memory(|m| m.has_focus(h.id())),
+                            "{path:?} zoom={zoom} {at:?} 한 패스 포커스"
+                        );
+                    }
+                }
             }
         }
     }

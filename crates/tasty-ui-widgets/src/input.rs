@@ -1,6 +1,7 @@
 //! 아이콘·접미 라벨을 붙일 수 있는 한 줄 입력 필드.
 //! 포커스와 잘못된 값의 테두리는 애니메이션 없이 바로 표시한다.
 
+use egui::emath::GuiRounding as _;
 use tasty_type_appearance::color::HexColor;
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
@@ -42,7 +43,7 @@ pub struct Input<'a> {
     idle_text: Option<&'a str>,
     /// 놓인 바탕. raised면 상자·쉬는 테두리·disabled·readonly 상자가 raised 토큰이다.
     ground: crate::Ground,
-    /// TextEdit이 가로 padding까지 상자 전체를 덮는다. [`Input::text_covers_padding`].
+    /// TextEdit이 가로 padding과 글자 줄 위아래 여백까지 상자 전체를 덮는다. [`Input::text_covers_padding`].
     text_covers_padding: bool,
 }
 
@@ -225,10 +226,12 @@ impl<'a> Input<'a> {
     }
 
     /// 기본은 왼쪽 정렬. 숫자를 비교하는 필드는 오른쪽 정렬을 사용할 수 있다.
-    /// TextEdit을 바깥 상자 전체에 두고 가로 padding을 TextEdit 자기 margin으로 준다.
-    /// 여백 누름이 글자 칸 안 누름이 되어 포커스·캐럿·드래그·키 입력을 egui가 그대로 처리한다.
-    /// 끄면(기본) TextEdit은 padding 안쪽만 덮는다. 글자 칸에서 egui 근접 판정(5)보다 먼 여백 누름은
-    /// 칸 밖 누름이라 포커스를 푼다.
+    /// TextEdit을 바깥 상자 전체에 두고 가로 padding과 글자 줄 위아래 여백을 TextEdit 자기 margin으로
+    /// 준다. 세로 margin은 egui가 정수로만 받아 (상자 높이 - 글자 줄 높이)/2를 내린 값이라, 상자와
+    /// TextEdit 사이에 위아래 1pt 미만이 남고 그 틈은 egui 근접 판정(5) 안이다.
+    /// 여백 누름이 글자 칸 누름이 되어 포커스·캐럿·드래그·키 입력을 egui가 그대로 처리한다.
+    /// 끄면(기본) TextEdit은 가로 padding 안쪽과 글자 줄 위아래 2만 덮는다. 글자 칸에서 egui 근접
+    /// 판정(5)보다 먼 상자 안 누름은 칸 밖 누름이라 포커스를 푼다.
     /// 그린 모양(글자·커서·테두리·링 위치)은 켜도 같다. 아이콘·addon·trailing·`text_margin`과는 함께 쓰지 않는다.
     pub fn text_covers_padding(mut self, on: bool) -> Self {
         self.text_covers_padding = on;
@@ -339,15 +342,22 @@ impl<'a> Input<'a> {
             // 가로 여백은 상자 padding 이 맡는다(시안 `input { padding: 0 }`). egui 기본 가로 margin 을
             // 두면 글자 칸 바깥이 te_w 보다 넓어져 addon·trailing 이 오른쪽 padding 으로 밀린다.
             // 세로는 egui 기본값(2)을 그대로 둔다.
-            // 덮는 칸은 가로 padding을 TextEdit margin으로 옮겨 글자 자리를 그대로 둔다.
-            let te_pad_x = if covers {
-                theme.input_padding_x()
+            // 덮는 칸은 가로 padding을 TextEdit margin으로 옮기고, 세로 margin을 상자 높이까지 늘린다.
+            // TextEdit은 상자 세로 가운데에 놓이므로 위아래 margin이 같으면 글자 자리는 그대로다.
+            // 글자 칸 높이는 egui처럼 줄 높이와 그 GUI 반올림 중 큰 값이다(builder.rs:540·:541).
+            let (te_pad_x, te_pad_y) = if covers {
+                let row = ui.fonts(|f| f.row_height(&font));
+                let text_h = row.max(row.round_ui());
+                (
+                    theme.input_padding_x(),
+                    LogicalPx(((height - text_h) / 2.0).floor().max(0.0)),
+                )
             } else {
-                LogicalPx(0.0)
+                (LogicalPx(0.0), crate::tokens::STRUCT_GAP_2)
             };
             let te = egui::TextEdit::singleline(text)
                 .frame(false)
-                .margin(crate::margin_sym(te_pad_x, crate::tokens::STRUCT_GAP_2))
+                .margin(crate::margin_sym(te_pad_x, te_pad_y))
                 .desired_width(te_w)
                 .hint_text(hint)
                 .font(font.clone())
