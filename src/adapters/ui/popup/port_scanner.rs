@@ -1133,21 +1133,16 @@ fn draw_header_row(ui: &mut egui::Ui, props: &PortScannerProps<'_>) -> Option<Po
     let mut out: Option<PortScannerAction> = None;
     // 헤더 글자 선택이 창 드래그를 막지 않도록 헤더 안에서만 텍스트 선택을 끈다.
     ui.style_mut().interaction.selectable_labels = false;
-    let gap = ui.spacing().item_spacing.x;
+    let (gap, button_side) = (ui.spacing().item_spacing.x, ControlSize::Md.height(th));
     let filter_width = 200.0;
-    let button_side = ControlSize::Md.height(th);
     let cluster_width = filter_width + 3.0 * (gap + button_side);
     let row_height = th.input_height().value().max(button_side);
     let (row, _) = ui.allocate_exact_size(
         egui::vec2(ui.available_width(), row_height),
         egui::Sense::hover(),
     );
-    let cluster =
-        egui::Rect::from_min_max(egui::pos2(row.right() - cluster_width, row.top()), row.max);
-    let left = egui::Rect::from_min_max(
-        row.min,
-        egui::pos2((cluster.left() - gap).max(row.left()), row.bottom()),
-    );
+    let (left, cluster) = row.split_left_right_at_x(row.right() - cluster_width);
+    let left = left.with_max_x((cluster.left() - gap).max(row.left()));
     let row_layout = egui::Layout::left_to_right(egui::Align::Center);
     ui.scope_builder(
         egui::UiBuilder::new().max_rect(cluster).layout(row_layout),
@@ -1168,29 +1163,18 @@ fn draw_header_row(ui: &mut egui::Ui, props: &PortScannerProps<'_>) -> Option<Po
             if let Some(a) = draw_column_chooser(ui, props) {
                 out = Some(a);
             }
-            if IconButton::new()
-                .variant(IconButtonVariant::Ghost)
-                .show(ui, th, &|ui, rect, c| {
-                    icons::REFRESH
-                        .image(th.icon_glyph_size_md.value(), c)
-                        .paint_at(ui, rect)
-                })
-                .on_hover_text(props.label_refresh)
-                .clicked()
-            {
-                out = Some(PortScannerAction::Refresh);
-            }
-            if IconButton::new()
-                .variant(IconButtonVariant::Ghost)
-                .show(ui, th, &|ui, rect, c| {
-                    icons::CLOSE
-                        .image(th.icon_glyph_size_md.value(), c)
-                        .paint_at(ui, rect)
-                })
-                .on_hover_text(props.label_close)
-                .clicked()
-            {
-                out = Some(PortScannerAction::Close);
+            use PortScannerAction::{Close, Refresh};
+            let buttons = [
+                (icons::REFRESH, props.label_refresh, Refresh),
+                (icons::CLOSE, props.label_close, Close),
+            ];
+            for (icon, hover, action) in buttons {
+                let glyph = th.icon_glyph_size_md.value();
+                let paint = |ui: &mut egui::Ui, rect, c| icon.image(glyph, c).paint_at(ui, rect);
+                let button = IconButton::new().variant(IconButtonVariant::Ghost);
+                if button.show(ui, th, &paint).on_hover_text(hover).clicked() {
+                    out = Some(action);
+                }
             }
         },
     );
@@ -1289,10 +1273,8 @@ fn draw_column_chooser(
         )
     });
     // 첫 Esc 는 선택기만 닫고 포커스를 Columns 버튼으로 돌린다(egui 는 Esc 에 포커스를 비운다). 다음 Esc 가 창을 닫는다.
-    if open_before
-        && !ui.memory(|m| m.is_popup_open(popup_id))
-        && ui.input(|i| i.key_pressed(egui::Key::Escape))
-    {
+    let closed = open_before && !ui.memory(|m| m.is_popup_open(popup_id));
+    if closed && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
         resp.request_focus();
     }
     // 팝업 밖으로 나온 드롭다운도 안쪽 클릭으로 인식하도록 영역을 보고한다.
