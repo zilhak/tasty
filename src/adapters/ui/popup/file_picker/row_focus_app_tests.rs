@@ -2,7 +2,7 @@
 //! 팝업 층 한 프레임의 도형으로 본다. 하네스는 [`super::list_keys_app_tests`] 의 것이다.
 use super::list_keys_app_tests::{App, load, open_picker, some, tree};
 use super::*;
-use crate::adapters::ui::popup::window_input_test_support::layer_pass;
+use crate::adapters::ui::popup::window_input_test_support::{click_widget_at, layer_pass};
 
 /// 팝업 층 한 프레임을 그려 행 포커스 링(행 높이 · `fp-row-focus-ring-width` · `radius-sm` 선)의 사각형을 모은다.
 fn rings(app: &mut App<'_>) -> Vec<egui::Rect> {
@@ -329,6 +329,41 @@ fn a_save_mode_empty_list_click_keeps_selection_focus_and_name() {
         app.data().save_name.as_deref(),
         Some("d.txt"),
         "이름 그대로"
+    );
+}
+
+/// [priority · Space] Space 는 버튼과 저장 이름 칸 포커스에만 양보한다: 긴 저장 목록에서 Tab 으로 목록 스크롤바에 위젯
+/// 포커스를 두어도 Space 는 행 포커스 행을 골라 이름을 채운다.
+#[test]
+fn space_picks_the_focused_row_while_the_scrollbar_has_tab_focus() {
+    let names: Vec<String> = (0..60).map(|i| format!("f{i:02}.txt")).collect();
+    let refs: Vec<&str> = names.iter().map(String::as_str).collect();
+    let (mut state, mut session) = crate::state::tests::two_pane_fixture();
+    let dir = tree(&[], &refs);
+    open_picker(&mut state, &mut session.borrow_mut(), "save", dir.path());
+    let engine = session.borrow_mut();
+    let read = engine.read();
+    let mut app = App::new(&mut state, &read);
+    app.press(egui::Key::ArrowDown);
+    assert_eq!(app.row_focus(), (some("f00.txt"), true), "↓");
+    assert!(app.selected().is_empty(), "저장 모드 ↓ 는 고르지 않는다");
+    let bar = click_widget_at(&app.ctx, scrollbar(&app).center()).expect("스크롤바 위젯");
+    let mut tabs = 0;
+    while app.ctx.memory(|m| m.focused()) != Some(bar) {
+        tabs += 1;
+        assert!(tabs <= 20, "Tab 이 스크롤바에 닿는다");
+        app.press(egui::Key::Tab);
+    }
+    app.press(egui::Key::Space);
+    assert_eq!(
+        app.selected(),
+        vec!["f00.txt".to_string()],
+        "Space 가 행을 고른다"
+    );
+    assert_eq!(
+        app.data().save_name.as_deref(),
+        Some("f00.txt"),
+        "이름이 채워진다"
     );
 }
 

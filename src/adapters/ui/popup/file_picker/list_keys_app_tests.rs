@@ -838,6 +838,7 @@ fn ids() -> list_keys::WidgetIds {
         name_field: Some(egui::Id::new("name")),
         menu_button: Some(egui::Id::new("menu-button")),
         menu: Some(egui::Id::new("menu")),
+        scrollbar: None,
         focus_hold: None,
     }
 }

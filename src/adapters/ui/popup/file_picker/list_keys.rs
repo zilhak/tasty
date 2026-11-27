@@ -245,6 +245,8 @@ pub(super) struct WidgetIds {
     /// 경로 막대 `…` 메뉴 버튼과 그 메뉴의 popup id.
     pub(super) menu_button: Option<egui::Id>,
     pub(super) menu: Option<egui::Id>,
+    /// 목록 세로 스크롤바. Tab 포커스를 받지만 Space 를 쓰지 않아 Space 는 목록 행 포커스 몫이다.
+    pub(super) scrollbar: Option<egui::Id>,
     /// 직전 프레임에 피커가 화살표를 가져갈 때의 위젯 포커스. egui 가 그 화살표로 옮긴 포커스를 되돌린다.
     pub(super) focus_hold: Option<egui::Id>,
 }
@@ -299,7 +301,8 @@ pub(super) fn confirm_enabled(p: &super::FilePickerProps<'_>) -> bool {
 ///   확정 가능 여부는 적용 시점에 다시 본다. 셋 다 아니면 위젯 몫(egui 가 Tab 포커스 버튼을 누른다).
 /// - 같은 패스의 Tab 뒤 키는 Tab 이 옮길 포커스를 아직 모른다: 그 Enter 는 확정이 활성이거나 앞선 행 키가 있을 때만
 ///   빼고 그린 뒤 [`settle_tab_enter`] 가 `…` 버튼 포커스를 다시 본다. 그 Space 는 위젯 몫이다.
-/// - Space 는 위젯 포커스가 있으면 위젯 몫. 저장 이름 칸이 포커스면 Space·Backspace·Home·End·→ 는 칸 몫.
+/// - Space 는 위젯 포커스가 버튼(링크 포함)이나 이름 칸이면 위젯 몫이다. 목록 스크롤바 포커스(Space 를 쓰지 않는다)는 목록
+///   몫이다. 저장 이름 칸이 포커스면 Space·Backspace·Home·End·→ 는 칸 몫.
 /// - 나머지는 피커 몫이라 TextEdit·Button 이 보지 않는다.
 ///
 /// 직전 프레임에 피커가 화살표를 가져갔는데 egui 가 패스 끝에 위젯 포커스를 옮겼으면(`Memory::end_pass` 방향 이동)
@@ -323,6 +326,8 @@ pub(super) fn take_keys(
     let focused = ui.memory(|m| m.focused());
     let text_focus = focused.is_some() && focused == ids.name_field;
     let menu_button_focus = focused.is_some() && focused == ids.menu_button;
+    // Space 는 버튼(링크 포함)과 이름 칸 포커스에만 양보한다. 그 밖에 Tab 포커스를 받는 위젯은 목록 스크롤바다.
+    let space_to_list = focused.is_none() || focused == ids.scrollbar;
     let menu_open = ids
         .menu
         .is_some_and(|id| ui.memory(|m| m.is_popup_open(id)));
@@ -382,7 +387,7 @@ pub(super) fn take_keys(
                 own
             }
             ListKey::Confirm => confirm || text_focus || row_key_before,
-            ListKey::Pick => focused.is_none() && !tabbed,
+            ListKey::Pick => space_to_list && !tabbed,
             ListKey::Back | ListKey::Into | ListKey::Move(MoveKey::Home | MoveKey::End) => {
                 !text_focus
             }

@@ -451,7 +451,7 @@ fn draw_view_sections(
             .layout(egui::Layout::top_down(egui::Align::Min)),
     );
     body_ui.set_clip_rect(body_rect.intersect(ui.clip_rect()));
-    let list_view = draw_body(
+    let (list_view, scrollbar) = draw_body(
         &mut body_ui,
         props,
         LogicalPx(body_rect.height()),
@@ -486,22 +486,24 @@ fn draw_view_sections(
         name_field,
         menu_button: hidden_menu.map(|m| m.button),
         menu: hidden_menu.map(|m| m.popup),
+        scrollbar,
         focus_hold: None,
     };
     (out, Drawn { ids, list_view })
 }
 
-/// 본문을 그리고, 목록을 그렸으면 그 view(스크롤 위치·보이는 높이·행 높이)를 돌려준다.
+/// 본문을 그리고, 목록을 그렸으면 그 view(스크롤 위치·보이는 높이·행 높이)와 세로 스크롤바 위젯 id 를 돌려준다.
 fn draw_body(
     ui: &mut egui::Ui,
     props: &FilePickerProps<'_>,
     body_height: LogicalPx,
     action: &mut FilePickerAction,
-) -> Option<list_keys::ListView> {
+) -> (Option<list_keys::ListView>, Option<egui::Id>) {
     let th = props.theme;
     let mut body_rect = ui.available_rect_before_wrap();
     let mut row_hit = false;
     let mut list_view = None;
+    let mut scrollbar = None;
     let mut on_scrollbar = false;
     match &props.state {
         FpViewState::Loaded => {
@@ -545,9 +547,9 @@ fn draw_body(
             });
             // 빈 곳 클릭 판정은 스크롤바를 뺀다(목록이 짧아도 그 아래 빈 곳은 판정 안이다). 세로 바는 egui 가
             // `id.with(1)` 로 입력을 등록하므로 그 응답에 포인터가 있으면 목록 클릭이 아니다.
-            on_scrollbar = ui
-                .ctx()
-                .read_response(scrolled.id.with(1_usize))
+            scrollbar = Some(scrolled.id.with(1_usize));
+            on_scrollbar = scrollbar
+                .and_then(|bar| ui.ctx().read_response(bar))
                 .is_some_and(|r| r.contains_pointer());
         }
         FpViewState::Loading => {
@@ -599,7 +601,7 @@ fn draw_body(
             FilePickerAction::HideRing
         };
     }
-    list_view
+    (list_view, scrollbar)
 }
 
 /// 목록 머리 높이. 위아래 `fp-list-head-pad-y`와 micro 글꼴 줄(`line-height-ui`)로 정해진다.
