@@ -665,6 +665,19 @@ cat > "$w" <<'EOF'
 EOF
 check '머리 행에만 백슬래시가 있는 표도 본문 전체를 엔터티로' "$m" "$w"
 
+# Git 은 CR 을 줄 끝으로 보지 않는다. 가위 줄·Conflicts: 줄만 CRLF 로 끝나면 Git 에는 그 줄이 그 꼴이 아니다.
+printf 'chore: bump version to 9.9.9\n\nSigned-off-by: A <a@example.invalid>\n\n# ------------------------ >8 ------------------------\r\nCo-Authored-By: B <b@example.invalid>\n' > "$m"
+printf 'Signed-off-by: A &lt;a@example.invalid&gt;\n\n# ------------------------ &gt;8 ------------------------\n' > "$w"
+check 'CRLF 로 끝난 가위 줄은 Git 처럼 가위 줄로 보지 않고 그 뒤 트레일러를 뺀다' "$m" "$w"
+
+printf 'chore: bump version to 9.9.9\n\nSigned-off-by: A <a@example.invalid>\n\nConflicts:\r\n\tfile\n' > "$m"
+printf 'Signed-off-by: A &lt;a@example.invalid&gt;\n' > "$w"
+check 'CRLF 로 끝난 Conflicts: 는 Git 처럼 꼬리로 보지 않고 트레일러로 뺀다' "$m" "$w"
+
+printf 'chore: bump version to 9.9.9\n\nFix it <s>.\n\nSigned-off-by: A <a@example.invalid>\n\n#\n  \n' > "$m"
+printf 'Fix it &lt;s&gt;.\n\n#\n' > "$w"
+check '공백만 있는 줄 앞의 주석 줄도 Git 처럼 건너뛰고 그 앞 트레일러를 뺀다' "$m" "$w"
+
 if [ "$failures" -ne 0 ]; then
     echo "실패 $failures 건" >&2
     exit 1

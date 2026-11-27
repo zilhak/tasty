@@ -19,6 +19,8 @@ strip=0
 
 git log -1 --format=%b "$commit" | awk -v strip="$strip" '
 function blank(s) { return s ~ /^[ \t]*$/ }
+# Git 의 공백 줄 판정(isspace). CR·FF·VT 도 공백으로 센다.
+function gblank(s) { return s ~ /^[ \t\r\f\v]*$/ }
 
 # 블록 하나(줄바꿈으로 이은 문자열)를 바꾼다. 스팬 짝이 GitHub 와 어긋날 수 있으면 블록 전체를 엔터티로 바꾼다.
 # 짝 없는 백틱 열이 있는 블록도 애매로 본다. GitHub(cmark-gfm)는 짝 없는 열 뒤에 오는 같은 길이의 스팬을
@@ -235,8 +237,8 @@ function end_leaf() { flush(); leaf = "" }
 function close_to(d) { if (d < nc) { end_leaf(); nc = d } }
 function para_line(l, p) { np++; phead[np] = head(l, p); pbody[np] = body(l, p); leaf = "para" }
 
-# GitHub 처럼 CRLF 를 줄 끝으로 본다. 줄 끝의 CR 을 떼고 LF 로 내보낸다.
-{ sub(/\r$/, ""); line[++count] = $0 }
+# GitHub 처럼 CRLF 를 줄 끝으로 본다. 줄 끝의 CR 을 떼고 LF 로 내보낸다. 트레일러 위치는 Git 처럼 떼기 전 원문 raw 로 찾는다.
+{ raw[++count] = $0; sub(/\r$/, ""); line[count] = $0 }
 END {
     HTML_TAGS = " address article aside base basefont blockquote body caption center col colgroup dd details dialog dir div dl dt fieldset figcaption figure footer form frame frameset h1 h2 h3 h4 h5 h6 head header hr html iframe legend li link main menu menuitem nav noframes ol optgroup option p param pre script section source style summary table tbody td textarea tfoot th thead title tr track ul "
     for (k = 1; k <= count; k++) if (index(line[k], "]:")) HAS_DEF = 1
@@ -245,28 +247,30 @@ END {
     while (last > 0 && blank(line[last])) last--
     if (strip == 1) {
         # Git 의 트레일러 블록: 가위 줄 앞에서, 끝의 주석(#) 줄·빈 줄·옛 Conflicts: 블록을 건너뛴 마지막 문단.
+        # Git 은 CR 을 줄 끝으로 보지 않는다. 가위 줄·빈 줄·Conflicts: 는 CR 없는 꼴만 맞고, 공백만 있는 줄 판정은 CR 도 공백으로 센다.
         cut = count
-        for (k = 1; k <= count; k++) if (line[k] == "# ------------------------ >8 ------------------------") { cut = k - 1; break }
+        for (k = 1; k <= count; k++) if (raw[k] == "# ------------------------ >8 ------------------------") { cut = k - 1; break }
         boc = 0; conflicts = 0
         for (k = 1; k <= cut; k++) {
-            if (substr(line[k], 1, 1) == "#" || line[k] == "") { if (!boc) boc = k }
-            else if (line[k] == "Conflicts:") { conflicts = 1; if (!boc) boc = k }
-            else if (conflicts && substr(line[k], 1, 1) == "\t") { }
+            if (substr(raw[k], 1, 1) == "#" || raw[k] == "") { if (!boc) boc = k }
+            else if (raw[k] == "Conflicts:") { conflicts = 1; if (!boc) boc = k }
+            else if (conflicts && substr(raw[k], 1, 1) == "\t") { }
             else if (boc) { boc = 0; conflicts = 0 }
         }
         stop = boc ? boc - 1 : cut
-        while (stop > 0 && blank(line[stop])) stop--
+        # Git 은 끝에서부터 블록을 찾을 때 주석 줄과 공백만 있는 줄을 건너뛴다.
+        while (stop > 0 && (gblank(raw[stop]) || substr(raw[stop], 1, 1) == "#")) stop--
         start = stop
-        while (start > 0 && !blank(line[start])) start--
+        while (start > 0 && !gblank(raw[start])) start--
         # git interpret-trailers --parse 가 내는 줄(구분자 Key: 가 있는 트레일러)과 그 바로 뒤의 들여쓴 이어 줄만 뺀다.
         # (cherry picked from commit ...) 줄은 Git 이 블록 판정에만 쓰고 트레일러로 내지 않으므로 남긴다.
         keep = 0; folded = 0
         for (k = start + 1; k <= stop; k++) {
-            l = line[k]
-            if (folded && l ~ /^[ \t]/) continue
+            l = raw[k]
+            if (folded && l ~ /^[ \t\r\f\v]/) continue
             folded = 0
             if (l ~ /^[A-Za-z0-9-]+[ \t]*:/) { folded = 1; continue }
-            kept[++keep] = l
+            kept[++keep] = line[k]
         }
         n = 0
         for (k = 1; k <= start; k++) out[++n] = line[k]
