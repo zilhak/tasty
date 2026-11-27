@@ -151,6 +151,7 @@ function escape_row(s,    out, cell, i, n, c) {
     }
     return out render(cell, 0)
 }
+function row(s) { return tall ? escape_text(s, 1) : escape_row(s) }
 # 문단을 끊을 수 있는 HTML 블록(CommonMark 1~6종)의 시작인가. 태그 이름은 여러 판의 목록을 합쳐 넉넉히 본다.
 function html_start(r,    t, c) {
     if (r ~ /^<[!?]/) return 1
@@ -353,14 +354,18 @@ END {
         if (kind == "table") {
             hh = phead[np]; hb = pbody[np]; np--
             end_leaf()
-            print hh escape_row(hb)
+            # GitHub 는 칸을 나누기 전에 \| 를 따로 읽어 \\| 같은 겹 백슬래시에서 칸 경계를 다르게 본다.
+            # 머리 행부터 다음 빈 줄까지 백슬래시가 있으면 표 전체를 애매로 보고 칸 안 스팬까지 엔터티로 바꾼다.
+            tall = index(hb, "\\") > 0
+            for (k = i; k <= last && !blank(line[k]); k++) if (index(line[k], "\\")) tall = 1
+            print hh row(hb)
             print l
             leaf = "table"
             continue
         }
         if (rest_blank) { end_leaf(); tcons = 0; print l; continue }
         # 표는 빈 줄이나 다른 블록의 시작에서 끝난다. 들여쓴 줄도 행으로 보고 엔터티로 바꾼다.
-        if (leaf == "table") { print head(l, p) escape_row(body(l, p)); continue }
+        if (leaf == "table") { print head(l, p) row(body(l, p)); continue }
         if (s >= 4 && leaf != "para") { end_leaf(); leaf = "code"; print l; continue }
         # 문단을 끊는 HTML 블록 시작(<div>, <!-- 등)으로 보이는 줄은 앞 줄과 스팬을 짝짓지 않는다.
         if (leaf == "para" && html_start(substr(X, p + s))) flush()

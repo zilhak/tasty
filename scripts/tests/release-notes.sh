@@ -468,6 +468,28 @@ Run --secs &lt;s&gt; `x`.
 EOF
 check '참조 정의(여러 줄 레이블 포함)로 시작하는 문단과 그 뒤 밑줄 모양 줄·들여쓴 줄은 모두 엔터티로' "$m" "$w"
 
+cat > "$m" <<'EOF'
+chore: bump version to 9.9.9
+
+| A | B |
+| --- | --- |
+| lone ` \\| `<s>` |
+
+| Flag | Value |
+| --- | --- |
+| `--secs <s>` | <n> |
+EOF
+cat > "$w" <<'EOF'
+| A | B |
+| --- | --- |
+| lone ` \\| `&lt;s&gt;` |
+
+| Flag | Value |
+| --- | --- |
+| `--secs <s>` | &lt;n&gt; |
+EOF
+check '백슬래시가 있는 표는 칸 경계가 애매하므로 표 전체를 엔터티로' "$m" "$w"
+
 if [ "$failures" -ne 0 ]; then
     echo "실패 $failures 건" >&2
     exit 1
