@@ -23,6 +23,13 @@ const EVENT: &str = "attached_workspace";
 /// let value = serde_json::json!({"workspace_id": 1, "name": "w", "tree": null, "surfaces": []});
 /// let _ = tasty_attach_protocol::AttachedWorkspaceDescriptor::deserialize(value);
 /// ```
+///
+/// `event`를 보지 않는 읽기 본문(`Wire`)도 크레이트 밖에서 이름으로 부를 수 없다.
+///
+/// ```compile_fail
+/// let value = serde_json::json!({"workspace_id": 1, "name": "w", "tree": null, "surfaces": []});
+/// let _ = serde_json::from_value::<tasty_attach_protocol::Wire>(value);
+/// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct AttachedWorkspaceDescriptor {
     /// 서버의 workspace ID.

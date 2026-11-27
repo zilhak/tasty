@@ -100,6 +100,13 @@ pub fn force_detach_notice(payload: &[u8]) -> Option<ForceDetachNotice> {
 /// let value = serde_json::json!({"reason": "workspace_gone"});
 /// let _ = tasty_attach_protocol::ForceDetachedControl::deserialize(value);
 /// ```
+///
+/// `event`를 보지 않는 읽기 본문(`ForceDetachedWire`)도 크레이트 밖에서 이름으로 부를 수 없다.
+///
+/// ```compile_fail
+/// let value = serde_json::json!({"reason": "workspace_gone"});
+/// let _ = serde_json::from_value::<tasty_attach_protocol::ForceDetachedWire>(value);
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ForceDetachedControl {
     /// 끊은 사유. [`FORCE_DETACH_WORKSPACE_GONE`]만 client 동작을 바꾼다.
