@@ -2827,7 +2827,8 @@ mod tests {
         (f32::from(a) * fraction).round() as u8
     }
 
-    /// drop target·파일 드롭 오버레이 채움과 테두리는 강조색 rgb를 두고 강조색 알파에 tint 비율을 곱한다.
+    /// drop target·파일 드롭 오버레이·영역 선택 사각형의 채움과 테두리는 강조색 rgb를 두고 강조색 알파에
+    /// tint 비율을 곱한다.
     /// 불투명 강조색이면 비율 × 255, 반투명이면 그 알파 × 비율이다.
     #[test]
     fn drop_tints_multiply_the_accent_alpha_by_the_tint_fractions() {
@@ -2842,6 +2843,8 @@ mod tests {
             assert_eq!(th.explorer_drop_target_bg(), fill, "alpha {alpha}");
             assert_eq!(th.file_drop_overlay_bg(), fill, "alpha {alpha}");
             assert_eq!(th.file_drop_overlay_border(), border, "alpha {alpha}");
+            assert_eq!(th.explorer_marquee_bg(), fill, "alpha {alpha}");
+            assert_eq!(th.explorer_marquee_border(), border, "alpha {alpha}");
         }
     }
 
