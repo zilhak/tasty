@@ -134,9 +134,9 @@ const EXCLUDED: &[(&str, Kind, &str)] = &[
         "crates 바로 아래 디렉터리 실측 수 54이며 공용 순회 래칫 상한이 아니다",
     ),
     (
-        "crates/tasty-doc-guards/tests/release_assets_match_the_guide.rs",
+        "docs/design/systems/design-gallery-mapping.md",
         Kind::OtherMeaning,
-        "릴리스 자산 실측 개수 19이며 doc 주석 계측 편향이 아니다",
+        "HtmlRemoteMarker 칸 크기 20(html_remote_marker_hit)이며 doc 주석 계측 편향이 아니다",
     ),
     (
         "src/app/anomaly_settings.rs",
