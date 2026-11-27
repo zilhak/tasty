@@ -648,6 +648,37 @@ printf 'chore: bump version to 9.9.9\n\n%s\n%s\n<s>\n' "$t256" "${t256%?}" > "$m
 printf '%s\n%s\n&lt;s&gt;\n' "$t256" "${t256%?}" > "$w"
 check '4개 이상 이어진 물결표가 있는 본문은 본문 전체를 엔터티로' "$m" "$w"
 
+# 경계: 정확히 4개는 표지, 3개는 흔한 경로.
+printf 'chore: bump version to 9.9.9\n\nx ````<s>```` & y\n' > "$m"
+printf 'x ````&lt;s&gt;```` &amp; y\n' > "$w"
+check '정확히 4개 백틱 스팬이 있는 본문은 본문 전체를 엔터티로' "$m" "$w"
+
+printf 'chore: bump version to 9.9.9\n\nx ```<s>``` & y\n' > "$m"
+printf 'x ```<s>``` &amp; y\n' > "$w"
+check '3개 백틱 스팬은 흔한 경로로 코드 그대로' "$m" "$w"
+
+printf 'chore: bump version to 9.9.9\n\n~~~~\n<s> & y\n~~~~\n' > "$m"
+printf '~~~~\n&lt;s&gt; &amp; y\n~~~~\n' > "$w"
+check '정확히 4개 물결표 펜스가 있는 본문은 본문 전체를 엔터티로' "$m" "$w"
+
+printf 'chore: bump version to 9.9.9\n\n~~~\n<s> & y\n~~~\n\nAfter <s>.\n' > "$m"
+printf '~~~\n<s> & y\n~~~\n\nAfter &lt;s&gt;.\n' > "$w"
+check '3개 물결표 펜스는 흔한 경로로 코드 그대로' "$m" "$w"
+
+cat > "$m" <<'EOF'
+chore: bump version to 9.9.9
+
+a | b
+--- | ---
+c `<s>` | d \| e
+EOF
+cat > "$w" <<'EOF'
+a | b
+--- | ---
+c `&lt;s&gt;` | d \| e
+EOF
+check '선행 | 없이 구분 행으로만 알아보는 표의 백슬래시도 본문 전체를 엔터티로' "$m" "$w"
+
 printf 'chore: bump version to 9.9.9\n\n|a\\\\|b|\n|-|-|\n2. ```<s>\n' > "$m"
 printf '|a\\\\|b|\n|-|-|\n2. ```&lt;s&gt;\n' > "$w"
 check '겹 백슬래시로 칸 경계가 애매한 표 뒤의 줄도 엔터티로' "$m" "$w"
