@@ -88,6 +88,8 @@ impl ElidedLabel {
 /// `egui::Label::new(text).truncate()` 와 같게 놓고 그리되, 잘렸을 때 egui 가 붙이는 전체 글자 tooltip 은 붙이지
 /// 않는다(egui 0.31 Label 에는 이 tooltip 을 끄는 설정이 없다). 그리기는 egui `Label::ui` 의 비대화형 경로와 같다.
 fn truncated_label(ui: &mut egui::Ui, text: egui::RichText) -> ElidedLabel {
+    // egui 0.31 `Label::ui` 가 초점·강조 때 긋는 밑줄 굵기 그대로다. 새로 정한 값이 아니다.
+    const EGUI_LABEL_UNDERLINE: f32 = 1.0;
     let (pos, galley, response) = egui::Label::new(text).truncate().layout_in_ui(ui);
     let info =
         || egui::WidgetInfo::labeled(egui::WidgetType::Label, ui.is_enabled(), galley.text());
@@ -96,7 +98,7 @@ fn truncated_label(ui: &mut egui::Ui, text: egui::RichText) -> ElidedLabel {
     if ui.is_rect_visible(response.rect) {
         let color = ui.style().visuals.text_color();
         let underline = if response.has_focus() || response.highlighted() {
-            egui::Stroke::new(1.0, color)
+            egui::Stroke::new(EGUI_LABEL_UNDERLINE, color)
         } else {
             egui::Stroke::NONE
         };
