@@ -2314,7 +2314,8 @@ impl App {
     /// 메뉴 결과가 마지막 workspace를 닫을 수 있어 처리 직후 빈 창의 닫기 요청도 소비한다.
     fn poll_pending_native_menus(&mut self) {
         for (_, main, engine) in self.engines_mut().window_pairs() {
-            main.poll_pending_native_menu(&engine.read());
+            let bound = main.current_bindings(&engine.as_ref());
+            main.poll_pending_native_menu(&engine.read(), &bound);
             main.poll_outbound_drag(&engine.read());
         }
         self.poll_text_selections();

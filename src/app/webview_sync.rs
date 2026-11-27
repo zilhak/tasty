@@ -93,27 +93,24 @@ pub(crate) fn synchronize(
             }
         }
     }
-    let stale: Vec<_> = view
-        .webviews
-        .keys()
-        .copied()
-        .filter(|surface| {
-            !webview_binding_current(
-                &view.webviews,
-                &view.webview_runtime,
-                &engine.as_ref(),
-                *surface,
-            )
-        })
+    let bound = view.current_bindings(&engine.as_ref());
+    let stale: Vec<_> = (view.webviews.keys().copied())
+        .filter(|sid| !bound.contains(sid))
         .collect();
+    let mut dropped = Vec::new();
     for surface in stale {
-        view.webviews.remove(&surface);
+        dropped.extend(view.webviews.remove(&surface));
         view.webview_key_bridge.retire_view(surface);
         view.webview_runtime.remove(&surface);
         view.webview_loaded_urls.remove(&surface);
         view.webview_applied_settings.remove(&surface);
         view.webview_create_attempts.remove(&surface);
         proofs.invalidate(&view.state.webview_identity, surface);
+    }
+    if !dropped.is_empty() {
+        // view 의 Drop 은 GTK 대기 이벤트를 비운다. 그 안의 키 신호는 이 프레임의 덮개·포커스로 판정한다.
+        let (state, bridge) = (&mut view.state, &view.webview_key_bridge);
+        key_release::publish_before_gtk_pump(state, engine.core, bridge, &bound, || drop(dropped));
     }
     #[cfg(any(target_os = "linux", target_os = "macos", windows))]
     view.http_preparing.retain(|_, pending| pending.current());
@@ -918,12 +915,8 @@ fn sync_webviews(
         overlay_open,
         &webviews,
     );
-    key_release::publish_key_holder(
-        &mut view.state,
-        engine.core,
-        &view.webview_key_bridge,
-        &bound,
-    );
+    let (state, bridge) = (&mut view.state, &view.webview_key_bridge);
+    key_release::publish_key_holder(state, engine.core, bridge, &bound);
     // 이 프레임은 알림 전 포커스로 그렸다. 알림이 옮긴 포커스는 다음 프레임이 그린다.
     if notice_moved_focus {
         view.mark_dirty();

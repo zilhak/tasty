@@ -100,7 +100,8 @@ fn every_host_gtk_pump_consumes_the_focus_notices_per_event() {
 /// N1a: native 콜백이 읽는 키 쥘 곳은 게시 함수 하나(`key_release::publish_key_holder`)로만 다리에 넣고, 그 함수는
 /// 콜백이 다음에 읽기 전에 키 쥘 곳을 바꿀 수 있는 자리마다 불린다: 누름 전이 뒤(`press_and_publish`), 전달 키 처리
 /// 뒤(`dispatch_and_apply` 의 `publish_key_holder`), 프레임 동기화(회수 판정 뒤), 창 이벤트 처리 뒤(그리기 제외),
-/// 루프 끝 intent·생명주기 적용 뒤·native 입력 펌프 전. 순서의 효과는 `app::webview_keys` 상태 시험
+/// 루프 끝 intent·생명주기 적용 뒤·native 입력 펌프 전, 그리고 GTK 대기 이벤트를 건마다 소비하지 않고 비우는 펌프
+/// (native 메뉴 poll, 맞지 않은 view 의 Drop) 바로 앞(`key_release::publish_before_gtk_pump`). 순서의 효과는 `app::webview_keys` 상태 시험
 /// (`a_consumed_shortcut_publishes_before_the_next_edit_key`)이 잰다.
 #[test]
 fn webview_key_holder_publish_sites() {
@@ -178,4 +179,43 @@ fn webview_key_holder_publish_sites() {
     );
     assert!(at("self.publish_webview_key_holders(None);") < at("self.poll_tray_menu_events();"));
     assert!(at("self.publish_webview_key_holders(None);") < at("self.pump_webview_key_events();"));
+    let pump = squeeze(
+        &fn_body(
+            &read("src/app/webview_sync/key_release.rs"),
+            "pub(crate) fn publish_before_gtk_pump<",
+        )
+        .expect("publish_before_gtk_pump"),
+    );
+    assert!(
+        pump.ends_with("publish_key_holder(state,core,bridge,&|sid|bound.contains(&sid));pump()}"),
+        "펌프 앞 게시가 아니다: {pump}"
+    );
+    let menu = squeeze(
+        &fn_body(
+            &read("src/view/main/redraw.rs"),
+            "pub(crate) fn poll_pending_native_menu(",
+        )
+        .expect("poll_pending_native_menu"),
+    );
+    assert_eq!(menu.matches(".poll()").count(), 1, "메뉴 poll 은 한 번이다");
+    assert!(
+        menu.contains("let(state,bridge)=(&mutself.state,&self.webview_key_bridge);letpolled=publish_before_gtk_pump(state,engine.core,bridge,bound,||handle.poll());"),
+        "메뉴 poll 이 게시 뒤가 아니다: {menu}"
+    );
+    let synchronize = squeeze(
+        &fn_body(
+            &read("src/app/webview_sync.rs"),
+            "pub(crate) fn synchronize(",
+        )
+        .expect("synchronize"),
+    );
+    assert_eq!(
+        synchronize.matches("dropped").count(),
+        4,
+        "지운 view 를 다른 자리에서 버린다"
+    );
+    assert!(
+        synchronize.contains("let(state,bridge)=(&mutview.state,&view.webview_key_bridge);key_release::publish_before_gtk_pump(state,engine.core,bridge,&bound,||drop(dropped));"),
+        "맞지 않은 view 의 Drop 이 게시 뒤가 아니다: {synchronize}"
+    );
 }

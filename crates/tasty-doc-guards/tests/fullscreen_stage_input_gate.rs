@@ -176,7 +176,7 @@ fn os_level_ui_is_suppressed_during_a_stage() {
     // 닫힌 네이티브 메뉴의 결과를 회수하려면 폴링은 계속해야 한다.
     only_at(
         &src,
-        "self.poll_pending_native_menu(engine);",
+        "self.poll_pending_native_menu(engine, bound);",
         "네이티브 메뉴 폴링",
     );
 }
@@ -187,7 +187,7 @@ fn native_menu_polling_stays_after_render() {
     let src = read("src/view/main/redraw.rs");
     let poll = only_at(
         &src,
-        "self.poll_pending_native_menu(engine);",
+        "self.poll_pending_native_menu(engine, bound);",
         "네이티브 메뉴 폴링",
     );
     assert!(poll > only_at(&src, "fn finish_redraw(", "렌더 후처리"));

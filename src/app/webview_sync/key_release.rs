@@ -123,6 +123,39 @@ pub(crate) fn publish_key_holder(
     bridge.set_press_forecast(state.press_forecast(core, bound));
 }
 
+/// GTK 대기 이벤트를 건마다 소비하지 않고 비우는 펌프(native 메뉴 poll, binding 이 맞지 않은 view 의 Drop)를
+/// 지금 상태로 게시한 뒤 돈다. 그 펌프 안의 native 키 신호는 게시값으로 판정하는데, 펌프는 그리기·Draw 효과가 덮개와
+/// 포커스를 바꾼 뒤이자 프레임 동기화 게시 전에 돈다. 앞 게시값으로 판정하면 닫힌 덮개의 표가 유효한 키를 막고 새
+/// 덮개 밑 페이지의 키를 연다.
+/// `bound` 는 펌프 전에 모은 binding 판정(`MainView::current_bindings`)이다.
+pub(crate) fn publish_before_gtk_pump<R>(
+    state: &mut MainViewState,
+    core: &crate::core::CoreState,
+    bridge: &crate::webview::WebViewKeyBridge,
+    bound: &Bindings,
+    pump: impl FnOnce() -> R,
+) -> R {
+    publish_key_holder(state, core, bridge, &|sid| bound.contains(&sid));
+    pump()
+}
+
+/// binding 이 맞는 WebView 의 sid 집합(`webview_sync::webview_binding_current`).
+pub(crate) type Bindings = std::collections::HashSet<u32>;
+
+impl crate::view::MainView {
+    /// 창 view 를 빌린 채 도는 펌프(`MainView::poll_pending_native_menu`)는 세션을 함께 볼 수 없어 그 전에 binding 이
+    /// 맞는 sid 를 모은다.
+    pub(crate) fn current_bindings(
+        &self,
+        engine: &crate::runtime::engine_access::EngineRef<'_>,
+    ) -> Bindings {
+        let current = |&sid: &u32| {
+            super::webview_binding_current(&self.webviews, &self.webview_runtime, engine, sid)
+        };
+        self.webviews.keys().copied().filter(current).collect()
+    }
+}
+
 /// 다음 입력이 볼 키 쥘 곳. 포커스를 정규화한 뒤 포커스 노드와 복원 안내 안쪽 키 포커스로 대응표
 /// (`webview_key_holder_of`)를 읽는다. 프레임 동기화(`release_webview_key_focus`)와 native 포커스 알림 소비
 /// (`webview_keys::consume_native_focus_requests`)가 이 값 하나를 다리에 게시한다.

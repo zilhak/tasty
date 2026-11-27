@@ -115,6 +115,46 @@ fn a_linux_edit_key_after_a_press_in_one_drained_pump_runs_in_the_pressed_page()
     );
 }
 
+/// Codex 2: GTK 대기 이벤트를 건마다 소비하지 않고 비우는 펌프(native 메뉴 poll, 맞지 않은 view 의 Drop)는 그리기가
+/// 덮개를 바꾼 뒤이자 프레임 동기화 게시 전에 돈다. Given 앞 게시가 창 덮개를 담았고 그 덮개가 닫혔다, When 펌프 안에서
+/// [B 누름, Ctrl+V] 가 오면, Then B 의 붙여넣기는 닫힌 뒤 표로 열린다. 거꾸로 앞 게시 뒤 창 덮개가 열렸으면 펌프 안의
+/// [B 누름, Ctrl+V] 는 막힌다. 대조: 각 장면의 앞 게시값은 반대로 판정한다.
+#[test]
+fn a_gtk_pump_judges_its_edit_keys_with_the_state_before_the_pump() {
+    use crate::app::webview_sync::key_release::{Bindings, publish_before_gtk_pump};
+    let bound = Bindings::from([A, B]);
+    let pressed_paste = |bridge: &WebViewKeyBridge| {
+        bridge.note_press(B);
+        paste_on(bridge, B)
+    };
+    let (mut state, mut session) = two_surfaces();
+    let engine = session.borrow_mut();
+    let cover = open_cover(&mut state, PopupScope::Window);
+    let bridge = published(&mut state, engine.core);
+    bridge.note_press(B);
+    assert!(!paste_on(&bridge, B), "대조: 덮개를 담은 표는 B 를 막는다");
+    bridge.retire_view(B);
+    state
+        .popups
+        .close_instance(cover, PopupCloseReason::Command);
+    let ran = publish_before_gtk_pump(&mut state, engine.core, &bridge, &bound, || {
+        pressed_paste(&bridge)
+    });
+    assert!(ran, "닫힌 덮개의 표가 펌프 안 B 의 붙여넣기를 막는다");
+
+    let (mut state, mut session) = two_surfaces();
+    let engine = session.borrow_mut();
+    let bridge = published(&mut state, engine.core);
+    bridge.note_press(B);
+    assert!(paste_on(&bridge, B), "대조: 덮개 전 표는 B 를 연다");
+    bridge.retire_view(B);
+    open_cover(&mut state, PopupScope::Window);
+    let ran = publish_before_gtk_pump(&mut state, engine.core, &bridge, &bound, || {
+        pressed_paste(&bridge)
+    });
+    assert!(!ran, "새 창 덮개 밑 B 의 붙여넣기가 펌프 안에서 열린다");
+}
+
 /// 알림 순서: 같은 surface 의 누름·포커스 획득은 어느 순서든 그 surface, 뒤 surface 의 포커스 획득은 그 surface, 뒤의
 /// 무효 누름은 앞 값을 지킨다.
 #[test]

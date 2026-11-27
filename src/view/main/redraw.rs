@@ -1,4 +1,5 @@
 use crate::app::plugin_display::PluginDisplay;
+use crate::app::webview_sync::key_release::{Bindings, publish_before_gtk_pump};
 use crate::runtime::engine_read::EngineRead;
 use crate::view::ui::View;
 use tasty_presets::PresetKind;
@@ -139,6 +140,7 @@ impl MainView {
         &mut self,
         engine: &EngineRead<'_>,
         _plugin_manager: Option<PluginDisplay<'_>>,
+        bound: &Bindings,
     ) {
         // 무대가 draw 중 닫힐 수 있으므로 렌더 뒤 OS 전체화면 상태를 맞춘다.
         self.sync_window_fullscreen();
@@ -147,7 +149,7 @@ impl MainView {
         self.run_held_view_actions(engine);
 
         // 닫힌 메뉴의 후처리를 먼저 마쳐 새 메뉴 요청을 처리할 수 있게 한다.
-        self.poll_pending_native_menu(engine);
+        self.poll_pending_native_menu(engine, bound);
 
         // Process pending native context menu (after egui frame, before webview sync)
         self.process_pending_native_menu(engine);
@@ -499,12 +501,15 @@ impl MainView {
     }
 
     /// 메뉴 결과를 비차단 조회하고 완료됐으면 후처리를 실행한다.
-    /// redraw에서는 새 메뉴 요청보다 먼저, 대기 중에는 8ms 주기로 호출한다.
-    pub(crate) fn poll_pending_native_menu(&mut self, engine: &EngineRead<'_>) {
+    /// redraw에서는 새 메뉴 요청보다 먼저, 대기 중에는 8ms 주기로 호출한다. 조회는 GTK 대기 이벤트를 비우므로 지금
+    /// 상태로 키 쥘 곳을 게시한 뒤 돈다(`key_release::publish_before_gtk_pump`).
+    pub(crate) fn poll_pending_native_menu(&mut self, engine: &EngineRead<'_>, bound: &Bindings) {
         let Some((handle, _)) = self.pending_menu.as_mut() else {
             return;
         };
-        let Some(result) = handle.poll() else {
+        let (state, bridge) = (&mut self.state, &self.webview_key_bridge);
+        let polled = publish_before_gtk_pump(state, engine.core, bridge, bound, || handle.poll());
+        let Some(result) = polled else {
             return;
         };
         let Some((_, cont)) = self.pending_menu.take() else {

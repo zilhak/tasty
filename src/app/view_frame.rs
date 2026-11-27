@@ -90,11 +90,13 @@ impl App {
             self.plugin_manager.as_ref(),
             FramePhase::Draw,
         );
+        let bound = view.current_bindings(&session.as_ref());
         view.finish_redraw(
             &session.read(),
             self.plugin_manager
                 .as_ref()
                 .map(super::plugin_display::PluginDisplay::new),
+            &bound,
         );
         let t0 = std::time::Instant::now();
         super::webview_sync::synchronize(

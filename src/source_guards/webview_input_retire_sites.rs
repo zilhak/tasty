@@ -36,7 +36,7 @@ fn every_webview_removal_and_page_swap_retires_its_queue_entries() {
     assert!(swap < capture, "새 binding 을 적은 뒤에 옛 항목을 지운다");
     pos(
         &sync,
-        "forsurfaceinstale{view.webviews.remove(&surface);view.webview_key_bridge.retire_view(surface);",
+        "forsurfaceinstale{dropped.extend(view.webviews.remove(&surface));view.webview_key_bridge.retire_view(surface);",
         "맞지 않은 view 지움",
     );
     let webviews = body_of(rel, "fn sync_webviews(");
