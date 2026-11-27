@@ -884,7 +884,7 @@ fn sync_webviews(
         planned.extend(reveal.then_some(*sid));
     }
     let webviews: Vec<_> = view.webviews.iter().map(|(sid, wv)| (*sid, wv)).collect();
-    let (holder, notice_moved_focus) = key_release::release_after_native_focus_notices(
+    let (_holder, notice_moved_focus) = key_release::release_after_native_focus_notices(
         &mut view.state,
         engine.core,
         &view.webview_key_bridge,
@@ -892,7 +892,7 @@ fn sync_webviews(
         overlay_open,
         &webviews,
     );
-    view.webview_key_bridge.set_key_holder(holder);
+    key_release::publish_key_holder(&mut view.state, engine.core, &view.webview_key_bridge);
     // 이 프레임은 알림 전 포커스로 그렸다. 알림이 옮긴 포커스는 다음 프레임이 그린다.
     if notice_moved_focus {
         view.mark_dirty();

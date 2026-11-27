@@ -51,6 +51,22 @@ impl App {
         crate::system_tray::pump_gtk_events_each(|| self.consume_webview_focus_requests());
     }
 
+    /// WebView 가 있는 창마다 키 쥘 곳을 다리에 게시한다(`key_release::publish_key_holder`). 창 이벤트(winit 키·누름)
+    /// 처리와 루프 끝의 intent·생명주기 적용이 팝업 열기·탭 전환·선택 이동으로 키 쥘 곳을 바꾼 뒤, native 콜백이 다음
+    /// 편집 키를 판정하기 전에 부른다. `only` 가 있으면 그 창만 게시한다.
+    pub(crate) fn publish_webview_key_holders(&mut self, only: Option<winit::window::WindowId>) {
+        let ids: Vec<winit::window::WindowId> = (self.view.views.iter())
+            .filter(|(id, w)| {
+                only.is_none_or(|o| o == **id)
+                    && w.as_main().is_some_and(|main| !main.webviews.is_empty())
+            })
+            .map(|(id, _)| *id)
+            .collect();
+        for id in ids {
+            NativeInputConsumer::publish_key_holder(self, id);
+        }
+    }
+
     /// 창마다 native 입력(누름 알림·전달 키)을 도착 순서대로 소비한다(`consume_native_inputs`). 누름으로 포커스가
     /// 바뀐 창은 다시 그린다.
     pub(crate) fn consume_webview_focus_requests(&mut self) {
@@ -237,9 +253,7 @@ pub(crate) fn press_and_publish(
     kind: crate::webview::PressKind,
 ) -> bool {
     let changed = apply_native_press(state, core, surface_id, kind);
-    bridge.set_key_holder(crate::app::webview_sync::key_release::webview_key_holder(
-        state, core,
-    ));
+    crate::app::webview_sync::key_release::publish_key_holder(state, core, bridge);
     changed
 }
 
@@ -254,6 +268,8 @@ pub(crate) trait NativeInputConsumer: ForwardedKeyConsumer {
     ) -> Option<crate::webview::NativeInput>;
     /// 그 창 대기열 소비를 마친다.
     fn end_native_inputs(&mut self, id: winit::window::WindowId);
+    /// host 가 처리한 키의 전이 뒤 키 쥘 곳을 다리에 게시한다(`key_release::publish_key_holder`).
+    fn publish_key_holder(&mut self, id: winit::window::WindowId);
     /// 누름 알림 한 건의 전이와 게시(`press_and_publish`).
     fn native_press(
         &mut self,
@@ -298,6 +314,7 @@ fn dispatch_and_apply(
 ) -> ForwardedKeyOutcome {
     let outcome = consumer.dispatch(id, ev);
     consumer.apply_focus_opens(id);
+    consumer.publish_key_holder(id);
     outcome
 }
 
@@ -325,6 +342,17 @@ impl NativeInputConsumer for App {
         if let Some(main) = self.view.views.get(&id).and_then(|w| w.as_main()) {
             main.webview_key_bridge.end_consuming();
         }
+    }
+
+    fn publish_key_holder(&mut self, id: winit::window::WindowId) {
+        let Some((main, engine)) = engines_mut!(self).window_pair(id) else {
+            return;
+        };
+        crate::app::webview_sync::key_release::publish_key_holder(
+            &mut main.state,
+            engine.core,
+            &main.webview_key_bridge,
+        );
     }
 
     fn native_press(
@@ -613,6 +641,8 @@ mod tests {
         }
 
         fn end_native_inputs(&mut self, _id: winit::window::WindowId) {}
+
+        fn publish_key_holder(&mut self, _id: winit::window::WindowId) {}
 
         fn native_press(
             &mut self,

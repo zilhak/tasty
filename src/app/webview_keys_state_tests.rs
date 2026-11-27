@@ -52,6 +52,8 @@ struct Window {
     finished: Vec<(u64, ForwardedKeyOutcome)>,
     /// 소비할 대기열.
     inputs: Vec<crate::webview::NativeInput>,
+    /// 창의 편집 키 다리(Ctrl+V 붙여넣기). 키 쥘 곳은 받은 surface 로 시작한다.
+    bridge: crate::webview::WebViewKeyBridge,
 }
 
 impl Window {
@@ -63,6 +65,17 @@ impl Window {
                 .focused_surface_id(&engine.read())
                 .expect("포커스 surface")
         };
+        let bridge = crate::webview::WebViewKeyBridge::new();
+        bridge.set_policy(crate::webview::HostShortcutPolicy::new(
+            crate::webview::ShortcutSources {
+                edit: vec![(
+                    crate::webview::WebViewEditAction::Paste,
+                    vec!["ctrl+v".to_string()],
+                )],
+                ..Default::default()
+            },
+        ));
+        bridge.set_key_holder(Some(received));
         Self {
             state,
             session,
@@ -72,7 +85,21 @@ impl Window {
             received,
             finished: Vec::new(),
             inputs: Vec::new(),
+            bridge,
         }
+    }
+
+    /// 그 자리의 native 콜백이 받은 surface 의 Ctrl+V 를 막는지(`WebViewKeySink::blocks_edit_key`).
+    fn paste_blocked(&self) -> bool {
+        use crate::host_api::webview::keys::WebViewKeySink;
+        self.bridge.blocks_edit_key(
+            self.received,
+            &Key::Character("v".into()),
+            &winit::keyboard::PhysicalKey::Unidentified(
+                winit::keyboard::NativeKeyCode::Unidentified,
+            ),
+            ModifiersState::CONTROL,
+        )
     }
 
     fn key(&self, id: u64, ch: &str, mods: ModifiersState) -> WebViewKeyEvent {
@@ -206,7 +233,7 @@ impl ForwardedKeyConsumer for Window {
     }
 }
 
-/// 대기열에는 전달 키만 든다.
+/// 누름과 게시는 제품 함수(`press_and_publish`, `key_release::publish_key_holder`)로 창의 다리에 적용한다.
 impl NativeInputConsumer for Window {
     fn begin_native_inputs(&mut self, _id: winit::window::WindowId) -> bool {
         true
@@ -221,13 +248,23 @@ impl NativeInputConsumer for Window {
 
     fn end_native_inputs(&mut self, _id: winit::window::WindowId) {}
 
+    fn publish_key_holder(&mut self, _id: winit::window::WindowId) {
+        let engine = self.session.borrow_mut();
+        crate::app::webview_sync::key_release::publish_key_holder(
+            &mut self.state,
+            engine.core,
+            &self.bridge,
+        );
+    }
+
     fn native_press(
         &mut self,
         _id: winit::window::WindowId,
-        _surface_id: u32,
-        _kind: crate::webview::PressKind,
+        surface_id: u32,
+        kind: crate::webview::PressKind,
     ) {
-        unreachable!("대기열에 누름이 없다");
+        let engine = self.session.borrow_mut();
+        super::press_and_publish(&mut self.state, engine.core, &self.bridge, surface_id, kind);
     }
 }
 
@@ -568,4 +605,95 @@ fn a_path_key_from_a_visible_webview_that_is_not_selected_is_gated() {
     assert_eq!(w.consume(batch), [ForwardedKeyOutcome::Gated]);
     assert_eq!(w.state.sidebar_collapsed, collapsed);
     assert_eq!(w.resent(), [(1, false)]);
+}
+
+/// X1(N1a): Given WebView 가 키 쥘 곳인 창, When 한 회차 대기열의 [(그 WebView 누름,) Ctrl+Shift+P(명령 팔레트, host 가
+/// 가져감)]를 소비하고 다음 그리기 전에 그 WebView 의 Ctrl+V 가 native 콜백으로 오면, Then 팔레트가 열려 포커스 노드가
+/// 되고 Ctrl+V 는 다리의 게시값(팔레트, 키 쥘 곳 없음)으로 막힌다. 누름이 있든 없든 같다. 대조: 소비 전에는 막지 않는다.
+#[test]
+fn a_consumed_shortcut_publishes_before_the_next_edit_key() {
+    if crate::test_support::rerun_alone(
+        module_path!(),
+        "a_consumed_shortcut_publishes_before_the_next_edit_key",
+    ) {
+        return;
+    }
+    let _home = crate::test_support::IsolatedHome::new();
+    let event_loop = event_loop();
+    for with_press in [false, true] {
+        let mut w = Window::new(event_loop.create_proxy());
+        assert_default_bindings(&mut w);
+        let received = w.received;
+        let mut inputs = Vec::new();
+        if with_press {
+            inputs.push(crate::webview::NativeInput::Press {
+                surface_id: received,
+                kind: crate::webview::PressKind::Click,
+            });
+        }
+        inputs.push(crate::webview::NativeInput::Forwarded(w.key(
+            1,
+            "P",
+            ctrl_shift(),
+        )));
+        w.inputs = inputs;
+        assert!(!w.paste_blocked(), "대조: 소비 전 누름 {with_press}");
+        consume_native_inputs(&mut w, winit::window::WindowId::from(1));
+        assert_eq!(
+            w.finished,
+            [(1, ForwardedKeyOutcome::Handled)],
+            "누름 {with_press}"
+        );
+        let FocusNode::Popup(PopupNode::Host(iid)) = w.focus_node() else {
+            panic!("포커스 노드가 host 팝업이 아니다: {:?}", w.focus_node());
+        };
+        assert_eq!(
+            w.state.popups.instance(iid).map(|p| p.id),
+            Some(COMMAND_PALETTE_POPUP_ID)
+        );
+        assert!(
+            w.paste_blocked(),
+            "누름 {with_press}: 열린 팔레트 뒤의 Ctrl+V 를 막지 않는다"
+        );
+    }
+}
+
+/// X1 한계(S6c 질문 2): Given WebView 가 키 쥘 곳인 창, When Ctrl+Shift+P 가 대기열에 든 채 아직 소비되지 않았을 때 같은
+/// WebView 의 Ctrl+V 가 native 콜백으로 오면, Then 그 Ctrl+V 는 지금 게시값(그 WebView)으로 판정돼 막히지 않는다. 앞
+/// 단축키가 소비되기 전의 경계는 이 판이 다루지 않는다(그 자리 판정 그대로).
+#[test]
+fn an_edit_key_before_its_shortcut_is_consumed_keeps_the_open_gate() {
+    use crate::host_api::webview::keys::WebViewKeySink;
+    let (_state, mut session) = crate::state::tests::test_state();
+    let received = {
+        let engine = session.borrow_mut();
+        _state
+            .focused_surface_id(&engine.read())
+            .expect("포커스 surface")
+    };
+    let bridge = crate::webview::WebViewKeyBridge::new();
+    bridge.set_policy(crate::webview::HostShortcutPolicy::new(
+        crate::webview::ShortcutSources {
+            host: vec!["ctrl+shift+p".to_string()],
+            edit: vec![(
+                crate::webview::WebViewEditAction::Paste,
+                vec!["ctrl+v".to_string()],
+            )],
+            ..Default::default()
+        },
+    ));
+    bridge.set_key_holder(Some(received));
+    let unknown =
+        winit::keyboard::PhysicalKey::Unidentified(winit::keyboard::NativeKeyCode::Unidentified);
+    assert!(
+        bridge
+            .forward_key(received, Key::Character("P".into()), unknown, ctrl_shift())
+            .is_some()
+    );
+    let v = Key::Character("v".into());
+    assert!(!bridge.blocks_edit_key(received, &v, &unknown, ModifiersState::CONTROL));
+    assert_eq!(
+        bridge.edit_action(received, &v, &unknown, ModifiersState::CONTROL),
+        Some(crate::webview::WebViewEditAction::Paste)
+    );
 }

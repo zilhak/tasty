@@ -376,7 +376,13 @@ impl ApplicationHandler<AppEvent> for App {
             }
         }
 
+        let redraw = matches!(event, WindowEvent::RedrawRequested);
         self.route_window_input(id, event);
+        // 그리기는 프레임 동기화가 게시한다. 그 밖의 사건 처리(winit 키·누름)가 바꾼 키 쥘 곳은 native 콜백이 다음
+        // 편집 키를 판정하기 전에 게시한다.
+        if !redraw {
+            self.publish_webview_key_holders(Some(id));
+        }
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
@@ -589,6 +595,8 @@ impl ApplicationHandler<AppEvent> for App {
         self.dispatch_plugin_popup_events();
         self.process_plugins_window_actions();
         self.process_pending_open_preset_window(event_loop);
+        // 위 intent·생명주기 적용이 바꾼 키 쥘 곳을 native 입력을 펌프하기 전에 게시한다.
+        self.publish_webview_key_holders(None);
 
         self.poll_tray_menu_events();
 

@@ -96,3 +96,86 @@ fn every_host_gtk_pump_consumes_the_focus_notices_per_event() {
         "halt 펌프가 native 입력을 소비한다"
     );
 }
+
+/// N1a: native 콜백이 읽는 키 쥘 곳은 게시 함수 하나(`key_release::publish_key_holder`)로만 다리에 넣고, 그 함수는
+/// 콜백이 다음에 읽기 전에 키 쥘 곳을 바꿀 수 있는 자리마다 불린다: 누름 전이 뒤(`press_and_publish`), 전달 키 처리
+/// 뒤(`dispatch_and_apply` 의 `publish_key_holder`), 프레임 동기화(회수 판정 뒤), 창 이벤트 처리 뒤(그리기 제외),
+/// 루프 끝 intent·생명주기 적용 뒤·native 입력 펌프 전. 순서의 효과는 `app::webview_keys` 상태 시험
+/// (`a_consumed_shortcut_publishes_before_the_next_edit_key`)이 잰다.
+#[test]
+fn webview_key_holder_publish_sites() {
+    let read = |rel: &str| {
+        std::fs::read_to_string(repo_root().join(rel))
+            .unwrap_or_else(|e| panic!("{rel} 을 읽지 못했다: {e}"))
+            .replace("\r\n", "\n")
+    };
+    let squeeze = |s: &str| strip_comments(s).split_whitespace().collect::<String>();
+    // 게시 함수 밖에서 다리의 키 쥘 곳을 직접 넣는 제품 호출은 없다(시험 모듈 제외).
+    let mut direct = Vec::new();
+    for (rel, src) in super::rust_sources() {
+        let rel = rel.to_string_lossy().into_owned();
+        if rel.ends_with("tests.rs")
+            || rel.contains("/tests/")
+            || rel.starts_with("src/source_guards/")
+        {
+            continue;
+        }
+        let product = src.split("\nmod tests {").next().unwrap_or_default();
+        let calls = strip_comments(product).matches("set_key_holder(").count()
+            - strip_comments(product)
+                .matches("fn set_key_holder(")
+                .count();
+        if calls > 0 {
+            direct.push((rel, calls));
+        }
+    }
+    assert_eq!(
+        direct,
+        [("src/app/webview_sync/key_release.rs".to_string(), 1)],
+        "키 쥘 곳을 게시 함수 밖에서 넣는다"
+    );
+    let keys = read("src/app/webview_keys.rs");
+    let press =
+        squeeze(&fn_body(&keys, "pub(crate) fn press_and_publish(").expect("press_and_publish"));
+    assert!(
+        press.ends_with(
+            "letchanged=apply_native_press(state,core,surface_id,kind);crate::app::webview_sync::key_release::publish_key_holder(state,core,bridge);changed}"
+        ),
+        "누름 전이 뒤 게시가 아니다: {press}"
+    );
+    let apply = squeeze(&fn_body(&keys, "fn dispatch_and_apply(").expect("dispatch_and_apply"));
+    assert!(
+        apply.contains("consumer.apply_focus_opens(id);consumer.publish_key_holder(id);"),
+        "전달 키 처리 뒤 게시가 아니다: {apply}"
+    );
+    let sync = squeeze(
+        &fn_body(&read("src/app/webview_sync.rs"), "fn sync_webviews(").expect("sync_webviews"),
+    );
+    let release = sync
+        .find("key_release::release_after_native_focus_notices(")
+        .expect("회수 판정");
+    let publish = sync
+        .find("key_release::publish_key_holder(")
+        .expect("동기화 게시");
+    assert!(release < publish, "동기화 게시가 회수 판정 앞이다");
+    let handler = read("src/app/event_handler.rs");
+    let window = squeeze(&fn_body(&handler, "fn window_event(").expect("window_event"));
+    assert!(
+        window.ends_with(
+            "letredraw=matches!(event,WindowEvent::RedrawRequested);self.route_window_input(id,event);if!redraw{self.publish_webview_key_holders(Some(id));}}"
+        ),
+        "창 이벤트 처리 뒤 게시가 아니다"
+    );
+    let wait = squeeze(&fn_body(&handler, "fn about_to_wait(").expect("about_to_wait"));
+    let at = |needle: &str| {
+        assert_eq!(wait.matches(needle).count(), 1, "`{needle}` 는 한 번이다");
+        wait.find(needle).unwrap()
+    };
+    assert!(at("self.dispatch_pending_intents();") < at("self.publish_webview_key_holders(None);"));
+    assert!(
+        at("self.process_pending_open_preset_window(event_loop);")
+            < at("self.publish_webview_key_holders(None);")
+    );
+    assert!(at("self.publish_webview_key_holders(None);") < at("self.poll_tray_menu_events();"));
+    assert!(at("self.publish_webview_key_holders(None);") < at("self.pump_webview_key_events();"));
+}

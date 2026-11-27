@@ -100,6 +100,14 @@ impl NativeInputConsumer for Turn<'_> {
         self.bridge.end_consuming();
     }
 
+    fn publish_key_holder(&mut self, _id: winit::window::WindowId) {
+        crate::app::webview_sync::key_release::publish_key_holder(
+            self.state,
+            self.core,
+            self.bridge,
+        );
+    }
+
     fn native_press(&mut self, _id: winit::window::WindowId, surface_id: u32, kind: PressKind) {
         press_and_publish(self.state, self.core, self.bridge, surface_id, kind);
     }

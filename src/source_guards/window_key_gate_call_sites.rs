@@ -177,8 +177,9 @@ fn forwarded_webview_keys_are_consumed_through_the_consumer_loop() {
     );
     let one = squeeze(&fn_body(&src, "fn dispatch_and_apply(").expect("dispatch_and_apply"));
     assert_eq!(
-        one, "{letoutcome=consumer.dispatch(id,ev);consumer.apply_focus_opens(id);outcome}",
-        "처리 → 포커스 열기 적용 순서가 아니다"
+        one,
+        "{letoutcome=consumer.dispatch(id,ev);consumer.apply_focus_opens(id);consumer.publish_key_holder(id);outcome}",
+        "처리 → 포커스 열기 적용 → 키 쥘 곳 게시 순서가 아니다"
     );
     // 대역 소비자(시험 모듈)와 trait 선언에도 같은 이름이 있으므로 제품 소비자 impl 만 잘라 읽는다.
     let start = src
