@@ -280,6 +280,15 @@ impl Endpoint {
         let listener = TcpListener::bind(("127.0.0.1", config.port))
             .await
             .map_err(|error| bind_error(ListenerRole::Endpoint, config.port, &error))?;
+        #[cfg(all(test, windows))]
+        tasty_utils::socket_inherit::seam::created(SEAM_LISTENER, &listener, None);
+        // 이 뒤에 std `Command` 로 뜨는 자식이 끝점 listener 를 쥐지 않게 한다. 끄지 못해도 끝점은 그대로 열고
+        // 경고만 남긴다.
+        if let Err(error) = tasty_utils::socket_inherit::disable_inherit(&listener) {
+            tracing::warn!(%error, "native mirror listener could not be kept out of child processes");
+        }
+        #[cfg(all(test, windows))]
+        tasty_utils::socket_inherit::seam::cleared(SEAM_LISTENER, &listener, None);
         let address = listener.local_addr();
         #[cfg(test)]
         let address = fault.endpoint_addr(address);
@@ -421,6 +430,23 @@ async fn listen(
     result
 }
 fn spawn_connection(state: &Arc<State>, tasks: &mut JoinSet<()>, socket: TcpStream) {
+    #[cfg(all(test, windows))]
+    tasty_utils::socket_inherit::seam::created(
+        SEAM_ACCEPT,
+        &socket,
+        socket.local_addr().ok().map(|addr| addr.port()),
+    );
+    // 이 뒤에 뜨는 자식이 연결을 쥐지 않게 한다. 끄지 못하면 그 연결만 닫는다.
+    if let Err(error) = tasty_utils::socket_inherit::disable_inherit(&socket) {
+        tracing::warn!(%error, "native mirror connection could not be kept out of child processes");
+        return;
+    }
+    #[cfg(all(test, windows))]
+    tasty_utils::socket_inherit::seam::cleared(
+        SEAM_ACCEPT,
+        &socket,
+        socket.local_addr().ok().map(|addr| addr.port()),
+    );
     let Ok(permit) = state.budget.socket() else {
         drop(socket);
         return;
@@ -580,3 +606,8 @@ fn sni_matches(authority: &Authority, sni: Option<&str>) -> bool {
 }
 #[cfg(test)]
 mod tests;
+/// 시험 이음새(`tasty_utils::socket_inherit::seam`)의 자리 이름.
+#[cfg(all(test, windows))]
+const SEAM_LISTENER: &str = "webview-endpoint.listener";
+#[cfg(all(test, windows))]
+const SEAM_ACCEPT: &str = "webview-endpoint.accept";

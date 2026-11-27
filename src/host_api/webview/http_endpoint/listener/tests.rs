@@ -431,4 +431,6 @@ mod tls;
 
 mod preparation;
 
+#[cfg(windows)]
+mod inherit;
 mod trust;
