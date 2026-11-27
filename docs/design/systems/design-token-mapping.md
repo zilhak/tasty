@@ -158,12 +158,12 @@ Tag는 모든 상태 variant가 `tag_bg()` 위에 그리고 테두리는 `tag_in
 
 디자인 `tokens/components.css:295-296` 의 `--tasty-preset-split-zone-*` 2종. 프리셋 편집기에서
 surface 경계 30% 존을 hover 할 때 뜨는 밴드+분할선 색. accent-primary 는 **테마 가변색**이라
-`from_rgba` 리터럴이 아니라 `HexColor::with_alpha` 로 rgb 를 보존하고 알파만 파생한다(scrim 은
-고정 검정이라 `from_rgba` 지만, 이건 가변 accent 라 접근자 방식이 정답). dtcg 인제스트 완료.
+`from_rgba` 리터럴이 아니라 accent 를 `transparent` 와 섞는 정본 식 `mix_srgb_premultiplied` 로 rgb 를 보존하고
+알파만 accent 알파 × 비율로 파생한다(scrim 은 고정 검정이라 `from_rgba` 지만, 이건 가변 accent 라 접근자 방식이 정답). dtcg 인제스트 완료.
 
 | 디자인 토큰 | 디자인 체인 | tasty Theme | 비고 |
 |---|---|---|---|
-| `--tasty-preset-split-zone-bg` | `color-mix(accent-primary 22%, transparent)` | `Theme::preset_split_zone_bg()` = `accent_primary().with_alpha(56)` | 존 밴드 채움(22%×255≈56). `PRESET_SPLIT_ZONE_BG_ALPHA` |
+| `--tasty-preset-split-zone-bg` | `color-mix(accent-primary 22%, transparent)` | `Theme::preset_split_zone_bg()` = `mix_srgb_premultiplied(accent_primary(), 22, CSS_TRANSPARENT)` | 존 밴드 채움(불투명 accent 면 22%×255≈56) |
 | `--tasty-preset-split-zone-border` | `color-mix(accent-primary 55%, transparent)` | `Theme::preset_split_zone_border()` = `accent_primary().with_alpha(140)` | 안쪽 변 2px 분할선(55%×255≈140). `PRESET_SPLIT_ZONE_BORDER_ALPHA`. 굵기는 `--tasty-preset-split-divider-width` → `Theme::preset_split_divider_width()`(= `selection_edge_width`, hairline, 배율 제외) |
 | `--tasty-preset-leaf-selected-ring-width` | `focus-ring-width` | `Theme::preset_leaf_selected_ring_width()`(= `focus_ring_width`, 배율 적용) | 선택한 leaf 를 감싸는 2px accent 링 |
 
@@ -171,20 +171,20 @@ surface 경계 30% 존을 hover 할 때 뜨는 밴드+분할선 색. accent-prim
 
 ## explorer drop target 채움
 
-`--tasty-explorer-drop-target-bg`는 accent-primary와 `transparent`를 tint-fill 비율로 섞는 식이라 생성기가 건너뛴다. preset split-zone과 같은 방식으로 accent의 rgb를 보존하고 알파만 낮추는 수기 접근자를 둔다.
+`--tasty-explorer-drop-target-bg`는 accent-primary와 `transparent`를 tint-fill 비율로 섞는 식이라 생성기가 건너뛴다. preset split-zone과 같은 방식으로 accent의 rgb를 보존하고 알파만 accent 알파 × tint-fill 비율로 낮추는 수기 접근자를 둔다.
 
 | 디자인 토큰 | 디자인 체인 | tasty Theme | 비고 |
 |---|---|---|---|
-| `--tasty-explorer-drop-target-bg` | `color-mix(accent-primary × tint-fill-alpha, transparent)` | `Theme::explorer_drop_target_bg()` = `accent_primary().with_alpha(31)` | 12%×255≈31. 행 fill과 잉크 아래에 칠한다(`DropTintSlot`, 링은 마지막). `EXPLORER_DROP_TARGET_BG_ALPHA`. 시험이 `TINT_FILL_ALPHA`의 반올림과 같은지 확인한다 |
+| `--tasty-explorer-drop-target-bg` | `color-mix(accent-primary × tint-fill-alpha, transparent)` | `Theme::explorer_drop_target_bg()` = `mix_srgb_premultiplied(accent_primary(), 12, CSS_TRANSPARENT)`(12 = `TINT_FILL_ALPHA`의 퍼센트) | 불투명 accent 면 12%×255≈31. 행 fill과 잉크 아래에 칠한다(`DropTintSlot`, 링은 마지막) |
 
 ## 창 파일 드롭 오버레이
 
-`--tasty-file-drop-overlay-bg`·`--tasty-file-drop-overlay-border`도 accent-primary와 `transparent`를 섞는 식이라 생성기가 건너뛴다. 같은 방식으로 알파만 낮추는 수기 접근자를 둔다. 글자·글리프 색 `--tasty-file-drop-overlay-fg`(accent-primary)는 생성 접근자다. 세 토큰은 본체와 갤러리가 함께 부르는 `tasty_ui_widgets::file_drop_overlay` 가 쓴다 — 터미널 영역 안쪽 `spacing-sm` 상자에 채움과 1px 테두리, 가운데에 download 글리프(`icon-size-md`) + `spacing-sm` + 라벨(`font-size-body`).
+`--tasty-file-drop-overlay-bg`·`--tasty-file-drop-overlay-border`도 accent-primary와 `transparent`를 섞는 식이라 생성기가 건너뛴다. 같은 방식으로 알파만 accent 알파 × 비율로 낮추는 수기 접근자를 둔다. 글자·글리프 색 `--tasty-file-drop-overlay-fg`(accent-primary)는 생성 접근자다. 세 토큰은 본체와 갤러리가 함께 부르는 `tasty_ui_widgets::file_drop_overlay` 가 쓴다 — 터미널 영역 안쪽 `spacing-sm` 상자에 채움과 1px 테두리, 가운데에 download 글리프(`icon-size-md`) + `spacing-sm` + 라벨(`font-size-body`).
 
 | 디자인 토큰 | 디자인 체인 | tasty Theme | 비고 |
 |---|---|---|---|
-| `--tasty-file-drop-overlay-bg` | `color-mix(accent-primary × tint-fill-alpha, transparent)` | `Theme::file_drop_overlay_bg()` = `accent_primary().with_alpha(31)` | 12%×255≈31. `FILE_DROP_OVERLAY_BG_ALPHA` |
-| `--tasty-file-drop-overlay-border` | `color-mix(accent-primary × tint-border-alpha, transparent)` | `Theme::file_drop_overlay_border()` = `accent_primary().with_alpha(92)` | 36%×255≈92. `FILE_DROP_OVERLAY_BORDER_ALPHA`. 시험이 두 알파가 `TINT_FILL_ALPHA`·`TINT_BORDER_ALPHA`의 반올림과 같은지 확인한다 |
+| `--tasty-file-drop-overlay-bg` | `color-mix(accent-primary × tint-fill-alpha, transparent)` | `Theme::file_drop_overlay_bg()` = `mix_srgb_premultiplied(accent_primary(), 12, CSS_TRANSPARENT)` | 불투명 accent 면 12%×255≈31 |
+| `--tasty-file-drop-overlay-border` | `color-mix(accent-primary × tint-border-alpha, transparent)` | `Theme::file_drop_overlay_border()` = `mix_srgb_premultiplied(accent_primary(), 36, CSS_TRANSPARENT)`(36 = `TINT_BORDER_ALPHA`의 퍼센트) | 불투명 accent 면 36%×255≈92 |
 
 ## explorer 영역 선택 사각형
 

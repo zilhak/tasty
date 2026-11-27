@@ -355,10 +355,9 @@ State 셀은 `status_dot`(점 `status_dot_size` 8 + `space-xs` 4 + caption 11px 
   인자다 — `a` 를 정수 퍼센트만큼 `b` 에 섞는다). 결과 알파는 두 알파를 비율대로 섞은 값이고, 채널은 알파를
   곱한 값을 정수로 보간한 뒤 결과 알파로 나눠 반올림한다(.5는 올림). 섞은 알파가 0이면 투명 검정이다.
   불투명 블렌드는 바탕 색을 `b` 로, transparent 믹스는 `b` 를 `CSS_TRANSPARENT`(`state_ink.rs`) 로 준다.
-  transparent 믹스는 채널이 강조색 그대로이고 알파만 강조색 알파 × 비율이 된다. `theme.rs` 의
-  `preset_split_zone_bg`·`explorer_drop_target_bg`·`file_drop_overlay_*`·`plugin_avatar_border` 와
-  `explorer_marquee.rs` 는 아직 강조색 알파를 상수 알파로 덮는다(불투명 강조색에서만 정본과 같다).
-- **근거**: 호출자는 `theme.rs`(`plugin_avatar_bg`)·`state_ink.rs`(`tint()`·`tint_border()` 포함)·
+  transparent 믹스는 채널이 강조색 그대로이고 알파만 강조색 알파 × 비율이 된다. `explorer_marquee.rs` 는
+  아직 강조색 알파를 상수 알파로 덮는다(불투명 강조색에서만 정본과 같다).
+- **근거**: 호출자는 `theme.rs`(`plugin_avatar_*`·`preset_split_zone_bg`·`explorer_drop_target_bg`·`file_drop_overlay_*`)·`state_ink.rs`(`tint()`·`tint_border()` 포함)·
   `dag_mix.rs`·`notification_ink.rs`·`approval_danger.rs` 다. 최종 변환 `HexColor::to_egui`(`crates/tasty-type-appearance/src/color.rs`)가
   sRGB 바이트에 알파를 곱해 premultiplied 색을 만든다. egui 렌더러가 sRGB 바이트 공간에서 합성하므로 CSS
   `color-mix(in srgb …, transparent)` 를 배경에 올린 값과 같다. 선형 공간에서 곱하는

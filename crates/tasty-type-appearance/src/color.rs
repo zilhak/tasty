@@ -566,19 +566,21 @@ mod tests {
     #[cfg(feature = "egui-compat")]
     #[test]
     fn a_tinted_fill_composites_like_css_color_mix() {
-        let fill = HexColor::from_rgb(0x89, 0xb4, 0xfa)
-            .with_alpha(crate::theme::EXPLORER_DROP_TARGET_BG_ALPHA)
-            .to_egui();
+        // drop target 채움과 같은 식: accent 를 tint-fill 비율로 transparent 와 섞는다.
+        let tint = |accent: HexColor| {
+            crate::theme::mix_srgb_premultiplied(
+                accent,
+                crate::theme::whole_percent(crate::theme::TINT_FILL_ALPHA),
+                crate::state_ink::CSS_TRANSPARENT,
+            )
+        };
+        let fill = tint(HexColor::from_rgb(0x89, 0xb4, 0xfa)).to_egui();
         assert_eq!(over(fill, (0x1e, 0x1e, 0x2e)), (43, 48, 70));
-        let latte = HexColor::from_rgb(0x1e, 0x66, 0xf5)
-            .with_alpha(crate::theme::EXPLORER_DROP_TARGET_BG_ALPHA)
-            .to_egui();
+        let latte_hex = tint(HexColor::from_rgb(0x1e, 0x66, 0xf5));
+        let latte = latte_hex.to_egui();
         // Latte base #eff1f5 위 기대값은 CSS 처럼 sRGB 바이트를 선형 보간해 구한다.
         let css = |c: u8, bg: u8| {
-            (f32::from(bg)
-                + (f32::from(c) - f32::from(bg))
-                    * f32::from(crate::theme::EXPLORER_DROP_TARGET_BG_ALPHA)
-                    / 255.0)
+            (f32::from(bg) + (f32::from(c) - f32::from(bg)) * f32::from(latte_hex.a()) / 255.0)
                 .round() as u8
         };
         let want = (css(0x1e, 0xef), css(0x66, 0xf1), css(0xf5, 0xf5));

@@ -4,6 +4,7 @@
 
 use crate::color::{GpuRgb, HexColor, PremulColor};
 use crate::motion::Millis;
+use crate::state_ink::CSS_TRANSPARENT;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use tasty_type_geometry::length::LogicalPx;
@@ -201,26 +202,6 @@ pub const SHADOW_NONE: ShadowToken = ShadowToken {
 /// straight (테마 무관 고정 검정). `Theme::scrim()` 이 이 값으로 색을 만든다.
 pub const SCRIM_ALPHA: u8 = 128;
 
-/// design `--tasty-preset-split-zone-bg` = accent-primary 22%. 프리셋 편집기 경계
-/// hover-split 존 밴드 채움 알파(22%×255≈56). accent 색은 테마 가변 → 알파만 파생.
-pub const PRESET_SPLIT_ZONE_BG_ALPHA: u8 = 56;
-
-/// design `plugins_window.jsx` `PluginAvatar` 보더 `color-mix(in srgb, C 38%, transparent)`
-/// 의 알파(38%×255≈97). 두 번째 항이 `transparent` 라 색은 그대로 두고 알파만 낮춘다.
-pub const PLUGIN_AVATAR_BORDER_ALPHA: u8 = 97;
-
-/// design `--tasty-explorer-drop-target-bg` = accent-primary × tint-fill-alpha(12%) 와
-/// `transparent` 의 합성. 색은 그대로 두고 알파만 낮춘다(12%×255≈31).
-pub const EXPLORER_DROP_TARGET_BG_ALPHA: u8 = 31;
-
-/// design `--tasty-file-drop-overlay-bg` = accent-primary × tint-fill-alpha(12%) 와
-/// `transparent` 의 합성. explorer drop target 채움과 같은 식이다(12%×255≈31).
-pub const FILE_DROP_OVERLAY_BG_ALPHA: u8 = 31;
-
-/// design `--tasty-file-drop-overlay-border` = accent-primary × tint-border-alpha(36%) 와
-/// `transparent` 의 합성. 색은 그대로 두고 알파만 낮춘다(36%×255≈92).
-pub const FILE_DROP_OVERLAY_BORDER_ALPHA: u8 = 92;
-
 /// 강조색으로 옅게 채우는 공통 비율. 알파 바이트가 아닌 계산용 f32 계수다.
 pub const TINT_FILL_ALPHA: f32 = 0.12;
 
@@ -245,7 +226,7 @@ pub(crate) fn mix_srgb_premultiplied(a: HexColor, percent: u8, b: HexColor) -> H
     let wb = u32::from(b.a()) * (100 - pa);
     let sum = wa + wb;
     if sum == 0 {
-        return crate::state_ink::CSS_TRANSPARENT;
+        return CSS_TRANSPARENT;
     }
     let round_div = |n: u32, d: u32| ((2 * n + d) / (2 * d)) as u8;
     let ch = |x: u8, y: u8| round_div(u32::from(x) * wa + u32::from(y) * wb, sum);
@@ -1503,33 +1484,44 @@ impl Theme {
         HexColor::from_rgba(0, 0, 0, SCRIM_ALPHA)
     }
 
-    /// 프리셋 경계의 분할 영역을 accent-primary 22%로 채운다.
+    /// 프리셋 경계의 분할 영역 채움. design `--tasty-preset-split-zone-bg` = accent-primary 22% +
+    /// transparent(강조색 알파 × 22%).
     #[inline]
     pub fn preset_split_zone_bg(&self) -> HexColor {
-        self.accent_primary().with_alpha(PRESET_SPLIT_ZONE_BG_ALPHA)
+        mix_srgb_premultiplied(self.accent_primary(), 22, CSS_TRANSPARENT)
     }
 
     /// 드래그 중 놓을 수 있는 폴더 행·셀·트리 노드·목록 본문의 채움. design
-    /// `--tasty-explorer-drop-target-bg` ([`EXPLORER_DROP_TARGET_BG_ALPHA`]).
+    /// `--tasty-explorer-drop-target-bg` = accent-primary × tint-fill-alpha + transparent.
     #[inline]
     pub fn explorer_drop_target_bg(&self) -> HexColor {
-        self.accent_primary()
-            .with_alpha(EXPLORER_DROP_TARGET_BG_ALPHA)
+        mix_srgb_premultiplied(
+            self.accent_primary(),
+            whole_percent(TINT_FILL_ALPHA),
+            CSS_TRANSPARENT,
+        )
     }
 
-    /// 창 파일 드롭 오버레이의 채움. design `--tasty-file-drop-overlay-bg`
-    /// ([`FILE_DROP_OVERLAY_BG_ALPHA`]).
+    /// 창 파일 드롭 오버레이의 채움. design `--tasty-file-drop-overlay-bg` = accent-primary ×
+    /// tint-fill-alpha + transparent.
     #[inline]
     pub fn file_drop_overlay_bg(&self) -> HexColor {
-        self.accent_primary().with_alpha(FILE_DROP_OVERLAY_BG_ALPHA)
+        mix_srgb_premultiplied(
+            self.accent_primary(),
+            whole_percent(TINT_FILL_ALPHA),
+            CSS_TRANSPARENT,
+        )
     }
 
-    /// 창 파일 드롭 오버레이의 1px 테두리. design `--tasty-file-drop-overlay-border`
-    /// ([`FILE_DROP_OVERLAY_BORDER_ALPHA`]).
+    /// 창 파일 드롭 오버레이의 1px 테두리. design `--tasty-file-drop-overlay-border` = accent-primary ×
+    /// tint-border-alpha + transparent.
     #[inline]
     pub fn file_drop_overlay_border(&self) -> HexColor {
-        self.accent_primary()
-            .with_alpha(FILE_DROP_OVERLAY_BORDER_ALPHA)
+        mix_srgb_premultiplied(
+            self.accent_primary(),
+            whole_percent(TINT_BORDER_ALPHA),
+            CSS_TRANSPARENT,
+        )
     }
 
     // 매니페스트에 카테고리가 없으므로 디자인의 기본 카테고리색인 accent_primary를 사용한다.
@@ -1540,11 +1532,10 @@ impl Theme {
         mix_srgb_premultiplied(self.accent_primary(), 18, self.surface_raised())
     }
 
-    /// design `PluginAvatar` 보더 = 카테고리색 38% + transparent
-    /// ([`PLUGIN_AVATAR_BORDER_ALPHA`]).
+    /// design `PluginAvatar` 보더 = 카테고리색 38% + transparent(카테고리색 알파 × 38%).
     #[inline]
     pub fn plugin_avatar_border(&self) -> HexColor {
-        self.accent_primary().with_alpha(PLUGIN_AVATAR_BORDER_ALPHA)
+        mix_srgb_premultiplied(self.accent_primary(), 38, CSS_TRANSPARENT)
     }
 
     /// 프리셋 편집기 leaf 미리보기 값 요약의 라벨(소문자 필드 키) 색. design
@@ -2828,34 +2819,30 @@ mod tests {
         }
     }
 
-    /// drop target 채움 알파는 tint-fill-alpha 계수를 바이트로 반올림한 값이다.
-    #[test]
-    fn explorer_drop_target_bg_alpha_follows_the_tint_fill_fraction() {
-        let expected = (TINT_FILL_ALPHA * 255.0).round() as u8;
-        assert_eq!(EXPLORER_DROP_TARGET_BG_ALPHA, expected);
-        let th = Theme::with_colors(distinct_colors(), false);
-        assert_eq!(
-            th.explorer_drop_target_bg(),
-            th.accent_primary().with_alpha(expected)
-        );
+    /// 시험의 반투명 강조색 알파.
+    const HALF_ALPHA: u8 = 128;
+
+    /// 강조색 알파 `a`에 tint 비율을 곱해 반올림한 기대 알파.
+    fn tinted_alpha(a: u8, fraction: f32) -> u8 {
+        (f32::from(a) * fraction).round() as u8
     }
 
-    /// 파일 드롭 오버레이 채움·테두리 알파는 tint-fill·tint-border 계수를 바이트로 반올림한 값이다.
+    /// drop target·파일 드롭 오버레이 채움과 테두리는 강조색 rgb를 두고 강조색 알파에 tint 비율을 곱한다.
+    /// 불투명 강조색이면 비율 × 255, 반투명이면 그 알파 × 비율이다.
     #[test]
-    fn file_drop_overlay_alphas_follow_the_tint_fractions() {
-        let fill = (TINT_FILL_ALPHA * 255.0).round() as u8;
-        let border = (TINT_BORDER_ALPHA * 255.0).round() as u8;
-        assert_eq!(FILE_DROP_OVERLAY_BG_ALPHA, fill);
-        assert_eq!(FILE_DROP_OVERLAY_BORDER_ALPHA, border);
-        let th = Theme::with_colors(distinct_colors(), false);
-        assert_eq!(
-            th.file_drop_overlay_bg(),
-            th.accent_primary().with_alpha(fill)
-        );
-        assert_eq!(
-            th.file_drop_overlay_border(),
-            th.accent_primary().with_alpha(border)
-        );
+    fn drop_tints_multiply_the_accent_alpha_by_the_tint_fractions() {
+        for alpha in [u8::MAX, HALF_ALPHA] {
+            let mut colors = distinct_colors();
+            colors.blue = colors.blue.with_alpha(alpha);
+            let th = Theme::with_colors(colors, false);
+            let accent = th.accent_primary();
+            assert_eq!(accent.a(), alpha);
+            let fill = accent.with_alpha(tinted_alpha(alpha, TINT_FILL_ALPHA));
+            let border = accent.with_alpha(tinted_alpha(alpha, TINT_BORDER_ALPHA));
+            assert_eq!(th.explorer_drop_target_bg(), fill, "alpha {alpha}");
+            assert_eq!(th.file_drop_overlay_bg(), fill, "alpha {alpha}");
+            assert_eq!(th.file_drop_overlay_border(), border, "alpha {alpha}");
+        }
     }
 
     /// egui 변환이 음수 spread를 지원하지 않으므로 현재 토큰에서 사용하지 않는지 확인한다.
