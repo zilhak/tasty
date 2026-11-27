@@ -517,8 +517,8 @@ fn callout_buttons_read_the_app_tutorial_keys_and_the_raised_ghost_ink() {
     }
 }
 
-/// 갤러리 표본(줄바꿈 묶음 안)에서 말풍선 안이 세로로 쌓이는지 그린 글자 Rect로 본다. 제목은 본문 위에 있고,
-/// 버튼 글자는 어느 본문 글자와도 겹치지 않으며 본문 아래에 있다.
+/// 갤러리 표본(줄바꿈 묶음 안)에서 말풍선 안이 세로로 쌓이는지 그린 도형으로 본다. 말풍선마다 제목은 본문
+/// 위에 있고, 같은 말풍선의 버튼 줄(버튼 배경 Rect의 합)이 있으며 그 줄이 본문 Rect와 겹치지 않는다.
 #[test]
 fn callout_specimen_stacks_the_body_above_the_button_row() {
     use crate::catalog::components::painted::{mocha_latte, paint};
@@ -538,8 +538,23 @@ fn callout_specimen_stacks_the_body_above_the_button_row() {
                 .map(|p| p.rect)
                 .collect()
         };
-        let button_rects: Vec<egui::Rect> = buttons.iter().flat_map(|b| rect_of(b)).collect();
-        assert!(!button_rects.is_empty(), "{name}: 버튼 글자 없음");
+        // 그림자를 뺀 채움 사각형.
+        let fills: Vec<(egui::Rect, egui::Color32)> = painted
+            .shapes
+            .iter()
+            .filter_map(|s| match s {
+                egui::Shape::Rect(r) if r.blur_width == 0.0 && r.brush.is_none() => {
+                    Some((r.rect, r.fill))
+                }
+                _ => None,
+            })
+            .collect();
+        let raised = egui::Color32::from(th.surface_raised());
+        let button_bgs = [
+            egui::Color32::from(th.button_primary_bg()),
+            egui::Color32::from(th.button_secondary_bg()),
+        ];
+        let labels: Vec<egui::Rect> = buttons.iter().flat_map(|b| rect_of(b)).collect();
         let mut bodies = 0;
         for step in BASICS_STEPS.iter().filter(|s| s.id != "summary") {
             for body in rect_of(t(step.body_key)) {
@@ -551,23 +566,29 @@ fn callout_specimen_stacks_the_body_above_the_button_row() {
                         step.id
                     );
                 }
-                // 같은 말풍선의 버튼 줄: 본문과 가로 범위가 겹치고 세로로 가까운 버튼 글자.
-                for b in button_rects
+                // 이 본문을 품은 가장 작은 surface-raised 채움이 그 말풍선 프레임이다.
+                let frame = fills
                     .iter()
-                    .filter(|b| b.x_range().intersects(body.x_range()))
-                    .filter(|b| (b.center().y - body.center().y).abs() < 120.0)
-                {
-                    assert!(
-                        !b.intersects(body),
-                        "{name} {}: 버튼 {b:?} 이 본문 {body:?} 과 겹친다",
-                        step.id
-                    );
-                    assert!(
-                        b.top() >= body.bottom(),
-                        "{name} {}: 버튼 {b:?} 이 본문 {body:?} 아래에 있지 않다",
-                        step.id
-                    );
-                }
+                    .filter(|(r, c)| *c == raised && r.contains_rect(body))
+                    .map(|(r, _)| *r)
+                    .min_by(|a, b| a.area().total_cmp(&b.area()))
+                    .unwrap_or_else(|| panic!("{name} {}: 말풍선 프레임 없음", step.id));
+                // 같은 말풍선의 버튼 줄: 프레임 안에서 버튼 글자를 품은 버튼 배경 Rect의 합.
+                let row = fills
+                    .iter()
+                    .filter(|(r, c)| button_bgs.contains(c) && *r != frame)
+                    .filter(|(r, _)| frame.contains_rect(*r))
+                    .filter(|(r, _)| labels.iter().any(|l| r.contains(l.center())))
+                    .map(|(r, _)| *r)
+                    .reduce(|a, b| a.union(b));
+                let row = row.unwrap_or_else(|| {
+                    panic!("{name} {}: 말풍선 {frame:?} 에 버튼 줄이 없다", step.id)
+                });
+                assert!(
+                    !row.intersects(body),
+                    "{name} {}: 버튼 줄 {row:?} 이 본문 {body:?} 과 겹친다",
+                    step.id
+                );
             }
         }
         assert_eq!(bodies, 4, "{name}: 표본 본문 수");
