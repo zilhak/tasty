@@ -26,7 +26,7 @@
 - **Windows에서 호스트와 plugin이 여는 TCP 소켓의 핸들 상속 플래그를 만든 직후 지운다.** 대상은 IPC listener, plugin 호스트 listener와 plugin 연결(인증·송신 복제 포함), native mirror 끝점 listener와 연결, SSH 터널 준비 소켓, 웹훅 listener, plugin SDK의 호스트 연결과 writer 복제다. 지운 뒤에 std `Command`로 뜨는 자식(plugin·ssh·훅 등)은 이 핸들을 물려받지 않는다. 만든 뒤 지우기 전의 짧은 구간에 다른 스레드가 띄운 자식은 여전히 물려받을 수 있다. listener와 SSH 터널 준비 소켓은 지우지 못해도 기록만 남기고 그대로 쓰므로 그때는 막지 못한다. accept한 plugin·끝점 연결은 지우지 못하면 그 연결만 닫는다. 웹훅 서버가 accept한 연결과 서버를 내릴 때 여는 연결은 대상이 아니다. plugin SDK의 공개 API는 바뀌지 않는다.
 ### Removed
 
-- **개발용 플러그인 `com.tasty.mesh-demo`가 없어진다.** 배포 패키지에 들어가지 않던 egui-mesh 채널 검증 플러그인이다. 공식 플러그인 목록에서도 빠지므로 남아 있는 설치 폴더(`<TASTY_HOME>/plugins/com.tasty.mesh-demo`)는 실행되지 않고, Plugins 창의 확인 필요 탭에 예약 id 항목으로 보인다. 폴더는 Tasty가 지우지 않으며 그 탭에서 지울 수 있다.
+- **개발용 플러그인 `com.tasty.mesh-demo`가 없어진다.** 배포 패키지에 들어가지 않던 egui-mesh 채널 검증 플러그인이다. 공식 플러그인 목록에서도 빠지므로 남아 있는 설치 폴더(`<TASTY_HOME>/plugins/com.tasty.mesh-demo`)는 실행되지 않는다. 그 폴더에 매니페스트가 있고 호스트의 매니페스트 검증을 통과하면 Plugins 창의 확인 필요 탭에 예약 id 항목으로 보인다. 매니페스트가 없으면 탐색이 건너뛰고, 검증에 실패하면 경고 로그를 남기고 건너뛴다. 폴더는 Tasty가 지우지 않으며 그 탭에서 지울 수 있다.
 
 ## [0.14.1] - 2026-11-26
 
