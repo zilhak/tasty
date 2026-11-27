@@ -3,7 +3,8 @@
 //! attach 스트림의 Control 메시지, capability 이름, workspace attach descriptor의 wire 타입.
 //!
 //! serde 타입과 상수만 둔다. 프레임 코덱·소켓·handshake·세션은 tasty-ipc와 호스트가 맡는다.
-//! 데스크톱 의존(tokio·저장소·GUI) 없이 다른 client가 같은 타입을 쓰도록 의존을 serde 수준으로 묶는다.
+//! 데스크톱 의존(tokio·저장소·GUI) 없이 다른 client가 같은 타입을 쓰도록 의존을 serde 수준으로 묶고,
+//! 그 범위는 `crates/tasty-attach-protocol/tests/dependency_closure.rs`가 지킨다.
 
 mod descriptor;
 mod inherit_cwd;
