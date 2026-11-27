@@ -22,7 +22,7 @@ const COMMON_PRUNED: &[&str] = &["target", ".git"];
 /// 표식 판독을 하지 않는 순회까지 안전하다고 보장하는 목록은 아니다.
 const KNOWN_OUTSIDE: &[(&str, &str)] = &[(
     "target-e2e-headless",
-    "문서의 E2E 전용 CARGO_TARGET_DIR이다(docs/dev-guide/e2e-tests.md). Cargo의 CACHEDIR.TAG가 있어 is_build_cache_dir를 호출하는 순회에서는 이름에 관계없이 제외된다.",
+    "문서의 E2E 전용 CARGO_TARGET_DIR이다(docs/dev-guide/e2e-tests.md). 저장소 루트에 둬야 했던 부팅 번들 동기화는 없어졌지만 scripts/build-e2e-headless.sh와 기존 작업 트리의 빌드 캐시가 이 경로를 쓰므로 target/ 아래로 옮기지 않았다. Cargo의 CACHEDIR.TAG가 있어 is_build_cache_dir를 호출하는 순회에서는 이름에 관계없이 제외된다.",
 )];
 
 /// 표식 수는 빌드 전이나 외부 target 경로를 사용할 때 0일 수 있어 순회한 디렉터리 수에 하한을 둔다.

@@ -99,7 +99,7 @@ const CRATES_TOML_FLOOR: Floor = Floor {
     measured: 97,
     measured_on: "2026-11-27",
     counted_on: tasty_doc_guards::floored_walk::CountedOn::Tree(
-        "시범 플러그인 크레이트를 지운 트리 — git ls-files 로 센 crates 아래 toml 파일 97개(공식 플러그인 픽스처 40개 포함).",
+        "52621040f9에서 시범 플러그인 크레이트를 지운 트리 — git ls-files 로 센 crates 아래 toml 파일 97개(공식 플러그인 픽스처 40개 포함).",
     ),
     why_this_gap: "크레이트마다 Cargo.toml이 있고 픽스처 번역이 함께 세진다. 크레이트 몇 개를 합치거나 픽스처를 갱신해도 통과하도록 17개 여유를 둔다. 그보다 줄면 루트를 잘못 잡았거나 순회가 실패한 것이므로 재측정한다.",
 };
