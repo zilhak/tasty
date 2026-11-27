@@ -218,13 +218,16 @@ Windows key-down 판정 순서는 편집 키 차단 → 편집 명령 → host �
 - macOS: `KeyWebView`의 `mouseDown:`(누름)과 `becomeFirstResponder`(포커스 획득).
 - Windows: host 입력 경로 메시지 훅의 `WM_LBUTTONDOWN`·`WM_LBUTTONDBLCLK`(`click_gesture::note_webview_button`, 누름)와 controller `GotFocus`(포커스 획득).
   - `GotFocus`는 이미 포커스를 가진 것으로 보는 controller를 다시 누르면 오지 않는다. 그래서 누름 알림은 메시지 훅이 낸다.
-  - host 입력 경로를 쓰지 못한 view(옛 runtime 등)는 메시지 훅 대신 TASTY_WEBVIEW 창이 받는 자식 창 `WM_PARENTNOTIFY`(왼쪽 버튼 누름)로 누름을 알린다(`click_gesture::note_parent_notify`).
+  - host 입력 경로를 쓰지 못한 view(옛 runtime 등)는 메시지 훅 대신 TASTY_WEBVIEW 창이 받는 자식 창 `WM_PARENTNOTIFY`(왼쪽 버튼 누름)로 누름을 알린다(등록·분배 `parent_press::dispatch`, 알림 `click_gesture::note_parent_notify`).
 
 native 입력 순서: 누름 알림과 host가 가져간 조합은 bridge의 대기열 하나에 도착 순서대로 쌓이고, 호스트 루프가
 그 순서로 소비한다(`webview_keys::consume_native_inputs`). 누름 한 건마다 창 누름 전이를 적용한다. 실제 누름이면 주소 띠의
 키 포커스를 놓고 선택을 그 surface로 옮긴 뒤, 정규화한 키 쥘 곳을 bridge에 게시한다(`webview_keys::press_and_publish`).
-누름 없는 포커스 획득은 주소 띠를 놓지 않는다. host가 가져간 조합은 전달 키 처리(`forwarded_key_gate_open`)를 대기열 자리에서 받는다. Linux GTK 펌프는 이벤트 한 건마다
-대기열을 소비하고, halt 펌프는 키·포커스를 전달하지 않으므로 소비하지 않는다.
+누름 없는 포커스 획득은 주소 띠를 놓지 않는다. view를 지우면 그 surface의 대기열 항목을 지운다
+(`WebViewKeyBridge::retire_view`). host가 가져간 조합은 전달 키 처리(`forwarded_key_gate_open`)를 대기열 자리에서 받는다.
+소비하는 곳은 호스트 루프 회차 끝과, Linux에서 이벤트 한 건마다 소비하는 App의 GTK 펌프(`App::pump_gtk_events`)다. 소비
+중에 온 입력은 대기열 끝에 쌓이고 같은 소비가 이어서 처리한다(`WebViewKeyBridge::begin_consuming`). 그 밖의 GTK 펌프(halt
+펌프, view를 지울 때의 펌프 등)는 소비하지 않는다. halt 펌프는 키·포커스를 전달하지 않는다.
 
 backend는 Rc<dyn WebViewKeySink>만 받는다. 정책 교체와 큐 관리는 구체 bridge가 맡는다.
 callback은 main thread에서 실행하므로 Rc·RefCell을 사용한다.
@@ -752,7 +755,7 @@ macOS·Windows는 투명 모드를 보고하지 않고 주 표면의 불투명 �
 입력·키보드·포커스·캡처 계약:
 
 - **포인터**: 대상 층이 보이는 동안 WebView 영역 전체의 클릭·휠은 호스트로 온다(`host_takes_pointer`). 입력 의미는 숨긴 상태와 같다. 페이지 클릭은 egui의 바깥 클릭으로 도착하고, 그 처리는 팝업 정의를 그대로 따른다. `close_on_outside_click`(plugin은 `dismiss_on_outside_click`)이 참이면 닫고, 거짓이면 닫지 않고 언포커스만 한다. `sticky_focus` 는 포커스 판정이 읽지 않는다([팝업 §포커스](popup.md#포커스), [§sticky_focus](popup.md#sticky_focus)). 어느 경우에도 그 클릭은 페이지로 가지 않는다. 대상 층이 사라지면 다음 프레임부터 포인터가 페이지로 간다.
-- **키보드·IME**: 페이지가 OS 키 포커스를 지키는지는 위 "포커스" 절의 회수 판정(`release_webview_key_focus`, 조건은 그 함수와 W2 시험이 정본)이 정한다. 대상 층 팝업이 포커스 노드이면 키는 그 팝업이 받는다. Linux에서 포인터가 페이지 위에 있으면 X 서버가 키를 WebView로 보내므로, 포인터를 호스트로 돌리는 처리가 이 라우팅도 막아야 한다. WebView가 넘긴 host 조합은 전달 키 게이트(`webview_keys::forwarded_key_gate_open`, [키 경로](../../architecture/input-layer.md#plugin-명령과-webview-전달-키))가, 편집 키는 bridge 판정(`WebViewKeyBridge::input_blocked`)이 받은 surface와 키 쥘 곳으로 정한다. 닫을 때 native 자식 포커스를 자동 복원하지 않는다.
+- **키보드·IME**: 페이지가 OS 키 포커스를 지키는지는 위 "포커스" 절의 회수 판정(`release_webview_key_focus`)이 정한다. Linux에서 포인터가 페이지 위에 있으면 X 서버가 키를 WebView로 보내므로, 포인터를 호스트로 돌리는 처리가 이 라우팅도 막아야 한다. WebView가 넘긴 host 조합은 전달 키 게이트(`webview_keys::forwarded_key_gate_open`, [키 경로](../../architecture/input-layer.md#plugin-명령과-webview-전달-키))가, 편집 키는 bridge 판정(`WebViewKeyBridge::input_blocked`)이 정한다. 닫을 때 native 자식 포커스를 자동 복원하지 않는다.
 - **포커스**: 새 OS 층(오버레이 창 등)은 OS 포커스나 창 활성화를 가져가지 않는다. 창이 비활성일 때 first responder·포커스를 바꾸지 않는 판정(`host_window_has_os_focus`)을 그대로 따른다.
 - **그리기**: 팝업은 주 표면에도 계속 그린다. 오버레이 창은 페이지 위 영역만 칠하므로 한 픽셀은 scrim과 정확히 한 번 합성된다(아래 GPU 분리).
 - **캡처**: `ui.screenshot`은 주 표면을 읽으므로 팝업은 지금처럼 캡처에 남고 WebView 픽셀은 지금처럼 없다. 페이지와 팝업이 함께 보이는지는 OS 화면 캡처로 확인한다. 원격 attach mesh 중계는 host 팝업 픽셀을 보내지 않아 영향이 없다.
