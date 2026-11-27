@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # 커밋 본문으로 GitHub 릴리스 노트를 만들어 stdout 에 쓴다. release.yml 의 create-release 잡이 태그 커밋에 부른다.
-# - git interpret-trailers 가 메시지에서 트레일러를 찾으면 본문의 끝 문단(트레일러 블록)을 뺀다.
-# - 코드 펜스(``` ·~~~)와 백틱 코드 스팬 밖의 <, >, & 를 HTML 엔터티로 바꾼다. GitHub 가 <s> 같은
-#   자리표시를 HTML 태그로 읽지 않게 한다. 코드 표기 안은 엔터티가 글자로 보이므로 그대로 둔다.
-# - 4칸 들여쓴 줄은 코드 블록으로 보지 않는다. 목록 이어 쓰기와 가르려면 Markdown 전체 해석이 필요하고,
-#   코드로 잘못 보면 자리표시가 다시 HTML 로 읽힌다.
+# - git interpret-trailers 가 메시지에서 트레일러를 찾으면 본문의 끝 문단(트레일러 블록)에서 트레일러 줄과
+#   그 접힌 이어 줄을 뺀다. Git 은 트레일러가 섞인 문장 줄도 같은 블록으로 보므로 그 줄은 남긴다.
+# - 코드 펜스(``` ·~~~), 들여쓴 코드 블록, 백틱 코드 스팬 밖의 <, >, & 를 HTML 엔터티로 바꾼다.
+#   GitHub 가 <s> 같은 자리표시를 HTML 태그로 읽지 않게 한다. 코드 표기 안은 엔터티가 글자로 보이므로 그대로 둔다.
+# - 들여쓴 코드 블록은 빈 줄 뒤의 4칸(또는 탭) 들여쓴 줄에서 시작한다. 목록 안의 들여쓴 줄은 목록 이어 쓰기로 본다.
 # 사용: release-notes.sh <커밋>
 set -eu -o pipefail
 commit="${1:?사용: release-notes.sh <커밋>}"
@@ -67,12 +67,28 @@ END {
     last = count
     while (last > 0 && blank(line[last])) last--
     if (strip == 1) {
-        while (last > 0 && !blank(line[last])) last--
+        start = last
+        while (start > 0 && !blank(line[start])) start--
+        keep = 0; in_trailer = 0
+        for (k = start + 1; k <= last; k++) {
+            l = line[k]
+            if (in_trailer && l ~ /^[ \t]/) continue
+            if (l ~ /^[A-Za-z0-9-]+[ \t]*:/ || l ~ /^\(cherry picked from commit /) { in_trailer = 1; continue }
+            in_trailer = 0
+            kept[++keep] = l
+        }
+        last = start
+        for (k = 1; k <= keep; k++) line[++last] = kept[k]
         while (last > 0 && blank(line[last])) last--
     }
-    fence = ""; para = ""; has_para = 0
+    fence = ""; para = ""; has_para = 0; code = 0; in_list = 0; after_blank = 1
     for (i = 1; i <= last; i++) {
         l = line[i]
+        if (code) {
+            if (blank(l)) { print l; after_blank = 1; continue }
+            if (l ~ /^(    |\t)/) { print l; after_blank = 0; continue }
+            code = 0
+        }
         if (fence != "") {
             print l
             if (match(l, /^(   |  | )?(`+|~+)[ \t]*$/)) {
@@ -86,12 +102,20 @@ END {
             rest = substr(l, RSTART + RLENGTH)
             if (substr(run, 1, 1) != "`" || index(rest, "`") == 0) {
                 flush()
-                fence = run
+                fence = run; after_blank = 0
                 print l
                 continue
             }
         }
-        if (blank(l)) { flush(); print l; continue }
+        if (blank(l)) { flush(); print l; after_blank = 1; continue }
+        if (l ~ /^(   |  | )?([-*+]|[0-9]+[.)])([ \t]|$)/) in_list = 1
+        else if (after_blank && l !~ /^[ \t]/) in_list = 0
+        if (after_blank && !in_list && l ~ /^(    |\t)/) {
+            code = 1; after_blank = 0
+            print l
+            continue
+        }
+        after_blank = 0
         para = has_para ? para "\n" l : l
         has_para = 1
     }
