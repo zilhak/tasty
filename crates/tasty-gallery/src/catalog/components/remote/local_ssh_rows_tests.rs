@@ -1,11 +1,12 @@
 //! 원격 표본의 From ssh config 행을 그려진 글자로 확인한다. 행 오른쪽 Tag·버튼 글자는 본체가 같은 상태에서
-//! 그리는 lang 키로 읽는다.
+//! 그리는 lang 키로 읽는다. 표본 창(520×460)에서는 이 목록이 스크롤 아래라 칠해지지 않으므로, 표본이 부르는
+//! 섹션 함수를 따로 그린다.
 
 use tasty_type_appearance::theme::Theme;
 
 use crate::catalog::components::painted::{PaintedText, paint};
 
-use super::draw;
+use super::local_ssh_section;
 
 fn themes() -> [Theme; 2] {
     [
@@ -39,7 +40,7 @@ fn the_ssh_config_rows_set_the_alias_match_apart_from_the_target_match() {
     let in_profiles = crate::i18n::t("remote_tool.local_ssh_in_profiles");
     let add = crate::i18n::t("remote_tool.local_ssh_add");
     for th in themes() {
-        let p = paint(|ui| draw(ui, &th));
+        let p = paint(|ui| local_ssh_section(ui, &th));
         let rows = [
             ("host", "maya@host.local:22", false),
             ("db.internal", "maya@db.internal:22", true),
@@ -59,10 +60,8 @@ fn the_ssh_config_rows_set_the_alias_match_apart_from_the_target_match() {
             "ssh config rows are drawn top to bottom: {tops:?}"
         );
         assert!(
-            p.texts
-                .iter()
-                .all(|t| t.text != "prod-web" || t.rect.top() < tops[0]),
-            "no prod-web ssh config row below the profiles"
+            p.texts.iter().all(|t| t.text != "prod-web"),
+            "no prod-web ssh config row"
         );
         for (alias, target, imported) in rows {
             let line = on_row(&p.texts, alias, target);

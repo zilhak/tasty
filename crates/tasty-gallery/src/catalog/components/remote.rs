@@ -200,19 +200,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 for p in PROFILES {
                     profile_row(ui, theme, p);
                 }
-                // 공용 목록 뷰가 구분선과 간격을 포함하므로 중복해서 그리지 않는다.
-                draw_local_ssh_section(
-                    ui,
-                    theme,
-                    &LocalSshSectionData {
-                        heading: "From ssh config",
-                        path: "~/.ssh/config",
-                        in_profiles_tag: crate::i18n::t("remote_tool.local_ssh_in_profiles"),
-                        add_label: crate::i18n::t("remote_tool.local_ssh_add"),
-                        empty_message: crate::i18n::t("remote_tool.local_ssh_empty"),
-                        hosts: LOCAL_HOSTS,
-                    },
-                );
+                local_ssh_section(ui, theme);
             });
         });
         // 호스트 없음·파일 없음·못 읽음은 한 줄 muted 문구만 바뀐다. 못 읽음은 원인을 나누지 않는다.
@@ -285,6 +273,23 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ui,
         theme,
         "Remote profiles store connection details for their protocol. SSH profiles supply the connection and authentication settings; Attach records add the remote Tasty executable and port discovery options.",
+    );
+}
+
+/// 프로필 아래 SSH config 목록. 공용 목록 뷰가 구분선과 간격을 포함하므로 중복해서 그리지 않는다.
+/// 표본 창 안에서는 스크롤 아래에 있어, 시험은 이 함수를 따로 그려 행을 본다.
+fn local_ssh_section(ui: &mut egui::Ui, theme: &Theme) {
+    draw_local_ssh_section(
+        ui,
+        theme,
+        &LocalSshSectionData {
+            heading: "From ssh config",
+            path: "~/.ssh/config",
+            in_profiles_tag: crate::i18n::t("remote_tool.local_ssh_in_profiles"),
+            add_label: crate::i18n::t("remote_tool.local_ssh_add"),
+            empty_message: crate::i18n::t("remote_tool.local_ssh_empty"),
+            hosts: LOCAL_HOSTS,
+        },
     );
 }
 
