@@ -492,6 +492,7 @@ fn a_skipped_webview_release_retries_when_native_input_drains() {
                     &bridge,
                     surface_id,
                     kind,
+                    &|_| true,
                 );
             }
         }

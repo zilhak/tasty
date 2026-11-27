@@ -1,7 +1,7 @@
 //! native 누름 알림 한 건이 지금 상태에 적용됐을 때의 결과표(`webview::PressForecast`). 결과는 알림 소비의 전이
 //! (`MainViewState::press_surface_body`, 포커스 획득은 `focus_surface_by_id` 뒤 `normalize_focus`)와 같은 판정을 읽는다:
 //! 창 전체를 막는 노드(무대, 설정 열기 요청, 키를 가진 복원 안내), 표시된 탭, 그 surface 경로를 덮는 덮개
-//! (`top_cover_over`), 지금 포커스 노드.
+//! (`top_cover_over`), 지금 포커스 노드, WebView binding(`bound`, 실제 소비 입구가 같은 판정으로 알림을 건너뛴다).
 //! TODO: S6c 입력 순서 경계 설계가 대체할 임시 장치.
 
 use super::FocusNode;
@@ -13,8 +13,13 @@ use crate::webview::PressForecast;
 
 impl MainViewState {
     /// 지금 상태에서 surface 마다 누름·포커스 획득 알림 한 건의 결과. 게시 자리(`key_release::publish_key_holder`)가
-    /// 정규화 뒤에 부른다.
-    pub(crate) fn press_forecast(&self, core: &CoreState) -> PressForecast {
+    /// 정규화 뒤에 부른다. `bound` 가 거짓인 surface(WebView binding 이 지금 surface 와 맞지 않음,
+    /// `webview_sync::webview_binding_current`)의 알림은 실제 소비가 건너뛰므로 무효다(덮음 여부는 그대로 적는다).
+    pub(crate) fn press_forecast(
+        &self,
+        core: &CoreState,
+        bound: &dyn Fn(u32) -> bool,
+    ) -> PressForecast {
         let selected = self.focused_surface_id(core);
         let mut forecast = PressForecast {
             selected,
@@ -44,8 +49,14 @@ impl MainViewState {
             let sids = tab.layout_opt.as_ref().map(|l| l.all_surface_ids());
             for sid in sids.into_iter().flatten() {
                 let path = path_of_scope(core, &PopupScope::Surface(sid));
-                if let Some(cover) = self.top_cover_over(&path, None) {
+                let cover = self.top_cover_over(&path, None);
+                if cover.is_some() {
                     forecast.covered.insert(sid);
+                }
+                if !bound(sid) {
+                    continue;
+                }
+                if let Some(cover) = cover {
                     // 누름은 덮개를 누른 것과 같다(`apply_press_target`). 포커스를 받지 않는 덮개면 아무것도 바꾸지 않는다.
                     if self.popups.press_takes_focus(cover) {
                         forecast.click_covered.insert(sid);

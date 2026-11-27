@@ -109,16 +109,18 @@ pub(crate) fn release_retry_due(
 /// 키 진입점, Linux 키 신호)은 host 상태를 읽지 못하고 게시값으로 편집 키를 판정하므로, 콜백이 다음에 읽기 전에 키
 /// 쥘 곳을 바꿀 수 있는 자리마다 부른다: 창 이벤트 처리 뒤(`App::publish_webview_key_holders`), 루프 끝 소비 전,
 /// 누름 알림 전이 뒤(`webview_keys::press_and_publish`), 전달 키 처리 뒤(`webview_keys::dispatch_and_apply`), 프레임
-/// 동기화. 자리 목록은 원본 가드(`webview_key_holder_publish_sites`)가 고정한다.
+/// 동기화. 자리 목록은 원본 가드(`webview_key_holder_publish_sites`)가 고정한다. `bound` 는 실제 소비 입구가 알림을
+/// 거르는 binding 판정(`webview_sync::webview_binding_current`)이고, 결과표가 같은 판정을 따른다.
 pub(crate) fn publish_key_holder(
     state: &mut MainViewState,
     core: &crate::core::CoreState,
     bridge: &crate::webview::WebViewKeyBridge,
+    bound: &dyn Fn(u32) -> bool,
 ) {
     bridge.set_key_holder(webview_key_holder(state, core));
     // 키 쥘 곳과 같은 정규화 뒤 상태로 대기 알림의 결과표를 함께 게시한다(N1).
     // TODO: S6c 입력 순서 경계 설계가 대체할 임시 장치.
-    bridge.set_press_forecast(state.press_forecast(core));
+    bridge.set_press_forecast(state.press_forecast(core, bound));
 }
 
 /// 다음 입력이 볼 키 쥘 곳. 포커스를 정규화한 뒤 포커스 노드와 복원 안내 안쪽 키 포커스로 대응표

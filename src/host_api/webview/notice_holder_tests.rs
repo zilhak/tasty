@@ -22,14 +22,23 @@ enum N {
     Focus(u32),
 }
 
-/// Ctrl+V 붙여넣기 바인딩 다리에 지금 상태의 키 쥘 곳과 결과표를 게시한다.
+/// Ctrl+V 붙여넣기 바인딩 다리에 지금 상태의 키 쥘 곳과 결과표를 게시한다. 모든 surface 의 binding 이 맞다.
 fn published(state: &mut MainViewState, core: &crate::core::CoreState) -> WebViewKeyBridge {
+    published_bound(state, core, &|_| true)
+}
+
+/// `published` 와 같되 binding 판정 `bound` 를 게시에 넘긴다.
+fn published_bound(
+    state: &mut MainViewState,
+    core: &crate::core::CoreState,
+    bound: &dyn Fn(u32) -> bool,
+) -> WebViewKeyBridge {
     let bridge = WebViewKeyBridge::new();
     bridge.set_policy(HostShortcutPolicy::new(ShortcutSources {
         edit: vec![(WebViewEditAction::Paste, vec!["ctrl+v".to_string()])],
         ..Default::default()
     }));
-    crate::app::webview_sync::key_release::publish_key_holder(state, core, &bridge);
+    crate::app::webview_sync::key_release::publish_key_holder(state, core, &bridge, bound);
     bridge
 }
 
@@ -42,12 +51,18 @@ fn notify(bridge: &WebViewKeyBridge, notices: &[N]) {
     }
 }
 
-/// 알림을 넣은 뒤 다리의 예측과, 그 알림을 실제로 소비한 뒤의 키 쥘 곳을 돌려준다. 둘이 다르면 실패한다.
-fn agree(state: &mut MainViewState, core: &crate::core::CoreState, notices: &[N]) -> Option<u32> {
-    let bridge = published(state, core);
+/// 알림을 넣은 뒤 다리의 예측과, 그 알림을 실제로 소비한 뒤의 키 쥘 곳을 돌려준다. 둘이 다르면 실패한다. 게시와
+/// 소비는 같은 binding 판정 `bound` 를 받는다.
+fn agree(
+    state: &mut MainViewState,
+    core: &crate::core::CoreState,
+    notices: &[N],
+    bound: &dyn Fn(u32) -> bool,
+) -> Option<u32> {
+    let bridge = published_bound(state, core, bound);
     notify(&bridge, notices);
     let forecast = bridge.holder_after_pending();
-    crate::app::webview_keys::consume_native_focus_requests(state, core, &bridge, &|_| true);
+    crate::app::webview_keys::consume_native_focus_requests(state, core, &bridge, bound);
     let real = crate::app::webview_sync::key_release::webview_key_holder(state, core);
     assert_eq!(forecast, real, "예측과 실제 소비 뒤 키 쥘 곳이 다르다");
     forecast
@@ -113,7 +128,50 @@ fn pending_notices_apply_in_arrival_order() {
     ] {
         let (mut state, mut session) = two_surfaces();
         let engine = session.borrow_mut();
-        assert_eq!(agree(&mut state, engine.core, notices), want);
+        assert_eq!(agree(&mut state, engine.core, notices, &|_| true), want);
+    }
+}
+
+/// P-1: Given A 가 키 쥘 곳이고 B 의 WebView binding 이 지금 surface 와 맞지 않는다(엔진이 B 의 실행 인스턴스를
+/// 바꿨고 동기화가 아직 view 를 바꾸지 않음), When 옛 B 의 누름·포커스 획득 알림이 대기열에 있으면, Then 예측은 실제
+/// 소비처럼 그 알림을 건너뛰어 A 를 지키고, A 의 붙여넣기가 열리고 B 의 것은 막힌다. 뒤 A 포커스 획득은 그대로 A 다.
+/// 대조: binding 이 맞으면 B 다.
+#[test]
+fn a_press_whose_binding_is_not_current_keeps_the_holder_in_the_forecast() {
+    let stale_b = |sid| sid != B;
+    for (scene, notices, want_stale, want_bound) in [
+        ("[Click B]", &[N::Click(B)][..], Some(A), Some(B)),
+        ("[Focus B]", &[N::Focus(B)][..], Some(A), Some(B)),
+        (
+            "[Click B, Focus A]",
+            &[N::Click(B), N::Focus(A)][..],
+            Some(A),
+            Some(A),
+        ),
+    ] {
+        let (mut state, mut session) = two_surfaces();
+        let engine = session.borrow_mut();
+        let bridge = published_bound(&mut state, engine.core, &stale_b);
+        notify(&bridge, notices);
+        assert!(
+            paste_on(&bridge, A) && !paste_on(&bridge, B),
+            "{scene}: 옛 B 알림이 A 의 붙여넣기를 막았다"
+        );
+        drop(bridge);
+        let (mut state, mut session) = two_surfaces();
+        let engine = session.borrow_mut();
+        assert_eq!(
+            agree(&mut state, engine.core, notices, &stale_b),
+            want_stale,
+            "{scene}: 예측과 실제 소비 뒤 키 쥘 곳"
+        );
+        let (mut state, mut session) = two_surfaces();
+        let engine = session.borrow_mut();
+        assert_eq!(
+            agree(&mut state, engine.core, notices, &|_| true),
+            want_bound,
+            "{scene}: 대조"
+        );
     }
 }
 
@@ -131,18 +189,21 @@ fn a_covered_press_goes_to_its_cover() {
         let engine = session.borrow_mut();
         open_cover(&mut state, PopupScope::Surface(B));
         state.normalize_focus(engine.core);
-        assert_eq!(agree(&mut state, engine.core, notices), want);
+        assert_eq!(agree(&mut state, engine.core, notices, &|_| true), want);
     }
     let (mut state, mut session) = two_surfaces();
     let engine = session.borrow_mut();
     let cover = open_cover(&mut state, PopupScope::Window);
     for notices in [&[N::Click(B)][..], &[N::Click(A)][..], &[N::Focus(B)][..]] {
-        assert_eq!(agree(&mut state, engine.core, notices), None);
+        assert_eq!(agree(&mut state, engine.core, notices, &|_| true), None);
     }
     state
         .popups
         .close_instance(cover, PopupCloseReason::Command);
-    assert_eq!(agree(&mut state, engine.core, &[N::Click(B)]), Some(B));
+    assert_eq!(
+        agree(&mut state, engine.core, &[N::Click(B)], &|_| true),
+        Some(B)
+    );
 }
 
 /// 포커스 획득은 팝업·주소 띠를 놓지 않는다: A 범위 검색 바가 포커스면 A 포커스 획득은 검색 바를 남기고(키 쥘 곳 없음)
@@ -165,13 +226,13 @@ fn a_focus_notice_keeps_the_node_it_does_not_release() {
                 true,
             )
             .expect("검색 바가 열린다");
-        assert_eq!(agree(&mut state, engine.core, notices), want);
+        assert_eq!(agree(&mut state, engine.core, notices, &|_| true), want);
     }
     for (notices, want) in [(&[N::Focus(B)][..], None), (&[N::Click(B)][..], Some(B))] {
         let (mut state, mut session) = two_surfaces();
         let engine = session.borrow_mut();
         state.html_address.set_focused_for_test(A);
-        assert_eq!(agree(&mut state, engine.core, notices), want);
+        assert_eq!(agree(&mut state, engine.core, notices, &|_| true), want);
     }
 }
 
@@ -206,7 +267,7 @@ fn a_window_blocking_node_keeps_every_notice_off_the_pages() {
         }
         for notices in [&[N::Click(B)][..], &[N::Focus(B)][..]] {
             assert_eq!(
-                agree(&mut state, engine.core, notices),
+                agree(&mut state, engine.core, notices, &|_| true),
                 None,
                 "막는 노드 {blocker}"
             );
@@ -224,7 +285,12 @@ fn a_linux_edit_reply_after_the_holder_moved_runs_in_the_pressed_page() {
     let bridge = published(&mut state, engine.core);
     assert!(paste_on(&bridge, A));
     state.focus_surface_by_id(engine.core, B);
-    crate::app::webview_sync::key_release::publish_key_holder(&mut state, engine.core, &bridge);
+    crate::app::webview_sync::key_release::publish_key_holder(
+        &mut state,
+        engine.core,
+        &bridge,
+        &|_| true,
+    );
     assert!(
         !bridge.edit_reply_blocked(A),
         "키 쥘 곳만 옮겼는데 응답을 버린다"
@@ -240,7 +306,12 @@ fn a_linux_edit_reply_under_a_new_cover_is_dropped() {
     let bridge = published(&mut state, engine.core);
     assert!(!bridge.edit_reply_blocked(A), "대조: 막는 것이 없다");
     open_cover(&mut state, PopupScope::Surface(A));
-    crate::app::webview_sync::key_release::publish_key_holder(&mut state, engine.core, &bridge);
+    crate::app::webview_sync::key_release::publish_key_holder(
+        &mut state,
+        engine.core,
+        &bridge,
+        &|_| true,
+    );
     assert!(
         bridge.edit_reply_blocked(A),
         "A 를 덮은 덮개 뒤 응답을 실행한다"
@@ -253,13 +324,23 @@ fn a_linux_edit_reply_under_a_new_cover_is_dropped() {
     let engine = session.borrow_mut();
     let bridge = published(&mut state, engine.core);
     state.settings_open_requested = true;
-    crate::app::webview_sync::key_release::publish_key_holder(&mut state, engine.core, &bridge);
+    crate::app::webview_sync::key_release::publish_key_holder(
+        &mut state,
+        engine.core,
+        &bridge,
+        &|_| true,
+    );
     assert!(
         bridge.edit_reply_blocked(A),
         "창 전체를 막는 노드 뒤 응답을 실행한다"
     );
     state.settings_open_requested = false;
-    crate::app::webview_sync::key_release::publish_key_holder(&mut state, engine.core, &bridge);
+    crate::app::webview_sync::key_release::publish_key_holder(
+        &mut state,
+        engine.core,
+        &bridge,
+        &|_| true,
+    );
     assert!(
         !bridge.edit_reply_blocked(A),
         "대조: 요청을 거두면 막지 않는다"
@@ -346,9 +427,9 @@ fn a_focus_after_a_covered_click_changes_nothing() {
         let cover = covered.then(|| open_cover(&mut state, PopupScope::Surface(B)));
         state.normalize_focus(engine.core);
         let notices: &[N] = if covered { &[N::Click(B)] } else { &[] };
-        agree(&mut state, engine.core, notices);
+        agree(&mut state, engine.core, notices, &|_| true);
         state.webview_key_released.insert(B);
-        let holder = agree(&mut state, engine.core, &[N::Focus(B)]);
+        let holder = agree(&mut state, engine.core, &[N::Focus(B)], &|_| true);
         if covered {
             assert_eq!(state.focused_surface_id(&engine.read()), Some(A));
             assert_eq!(

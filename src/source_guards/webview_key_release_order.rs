@@ -139,7 +139,7 @@ fn webview_key_holder_publish_sites() {
         squeeze(&fn_body(&keys, "pub(crate) fn press_and_publish(").expect("press_and_publish"));
     assert!(
         press.ends_with(
-            "letchanged=apply_native_press(state,core,surface_id,kind);crate::app::webview_sync::key_release::publish_key_holder(state,core,bridge);changed}"
+            "letchanged=apply_native_press(state,core,surface_id,kind);crate::app::webview_sync::key_release::publish_key_holder(state,core,bridge,bound);changed}"
         ),
         "누름 전이 뒤 게시가 아니다: {press}"
     );

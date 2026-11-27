@@ -249,7 +249,7 @@ pub(crate) fn consume_native_focus_requests(
     let mut changed = false;
     for (surface_id, kind) in bridge.take_leading_presses() {
         if bound(surface_id) {
-            changed |= press_and_publish(state, core, bridge, surface_id, kind);
+            changed |= press_and_publish(state, core, bridge, surface_id, kind, bound);
         }
     }
     changed
@@ -257,16 +257,17 @@ pub(crate) fn consume_native_focus_requests(
 
 /// 누름 알림 한 건의 전이(`apply_native_press`)를 적용하고 그 전이 뒤의 키 쥘 곳(`key_release::webview_key_holder`)을
 /// 다리에 게시한다. 그래서 누른 직후의 편집 키는 다음 프레임 게시를 기다리지 않고 누른 페이지에서 처리되고, 연속
-/// 알림도 알림마다 같은 전이를 받는다. 선택이 바뀌었으면 참이다.
+/// 알림도 알림마다 같은 전이를 받는다. `bound` 는 게시하는 결과표가 따를 binding 판정이다. 선택이 바뀌었으면 참이다.
 pub(crate) fn press_and_publish(
     state: &mut crate::state::MainViewState,
     core: &crate::core::CoreState,
     bridge: &crate::webview::WebViewKeyBridge,
     surface_id: u32,
     kind: crate::webview::PressKind,
+    bound: &dyn Fn(u32) -> bool,
 ) -> bool {
     let changed = apply_native_press(state, core, surface_id, kind);
-    crate::app::webview_sync::key_release::publish_key_holder(state, core, bridge);
+    crate::app::webview_sync::key_release::publish_key_holder(state, core, bridge, bound);
     changed
 }
 
@@ -361,10 +362,20 @@ impl NativeInputConsumer for App {
         let Some((main, engine)) = engines_mut!(self).window_pair(id) else {
             return;
         };
+        let (webviews, runtime) = (&main.webviews, &main.webview_runtime);
+        let bound = |sid| {
+            crate::app::webview_sync::webview_binding_current(
+                webviews,
+                runtime,
+                &engine.as_ref(),
+                sid,
+            )
+        };
         crate::app::webview_sync::key_release::publish_key_holder(
             &mut main.state,
             engine.core,
             &main.webview_key_bridge,
+            &bound,
         );
     }
 
@@ -386,12 +397,22 @@ impl NativeInputConsumer for App {
         ) {
             return;
         }
+        let (webviews, runtime) = (&main.webviews, &main.webview_runtime);
+        let bound = |sid| {
+            crate::app::webview_sync::webview_binding_current(
+                webviews,
+                runtime,
+                &engine.as_ref(),
+                sid,
+            )
+        };
         if press_and_publish(
             &mut main.state,
             engine.core,
             &main.webview_key_bridge,
             surface_id,
             kind,
+            &bound,
         ) {
             main.mark_dirty();
         }

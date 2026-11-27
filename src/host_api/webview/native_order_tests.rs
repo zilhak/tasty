@@ -106,11 +106,19 @@ impl NativeInputConsumer for Turn<'_> {
             self.state,
             self.core,
             self.bridge,
+            &|_| true,
         );
     }
 
     fn native_press(&mut self, _id: winit::window::WindowId, surface_id: u32, kind: PressKind) {
-        press_and_publish(self.state, self.core, self.bridge, surface_id, kind);
+        press_and_publish(
+            self.state,
+            self.core,
+            self.bridge,
+            surface_id,
+            kind,
+            &|_| true,
+        );
     }
 }
 
@@ -182,7 +190,12 @@ fn turn_with_nested(
     }
     let bridge = bridge(holder);
     // 회차 앞 게시: 키 쥘 곳과 누름 알림 결과표(`key_release::publish_key_holder`).
-    crate::app::webview_sync::key_release::publish_key_holder(&mut state, engine.core, &bridge);
+    crate::app::webview_sync::key_release::publish_key_holder(
+        &mut state,
+        engine.core,
+        &bridge,
+        &|_| true,
+    );
     let log = turn_on(&bridge, &mut state, engine.core, events, nested);
     let focused = state.focused_surface_id(&engine.read());
     (log, focused)
@@ -425,7 +438,12 @@ fn a_fallback_hwnd_press_without_got_focus_routes_the_next_paste() {
         let (mut state, mut session) = two_surfaces();
         let engine = session.borrow_mut();
         let bridge = Rc::new(bridge(11));
-        crate::app::webview_sync::key_release::publish_key_holder(&mut state, engine.core, &bridge);
+        crate::app::webview_sync::key_release::publish_key_holder(
+            &mut state,
+            engine.core,
+            &bridge,
+            &|_| true,
+        );
         let _guard = crate::host_api::webview::parent_press::register(0x200, 12, bridge.clone());
         let log = turn_on(&bridge, &mut state, engine.core, events, &[]);
         let focused = state.focused_surface_id(&engine.read());

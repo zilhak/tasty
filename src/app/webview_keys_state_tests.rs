@@ -254,6 +254,7 @@ impl NativeInputConsumer for Window {
             &mut self.state,
             engine.core,
             &self.bridge,
+            &|_| true,
         );
     }
 
@@ -264,7 +265,14 @@ impl NativeInputConsumer for Window {
         kind: crate::webview::PressKind,
     ) {
         let engine = self.session.borrow_mut();
-        super::press_and_publish(&mut self.state, engine.core, &self.bridge, surface_id, kind);
+        super::press_and_publish(
+            &mut self.state,
+            engine.core,
+            &self.bridge,
+            surface_id,
+            kind,
+            &|_| true,
+        );
     }
 }
 

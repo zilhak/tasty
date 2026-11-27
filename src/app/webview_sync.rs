@@ -918,7 +918,12 @@ fn sync_webviews(
         overlay_open,
         &webviews,
     );
-    key_release::publish_key_holder(&mut view.state, engine.core, &view.webview_key_bridge);
+    key_release::publish_key_holder(
+        &mut view.state,
+        engine.core,
+        &view.webview_key_bridge,
+        &bound,
+    );
     // 이 프레임은 알림 전 포커스로 그렸다. 알림이 옮긴 포커스는 다음 프레임이 그린다.
     if notice_moved_focus {
         view.mark_dirty();
