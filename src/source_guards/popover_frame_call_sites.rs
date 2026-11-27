@@ -3,7 +3,7 @@
 //! (menu-bg · menu-border · menu-radius)로 그려진다. 전역 스타일은 tooltip 토큰을 담으므로 감싸지 않은
 //! 팝오버는 tooltip 틀로 그려진다(docs/design/systems/theme.md).
 //!
-//! 주석을 가린 본체·크레이트 소스에서 세 진입 호출을 찾고, 바로 앞 코드가 래퍼 호출의 `|ui| {` 클로저
+//! 주석을 가린 본체·크레이트 소스에서 네 진입 호출을 찾고, 바로 앞 코드가 래퍼 호출의 `|ui| {` 클로저
 //! 시작인지 텍스트로 확인한다. 래퍼를 다른 함수로 한 번 더 감싼 호출, `Frame::popup`을 직접 그리는 경로,
 //! 진입 호출을 `use`로 줄여 부른 형태는 보지 않는다.
 //!
@@ -23,6 +23,7 @@ const ENTRIES: &[&str] = &[
     "egui::popup_below_widget(",
     "egui::popup::popup_above_or_below_widget(",
     "egui::ComboBox::from_id_salt(",
+    "tasty_egui_theme::popup_below_widget_unfocused(",
 ];
 /// 기본 둘레 래퍼와 둘레를 받는 래퍼. 어느 쪽이든 메뉴 틀을 정한다.
 const WRAPPERS: &[&str] = &["with_popover_frame(", "with_popover_frame_ring("];

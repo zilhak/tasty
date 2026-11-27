@@ -85,6 +85,62 @@ pub fn with_popover_frame_ring<R>(
     out
 }
 
+/// `egui::popup_below_widget` 과 같은 자리·틀·닫기 규칙으로 팝오버를 열되, 팝오버 Area 자체는 Tab 이동 대상에서
+/// 뺀다(egui 는 interactable Area 에 `Sense::click()` 을 주어 Area 가 한 칸의 포커스를 받는다). 안의 위젯은 버튼 바로
+/// 뒤의 Tab 순서에 그대로 든다. egui 판과 달리 부모 레이어의 열린 팝업 목록에는 올리지 않는다(egui 내부 상태라
+/// 바깥에서 쓸 수 없다). 그 목록은 같은 레이어의 tooltip 을 숨기는 데만 쓰인다. 메뉴 틀은 [`with_popover_frame`]
+/// 클로저 안에서 불러야 입는다.
+pub fn popup_below_widget_unfocused<R>(
+    parent_ui: &egui::Ui,
+    popup_id: egui::Id,
+    widget_response: &egui::Response,
+    close_behavior: egui::PopupCloseBehavior,
+    add_contents: impl FnOnce(&mut egui::Ui) -> R,
+) -> Option<R> {
+    if !parent_ui.memory(|mem| mem.is_popup_open(popup_id)) {
+        return None;
+    }
+    let mut pos = widget_response.rect.left_bottom();
+    if let Some(to_global) = parent_ui
+        .ctx()
+        .layer_transform_to_global(parent_ui.layer_id())
+    {
+        pos = to_global * pos;
+    }
+    let frame = egui::Frame::popup(parent_ui.style());
+    let inner_width = (widget_response.rect.width() - frame.total_margin().sum().x).max(0.0);
+    let response = egui::Area::new(popup_id)
+        .kind(egui::UiKind::Popup)
+        .order(egui::Order::Foreground)
+        .fixed_pos(pos)
+        .default_width(inner_width)
+        .pivot(egui::Align2::LEFT_TOP)
+        // 누름은 받아 앞으로 올리되 포커스는 받지 않는다.
+        .sense(egui::Sense::CLICK)
+        .show(parent_ui.ctx(), |ui| {
+            frame
+                .show(ui, |ui| {
+                    ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui| {
+                        ui.set_min_width(inner_width);
+                        add_contents(ui)
+                    })
+                    .inner
+                })
+                .inner
+        });
+    let should_close = match close_behavior {
+        egui::PopupCloseBehavior::CloseOnClick => widget_response.clicked_elsewhere(),
+        egui::PopupCloseBehavior::CloseOnClickOutside => {
+            widget_response.clicked_elsewhere() && response.response.clicked_elsewhere()
+        }
+        egui::PopupCloseBehavior::IgnoreClicks => false,
+    };
+    if parent_ui.input(|i| i.key_pressed(egui::Key::Escape)) || should_close {
+        parent_ui.memory_mut(|mem| mem.close_popup());
+    }
+    Some(response.inner)
+}
+
 /// Theme를 egui에 적용한다. Theme에 이미 UI 배율이 반영되어 있어야 한다.
 pub fn apply_theme_to_egui(theme: &Theme, ctx: &egui::Context) {
     ctx.set_visuals(theme_visuals(theme));

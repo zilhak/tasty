@@ -1252,8 +1252,9 @@ fn draw_column_chooser(
         ui.memory_mut(|m| m.toggle_popup(popup_id));
     }
 
+    // 선택기 Area 는 Tab 대상이 아니다. Columns 다음 Tab 이 바로 첫 활성 체크박스로 간다.
     tasty_egui_theme::with_popover_frame(ui, th, |ui| {
-        egui::popup_below_widget(
+        tasty_egui_theme::popup_below_widget_unfocused(
             ui,
             popup_id,
             &resp,
@@ -3440,5 +3441,204 @@ mod tests {
                 assert!(!cut, "{width}: 넓은 폭에서 제목이 잘렸다");
             }
         }
+    }
+
+    // ---- 머리·열 선택기 키 순서(팝업 층 하네스). 문구는 i18n 으로 읽는다. ----
+
+    fn key_press(key: egui::Key, modifiers: egui::Modifiers) -> egui::Event {
+        egui::Event::Key {
+            key,
+            physical_key: Some(key),
+            pressed: true,
+            repeat: false,
+            modifiers,
+        }
+    }
+
+    /// 머리 컨트롤의 위젯 id. 버튼은 글자가 없어 필터 오른쪽 같은 줄의 누를 수 있는 위젯을 왼쪽부터 센다.
+    struct HeaderIds {
+        filter: egui::Id,
+        columns: egui::Id,
+        refresh: egui::Id,
+        close: egui::Id,
+    }
+
+    fn header_ids(ctx: &egui::Context, texts: &[(String, egui::Rect)]) -> HeaderIds {
+        let placeholder =
+            painted_at(texts, t("port_scanner.search_placeholder")).expect("검색칸 안내 글자");
+        let filter = crate::adapters::ui::popup::window_input_test_support::click_widget_at(
+            ctx,
+            placeholder.center(),
+        );
+        let (filter, mut row) = ctx.viewport(|vp| {
+            let widgets = &vp.prev_pass.widgets;
+            let filter = filter
+                .or_else(|| {
+                    widgets
+                        .layers()
+                        .flat_map(|(_, r)| r.iter())
+                        .filter(|w| w.sense.is_focusable() && w.rect.contains(placeholder.center()))
+                        .min_by(|a, b| a.rect.area().total_cmp(&b.rect.area()))
+                        .map(|w| w.id)
+                })
+                .expect("검색칸 위젯");
+            let filter_rect = widgets.get(filter).expect("검색칸 영역").rect;
+            let row: Vec<(f32, egui::Id)> = widgets
+                .layers()
+                .flat_map(|(_, r)| r.iter())
+                .filter(|w| {
+                    w.sense.senses_click()
+                        && w.rect.left() >= filter_rect.right()
+                        && w.rect.center().y > filter_rect.top()
+                        && w.rect.center().y < filter_rect.bottom()
+                })
+                .map(|w| (w.rect.left(), w.id))
+                .collect();
+            (filter, row)
+        });
+        row.sort_by(|a, b| a.0.total_cmp(&b.0));
+        row.dedup_by(|a, b| a.1 == b.1);
+        assert_eq!(row.len(), 3, "검색칸 오른쪽 버튼이 셋이 아니다: {row:?}");
+        HeaderIds {
+            filter,
+            columns: row[0].1,
+            refresh: row[1].1,
+            close: row[2].1,
+        }
+    }
+
+    /// 지금 포커스 위젯의 이름. 열 선택기 체크박스는 선택기 영역 안에서 그 위젯이 덮는 열 이름 글자다.
+    fn focus_name(
+        ctx: &egui::Context,
+        ids: &HeaderIds,
+        iid: crate::adapters::ui::popup::PopupInstanceId,
+        texts: &[(String, egui::Rect)],
+    ) -> String {
+        let Some(focused) = ctx.memory(|m| m.focused()) else {
+            return "(none)".into();
+        };
+        for (id, name) in [
+            (ids.filter, "Filter"),
+            (ids.columns, "Columns"),
+            (ids.refresh, "Refresh"),
+            (ids.close, "Close"),
+        ] {
+            if focused == id {
+                return name.into();
+            }
+        }
+        let chooser = super::super::child_popup_ids::child_layer_ids(ctx, iid);
+        if chooser.contains(&focused) {
+            return "(chooser area)".into();
+        }
+        let area = chooser
+            .iter()
+            .find_map(|id| ctx.memory(|m| m.area_rect(*id)));
+        let rect = ctx.viewport(|vp| vp.prev_pass.widgets.get(focused).map(|w| w.rect));
+        if let (Some(area), Some(rect)) = (area, rect) {
+            for col in ColumnId::ALL {
+                let label = t(match col {
+                    ColumnId::Port => "port_scanner.column_port",
+                    ColumnId::Proto => "port_scanner.column_proto",
+                    ColumnId::Address => "port_scanner.column_address",
+                    ColumnId::Process => "port_scanner.column_process",
+                    ColumnId::Workspace => "port_scanner.column_workspace",
+                    ColumnId::Tab => "port_scanner.column_tab",
+                    ColumnId::State => "port_scanner.column_state",
+                });
+                if texts.iter().any(|(s, r)| {
+                    s == label && area.contains(r.center()) && rect.contains(r.center())
+                }) {
+                    return label.into();
+                }
+            }
+        }
+        format!("(other {focused:?})")
+    }
+
+    /// 키 하나를 보내고 한 프레임 더 그린 뒤(Shift+Tab 은 다음 프레임에 옮겨 간다) 포커스 이름을 돌려준다.
+    fn press_and_name(
+        ctx: &egui::Context,
+        state: &mut MainViewState,
+        engine: &EngineRead<'_>,
+        ids: &HeaderIds,
+        iid: crate::adapters::ui::popup::PopupInstanceId,
+        event: egui::Event,
+    ) -> String {
+        layer_frame(ctx, state, engine, vec![event]);
+        let texts = layer_frame(ctx, state, engine, Vec::new());
+        focus_name(ctx, ids, iid, &texts)
+    }
+
+    /// 검색칸에서 Tab 으로 Columns 에 가서 Space 로 열 선택기를 연 키 주인 스캐너.
+    fn scanner_with_chooser_opened_by_keys(
+        ctx: &egui::Context,
+        state: &mut MainViewState,
+        engine: &EngineRead<'_>,
+    ) -> (crate::adapters::ui::popup::PopupInstanceId, HeaderIds) {
+        let iid = ready_scanner(state);
+        layer_frame(ctx, state, engine, Vec::new());
+        let texts = layer_frame(ctx, state, engine, Vec::new());
+        let ids = header_ids(ctx, &texts);
+        let placeholder =
+            painted_at(&texts, t("port_scanner.search_placeholder")).expect("검색칸 안내 글자");
+        let texts = click_at(ctx, state, engine, placeholder.center());
+        assert_eq!(
+            focus_name(ctx, &ids, iid, &texts),
+            "Filter",
+            "검색칸을 눌러 포커스를 준다"
+        );
+        let tab = key_press(egui::Key::Tab, egui::Modifiers::NONE);
+        assert_eq!(
+            press_and_name(ctx, state, engine, &ids, iid, tab),
+            "Columns"
+        );
+        let space = key_press(egui::Key::Space, egui::Modifiers::NONE);
+        layer_frame(ctx, state, engine, vec![space]);
+        let texts = layer_frame(ctx, state, engine, Vec::new());
+        assert!(
+            painted_at(&texts, t("port_scanner.columns_menu_title")).is_some(),
+            "Space 로 열 선택기가 열린다"
+        );
+        assert_eq!(focus_name(ctx, &ids, iid, &texts), "Columns");
+        (iid, ids)
+    }
+
+    /// 정본 키 순서: Filter → Columns → Proto → Address → Process → Workspace → Tab → State → Refresh. Port(필수)와
+    /// 선택기 영역은 건너뛰고, Shift+Tab 은 정확히 반대다.
+    #[test]
+    fn tab_walks_the_header_and_the_column_chooser_in_screen_order() {
+        let (mut state, mut session) = crate::state::tests::test_state();
+        let engine = session.borrow_mut();
+        let read = engine.read();
+        let ctx = egui::Context::default();
+        let (iid, ids) = scanner_with_chooser_opened_by_keys(&ctx, &mut state, &read);
+        let mut forward = vec!["Filter".to_string(), "Columns".to_string()];
+        for _ in 0..7 {
+            let tab = key_press(egui::Key::Tab, egui::Modifiers::NONE);
+            forward.push(press_and_name(&ctx, &mut state, &read, &ids, iid, tab));
+        }
+        let column = |k: &str| t(k).to_string();
+        let expected = vec![
+            "Filter".to_string(),
+            "Columns".to_string(),
+            column("port_scanner.column_proto"),
+            column("port_scanner.column_address"),
+            column("port_scanner.column_process"),
+            column("port_scanner.column_workspace"),
+            column("port_scanner.column_tab"),
+            column("port_scanner.column_state"),
+            "Refresh".to_string(),
+        ];
+        assert_eq!(forward, expected, "Tab 순서");
+        let mut backward = vec![forward.last().cloned().expect("마지막")];
+        for _ in 0..8 {
+            let shift_tab = key_press(egui::Key::Tab, egui::Modifiers::SHIFT);
+            backward.push(press_and_name(
+                &ctx, &mut state, &read, &ids, iid, shift_tab,
+            ));
+        }
+        let reversed: Vec<String> = expected.iter().rev().cloned().collect();
+        assert_eq!(backward, reversed, "Shift+Tab 순서");
     }
 }
