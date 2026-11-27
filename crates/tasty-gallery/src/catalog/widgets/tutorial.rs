@@ -9,7 +9,6 @@ use tasty_ui_widgets::tokens::{STRUCT_GAP_2, TUTORIAL_STEP_GAP_X};
 use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, Ground, margin_all, vspace};
 
 use crate::catalog::spec::{self, StageVariant, TokenChip};
-use crate::i18n::t;
 const CALLOUT_W: LogicalPx = LogicalPx(244.0);
 const POPUP_W: LogicalPx = LogicalPx(360.0);
 /// 중앙 topic 팝업 주위의 scrim을 보여 주는 데모 무대 높이. marker 링 크기가 아니다.
@@ -235,8 +234,9 @@ enum Tail {
 }
 
 /// 안내 말풍선 프레임을 그린 뒤 지정한 방향에 꼬리 삼각형을 덧붙인다. 꼬리까지 덮는 사각형을 돌려준다.
+/// 버튼 글자는 `tr`로 [tutorial] 키를 읽는다. 표본은 갤러리 언어(`crate::i18n::t`)를 넘긴다.
 #[allow(clippy::too_many_arguments)]
-fn callout(
+fn callout<'a>(
     ui: &mut egui::Ui,
     theme: &Theme,
     tail: Tail,
@@ -245,6 +245,7 @@ fn callout(
     title: &str,
     body: &str,
     first: bool,
+    tr: &dyn Fn(&'static str) -> &'a str,
 ) -> egui::Rect {
     let resp = egui::Frame::new()
         .fill(theme.surface_raised().to_egui())
@@ -300,22 +301,22 @@ fn callout(
                 // 본체 callout.rs와 같은 lang 키·변형이다. 마지막 단계의 주 버튼은 btn_done이다.
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     let next = if step == total {
-                        t("tutorial.btn_done")
+                        tr("tutorial.btn_done")
                     } else {
-                        t("tutorial.btn_next")
+                        tr("tutorial.btn_next")
                     };
                     Button::new(next)
                         .variant(ButtonVariant::Primary)
                         .size(ControlSize::Sm)
                         .show(ui, theme);
                     if !first {
-                        Button::new(t("tutorial.btn_back"))
+                        Button::new(tr("tutorial.btn_back"))
                             .variant(ButtonVariant::Secondary)
                             .size(ControlSize::Sm)
                             .show(ui, theme);
                     }
                     // 말풍선은 raised 바탕이라 ghost 글자도 raised 잉크로 그린다.
-                    Button::new(t("tutorial.btn_skip"))
+                    Button::new(tr("tutorial.btn_skip"))
                         .variant(ButtonVariant::Ghost)
                         .size(ControlSize::Sm)
                         .ground(Ground::Raised)
@@ -711,6 +712,7 @@ fn basics_callout(ui: &mut egui::Ui, theme: &Theme, tail: Tail, id: &str) -> egu
         crate::i18n::t(step.title_key),
         crate::i18n::t(step.body_key),
         i == 0,
+        &crate::i18n::t,
     )
 }
 pub fn draw_callout(ui: &mut egui::Ui, theme: &Theme) {
