@@ -42,6 +42,8 @@ pub struct Input<'a> {
     idle_text: Option<&'a str>,
     /// 놓인 바탕. raised면 상자·쉬는 테두리·disabled·readonly 상자가 raised 토큰이다.
     ground: crate::Ground,
+    /// TextEdit이 가로 padding까지 상자 전체를 덮는다. [`Input::text_covers_padding`].
+    text_covers_padding: bool,
 }
 
 /// 상자 채움. disabled > readonly > 기본 순이며 raised 바탕이면 raised 토큰이다.
@@ -97,6 +99,7 @@ impl<'a> Input<'a> {
             trailing: None,
             idle_text: None,
             ground: crate::Ground::Panel,
+            text_covers_padding: false,
         }
     }
 
@@ -222,6 +225,16 @@ impl<'a> Input<'a> {
     }
 
     /// 기본은 왼쪽 정렬. 숫자를 비교하는 필드는 오른쪽 정렬을 사용할 수 있다.
+    /// TextEdit을 바깥 상자 전체에 두고 가로 padding을 TextEdit 자기 margin으로 준다.
+    /// 여백 누름이 글자 칸 안 누름이 되어 포커스·캐럿·드래그·키 입력을 egui가 그대로 처리한다.
+    /// 끄면(기본) TextEdit은 padding 안쪽만 덮는다. 글자 칸에서 egui 근접 판정(5)보다 먼 여백 누름은
+    /// 칸 밖 누름이라 포커스를 푼다.
+    /// 그린 모양(글자·커서·테두리·링 위치)은 켜도 같다. 아이콘·addon·trailing·`text_margin`과는 함께 쓰지 않는다.
+    pub fn text_covers_padding(mut self, on: bool) -> Self {
+        self.text_covers_padding = on;
+        self
+    }
+
     pub fn align(mut self, align: egui::Align) -> Self {
         self.align = align;
         self
@@ -238,18 +251,7 @@ impl<'a> Input<'a> {
         let caption = theme.font_size_caption.value();
 
         let width = self.width.unwrap_or_else(|| ui.available_width());
-        let (outer, outer_resp) =
-            ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::hover());
-        // 글자 칸(TextEdit)은 가로 padding 안쪽만 덮는다. 편집 중에는 상자 전체에서 누름을 받아,
-        // 여백·아이콘 칸 누름을 egui가 칸 밖 누름으로 보고 포커스를 푸는 것을 막는다.
-        // 포커스를 받는 칸이 아니라(FOCUSABLE 없음) Tab 순서는 그대로이고, 편집 중이 아니면 누름을 받지 않는다.
-        let text_key = outer_resp.id.with("input_text_edit");
-        let editing = self.enabled
-            && ui
-                .data(|d| d.get_temp::<egui::Id>(text_key))
-                .is_some_and(|id| ui.memory(|m| m.has_focus(id)));
-        let box_press =
-            editing.then(|| ui.interact(outer, text_key.with("box"), egui::Sense::CLICK));
+        let (outer, _) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::hover());
 
         // disabled는 opacity 없이 disabled 상자 role과 disabled ink를 쓴다.
         let read_only = self.enabled && self.read_only;
@@ -288,9 +290,18 @@ impl<'a> Input<'a> {
         };
         // 부모에는 위의 outer 한 칸만 할당한다. allocate_new_ui는 자식 영역(inner)으로 부모 커서를
         // 다시 옮겨 가로 배치에서 다음 위젯이 padding만큼 겹치므로, 할당하지 않는 자식 Ui에 그린다.
+        let covers = self.text_covers_padding;
+        debug_assert!(
+            !covers
+                || (self.icon.is_none()
+                    && self.addon.is_none()
+                    && self.trailing.is_none()
+                    && self.text_margin.is_none()),
+            "text_covers_padding는 아이콘·addon·trailing·text_margin 없는 칸에서만 쓴다"
+        );
         let mut field = ui.new_child(
             egui::UiBuilder::new()
-                .max_rect(inner)
+                .max_rect(if covers { outer } else { inner })
                 .layout(egui::Layout::left_to_right(egui::Align::Center)),
         );
         let resp = {
@@ -328,12 +339,15 @@ impl<'a> Input<'a> {
             // 가로 여백은 상자 padding 이 맡는다(시안 `input { padding: 0 }`). egui 기본 가로 margin 을
             // 두면 글자 칸 바깥이 te_w 보다 넓어져 addon·trailing 이 오른쪽 padding 으로 밀린다.
             // 세로는 egui 기본값(2)을 그대로 둔다.
+            // 덮는 칸은 가로 padding을 TextEdit margin으로 옮겨 글자 자리를 그대로 둔다.
+            let te_pad_x = if covers {
+                theme.input_padding_x()
+            } else {
+                LogicalPx(0.0)
+            };
             let te = egui::TextEdit::singleline(text)
                 .frame(false)
-                .margin(crate::margin_sym(
-                    LogicalPx(0.0),
-                    crate::tokens::STRUCT_GAP_2,
-                ))
+                .margin(crate::margin_sym(te_pad_x, crate::tokens::STRUCT_GAP_2))
                 .desired_width(te_w)
                 .hint_text(hint)
                 .font(font.clone())
@@ -354,11 +368,6 @@ impl<'a> Input<'a> {
                 None => te,
             };
             let out = te.show(ui);
-            ui.data_mut(|d| d.insert_temp(text_key, out.response.id));
-            // 상자 여백을 누른 패스에 egui가 푼 포커스를 같은 패스에 되돌린다(lost_focus가 서지 않는다).
-            if box_press.is_some_and(|r| r.is_pointer_button_down_on()) {
-                out.response.request_focus();
-            }
             paint_idle_text(ui, &out, self.idle_text, font, text_color);
             let clipped = out.galley.size().x > out.text_clip_rect.width();
             if self.full_value_tooltip {

@@ -21,9 +21,11 @@ pub(super) struct ToolbarEditingOutcome {
 }
 
 /// 프리셋 이름·이름 바꾸기 칸. 공용 Input이라 input-bg 채움, input-border 테두리, Input 포커스 모양이다.
+/// 글자 칸이 가로 여백까지 덮어, 편집 중 여백 누름이 포커스를 풀어 이름을 확정하지 않는다.
 fn name_field(ui: &mut egui::Ui, theme: &Theme, buf: &mut String, id: egui::Id) -> egui::Response {
     tasty_ui_widgets::Input::new()
         .id(id)
+        .text_covers_padding(true)
         .width(RENAME_W.value())
         .show(ui, theme, buf)
 }
@@ -392,23 +394,88 @@ mod tests {
         (fill, p.strokes_on(rect))
     }
 
-    /// 이름 바꾸기 중 칸 안쪽 가로 여백을 누르고 떼도 이름을 확정하지 않고 편집을 이어 간다.
-    /// 확정은 이름 칸이 포커스를 잃을 때 돈다(`rename`이 `None`이 된다).
-    #[test]
-    fn pressing_the_name_field_padding_keeps_the_rename_open() {
-        let theme = tasty_themes::mocha_fallback();
-        let ctx = egui::Context::default();
-        let kind = PresetKind::Tab;
-        let id = egui::Id::new(("preset_rename_input", kind.as_str()));
-        let mut store = PresetDrafts::default();
-        let mut selected = None;
-        let mut rename = Some(RenameState {
-            kind,
-            original: "Dev".to_owned(),
-            buffer: "Dev 2".to_owned(),
-            request_focus: true,
-        });
-        let mut frame = |events: Vec<egui::Event>, rename: &mut Option<RenameState>| {
+    /// 이름 칸을 그리는 두 경로: 편집 툴바 이름 칸, 보기 툴바 인라인 이름 바꾸기 칸.
+    #[derive(Clone, Copy, Debug, PartialEq)]
+    enum NamePath {
+        Edit,
+        View,
+    }
+
+    const KIND: PresetKind = PresetKind::Tab;
+    const META_ID: &str = "preset_name_press_meta";
+
+    /// 이름 칸 하나를 띄운 툴바. 초안에 프리셋이 없어 확정하면 이름 바꾸기가 실패한다.
+    /// 편집 툴바는 실패 toast로, 보기 툴바는 `rename`이 `None`이 되는 것으로 확정을 읽는다.
+    struct NameHarness {
+        path: NamePath,
+        ctx: egui::Context,
+        theme: Theme,
+        store: PresetDrafts,
+        selected: Option<String>,
+        toasts: ToastManager,
+        rename: Option<RenameState>,
+        /// 마지막 패스에 그린 이름 칸 상자(폭 RENAME_W인 Inside 테두리).
+        field: egui::Rect,
+    }
+
+    impl NameHarness {
+        fn new(path: NamePath) -> Self {
+            let ctx = egui::Context::default();
+            let mut rename = None;
+            match path {
+                NamePath::Edit => {
+                    ctx.memory_mut(|m| m.request_focus(Self::id_of(path)));
+                    ctx.data_mut(|d| {
+                        d.insert_temp(
+                            egui::Id::new(META_ID),
+                            EditMetaState {
+                                key: format!("{}:Dev", KIND.as_str()),
+                                name: "Dev 2".to_owned(),
+                                subtitle: String::new(),
+                            },
+                        )
+                    });
+                }
+                NamePath::View => {
+                    rename = Some(RenameState {
+                        kind: KIND,
+                        original: "Dev".to_owned(),
+                        buffer: "Dev 2".to_owned(),
+                        request_focus: true,
+                    });
+                }
+            }
+            let mut h = Self {
+                path,
+                ctx,
+                theme: tasty_themes::mocha_fallback(),
+                store: PresetDrafts::default(),
+                selected: None,
+                toasts: ToastManager::new(),
+                rename,
+                field: egui::Rect::NOTHING,
+            };
+            h.frame(Vec::new());
+            h.frame(Vec::new());
+            assert!(
+                h.ctx.memory(|m| m.has_focus(h.id())),
+                "{path:?} 이름 칸 포커스"
+            );
+            h
+        }
+
+        fn id_of(path: NamePath) -> egui::Id {
+            match path {
+                NamePath::Edit => egui::Id::new(("preset_edit_name", KIND.as_str())),
+                NamePath::View => egui::Id::new(("preset_rename_input", KIND.as_str())),
+            }
+        }
+
+        fn id(&self) -> egui::Id {
+            Self::id_of(self.path)
+        }
+
+        fn frame(&mut self, events: Vec<egui::Event>) {
             let raw = egui::RawInput {
                 screen_rect: Some(egui::Rect::from_min_size(
                     egui::Pos2::ZERO,
@@ -417,46 +484,205 @@ mod tests {
                 events,
                 ..Default::default()
             };
-            // 포커스와 응답만 본다. 패스 출력(도형·텍스처)은 쓰지 않는다.
-            let _ = ctx.run(raw, |ctx| {
+            let Self {
+                path,
+                ctx,
+                theme,
+                store,
+                selected,
+                toasts,
+                rename,
+                ..
+            } = self;
+            let out = ctx.run(raw, |ctx| {
                 egui::CentralPanel::default().show(ctx, |ui| {
-                    ui.horizontal(|ui| {
-                        draw_toolbar_view(
-                            ui,
-                            &theme,
-                            &mut store,
-                            kind,
-                            "Dev",
-                            "",
-                            rename,
-                            &mut selected,
-                        );
+                    ui.horizontal(|ui| match path {
+                        NamePath::Edit => {
+                            let meta_id = egui::Id::new(META_ID);
+                            let outcome = draw_toolbar_editing(
+                                ui, ctx, store, theme, KIND, "Dev", selected, toasts, meta_id,
+                            );
+                            if let Some(meta) = outcome.edit_meta {
+                                ctx.data_mut(|d| d.insert_temp(meta_id, meta));
+                            }
+                        }
+                        NamePath::View => {
+                            draw_toolbar_view(ui, theme, store, KIND, "Dev", "", rename, selected);
+                        }
                     });
                 });
             });
-        };
-        frame(Vec::new(), &mut rename);
-        frame(Vec::new(), &mut rename);
-        assert!(ctx.memory(|m| m.has_focus(id)), "이름 칸 포커스");
-        // 글자 칸(TextEdit) 왼쪽 끝에서 가로 padding의 절반만큼 바깥, 곧 상자 안쪽 여백이다.
-        let text = ctx.read_response(id).expect("이름 칸 TextEdit").rect;
-        let pad = egui::pos2(
-            text.min.x - theme.input_padding_x().value() / 2.0,
-            text.center().y,
-        );
-        let button = |pressed| egui::Event::PointerButton {
-            pos: pad,
+            let w = RENAME_W.value();
+            if let Some(r) = out.shapes.iter().find_map(|c| match &c.shape {
+                egui::Shape::Rect(r)
+                    if r.rect.width() == w
+                        && r.stroke.width > 0.0
+                        && r.stroke_kind == egui::StrokeKind::Inside =>
+                {
+                    Some(r.rect)
+                }
+                _ => None,
+            }) {
+                self.field = r;
+            }
+        }
+
+        fn committed(&self) -> bool {
+            match self.path {
+                NamePath::Edit => self.toasts.len() > 0,
+                NamePath::View => self.rename.is_none(),
+            }
+        }
+
+        fn buffer(&self) -> String {
+            match self.path {
+                NamePath::Edit => {
+                    self.ctx
+                        .data(|d| d.get_temp::<EditMetaState>(egui::Id::new(META_ID)))
+                        .expect("편집 메타")
+                        .name
+                }
+                NamePath::View => self.rename.as_ref().expect("이름 바꾸기 중").buffer.clone(),
+            }
+        }
+
+        fn range(&self) -> Option<(usize, usize)> {
+            egui::text_edit::TextEditState::load(&self.ctx, self.id())
+                .and_then(|s| s.cursor.char_range())
+                .map(|r| (r.primary.index, r.secondary.index))
+        }
+
+        fn caret_at(&mut self, at: usize) {
+            let id = self.id();
+            let mut st = egui::text_edit::TextEditState::load(&self.ctx, id).unwrap_or_default();
+            st.cursor
+                .set_char_range(Some(egui::text_selection::CCursorRange::one(
+                    egui::text::CCursor::new(at),
+                )));
+            st.store(&self.ctx, id);
+            self.frame(Vec::new());
+            assert_eq!(self.range(), Some((at, at)), "커서 준비");
+        }
+
+        /// 글자 칸 왼쪽 끝(상자 왼쪽 + 가로 padding)에서 dx 바깥.
+        fn left_pad(&self, dx: f32) -> egui::Pos2 {
+            let pad = self.theme.input_padding_x().value();
+            egui::pos2(self.field.min.x + pad - dx, self.field.center().y)
+        }
+
+        /// 글자 칸 오른쪽 끝(상자 오른쪽 - 가로 padding)에서 dx 바깥.
+        fn right_pad(&self, dx: f32) -> egui::Pos2 {
+            let pad = self.theme.input_padding_x().value();
+            egui::pos2(self.field.max.x - pad + dx, self.field.center().y)
+        }
+    }
+
+    fn button(pos: egui::Pos2, pressed: bool) -> egui::Event {
+        egui::Event::PointerButton {
+            pos,
             button: egui::PointerButton::Primary,
             pressed,
             modifiers: egui::Modifiers::default(),
-        };
-        frame(vec![egui::Event::PointerMoved(pad)], &mut rename);
-        frame(vec![button(true)], &mut rename);
-        assert!(rename.is_some(), "여백을 누른 패스에 이름을 확정했다");
-        frame(vec![button(false)], &mut rename);
-        frame(Vec::new(), &mut rename);
-        assert!(rename.is_some(), "여백을 뗀 뒤 이름을 확정했다");
-        assert!(ctx.memory(|m| m.has_focus(id)), "여백 누름 뒤 포커스");
+        }
+    }
+
+    const PATHS: [NamePath; 2] = [NamePath::Edit, NamePath::View];
+    /// Claude 탐침과 같은 글자 칸 바깥 거리. 8은 egui 근접 판정(5) 밖이다.
+    const DXS: [f32; 3] = [2.0, 4.0, 8.0];
+
+    /// 이름 칸 여백 누름은 누름·뗌이 다른 패스든 한 패스든 이름을 확정하지 않고 편집을 이어 간다.
+    #[test]
+    fn pressing_the_name_field_padding_keeps_editing() {
+        for path in PATHS {
+            for dx in DXS {
+                let mut h = NameHarness::new(path);
+                let at = h.left_pad(dx);
+                h.frame(vec![egui::Event::PointerMoved(at)]);
+                h.frame(vec![button(at, true)]);
+                assert!(!h.committed(), "{path:?} dx={dx} 누른 패스에 확정했다");
+                h.frame(vec![button(at, false)]);
+                h.frame(Vec::new());
+                assert!(!h.committed(), "{path:?} dx={dx} 뗀 뒤 확정했다");
+                assert!(
+                    h.ctx.memory(|m| m.has_focus(h.id())),
+                    "{path:?} dx={dx} 포커스"
+                );
+
+                let mut h = NameHarness::new(path);
+                let at = h.left_pad(dx);
+                h.frame(vec![egui::Event::PointerMoved(at)]);
+                h.frame(vec![button(at, true), button(at, false)]);
+                h.frame(Vec::new());
+                assert!(
+                    !h.committed(),
+                    "{path:?} dx={dx} 한 패스 누름·뗌에 확정했다"
+                );
+                assert!(
+                    h.ctx.memory(|m| m.has_focus(h.id())),
+                    "{path:?} dx={dx} 한 패스 포커스"
+                );
+            }
+        }
+    }
+
+    /// 왼쪽 여백 누름은 캐럿을 처음으로, 오른쪽 여백 누름은 끝으로 보낸다. 왼쪽 여백에서 시작해
+    /// 끝까지 끈 드래그는 선택을 만든다. "Dev 2"는 다섯 글자이고 커서는 3에서 시작한다.
+    #[test]
+    fn the_name_field_padding_places_the_caret_and_starts_a_drag() {
+        for path in PATHS {
+            for dx in DXS {
+                let mut h = NameHarness::new(path);
+                h.caret_at(3);
+                let at = h.left_pad(dx);
+                h.frame(vec![egui::Event::PointerMoved(at)]);
+                h.frame(vec![button(at, true)]);
+                h.frame(vec![button(at, false)]);
+                assert_eq!(h.range(), Some((0, 0)), "{path:?} dx={dx} 왼쪽 누름");
+
+                let mut h = NameHarness::new(path);
+                h.caret_at(3);
+                let at = h.right_pad(dx);
+                h.frame(vec![egui::Event::PointerMoved(at)]);
+                h.frame(vec![button(at, true)]);
+                h.frame(vec![button(at, false)]);
+                assert_eq!(h.range(), Some((5, 5)), "{path:?} dx={dx} 오른쪽 누름");
+
+                let mut h = NameHarness::new(path);
+                h.caret_at(3);
+                let at = h.left_pad(dx);
+                let end = h.right_pad(0.0);
+                h.frame(vec![egui::Event::PointerMoved(at)]);
+                h.frame(vec![button(at, true)]);
+                h.frame(vec![egui::Event::PointerMoved(end)]);
+                h.frame(vec![button(end, false)]);
+                assert_eq!(h.range(), Some((5, 0)), "{path:?} dx={dx} 드래그 선택");
+                assert!(!h.committed(), "{path:?} dx={dx} 드래그에 확정했다");
+            }
+        }
+    }
+
+    /// 여백 누름과 같은 패스의 글자 키는 TextEdit에 들어가고(캐럿이 처음으로 간 뒤라 앞에 붙는다),
+    /// 다음 패스 Enter가 확정한다.
+    #[test]
+    fn a_key_typed_with_a_padding_press_goes_in_and_enter_then_commits() {
+        for path in PATHS {
+            let mut h = NameHarness::new(path);
+            let at = h.left_pad(8.0);
+            h.frame(vec![egui::Event::PointerMoved(at)]);
+            h.frame(vec![button(at, true), egui::Event::Text("x".to_owned())]);
+            h.frame(vec![button(at, false)]);
+            assert!(!h.committed(), "{path:?} 여백 누름에 확정했다");
+            assert_eq!(h.buffer(), "xDev 2", "{path:?} 같은 패스 글자");
+            h.frame(vec![egui::Event::Key {
+                key: egui::Key::Enter,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers::NONE,
+            }]);
+            h.frame(Vec::new());
+            assert!(h.committed(), "{path:?} Enter가 확정하지 않았다");
+        }
     }
 
     /// 프리셋 이름 칸은 Input 칸 모양이다: 쉴 때 input-bg 채움과 input-border 테두리 하나, 포커스면

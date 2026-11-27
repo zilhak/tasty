@@ -663,6 +663,33 @@ fn the_blocked_remote_marker_sits_at_the_field_end_and_clicks_without_editing() 
     assert!(!out.has_keyboard_focus);
 }
 
+/// 주소를 편집하는 중에도 차단 표지 오른쪽 변 바로 바깥(칸 오른쪽 여백 안) 누름은 egui 근접 판정으로
+/// 표지에 간다. Input 상자가 여백 누름을 가로채지 않는다.
+#[test]
+fn a_press_just_outside_the_blocked_marker_reaches_it_while_editing() {
+    let ctx = egui::Context::default();
+    let mut s = HtmlAddressState::default();
+    let mut v = view();
+    v.kind = HtmlAddressKind::Local;
+    v.remote_marker = Some(marker(HtmlRemoteMarkerKind::Blocked));
+    let out = frame(&ctx, &mut s, &v, 460.0, vec![]);
+    let field = out.field_rect.unwrap();
+    let m = out.remote_marker_rect.unwrap();
+    click(
+        &ctx,
+        &mut s,
+        &v,
+        egui::pos2(field.min.x + 40.0, field.center().y),
+    );
+    assert!(s.editing, "칸 누름으로 편집을 시작한다");
+    let just_outside = egui::pos2(m.right() + 1.0, m.center().y);
+    assert!(
+        field.contains(just_outside),
+        "누르는 자리는 칸 오른쪽 여백 안이다"
+    );
+    assert!(click(&ctx, &mut s, &v, just_outside).remote_marker_clicked);
+}
+
 /// 허용 표지는 툴팁만 있어 클릭을 알리지 않는다. 표지가 없으면 칸도 없다.
 #[test]
 fn the_allowed_marker_does_not_click_and_no_marker_draws_no_cell() {
