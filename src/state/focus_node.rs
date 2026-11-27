@@ -239,6 +239,14 @@ impl super::MainViewState {
         moved || before != (self.popups.focus(), self.html_address.has_keyboard_focus())
     }
 
+    /// 그 surface 경로를 덮개가 덮는지(`top_cover_over`). 덮인 surface 의 포커스 획득 알림은 아무 효과도 없다
+    /// (`webview_keys::apply_native_press`).
+    #[cfg(any(windows, target_os = "macos", test))]
+    pub(crate) fn surface_covered(&self, core: &CoreState, surface_id: u32) -> bool {
+        let path = path_of_scope(core, &PopupScope::Surface(surface_id));
+        self.top_cover_over(&path, None).is_some()
+    }
+
     /// 누름 대상 하나의 포커스 전이. 창 누름(`take_press_snapshot`)과 native 본문 누름(`press_surface_body`)이 함께
     /// 쓴다. 팝업(상자 또는 덮개)이면 그 팝업이 포커스 위치가 되고 passive 가 풀린다(`PopupManager::focus_on_press`).
     /// 본문이면 팝업 포커스를 놓고, native 누름처럼 surface 가 정해졌으면 주소 띠 키 포커스를 놓은 뒤 선택을 그

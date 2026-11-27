@@ -378,14 +378,21 @@ impl NativeInputConsumer for App {
 
 /// native 누름 알림 한 건의 전이. 그 surface 의 회수 기록을 지운다(`note_native_webview_focus`). 실제 버튼 누름이면
 /// 창 누름과 같은 본문 누름 전이(`MainViewState::press_surface_body`: 덮개가 있으면 덮개가 누름을 가지고, 없으면 팝업
-/// 포커스와 주소 띠를 놓고 선택을 옮긴다)를 적용한다. 누름 없는 포커스 획득은 선택만 옮긴다(주소 띠·팝업 포커스를
-/// 놓지 않는다). 덮음과 경로 밖 팝업은 뒤따르는 게시의 정규화(`webview_key_holder`)가 정한다. 바뀌었으면 참이다.
+/// 포커스와 주소 띠를 놓고 선택을 옮긴다)를 적용한다. 누름 없는 포커스 획득은 덮인 surface 면 아무것도 하지 않고(회수
+/// 기록도 그대로다), 아니면 선택만 옮긴다(주소 띠·팝업 포커스를 놓지 않는다). 경로 밖 팝업은 뒤따르는 게시의
+/// 정규화(`webview_key_holder`)가 정한다. 바뀌었으면 참이다.
 fn apply_native_press(
     state: &mut crate::state::MainViewState,
     core: &crate::core::CoreState,
     surface_id: u32,
     kind: crate::webview::PressKind,
 ) -> bool {
+    // 덮인 surface 의 포커스 획득은 덮개를 넘지 않는다: 선택·회수 기록 어느 것도 바꾸기 전에 거른다. 누름은 덮개가
+    // 가진다(`press_surface_body`).
+    #[cfg(any(windows, target_os = "macos", test))]
+    if kind == crate::webview::PressKind::Focus && state.surface_covered(core, surface_id) {
+        return false;
+    }
     crate::app::webview_sync::key_release::note_native_webview_focus(state, surface_id);
     match kind {
         crate::webview::PressKind::Click => state.press_surface_body(core, surface_id),

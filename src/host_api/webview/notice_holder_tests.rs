@@ -334,3 +334,38 @@ fn window_and_native_entries_reach_the_same_press_result() {
         }
     }
 }
+
+/// P2: Given B 를 덮는 덮개가 포커스이고 B 의 회수 기록이 있다, When [B 누름(덮개가 가짐), B 포커스 획득]을 소비하면,
+/// Then 포커스 획득은 아무것도 바꾸지 않는다: 선택은 A, 포커스 노드는 덮개, B 회수 기록은 남는다. 대조: 덮개가 없으면
+/// B 포커스 획득이 선택을 B 로 옮기고 기록을 지운다.
+#[test]
+fn a_focus_after_a_covered_click_changes_nothing() {
+    for covered in [true, false] {
+        let (mut state, mut session) = two_surfaces();
+        let engine = session.borrow_mut();
+        let cover = covered.then(|| open_cover(&mut state, PopupScope::Surface(B)));
+        state.normalize_focus(engine.core);
+        let notices: &[N] = if covered { &[N::Click(B)] } else { &[] };
+        agree(&mut state, engine.core, notices);
+        state.webview_key_released.insert(B);
+        let holder = agree(&mut state, engine.core, &[N::Focus(B)]);
+        if covered {
+            assert_eq!(state.focused_surface_id(&engine.read()), Some(A));
+            assert_eq!(
+                state.focus_node(engine.core),
+                crate::state::focus_node::FocusNode::Popup(
+                    crate::adapters::ui::popup::focus::PopupNode::Host(cover.unwrap())
+                )
+            );
+            assert!(
+                state.webview_key_released.contains(&B),
+                "덮인 포커스 획득이 회수 기록을 지웠다"
+            );
+            assert_eq!(holder, None);
+        } else {
+            assert_eq!(state.focused_surface_id(&engine.read()), Some(B));
+            assert!(!state.webview_key_released.contains(&B));
+            assert_eq!(holder, Some(B));
+        }
+    }
+}
