@@ -72,3 +72,37 @@ fn another_event_is_not_a_workspace_descriptor() {
         .remove("event");
     assert!(serde_json::from_value::<AttachedWorkspaceDescriptor>(other).is_err());
 }
+
+#[test]
+fn every_public_read_of_a_descriptor_checks_the_event() {
+    let mut missing = serde_json::to_value(sample()).expect("descriptor serializes");
+    missing
+        .as_object_mut()
+        .expect("descriptor is an object")
+        .remove("event");
+    let mut other = serde_json::to_value(sample()).expect("descriptor serializes");
+    other["event"] = json!("attached");
+    for value in [missing, other] {
+        let text = value.to_string();
+        assert!(
+            serde_json::from_str::<AttachedWorkspaceDescriptor>(&text).is_err(),
+            "from_str {text}"
+        );
+        assert!(
+            serde_json::from_slice::<AttachedWorkspaceDescriptor>(text.as_bytes()).is_err(),
+            "from_slice {text}"
+        );
+        assert!(
+            serde_json::from_reader::<_, AttachedWorkspaceDescriptor>(text.as_bytes()).is_err(),
+            "from_reader {text}"
+        );
+        assert!(
+            serde_json::from_value::<AttachedWorkspaceDescriptor>(value.clone()).is_err(),
+            "from_value {text}"
+        );
+        assert!(
+            <AttachedWorkspaceDescriptor as serde::Deserialize>::deserialize(value).is_err(),
+            "trait {text}"
+        );
+    }
+}

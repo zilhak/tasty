@@ -92,11 +92,17 @@ pub fn force_detach_notice(payload: &[u8]) -> Option<ForceDetachNotice> {
 
 /// 서버가 점유를 끊을 때 Detach보다 먼저 보내는 `force_detached` Control. 서버는 사유를 늘 싣는다.
 /// 읽을 때 `event`가 [`FORCE_DETACHED_EVENT`]가 아니면 거절하고, 사유가 없거나 문자열이 아니면 빈 사유로 읽는다.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(remote = "Self", tag = "event", rename = "force_detached")]
+///
+/// 공개 역직렬화 경로는 [`Deserialize`] impl 하나이고, 그 impl이 `event`를 본다.
+/// 태그를 건너뛰는 고유 `deserialize`는 없다.
+///
+/// ```compile_fail
+/// let value = serde_json::json!({"reason": "workspace_gone"});
+/// let _ = tasty_attach_protocol::ForceDetachedControl::deserialize(value);
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ForceDetachedControl {
     /// 끊은 사유. [`FORCE_DETACH_WORKSPACE_GONE`]만 client 동작을 바꾼다.
-    #[serde(default, deserialize_with = "string_or_empty")]
     pub reason: String,
 }
 
@@ -111,10 +117,13 @@ impl ForceDetachedControl {
     }
 }
 
-// 파생 Deserialize는 struct의 tag를 확인하지 않으므로 `event`를 먼저 본 뒤 파생 본문으로 읽는다.
 impl Serialize for ForceDetachedControl {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        ForceDetachedControl::serialize(self, serializer)
+        use serde::ser::SerializeStruct;
+        let mut out = serializer.serialize_struct("ForceDetachedControl", 2)?;
+        out.serialize_field("event", FORCE_DETACHED_EVENT)?;
+        out.serialize_field("reason", &self.reason)?;
+        out.end()
     }
 }
 
@@ -124,8 +133,18 @@ impl<'de> Deserialize<'de> for ForceDetachedControl {
         if value.get("event").and_then(serde_json::Value::as_str) != Some(FORCE_DETACHED_EVENT) {
             return Err(serde::de::Error::custom("not a force_detached control"));
         }
-        ForceDetachedControl::deserialize(value).map_err(serde::de::Error::custom)
+        let wire = ForceDetachedWire::deserialize(value).map_err(serde::de::Error::custom)?;
+        Ok(Self {
+            reason: wire.reason,
+        })
     }
+}
+
+/// 읽기 본문. 파생 Deserialize는 `event`를 보지 않으므로 공개 impl이 먼저 본 뒤에만 쓴다.
+#[derive(Deserialize)]
+struct ForceDetachedWire {
+    #[serde(default, deserialize_with = "string_or_empty")]
+    reason: String,
 }
 
 fn string_or_empty<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<String, D::Error> {

@@ -837,3 +837,34 @@ fn a_force_detached_control_without_a_string_reason_is_final() {
 fn method_not_found_is_the_json_rpc_code() {
     assert_eq!(METHOD_NOT_FOUND, -32601);
 }
+
+#[test]
+fn every_public_read_of_a_force_detached_control_checks_the_event() {
+    for text in [
+        r#"{"reason":"workspace_gone"}"#,
+        r#"{"event":"detach","reason":"workspace_gone"}"#,
+    ] {
+        let value: serde_json::Value = serde_json::from_str(text).unwrap();
+        assert!(
+            serde_json::from_str::<ForceDetachedControl>(text).is_err(),
+            "from_str {text}"
+        );
+        assert!(
+            serde_json::from_slice::<ForceDetachedControl>(text.as_bytes()).is_err(),
+            "from_slice {text}"
+        );
+        assert!(
+            serde_json::from_reader::<_, ForceDetachedControl>(text.as_bytes()).is_err(),
+            "from_reader {text}"
+        );
+        assert!(
+            serde_json::from_value::<ForceDetachedControl>(value.clone()).is_err(),
+            "from_value {text}"
+        );
+        assert!(
+            <ForceDetachedControl as Deserialize>::deserialize(value).is_err(),
+            "trait {text}"
+        );
+        assert_eq!(force_detach_notice(text.as_bytes()), None, "notice {text}");
+    }
+}
