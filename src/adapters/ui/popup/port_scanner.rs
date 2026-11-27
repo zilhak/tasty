@@ -1133,23 +1133,24 @@ fn draw_header_row(ui: &mut egui::Ui, props: &PortScannerProps<'_>) -> Option<Po
     let mut out: Option<PortScannerAction> = None;
     // 헤더 글자 선택이 창 드래그를 막지 않도록 헤더 안에서만 텍스트 선택을 끈다.
     ui.style_mut().interaction.selectable_labels = false;
-    let (gap, button_side) = (ui.spacing().item_spacing.x, ControlSize::Md.height(th));
-    let filter_width = 200.0;
-    let cluster_width = filter_width + 3.0 * (gap + button_side);
-    let row_height = th.input_height().value().max(button_side);
+    let gap = LogicalPx(ui.spacing().item_spacing.x);
+    let button_side = LogicalPx(ControlSize::Md.height(th));
+    let filter_width = LogicalPx(200.0);
+    let cluster_width = filter_width + (gap + button_side) * 3.0;
+    let row_height = th.input_height().max(button_side);
     let (row, _) = ui.allocate_exact_size(
-        egui::vec2(ui.available_width(), row_height),
+        egui::vec2(ui.available_width(), row_height.value()),
         egui::Sense::hover(),
     );
-    let (left, cluster) = row.split_left_right_at_x(row.right() - cluster_width);
-    let left = left.with_max_x((cluster.left() - gap).max(row.left()));
+    let (left, cluster) = row.split_left_right_at_x(row.right() - cluster_width.value());
+    let left = left.with_max_x((cluster.left() - gap.value()).max(row.left()));
     let row_layout = egui::Layout::left_to_right(egui::Align::Center);
     let slot = |rect| egui::UiBuilder::new().max_rect(rect).layout(row_layout);
     ui.scope_builder(slot(cluster), |ui| {
         let mut buf = props.filter.query.to_string();
         let resp = Input::new()
             .placeholder(props.label_search_placeholder)
-            .width(filter_width)
+            .width(filter_width.value())
             .icon(&|ui, rect, c| {
                 icons::SEARCH
                     .image(th.icon_glyph_size_row_action.value(), c)
