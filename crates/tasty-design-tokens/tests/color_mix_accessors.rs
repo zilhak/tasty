@@ -77,8 +77,8 @@ fn ratio(set: &TokenSet, s: &str, mode: ThemeMode) -> u64 {
 /// 비어 있으면 DTCG 값을 쓴다.
 type Inputs = HashMap<&'static str, HexColor>;
 
-/// `path` 토큰의 `mode` 값을 계산한다. 별칭과 var 참조를 따라가다 `inputs`에 있는 primitive를 만나면
-/// DTCG 값 대신 그 색을 쓴다.
+/// `path` 토큰의 `mode` 값을 계산한다. `inputs`에 `path`(테마 필드인 토큰의 전체 경로)가 있으면 그 값을
+/// 먼저 돌려준다. 아니면 별칭과 var 참조를 따라가다 `inputs`에 있는 primitive를 만나면 DTCG 값 대신 그 색을 쓴다.
 fn design_color(set: &TokenSet, path: &str, mode: ThemeMode, inputs: &Inputs) -> HexColor {
     if let Some(input) = inputs.get(path) {
         return *input;

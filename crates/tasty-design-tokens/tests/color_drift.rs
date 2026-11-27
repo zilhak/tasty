@@ -481,7 +481,8 @@ fn font_style_absent_is_the_italic_the_app_applies() {
     }
 }
 
-/// 선택 위 매치의 새 역할. 키가 없는 바탕은 사용자 테마의 현재 매치 바탕을 따른다.
+/// 선택 위 매치의 새 역할. 키가 없는 선택 위 현재 매치 바탕은 다크 테마에서 그 테마의 현재 매치 바탕이고,
+/// 라이트 테마에서 그 테마의 yellow 80%를 transparent와 섞은 값이다.
 #[test]
 fn selected_match_roles_match_the_design_values() {
     let build = |toml: &str, light: bool| {
