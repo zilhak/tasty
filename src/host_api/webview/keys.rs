@@ -406,6 +406,11 @@ impl WebViewKeyBridge {
         self.consuming.get() || !self.inputs.borrow().is_empty()
     }
 
+    /// 대기열에 아직 소비하지 않은 누름 알림이 있는지. 그 누름은 키 쥘 곳을 바꿀 수 있다.
+    pub fn has_pending_press(&self) -> bool {
+        (self.inputs.borrow().iter()).any(|input| matches!(input, NativeInput::Press { .. }))
+    }
+
     /// 시험용: 대기열의 native 입력을 도착 순서대로 모두 꺼낸다.
     #[cfg(test)]
     pub fn take_inputs(&self) -> Vec<NativeInput> {

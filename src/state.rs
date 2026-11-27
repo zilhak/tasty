@@ -279,6 +279,8 @@ impl RequestContext {
             #[cfg(feature = "gui")]
             webview_key_released: std::collections::BTreeSet::new(),
             #[cfg(feature = "gui")]
+            webview_release_due: false,
+            #[cfg(feature = "gui")]
             segment_notice: None,
             #[cfg(feature = "gui")]
             segment_screen: None,

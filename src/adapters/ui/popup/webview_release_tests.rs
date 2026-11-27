@@ -425,3 +425,80 @@ fn a_frame_sync_consumes_a_pending_press_notice_before_it_releases_the_pressed_w
         assert!(!bridge.has_focus_requests(), "알림은 소비됐다");
     }
 }
+
+/// X5: Given L 이 포커스 노드이고 R WebView 가 OS 키 포커스를 쥐었을 때, When 프레임 동기화가 회수를 판정하면, Then
+/// 대기열에 회수 결과를 바꾸지 않는 키(L 이 넘긴 host 조합)만 남았으면 R 을 바로 회수한다. 키 뒤에 R 누름이 남았으면
+/// 회수를 미루고 재판정 의무를 남긴다. 회차 끝 소비가 R 누름까지 적용해 대기열이 비면 의무가 한 번 다시 판정을
+/// 예약하고(외부 다시 그리기 없이), 그 동기화는 R 을 키 쥘 곳으로 두고 회수하지 않는다.
+#[test]
+fn a_skipped_webview_release_retries_when_native_input_drains() {
+    use crate::app::webview_sync::key_release::{
+        release_after_native_focus_notices, release_retry_due,
+    };
+    use crate::host_api::webview::keys::{HostShortcutPolicy, ShortcutSources, WebViewKeySink};
+    use winit::keyboard::{Key, ModifiersState, NativeKeyCode, PhysicalKey};
+    for press_behind in [false, true] {
+        let (mut state, mut session) = defs_scene();
+        let bridge = crate::webview::WebViewKeyBridge::default();
+        bridge.set_policy(HostShortcutPolicy::new(ShortcutSources {
+            host: vec!["ctrl+j".to_string()],
+            ..Default::default()
+        }));
+        bridge.set_key_holder(Some(SURFACE_L));
+        let forwarded = bridge.forward_key(
+            SURFACE_L,
+            Key::Character("j".into()),
+            PhysicalKey::Unidentified(NativeKeyCode::Unidentified),
+            ModifiersState::CONTROL,
+        );
+        assert!(forwarded.is_some());
+        if press_behind {
+            bridge.note_press(SURFACE_R);
+        }
+        let r = holding();
+        let engine = session.borrow_mut();
+        let sync_once = |state: &mut RequestContext| {
+            let overlay_open = state.has_egui_overlay_open();
+            release_after_native_focus_notices(
+                state,
+                &engine.read(),
+                &bridge,
+                OverlayMode::Opaque,
+                overlay_open,
+                &[(SURFACE_R, &r)],
+            )
+            .0
+        };
+        let got = sync_once(&mut state);
+        if !press_behind {
+            assert_eq!(r.released.get(), 1, "키만 남았으면 바로 회수한다");
+            assert_eq!(got, Some(SURFACE_L));
+            assert!(!release_retry_due(&mut state, &bridge), "의무가 없다");
+            continue;
+        }
+        assert_eq!(r.released.get(), 0, "R 누름이 남은 동안 회수하지 않는다");
+        assert!(
+            !release_retry_due(&mut state, &bridge),
+            "대기열이 남은 동안은 다시 판정하지 않는다"
+        );
+        // 회차 끝 소비: 전달 키를 처리하고 R 누름을 적용한다.
+        while let Some(input) = bridge.pop_input() {
+            if let crate::webview::NativeInput::Press { surface_id, kind } = input {
+                crate::app::webview_keys::press_and_publish(
+                    &mut state,
+                    &engine.read(),
+                    &bridge,
+                    surface_id,
+                    kind,
+                );
+            }
+        }
+        assert!(
+            release_retry_due(&mut state, &bridge),
+            "비면 한 번 예약한다"
+        );
+        assert!(!release_retry_due(&mut state, &bridge), "예약은 한 번이다");
+        assert_eq!(sync_once(&mut state), Some(SURFACE_R));
+        assert_eq!(r.released.get(), 0, "R 은 키 쥘 곳이라 회수하지 않는다");
+    }
+}

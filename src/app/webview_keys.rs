@@ -70,6 +70,15 @@ impl App {
             .collect();
         for id in ids {
             consume_native_inputs(self, id);
+            // 남은 누름 때문에 미룬 W2 회수는 대기열이 비면 다음 동기화로 다시 판정한다.
+            if let Some(main) = self.view.views.get_mut(&id).and_then(|w| w.as_main_mut())
+                && crate::app::webview_sync::key_release::release_retry_due(
+                    &mut main.state,
+                    &main.webview_key_bridge,
+                )
+            {
+                main.mark_dirty();
+            }
         }
     }
 
