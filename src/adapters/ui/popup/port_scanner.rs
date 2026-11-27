@@ -1235,9 +1235,9 @@ fn draw_column_chooser(
     if resp.clicked() {
         ui.memory_mut(|m| m.toggle_popup(popup_id));
     }
-    let open_before = ui.memory(|m| m.is_popup_open(popup_id));
 
-    // 선택기 Area 는 Tab 대상이 아니다. Columns 다음 Tab 이 바로 첫 활성 체크박스로 간다.
+    // 선택기 Area 는 Tab 대상이 아니다. Columns 다음 Tab 이 바로 첫 활성 체크박스로 간다. 첫 Esc 는 선택기만 닫고
+    // 포커스를 Columns 로 돌린다. 다음 Esc 가 창을 닫는다.
     tasty_egui_theme::with_popover_frame(ui, th, |ui| {
         tasty_egui_theme::popup_below_widget_unfocused(
             ui,
@@ -1272,11 +1272,6 @@ fn draw_column_chooser(
             },
         )
     });
-    // 첫 Esc 는 선택기만 닫고 포커스를 Columns 버튼으로 돌린다(egui 는 Esc 에 포커스를 비운다). 다음 Esc 가 창을 닫는다.
-    let closed = open_before && !ui.memory(|m| m.is_popup_open(popup_id));
-    if closed && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
-        resp.request_focus();
-    }
     // 팝업 밖으로 나온 드롭다운도 안쪽 클릭으로 인식하도록 영역을 보고한다.
     super::report_dropdown_overlay(ui, props.instance, COLUMN_CHOOSER_POPUP_ID, popup_id);
 
