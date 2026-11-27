@@ -1,5 +1,5 @@
 //! 에이전트 승인 위험 선택지 채움의 수기 접근자. design `--tasty-approval-danger-bg` 는
-//! accent-danger 를 tint-fill 비율로 bg-panel 에 섞는 불투명 식이라 생성기가 건너뛴다.
+//! accent-danger 를 tint-fill 비율로 bg-panel 에 섞는 식이라 생성기가 건너뛴다.
 //! 테두리·글자색(`approval_danger_border`·`approval_danger_fg`)은 생성 접근자다.
 
 use crate::color::HexColor;
