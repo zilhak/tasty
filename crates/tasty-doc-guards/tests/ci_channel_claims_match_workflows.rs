@@ -1698,7 +1698,7 @@ fn can_reach_gui_tests(command: &str) -> bool {
 #[test]
 fn only_calls_that_can_build_gui_tests_count_for_its_channel() {
     assert!(!can_reach_gui_tests(
-        "cargo test -p tasty-plugin-mesh-demo --locked -- --ignored --exact x"
+        "cargo test -p tasty-plugin-sample --locked -- --ignored --exact x"
     ));
     assert!(!can_reach_gui_tests(
         "cargo test --workspace --locked --test e2e_tests -- --ignored"

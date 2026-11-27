@@ -16,7 +16,7 @@ fn size(w: f32, h: f32) -> PopupSize {
     }
 }
 
-/// 공식 플러그인과 mesh-demo의 매니페스트 선언이 바뀌는 값.
+/// 공식 플러그인 매니페스트와 ipc 트리거 팝업 선언이 바뀌는 값.
 #[test]
 fn bundled_manifest_popups_convert_to_the_current_behaviour() {
     let cases = [
@@ -75,7 +75,7 @@ fn bundled_manifest_popups_convert_to_the_current_behaviour() {
             size(480.0, 360.0),
         ),
         (
-            "mesh-demo demo",
+            "ipc demo",
             r#"
                 id = "demo"
                 trigger = { kind = "ipc" }

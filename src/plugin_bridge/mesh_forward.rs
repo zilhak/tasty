@@ -211,7 +211,7 @@ mod tests {
                 name: "mesh".into(),
                 surface: SurfaceSpec {
                     id: surface_id,
-                    kind: "mesh_demo".into(),
+                    kind: "demo".into(),
                     data: None,
                 },
             },
@@ -222,8 +222,8 @@ mod tests {
             surface_id,
             Box::new(EguiMeshSurface::new(
                 surface_id,
-                "mesh_demo",
-                "com.tasty.mesh-demo".into(),
+                "demo",
+                "com.example.demo".into(),
                 "Demo".into(),
                 None,
             )),

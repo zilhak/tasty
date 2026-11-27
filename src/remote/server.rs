@@ -834,7 +834,7 @@ mod mesh_mirror_candidate_tests {
         let reg = SurfaceKindRegistry::new();
         for (plugin, kind) in [
             ("com.tasty.image", "image"),
-            ("com.tasty.mesh-demo", "mesh_demo"),
+            ("com.example.demo", "demo"),
             ("com.example.widget", "widget"),
         ] {
             assert!(register_egui_mesh_kind(
@@ -850,11 +850,7 @@ mod mesh_mirror_candidate_tests {
             explorers: vec![],
             mesh_candidates: vec![
                 (10, "image".to_string(), "com.tasty.image".to_string()),
-                (
-                    11,
-                    "mesh_demo".to_string(),
-                    "com.tasty.mesh-demo".to_string(),
-                ),
+                (11, "demo".to_string(), "com.example.demo".to_string()),
                 (12, "widget".to_string(), "com.example.widget".to_string()),
                 // 등록부에 없는 kind와 등록 소유자가 다른 후보는 mirror하지 않는다.
                 (13, "markdown".to_string(), "com.tasty.markdown".to_string()),
@@ -941,10 +937,10 @@ mod mesh_descriptor_display_name_tests {
     }
 
     #[test]
-    fn image_and_mesh_demo_mesh_descriptors_also_carry_display_name() {
+    fn image_and_custom_mesh_descriptors_also_carry_display_name() {
         for (kind, plugin_id, name) in [
             ("image", "com.tasty.image", "screenshot.png"),
-            ("mesh_demo", "com.tasty.mesh-demo", "Demo"),
+            ("demo", "com.example.demo", "Demo"),
             ("widget", "com.example.widget", "Widget"),
         ] {
             let (mut engine_session, idx) = engine_with_mesh_surface(kind, plugin_id, name);
@@ -974,7 +970,7 @@ mod mesh_descriptor_display_name_tests {
     fn mesh_descriptors_carry_the_owner_bed_focus() {
         for (kind, plugin_id, want) in [
             ("image", "com.tasty.image", true),
-            ("mesh_demo", "com.tasty.mesh-demo", false),
+            ("demo", "com.example.demo", false),
             ("widget", "com.example.widget", false),
         ] {
             let (mut engine_session, idx) = engine_with_mesh_surface(kind, plugin_id, "x");

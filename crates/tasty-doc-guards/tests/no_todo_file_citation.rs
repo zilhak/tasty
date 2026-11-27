@@ -842,11 +842,11 @@ fn p6_allows_identifiers_and_build_outputs() {
     assert_eq!(find_p6("id = \"com.tasty.claude\""), None);
     assert_eq!(find_p6("com.tasty.claude-design 은 제거됐다"), None);
     assert_eq!(
-        find_p6("crates/tasty-plugin-mesh-demo/tasty-plugin.toml.sig"),
+        find_p6("crates/tasty-plugin-sample/tasty-plugin.toml.sig"),
         None
     );
     assert_eq!(find_p6("site/release.json 을 읽는다"), None);
-    assert_eq!(find_p6("target/release/tasty-plugin-mesh-demo"), None);
+    assert_eq!(find_p6("target/release/tasty-plugin-sample"), None);
 }
 
 #[test]
@@ -974,7 +974,7 @@ fn scan_target_covers_scripts_ci_and_root_docs() {
     assert!(is_scan_target("site/content/help/troubleshooting.md"));
     assert!(!is_scan_target("assets/icon.png"));
     assert!(!is_scan_target(
-        "crates/tasty-plugin-mesh-demo/tasty-plugin.toml.sig"
+        "crates/tasty-plugin-sample/tasty-plugin.toml.sig"
     ));
 }
 

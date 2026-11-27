@@ -1172,7 +1172,7 @@ mod tests {
 
         let mut mgr = mgr();
         let mut out = CollectedPluginEvents::default();
-        mgr.classify_event("com.tasty.mesh-demo", new, &mut out);
+        mgr.classify_event("com.example.demo", new, &mut out);
         mgr.apply_collected_events(out);
         assert_eq!(
             mgr.banner_mesh_frame(9)
@@ -1181,7 +1181,7 @@ mod tests {
         );
 
         let mut out = CollectedPluginEvents::default();
-        mgr.classify_event("com.tasty.mesh-demo", old, &mut out);
+        mgr.classify_event("com.example.demo", old, &mut out);
         mgr.apply_collected_events(out);
         assert!(
             mgr.banner_mesh_frame(9)
@@ -1195,7 +1195,7 @@ mod tests {
         let mut mgr = mgr();
         let mut out = CollectedPluginEvents::default();
         mgr.classify_event(
-            "com.tasty.mesh-demo",
+            "com.example.demo",
             PluginEvent::BannerInvalidated { instance_id: 7 },
             &mut out,
         );
@@ -1292,7 +1292,7 @@ mod tests {
         let mgr = mgr();
         let mut out = CollectedPluginEvents::default();
         mgr.classify_event(
-            "com.tasty.mesh-demo",
+            "com.example.demo",
             PluginEvent::BannerInvalidated { instance_id: 7 },
             &mut out,
         );

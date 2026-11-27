@@ -1388,7 +1388,7 @@ fn a_popup_shown_over_the_window_and_its_child_light_nothing() {
         selected,
         Box::new(crate::runtime::egui_mesh_surface::EguiMeshSurface::new(
             selected,
-            "mesh-demo",
+            "demo",
             "com.example.demo".into(),
             "Mesh".into(),
             None,

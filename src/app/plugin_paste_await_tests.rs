@@ -16,7 +16,7 @@ use crate::gfx::gpu::edit_keys::AWAIT_TEXT_LIMIT;
 use crate::gfx::gpu::plugin_paste_read::PluginPasteEnd;
 use crate::plugin::manager::{PluginCopyTarget, PluginManager};
 
-const DEMO: &str = "com.tasty.mesh-demo";
+const DEMO: &str = "com.example.demo";
 const TAG: u64 = 77;
 const SURFACE: PluginCopyTarget = PluginCopyTarget::Surface(5);
 

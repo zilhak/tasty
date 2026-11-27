@@ -81,7 +81,7 @@ fn subscribers_receive_unfocused_and_focused_around_a_popup() {
         201,
         Box::new(crate::runtime::egui_mesh_surface::EguiMeshSurface::new(
             201,
-            "mesh-demo",
+            "demo",
             "com.example.demo".into(),
             "Mesh".into(),
             None,

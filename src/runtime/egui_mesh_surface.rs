@@ -115,7 +115,7 @@ mod tests {
 
     #[test]
     fn source_cwd_none_without_file() {
-        let s = EguiMeshSurface::new(9, "mesh-demo", "com.tasty.demo".into(), "Demo".into(), None);
+        let s = EguiMeshSurface::new(9, "demo", "com.tasty.demo".into(), "Demo".into(), None);
         assert_eq!(s.source_cwd(), None);
     }
 

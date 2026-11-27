@@ -237,7 +237,7 @@ mod tests {
     }
 
     #[test]
-    fn bundled_kinds_still_register() {
+    fn the_bundled_image_kind_still_registers() {
         let reg = SurfaceKindRegistry::new();
         assert!(register_egui_mesh_kind(
             &reg,
@@ -245,21 +245,10 @@ mod tests {
             &decl("image"),
             HOST_API_VERSION
         ));
-        assert!(register_egui_mesh_kind(
-            &reg,
-            "com.tasty.mesh-demo",
-            &decl("mesh_demo"),
-            HOST_API_VERSION
-        ));
         assert!(is_registered_egui_mesh_kind(
             &reg,
             "image",
             "com.tasty.image"
-        ));
-        assert!(is_registered_egui_mesh_kind(
-            &reg,
-            "mesh_demo",
-            "com.tasty.mesh-demo"
         ));
     }
 
@@ -336,11 +325,11 @@ mod tests {
         let reg = SurfaceKindRegistry::new();
         assert!(!register_egui_mesh_kind(
             &reg,
-            "com.tasty.mesh-demo",
-            &decl("mesh_demo"),
+            "com.example.demo",
+            &decl("demo"),
             "999"
         ));
-        assert!(!reg.contains("mesh_demo"));
+        assert!(!reg.contains("demo"));
     }
 
     #[test]
@@ -348,15 +337,15 @@ mod tests {
         let reg = SurfaceKindRegistry::new();
         assert!(register_egui_mesh_kind(
             &reg,
-            "com.tasty.mesh-demo",
-            &decl("mesh_demo"),
+            "com.example.demo",
+            &decl("demo"),
             HOST_API_VERSION
         ));
-        let def = reg.get("mesh_demo").unwrap();
+        let def = reg.get("demo").unwrap();
         let s = (def.create)(5, None, &json!({"display_name": "Readme"}))
             .and_then(|prepared| prepared.publish())
             .unwrap();
-        assert_eq!(s.kind(), "mesh_demo");
+        assert_eq!(s.kind(), "demo");
         assert_eq!(s.type_name(), "EguiMesh");
         assert_eq!(s.surface_id(), Some(5));
         assert_eq!(s.display_name(), "Readme");
@@ -365,7 +354,7 @@ mod tests {
         let restored = (def.restore)(5, None, &snap)
             .and_then(|prepared| prepared.publish())
             .unwrap();
-        assert_eq!(restored.kind(), "mesh_demo");
+        assert_eq!(restored.kind(), "demo");
         assert_eq!(restored.display_name(), "Readme");
     }
 
@@ -374,11 +363,11 @@ mod tests {
         let reg = SurfaceKindRegistry::new();
         assert!(register_egui_mesh_kind(
             &reg,
-            "com.tasty.mesh-demo",
-            &decl("mesh_demo"),
+            "com.example.demo",
+            &decl("demo"),
             HOST_API_VERSION
         ));
-        let def = reg.get("mesh_demo").unwrap();
+        let def = reg.get("demo").unwrap();
         let s = (def.create)(7, None, &json!({ "display_name": "Demo" }))
             .and_then(|prepared| prepared.publish())
             .unwrap();
@@ -401,7 +390,7 @@ mod tests {
     #[test]
     fn register_forwards_capability_flags() {
         let decl: SurfaceKindDecl = serde_json::from_value(json!({
-            "kind": "mesh_demo",
+            "kind": "demo",
             "display_name_i18n_key": "surface.kind.markdown",
             "rendering": "egui-mesh",
             "zoomable": true,
@@ -411,11 +400,11 @@ mod tests {
         let reg = SurfaceKindRegistry::new();
         assert!(register_egui_mesh_kind(
             &reg,
-            "com.tasty.mesh-demo",
+            "com.example.demo",
             &decl,
             HOST_API_VERSION
         ));
-        let def = reg.get("mesh_demo").unwrap();
+        let def = reg.get("demo").unwrap();
         assert!(def.zoomable);
         assert!(def.egui_copy);
         assert!(!def.egui_paste);
@@ -427,16 +416,16 @@ mod tests {
         let reg = SurfaceKindRegistry::new();
         assert!(register_egui_mesh_kind(
             &reg,
-            "com.tasty.mesh-demo",
-            &decl("mesh_demo"),
+            "com.example.demo",
+            &decl("demo"),
             HOST_API_VERSION
         ));
         assert!(register_egui_mesh_kind(
             &reg,
-            "com.tasty.mesh-demo",
-            &decl("mesh_demo"),
+            "com.example.demo",
+            &decl("demo"),
             HOST_API_VERSION
         ));
-        assert!(reg.contains("mesh_demo"));
+        assert!(reg.contains("demo"));
     }
 }

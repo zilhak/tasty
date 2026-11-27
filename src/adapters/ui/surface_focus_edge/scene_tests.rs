@@ -89,7 +89,7 @@ fn local_mesh(kind: &'static str, plugin: &str) -> Box<dyn crate::model::Surface
 fn mirror_mesh(bed_focus: bool) -> Box<dyn crate::model::Surface> {
     Box::new(crate::model::AttachMeshSurface::new(
         SID,
-        "mesh-demo",
+        "demo",
         "com.example.demo".into(),
         "Mesh".into(),
         bed_focus,
@@ -130,8 +130,8 @@ fn a_mesh_frame_starts_below_the_edge_only_for_an_edge_kind() {
     let theme = crate::theme::theme();
     let cases: [Case; 4] = [
         (
-            "mesh-demo",
-            local_mesh("mesh-demo", "com.example.demo"),
+            "demo",
+            local_mesh("demo", "com.example.demo"),
             None,
             MeshSide::Local,
             true,
@@ -143,20 +143,8 @@ fn a_mesh_frame_starts_below_the_edge_only_for_an_edge_kind() {
             MeshSide::Local,
             false,
         ),
-        (
-            "mesh-demo",
-            mirror_mesh(false),
-            None,
-            MeshSide::Attach,
-            true,
-        ),
-        (
-            "mesh-demo",
-            mirror_mesh(true),
-            None,
-            MeshSide::Attach,
-            false,
-        ),
+        ("demo", mirror_mesh(false), None, MeshSide::Attach, true),
+        ("demo", mirror_mesh(true), None, MeshSide::Attach, false),
     ];
     for (kind, surface, declares_bed, side, edge) in cases {
         let (state, mut session) = scene(kind, surface, declares_bed);
@@ -190,11 +178,7 @@ fn a_mesh_frame_starts_below_the_edge_only_for_an_edge_kind() {
 /// 띠 leaf의 attention 링과 chrome은 `collect`가 정한 행 아래 끝에서 시작한다. 행 경계는 물리 정수 px다.
 #[test]
 fn the_attention_ring_and_the_chrome_start_on_the_row_boundary() {
-    let (mut state, mut session) = scene(
-        "mesh-demo",
-        local_mesh("mesh-demo", "com.example.demo"),
-        None,
-    );
+    let (mut state, mut session) = scene("demo", local_mesh("demo", "com.example.demo"), None);
     let mut engine = session.borrow_mut();
     engine.raise_attention(SID, crate::core::AttentionKind::NeedsInput);
     let read = engine.read();
@@ -219,11 +203,7 @@ fn the_attention_ring_and_the_chrome_start_on_the_row_boundary() {
 /// 띠 leaf의 점유 링은 행 아래로 잘라 칠한다. 행 안의 링은 띠가 다시 칠한다.
 #[test]
 fn the_occupancy_ring_is_clipped_below_the_row() {
-    let (mut state, mut session) = scene(
-        "mesh-demo",
-        local_mesh("mesh-demo", "com.example.demo"),
-        None,
-    );
+    let (mut state, mut session) = scene("demo", local_mesh("demo", "com.example.demo"), None);
     let engine = session.borrow_mut();
     engine.live.occupancy.acquire(SID, 41).expect("occupy");
     let read = engine.read();
@@ -387,11 +367,7 @@ fn the_painted_edge_ends_on_the_host_row_and_opens_only_the_composited_clip() {
 /// 그 leaf 하나가 켜진다. 창 위로 펼친 팝업과 그 자식은 `popup::window_key_gate_tests`가 본다.
 #[test]
 fn a_window_scope_popup_with_key_focus_leaves_nothing_lit() {
-    let (mut state, mut session) = scene(
-        "mesh-demo",
-        local_mesh("mesh-demo", "com.example.demo"),
-        None,
-    );
+    let (mut state, mut session) = scene("demo", local_mesh("demo", "com.example.demo"), None);
     let engine = session.borrow_mut();
     let read = engine.read();
     let panes = pane_rects(&state, &read);
@@ -447,11 +423,7 @@ fn a_window_scope_popup_with_key_focus_leaves_nothing_lit() {
 /// 키 포커스를 가진 띠 leaf에 남은 완료 강조(OS 창 비활성 등)는 띠 행 안에도 링으로 보인다.
 #[test]
 fn a_focused_edge_leaf_keeps_a_completion_ring_in_its_row() {
-    let (mut state, mut session) = scene(
-        "mesh-demo",
-        local_mesh("mesh-demo", "com.example.demo"),
-        None,
-    );
+    let (mut state, mut session) = scene("demo", local_mesh("demo", "com.example.demo"), None);
     let mut engine = session.borrow_mut();
     engine.raise_attention(SID, crate::core::AttentionKind::Completion);
     let read = engine.read();

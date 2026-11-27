@@ -81,7 +81,7 @@ fn scene() -> (RequestContext, EngineSession) {
         201,
         Box::new(crate::runtime::egui_mesh_surface::EguiMeshSurface::new(
             201,
-            "mesh-demo",
+            "demo",
             "com.example.demo".into(),
             "Mesh".into(),
             None,
@@ -296,7 +296,7 @@ fn a_plugin_surface_closed_before_the_poll_gets_no_unfocused() {
         101,
         Box::new(crate::runtime::egui_mesh_surface::EguiMeshSurface::new(
             101,
-            "mesh-demo",
+            "demo",
             "com.example.demo".into(),
             "Mesh".into(),
             None,
