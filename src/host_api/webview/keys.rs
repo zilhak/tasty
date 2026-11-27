@@ -428,6 +428,19 @@ impl WebViewKeyBridge {
         self.consuming.set(false);
     }
 
+    /// 그 surface 의 native view 가 사라졌다(지움, 또는 같은 surface 로 다시 만들기 전 지움). 그 view 가 낸 대기열
+    /// 항목(누름 알림·전달 키)을 모두 지운다. 그 view 가 붙잡은 원래 키는 view 와 함께 사라지므로, 지운 항목의
+    /// 결과는 어느 view 에도 가지 않는다. 같은 surface 의 새 view 는 빈 자리에서 시작한다.
+    pub fn retire_view(&self, surface_id: u32) {
+        self.inputs.borrow_mut().retain(|input| {
+            let sid = match input {
+                NativeInput::Press { surface_id, .. } => *surface_id,
+                NativeInput::Forwarded(ev) => ev.surface_id,
+            };
+            sid != surface_id
+        });
+    }
+
     /// 대기열 앞의 누름 알림만 꺼낸다. 첫 키 뒤의 입력은 남긴다(키는 host 단축키 처리가 있는 소비만 판정한다).
     /// 소비 중이면(꺼낸 항목이 아직 처리 중) 아무것도 꺼내지 않는다.
     pub fn take_leading_presses(&self) -> Vec<(u32, PressKind)> {

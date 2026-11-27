@@ -111,6 +111,8 @@ enum Native {
     Press(u32),
     /// F2
     Shortcut(u32),
+    /// 그 surface 의 view 를 지웠다(`WebViewKeyBridge::retire_view`).
+    Retire(u32),
 }
 
 /// `events` 를 한 회차에 넣고(키는 backend 판정 `route_key_down`, 그 자리의 편집 실행은 기록) 회차 끝에 제품 소비
@@ -123,6 +125,7 @@ fn turn(holder: u32, events: &[Native]) -> (Vec<String>, Option<u32>) {
 fn send(bridge: &WebViewKeyBridge, event: Native, log: &mut Vec<String>) {
     match event {
         Native::Press(sid) => bridge.note_press(sid),
+        Native::Retire(sid) => bridge.retire_view(sid),
         Native::Shortcut(sid) => {
             let mut ran = None;
             let route = route_key_down(
@@ -267,4 +270,32 @@ fn nested_gtk_input_stays_behind_the_active_native_queue() {
         "중첩 입력이 바깥 소비에서 도착 순서대로 처리된다"
     );
     assert_eq!(focused, Some(11));
+}
+
+/// X4: Given A(11)가 키 쥘 곳이다, When B(12) view 의 [누름, F2]가 대기열에 있는 채 그 view 가 지워지고 같은 surface 의
+/// 새 view 가 F2 를 내면, Then 회차 끝 소비는 옛 view 의 누름과 단축키를 하나도 처리하지 않고 새 view 의 F2 만 한 번
+/// 처리한다(옛 누름이 없어 A 가 키 쥘 곳이라 막힌다). 대조: view 를 지우지 않으면 옛 누름 뒤 F2 가 B 에서 동작한다.
+#[test]
+fn retiring_a_webview_cancels_its_queued_inputs() {
+    let old = [Native::Press(12), Native::Shortcut(12)];
+    let mut events = old.to_vec();
+    events.extend([Native::Retire(12), Native::Shortcut(12)]);
+    let (log, focused) = turn(11, &events);
+    assert_eq!(
+        log,
+        [
+            "held 12",
+            "held 12",
+            "shortcut 12 Gated",
+            "forwarded 12 Gated",
+        ]
+    );
+    assert_eq!(focused, Some(11));
+    let (log, focused) = turn(11, &old);
+    assert_eq!(
+        log,
+        ["held 12", "shortcut 12 Handled", "forwarded 12 Handled"],
+        "대조: 지우지 않은 view 의 항목은 처리된다"
+    );
+    assert_eq!(focused, Some(12));
 }

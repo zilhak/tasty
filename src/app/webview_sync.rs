@@ -85,6 +85,7 @@ pub(crate) fn synchronize(
         .collect();
     for surface in stale {
         view.webviews.remove(&surface);
+        view.webview_key_bridge.retire_view(surface);
         view.webview_runtime.remove(&surface);
         view.webview_loaded_urls.remove(&surface);
         view.webview_applied_settings.remove(&surface);
@@ -913,7 +914,13 @@ fn sync_webviews(
     view.webview_any_visible = any_visible;
 
     // Remove webviews for closed Html surfaces
+    let closed: Vec<u32> = (view.webviews.keys().copied())
+        .filter(|sid| !all_html_ids.contains(sid))
+        .collect();
     view.webviews.retain(|sid, _| all_html_ids.contains(sid));
+    closed
+        .into_iter()
+        .for_each(|sid| view.webview_key_bridge.retire_view(sid));
     view.webview_runtime
         .retain(|sid, _| all_html_ids.contains(sid));
     view.webview_applied_settings
