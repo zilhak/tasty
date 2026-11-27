@@ -21,12 +21,13 @@
 
 - **사용자 테마의 팔레트·강조색에 알파를 주면 그 색으로 만드는 틴트와 혼합 색이 디자인의 color-mix 규칙대로 알파를 섞는다.** 틴트 채움·테두리(git diff 줄 채움, DAG 주기·러너 테두리, 드롭 대상, 파일 드롭 오버레이, 영역 선택 사각형, 프리셋 분할 영역, 플러그인 아바타 테두리)는 Tag 테두리처럼 강조색 알파에 비율을 곱하고, 바탕과 섞는 색(raised·strong·on-active 글자, 알림 잉크, 승인 위험 채움, DAG 상태 채움, 플러그인 아바타 배경, 탭 hover 바탕 등)은 두 색의 알파를 비율대로 섞는다. 전에는 틴트가 강조색 알파를 고정 알파로 덮어썼고, 혼합 색은 바탕의 알파를 그대로 썼다. 계산 결과가 정확히 반 단계인 채널은 올린다. 내장 Mocha·Latte의 값은 그대로다. 불투명한 사용자 색도 전 계산이 정확한 반 단계를 내리던 채널에서는 1 오른다(예: blue `#010101`, surface0 `#b0b0b0`의 플러그인 아바타 배경 채널 144 → 145). 선택 영역 위 현재 찾기 매치 바탕은 라이트 테마에서 그 테마의 yellow 80%를 transparent와 섞은 값이고, 다크 테마에서 그 테마의 `search_match_active_bg`다. 전에는 테마 종류와 상관없이 `search_match_active_bg`가 내장 Latte 값 `#df8e1d80`이면 `#df8e1dcc`를, 아니면 `search_match_active_bg`를 그대로 썼다. 그래서 그 값을 직접 쓴 다크 사용자 테마와, 다른 값을 쓴 라이트 사용자 테마의 이 바탕이 바뀐다.
 
-### Fixed
-
-- **Windows에서 호스트와 plugin이 여는 TCP 소켓의 핸들 상속 플래그를 만든 직후 지운다.** 대상은 IPC listener, plugin 호스트 listener와 plugin 연결(인증·송신 복제 포함), native mirror 끝점 listener와 연결, SSH 터널 준비 소켓, 웹훅 listener, plugin SDK의 호스트 연결과 writer 복제다. 지운 뒤에 std `Command`로 뜨는 자식(plugin·ssh·훅 등)은 이 핸들을 물려받지 않는다. 만든 뒤 지우기 전의 짧은 구간에 다른 스레드가 띄운 자식은 여전히 물려받을 수 있다. listener와 SSH 터널 준비 소켓은 지우지 못해도 기록만 남기고 그대로 쓰므로 그때는 막지 못한다. accept한 plugin·끝점 연결은 지우지 못하면 그 연결만 닫는다. 웹훅 서버가 accept한 연결과 서버를 내릴 때 여는 연결은 대상이 아니다. plugin SDK의 공개 API는 바뀌지 않는다.
 ### Removed
 
 - **개발용 플러그인 `com.tasty.mesh-demo`가 없어진다.** 배포 패키지에 들어가지 않던 egui-mesh 채널 검증 플러그인이다. 공식 플러그인 목록에서도 빠지므로 남아 있는 설치 폴더(`<TASTY_HOME>/plugins/com.tasty.mesh-demo`)는 실행되지 않는다. 그 폴더에 매니페스트가 있고 호스트의 매니페스트 검증을 통과하면 Plugins 창의 확인 필요 탭에 예약 id 항목으로 보인다. 매니페스트가 없으면 탐색이 건너뛰고, 검증에 실패하면 경고 로그를 남기고 건너뛴다. 폴더는 Tasty가 지우지 않으며 그 탭에서 지울 수 있다.
+
+### Fixed
+
+- **Windows에서 호스트와 plugin이 여는 TCP 소켓의 핸들 상속 플래그를 만든 직후 지운다.** 대상은 IPC listener, plugin 호스트 listener와 plugin 연결(인증·송신 복제 포함), native mirror 끝점 listener와 연결, SSH 터널 준비 소켓, 웹훅 listener, plugin SDK의 호스트 연결과 writer 복제다. 지운 뒤에 std `Command`로 뜨는 자식(plugin·ssh·훅 등)은 이 핸들을 물려받지 않는다. 만든 뒤 지우기 전의 짧은 구간에 다른 스레드가 띄운 자식은 여전히 물려받을 수 있다. listener와 SSH 터널 준비 소켓은 지우지 못해도 기록만 남기고 그대로 쓰므로 그때는 막지 못한다. accept한 plugin·끝점 연결은 지우지 못하면 그 연결만 닫는다. 웹훅 서버가 accept한 연결과 서버를 내릴 때 여는 연결은 대상이 아니다. plugin SDK의 공개 API는 바뀌지 않는다.
 
 ## [0.14.1] - 2026-11-26
 
