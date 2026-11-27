@@ -313,20 +313,8 @@ impl<'a> Button<'a> {
                     )
                 }
                 ButtonVariant::Secondary => {
-                    let mut bg = theme.button_secondary_bg();
-                    let (edge, label) = if pressed {
-                        (theme.border_default(), theme.text_on_active())
-                    } else if resp.hovered() {
-                        (
-                            theme.button_secondary_border_hover(),
-                            theme.text_on_active(),
-                        )
-                    } else if self.select_rest {
-                        bg = theme.select_bg();
-                        (theme.select_border(), theme.button_fg())
-                    } else {
-                        (theme.button_secondary_border(), theme.button_fg())
-                    };
+                    let (bg, edge, label) =
+                        secondary_colors(theme, pressed, resp.hovered(), self.select_rest);
                     (Some(bg.to_egui()), Some(edge.to_egui()), label.to_egui())
                 }
                 ButtonVariant::Ghost => {
@@ -429,6 +417,33 @@ fn paint_ring_if(
             crate::focus_ring::control_ring_gap(theme),
             crate::focus_ring::control_ring_color(theme, ground),
         );
+    }
+}
+
+/// Secondary 버튼의 상태별 채움·테두리·글자색. 눌림·hover가 앞서고, 쉴 때 `select_rest`면 select-bg·select-border다.
+fn secondary_colors(
+    theme: &Theme,
+    pressed: bool,
+    hovered: bool,
+    select_rest: bool,
+) -> (
+    tasty_type_appearance::color::HexColor,
+    tasty_type_appearance::color::HexColor,
+    tasty_type_appearance::color::HexColor,
+) {
+    let bg = theme.button_secondary_bg();
+    if pressed {
+        (bg, theme.border_default(), theme.text_on_active())
+    } else if hovered {
+        (
+            bg,
+            theme.button_secondary_border_hover(),
+            theme.text_on_active(),
+        )
+    } else if select_rest {
+        (theme.select_bg(), theme.select_border(), theme.button_fg())
+    } else {
+        (bg, theme.button_secondary_border(), theme.button_fg())
     }
 }
 
