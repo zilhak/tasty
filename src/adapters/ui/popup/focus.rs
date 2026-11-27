@@ -198,11 +198,19 @@ impl PopupManager {
     /// 포커스를 얻지 못하고 그릴 때 포커스를 놓는다. 포커스 노드를 출발로 찾지 않는다(정규화로 덮개가 포커스가 되면
     /// 그 위를 찾아 덮개가 빠진다). 막이 위의 팝업 Area와 등록 자식은 하한 위다.
     pub(crate) fn window_cover_floor(&self) -> Option<egui::LayerId> {
+        self.window_cover_layers()
+            .max_by_key(|(_, z)| *z)
+            .map(|(layer, _)| layer)
+    }
+
+    /// 창 전체를 덮는 host 덮개마다 그 덮음 막이 레이어와 순번.
+    fn window_cover_layers(&self) -> impl Iterator<Item = (egui::LayerId, u64)> + '_ {
         self.covering_nodes()
             .filter(|(_, scope, _)| matches!(scope, PopupScope::Window))
-            .max_by_key(|(_, _, z)| *z)
-            .and_then(|(iid, _, _)| self.instance(iid))
-            .map(|p| cover_block_layer(p.id, p.instance))
+            .filter_map(|(iid, _, z)| {
+                self.instance(iid)
+                    .map(|p| (cover_block_layer(p.id, p.instance), z))
+            })
     }
 
     /// egui 패스마다 위젯을 그리기 전(`run_input_pass`가 패스 콜백 첫머리에서) 부른다. 닫힘 기록(그리기 밖의 명령·
@@ -210,20 +218,41 @@ impl PopupManager {
     /// 위젯이 그 패스에 그려지지 않으면 Tab 이 어느 위젯에도 가지 않는다. 그래서 닫힌 레이어의 포커스를 위젯 탐색 전에
     /// 놓아, 닫은 뒤 첫 Tab 이 포커스 없음에서 출발하게 한다. 역방향 탐색이 예약해 이 패스 시작에 옮겨진 포커스도 같다.
     /// egui 의 창 하한은 지난 패스 끝에 등록한 값이다. 그 하한이 이번 패스 전에 닫힌 덮개의 막이 레이어면, 위젯 탐색
-    /// 전에 지금 덮개의 하한(`window_cover_floor`, 지난 패스에 보인 레이어만, 없으면 하한 없음)으로 내린다
-    /// (`egui::Memory::sync_top_modal_layer`, 포크 패치). 그래서 닫은 뒤 첫 Tab 이 닫힌 덮개 아래 창 위젯으로 간다. 올리는
-    /// 쪽(새로 연 덮개)은 지난 패스 순서표에 없어 바꾸지 않는다. 기록은 지우지 않는다(패스 끝이 지운다).
+    /// 전에 지난 패스의 층 순서에서 닫힌 하한 아래에 있고 지난 패스에 그려진 살아 있는 Window 덮개 가운데 맨 위로
+    /// 내린다(`egui::Memory::sync_top_modal_layer`, 포크 패치). 그런 덮개가 없고 새로 연 덮개만 있으면 그대로 두고,
+    /// 덮개가 없으면 하한을 비운다. 그래서 닫은 뒤 첫 Tab 이
+    /// 닫힌 덮개 아래 창 위젯으로 가고, 닫기와 함께 연 새 덮개가 남은 덮개를 하한에서 빼지 않는다. 올리는 쪽(새로 연
+    /// 덮개)은 지난 패스 순서표에 없어 바꾸지 않는다. 기록은 지우지 않는다(패스 끝이 지운다).
     pub(crate) fn release_closed_focus(&self, ctx: &egui::Context) {
         if let Some(focused) = self.closed_layer_focus(ctx, &self.closed_this_pass) {
             ctx.memory_mut(|m| m.surrender_focus(focused));
         }
-        let floor_closed = ctx.memory(|m| m.top_modal_layer()).is_some_and(|floor| {
-            (self.closed_this_pass.iter()).any(|(id, iid, _)| floor == cover_block_layer(id, *iid))
+        let Some(floor) = ctx.memory(|m| m.top_modal_layer()) else {
+            return;
+        };
+        let floor_closed =
+            (self.closed_this_pass.iter()).any(|(id, iid, _)| floor == cover_block_layer(id, *iid));
+        if !floor_closed {
+            return;
+        }
+        // 지난 패스의 층 순서(`Memory::layer_ids`, 뒤 → 앞)에서 닫힌 하한 아래에 있고, 아직 열렸고, 지난 패스에 그려진
+        // Window 덮개 가운데 맨 위로 내린다. 새로 연 덮개는 지난 패스 순서에 없어 후보가 아니다. 그런 덮개가 없는데
+        // 열린 덮개가 있으면 닫힌 하한을 둔다(패스 끝이 새 덮개를 하한으로 등록한다). 덮개가 없으면 하한을 비운다.
+        let live: Vec<egui::LayerId> = self.window_cover_layers().map(|(layer, _)| layer).collect();
+        let below = ctx.memory(|m| {
+            let order: Vec<egui::LayerId> = m.layer_ids().collect();
+            let top = order
+                .iter()
+                .position(|l| *l == floor)
+                .unwrap_or(order.len());
+            (order[..top].iter().rev())
+                .find(|l| live.contains(l) && m.areas().visible_last_frame(l))
+                .copied()
         });
-        if floor_closed {
-            let floor = (self.window_cover_floor())
-                .filter(|layer| ctx.memory(|m| m.areas().visible_last_frame(layer)));
-            ctx.memory_mut(|m| m.sync_top_modal_layer(floor));
+        match below {
+            Some(layer) => ctx.memory_mut(|m| m.sync_top_modal_layer(Some(layer))),
+            None if live.is_empty() => ctx.memory_mut(|m| m.sync_top_modal_layer(None)),
+            None => {}
         }
     }
 

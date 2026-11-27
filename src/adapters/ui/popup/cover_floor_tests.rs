@@ -61,6 +61,33 @@ fn drain(
     }
 }
 
+/// `drain` 의 한 패스를 돌고, 위젯을 그리는 때(패스 첫머리의 `release_closed_focus` 뒤) egui 가 읽는 창 하한을 돌려준다.
+fn floor_in_pass(
+    ctx: &egui::Context,
+    state: &mut RequestContext,
+    engine: &EngineRead<'_>,
+    input: &mut WindowInput,
+    side: &mut String,
+) -> Option<egui::LayerId> {
+    let mut floor = None;
+    let mut held = HeldPastes::default();
+    drop(input.run_pass(
+        state,
+        ctx,
+        screen(),
+        &mut held,
+        &mut |_| {},
+        |ctx, state| {
+            floor = ctx.memory(|m| m.top_modal_layer());
+            egui::CentralPanel::default().show(ctx, |ui| {
+                ui.add(egui::TextEdit::singleline(side).id(egui::Id::new(SIDE)));
+            });
+            draw_popup_layer(ctx, state, engine, &layout());
+        },
+    ));
+    floor
+}
+
 fn open_palette(state: &mut RequestContext) -> PopupInstanceId {
     state
         .popups
@@ -154,5 +181,100 @@ fn a_plugin_window_cover_over_a_host_cover_keeps_the_host_floor() {
         state.popups.window_cover_floor(),
         Some(cover_block(COMMAND_PALETTE_POPUP_ID, palette)),
         "the floor stays on the host cover"
+    );
+}
+
+/// Window 덮개 정의 `id` 를 연다.
+fn open_window(
+    state: &mut RequestContext,
+    id: crate::adapters::ui::popup::PopupId,
+) -> PopupInstanceId {
+    state
+        .popups
+        .open_request(
+            &OpenRequest::new(id, PopupScope::Window)
+                .centered()
+                .focused(),
+            true,
+        )
+        .unwrap_or_else(|| panic!("{id} opens"))
+}
+
+/// E1: Given 팔레트(A) 위에 튜토리얼 목록(B)이 그려져 B 가 창 하한이다, When 패스 사이에 B 를 닫고 원격 도구(C)를
+/// 함께 열면, Then 다음 패스가 위젯을 그리는 때의 하한은 지난 패스에 그려진 A 다(C 는 아직 그려지지 않았다). 하한이
+/// 비면 그 패스의 Tab 이 덮인 창 위젯으로 갈 수 있다. 대조: C 없이 B 만 닫아도 하한은 A 다.
+#[test]
+fn a_cover_opened_with_the_close_keeps_the_live_cover_below_as_the_floor() {
+    use crate::adapters::ui::popup::remote_tool::REMOTE_TOOL_POPUP_ID;
+    use crate::adapters::ui::tutorial::topic_popup::TUTORIAL_TOPICS_POPUP_ID;
+    for open_c in [true, false] {
+        let (mut state, mut session) = scene(PANE_L);
+        for def in defs::all_defs() {
+            state.popups.register_def(def, 1.0);
+        }
+        let engine = session.borrow_mut();
+        let read = engine.read();
+        let ctx = egui::Context::default();
+        let mut input = WindowInput::default();
+        let mut side = String::new();
+        let palette = open_palette(&mut state);
+        drain(&ctx, &mut state, &read, &mut input, &mut side);
+        let topics = open_window(&mut state, TUTORIAL_TOPICS_POPUP_ID);
+        drain(&ctx, &mut state, &read, &mut input, &mut side);
+        drain(&ctx, &mut state, &read, &mut input, &mut side);
+        assert_eq!(
+            ctx.memory(|m| m.top_modal_layer()),
+            Some(cover_block(TUTORIAL_TOPICS_POPUP_ID, topics)),
+            "B 가 하한이다"
+        );
+        state.popups.close_instance(
+            topics,
+            crate::adapters::ui::popup::PopupCloseReason::Command,
+        );
+        if open_c {
+            open_window(&mut state, REMOTE_TOOL_POPUP_ID);
+        }
+        state.normalize_focus(&read);
+        assert_eq!(
+            floor_in_pass(&ctx, &mut state, &read, &mut input, &mut side),
+            Some(cover_block(COMMAND_PALETTE_POPUP_ID, palette)),
+            "open_c={open_c}: 위젯을 그리는 때의 하한이 남은 A 가 아니다"
+        );
+    }
+}
+
+/// E1: Given 팔레트(A) 하나가 그려져 하한이다, When 패스 사이에 A 를 닫고 원격 도구(C)를 함께 열면, Then 지난 패스에
+/// 그려진 살아 있는 덮개가 없어도 열린 덮개가 있으므로 다음 패스가 위젯을 그리는 때 닫힌 A 의 하한을 둔다(비우지
+/// 않는다). 그 패스 끝이 C 를 하한으로 등록한다.
+#[test]
+fn a_cover_opened_with_the_only_close_keeps_the_closed_floor_for_its_first_pass() {
+    use crate::adapters::ui::popup::remote_tool::REMOTE_TOOL_POPUP_ID;
+    let (mut state, mut session) = scene(PANE_L);
+    for def in defs::all_defs() {
+        state.popups.register_def(def, 1.0);
+    }
+    let engine = session.borrow_mut();
+    let read = engine.read();
+    let ctx = egui::Context::default();
+    let mut input = WindowInput::default();
+    let mut side = String::new();
+    let palette = open_palette(&mut state);
+    drain(&ctx, &mut state, &read, &mut input, &mut side);
+    drain(&ctx, &mut state, &read, &mut input, &mut side);
+    state.popups.close_instance(
+        palette,
+        crate::adapters::ui::popup::PopupCloseReason::Command,
+    );
+    let c = open_window(&mut state, REMOTE_TOOL_POPUP_ID);
+    state.normalize_focus(&read);
+    assert_eq!(
+        floor_in_pass(&ctx, &mut state, &read, &mut input, &mut side),
+        Some(cover_block(COMMAND_PALETTE_POPUP_ID, palette)),
+        "위젯을 그리는 때 하한이 비었다"
+    );
+    assert_eq!(
+        ctx.memory(|m| m.top_modal_layer()),
+        Some(cover_block(REMOTE_TOOL_POPUP_ID, c)),
+        "패스 끝이 C 를 하한으로 등록했다"
     );
 }

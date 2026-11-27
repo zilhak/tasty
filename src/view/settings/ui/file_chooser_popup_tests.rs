@@ -1794,6 +1794,17 @@ fn chooser_with_a_focused_crumb(
     st: &mut SettingsUiState,
     outside: &mut dyn FnMut(&mut egui::Ui),
 ) -> (tempfile::TempDir, egui::Id) {
+    chooser_with_a_crumb_focused_by(h, st, outside, false)
+}
+
+/// `chooser_with_a_focused_crumb` 와 같고, `reverse` 면 메뉴 행 포커스를 직접 주지 않고 Shift+Tab 역방향 탐색으로
+/// 숨은 경로 행에 닿을 때까지 옮긴다.
+fn chooser_with_a_crumb_focused_by(
+    h: &mut crate::view::window_input::tests::Harness,
+    st: &mut SettingsUiState,
+    outside: &mut dyn FnMut(&mut egui::Ui),
+    reverse: bool,
+) -> (tempfile::TempDir, egui::Id) {
     use crate::adapters::ui::popup::window_input_test_support::{
         click_widget_at, painted_at, painted_texts,
     };
@@ -1823,16 +1834,28 @@ fn chooser_with_a_focused_crumb(
     }
     assert!(ctx.memory(|m| m.any_popup_open()), "경로 메뉴가 열렸다");
     let texts = painted_texts(&menu);
-    let row_label = (0..40)
+    let hidden: Vec<egui::Id> = (0..40)
         .map(|i| format!("d{i:02}"))
-        .find(|l| !before.contains(l) && painted_at(&texts, l).is_some())
-        .expect("메뉴에만 있는 숨은 경로 행");
-    let row = click_widget_at(&ctx, painted_at(&texts, &row_label).expect("행").center())
-        .expect("메뉴 행 위젯");
-    ctx.memory_mut(|m| m.request_focus(row));
-    drop(chooser_pass(h, st, outside));
-    assert_eq!(focused(&ctx), Some(row), "메뉴 행이 포커스를 가진다");
-    (root, row)
+        .filter(|l| !before.contains(l))
+        .filter_map(|l| painted_at(&texts, &l))
+        .filter_map(|rect| click_widget_at(&ctx, rect.center()))
+        .collect();
+    let row = *hidden.first().expect("메뉴에만 있는 숨은 경로 행");
+    if !reverse {
+        ctx.memory_mut(|m| m.request_focus(row));
+        drop(chooser_pass(h, st, outside));
+        assert_eq!(focused(&ctx), Some(row), "메뉴 행이 포커스를 가진다");
+        return (root, row);
+    }
+    for _ in 0..80 {
+        h.key_with(st, egui::Key::Tab, egui::Modifiers::SHIFT, None);
+        drop(chooser_pass(h, st, outside));
+        if let Some(row) = focused(&ctx).filter(|id| hidden.contains(id)) {
+            assert!(ctx.memory(|m| m.any_popup_open()), "경로 메뉴가 열려 있다");
+            return (root, row);
+        }
+    }
+    panic!("Shift+Tab 이 숨은 경로 행에 닿지 않았다");
 }
 
 /// 선택기 없이 창 위젯과 남은 팝업만 그리는 한 패스. 위젯 탐색 전(패스 첫머리)의 egui 포커스를 `at_widgets` 에 적는다.
@@ -1898,6 +1921,29 @@ fn the_first_tab_after_closing_the_chooser_with_a_focused_crumb_moves_in_the_win
     let mut h = crate::view::window_input::tests::Harness::new();
     let mut outside = outside_edit(outside_id);
     let (_root, _) = chooser_with_a_focused_crumb(&mut h, &mut st, &mut outside);
+    st.popups.close_instance(
+        chooser_instance(&st),
+        crate::adapters::ui::popup::PopupCloseReason::Command,
+    );
+    h.key(&mut st, egui::Key::Tab, None);
+    window_pass_after_close(&mut h, &mut st, &mut outside, &mut Vec::new());
+    assert_eq!(
+        focused(&h.ctx),
+        Some(outside_id),
+        "닫은 뒤 첫 Tab 이 창 위젯으로 간다"
+    );
+}
+
+/// E1 역방향 대조: Given 설정 창 선택기의 숨은 경로 메뉴 행이 Shift+Tab 역방향 탐색으로 egui 포커스를 얻었다, When
+/// 그리기 전에 선택기를 닫고 Tab 을 한 번 보내면, Then 그 Tab 이 창 위젯 입력칸으로 간다(닫힌 선택기의 하한이 그 패스
+/// 첫머리에 내려간다, `PopupManager::release_closed_focus`).
+#[test]
+fn the_first_tab_after_closing_the_chooser_with_a_crumb_reached_by_shift_tab_moves_in_the_window() {
+    let outside_id = egui::Id::new("e1-outside");
+    let mut st = SettingsUiState::new();
+    let mut h = crate::view::window_input::tests::Harness::new();
+    let mut outside = outside_edit(outside_id);
+    let (_root, _) = chooser_with_a_crumb_focused_by(&mut h, &mut st, &mut outside, true);
     st.popups.close_instance(
         chooser_instance(&st),
         crate::adapters::ui::popup::PopupCloseReason::Command,
