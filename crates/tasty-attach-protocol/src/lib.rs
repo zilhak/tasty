@@ -153,8 +153,8 @@ fn string_or_empty<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<
 }
 
 /// 세션 중 전달하는 event 태그 기반 Control 메시지. handshake descriptor는 별도 JSON이다.
-/// 모르는 variant는 역직렬화에 실패하고 소비자가 무시한다. Loss는 출력의 연속성을 바꾸므로
-/// ClientLossNotify를 선언한 클라이언트에만 보낸다.
+/// 모르는 variant는 역직렬화에 실패하고 소비자가 무시한다. Loss를 보내는 경로는 둘이다
+/// (각 경로는 [`StreamControl::Loss`]).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "event", rename_all = "snake_case")]
 pub enum StreamControl {
@@ -357,9 +357,13 @@ pub enum StreamControl {
     /// 서버→클라이언트: mesh mirror가 불가능한 surface의 오류.
     /// 대상 부재·지원 kind 아님·플러그인 미실행 등의 reason을 보낸다.
     MeshError { surface_id: u32, reason: String },
-    /// 서버→클라이언트: 이 연결의 push 큐에서 프레임이 유실됐다.
-    /// ClientLossNotify를 선언한 연결에만 보내며 새 출력보다 먼저 큐에 넣는다.
-    /// 유실 뒤에 선언하면 그전의 누적 손실도 알린다. 여러 surface가 같은 연결을 쓰므로 surface ID는 없다.
+    /// 서버→클라이언트: 이 연결에서 프레임이 유실됐다. 보내는 경로가 둘이고 조건이 다르다.
+    /// - StreamHub 송신 큐의 누적 손실: ClientLossNotify를 선언한 연결에만 보내며 새 출력보다 먼저 큐에 넣는다.
+    ///   유실 뒤에 선언하면 그전의 누적 손실도 알린다.
+    /// - 터미널 구독 큐가 넘침: 선언과 무관하게 `Loss { frames: 1 }`를 넣고 그 연결의 구독 등록을 해제한다
+    ///   (`src/remote/subscription.rs`의 `poll_attach_subscriptions`). 선언하지 않은 client는 강제 EOF로 본다.
+    ///
+    /// 여러 surface가 같은 연결을 쓰므로 surface ID는 없다.
     /// 복구는 PTY·상태·mesh·bulk 소비자가 각자의 규칙으로 처리한다.
     Loss {
         /// Frames dropped for this connection since the previous `Loss` frame (or
