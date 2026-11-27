@@ -17,6 +17,14 @@ use crate::protocol::{AuthAck, AuthAckEnvelope, AuthMessage};
 
 const AUTH_READ_TIMEOUT: Duration = Duration::from_secs(5);
 
+/// 시험 이음새(`tasty_utils::socket_inherit::seam`)의 자리 이름.
+#[cfg(all(test, windows))]
+const SEAM_LISTENER: &str = "host-plugin.listener";
+#[cfg(all(test, windows))]
+const SEAM_ACCEPT: &str = "host-plugin.accept";
+#[cfg(all(test, windows))]
+const SEAM_AUTH_READER: &str = "host-plugin.auth-reader";
+
 pub struct HostListener {
     addr: SocketAddr,
     /// 연결 대기 한도. 운영 값은 HANDSHAKE_TIMEOUT이며 테스트에서 줄일 수 있다.
@@ -42,6 +50,17 @@ impl HostListener {
             anyhow::bail!("plugin host listener bind refused by the test");
         }
         let listener = TcpListener::bind("127.0.0.1:0")?;
+        #[cfg(all(test, windows))]
+        tasty_utils::socket_inherit::seam::created(SEAM_LISTENER, &listener, None);
+        // 이 뒤에 std `Command` 로 뜨는 자식(plugin 등)이 listener 를 쥐지 않게 한다. 끄지 못해도 listener 는
+        // 그대로 쓰고 경고만 남긴다.
+        if let Err(e) = tasty_utils::socket_inherit::disable_inherit(&listener) {
+            tracing::warn!(
+                "plugin listener: keeping the listener out of child processes failed: {e}"
+            );
+        }
+        #[cfg(all(test, windows))]
+        tasty_utils::socket_inherit::seam::cleared(SEAM_LISTENER, &listener, None);
         let addr = listener.local_addr()?;
         let pending: Arc<Mutex<HashMap<String, mpsc::Sender<TcpStream>>>> = Arc::default();
         let pending_clone = pending.clone();
@@ -136,6 +155,25 @@ fn handle_incoming(
     stream: TcpStream,
     pending: &Arc<Mutex<HashMap<String, mpsc::Sender<TcpStream>>>>,
 ) {
+    #[cfg(all(test, windows))]
+    tasty_utils::socket_inherit::seam::created(
+        SEAM_ACCEPT,
+        &stream,
+        stream.local_addr().ok().map(|addr| addr.port()),
+    );
+    // 이 뒤에 뜨는 자식이 plugin 연결을 쥐지 않게 한다. 끄지 못하면 그 연결만 닫는다.
+    if let Err(e) = tasty_utils::socket_inherit::disable_inherit(&stream) {
+        tracing::warn!(
+            "plugin listener: keeping the connection out of child processes failed: {e}"
+        );
+        return;
+    }
+    #[cfg(all(test, windows))]
+    tasty_utils::socket_inherit::seam::cleared(
+        SEAM_ACCEPT,
+        &stream,
+        stream.local_addr().ok().map(|addr| addr.port()),
+    );
     // 짧은 요청·응답이 ACK 대기로 지연되지 않도록 양 끝에서 Nagle을 끈다.
     // 설정에 실패해도 통신은 계속하고 경고를 남긴다.
     if let Err(e) = stream.set_nodelay(true) {
@@ -180,13 +218,20 @@ fn read_auth_message_tcp(stream: &TcpStream) -> Option<AuthMessage> {
 
 /// stream 을 clone 해 인증 라인 한 줄을 읽는다.
 fn read_auth_line_tcp(stream: &TcpStream) -> Option<String> {
-    let cloned = match stream.try_clone() {
+    // 인증을 기다리는 동안 다른 plugin 이 뜰 수 있어 복제의 상속도 끈다.
+    let cloned = match tasty_utils::socket_inherit::try_clone_uninherited(stream) {
         Ok(s) => s,
         Err(e) => {
             tracing::warn!("plugin listener: stream clone failed: {e}");
             return None;
         }
     };
+    #[cfg(all(test, windows))]
+    tasty_utils::socket_inherit::seam::cleared(
+        SEAM_AUTH_READER,
+        &cloned,
+        cloned.local_addr().ok().map(|addr| addr.port()),
+    );
     let mut reader = BufReader::new(cloned);
     let mut line = String::new();
     if let Err(e) = reader.read_line(&mut line) {
@@ -418,3 +463,7 @@ mod tests {
         });
     }
 }
+
+#[cfg(all(test, windows))]
+#[path = "listener_inherit_tests.rs"]
+mod inherit_tests;
