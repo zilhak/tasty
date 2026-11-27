@@ -1,5 +1,5 @@
 //! 에이전트 승인 팝업의 선택지 버튼. 본체와 갤러리가 같이 그린다.
-//! 위험 선택지는 `approval-danger-*` 토큰으로 불투명 채움·1px 테두리·글자색을 쓰고,
+//! 위험 선택지는 `approval-danger-*` 토큰으로 채움(두 색이 불투명하면 불투명, 내장 테마에서 불투명)·1px 테두리·글자색을 쓰고,
 //! hover·누름은 그 채움 위에 일반 버튼 overlay 를 얹는다.
 
 use tasty_type_appearance::theme::Theme;
