@@ -5,8 +5,10 @@
 //! serde 타입과 상수만 둔다. 프레임 코덱·소켓·handshake·세션은 tasty-ipc와 호스트가 맡는다.
 //! 데스크톱 의존(tokio·저장소·GUI) 없이 다른 client가 같은 타입을 쓰도록 의존을 serde 수준으로 묶는다.
 
+mod descriptor;
 mod inherit_cwd;
 
+pub use descriptor::AttachedWorkspaceDescriptor;
 pub use inherit_cwd::InheritCwd;
 use serde::{Deserialize, Serialize};
 

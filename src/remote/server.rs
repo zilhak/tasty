@@ -546,15 +546,23 @@ impl EngineRef<'_> {
         class: &AttachSurfaceClass,
     ) -> serde_json::Value {
         let (tree, surfaces) = self.build_workspace_tree_surfaces(idx, class);
-        serde_json::json!({
-            "event": "attached_workspace",
-            "workspace_id": workspace_id,
-            "name": self.core.workspace_at(idx).expect("workspace index is valid").name,
-            "tree": tree,
-            "surfaces": surfaces,
-            (tasty_ipc::stream::DESCRIPTOR_CAPABILITIES): descriptor_capabilities(),
-            (tasty_ipc::stream::DESCRIPTOR_PTY_INPUT): tasty_ipc::stream::local_pty_input(),
-        })
+        let descriptor = tasty_ipc::stream::AttachedWorkspaceDescriptor {
+            workspace_id,
+            name: self
+                .core
+                .workspace_at(idx)
+                .expect("workspace index is valid")
+                .name
+                .clone(),
+            tree,
+            surfaces,
+            stream_capabilities: descriptor_capabilities()
+                .into_iter()
+                .map(String::from)
+                .collect(),
+            pty_input: tasty_ipc::stream::local_pty_input().to_string(),
+        };
+        serde_json::to_value(descriptor).expect("descriptor fields are plain JSON values")
     }
 
     /// 초기 attach와 StructuralDelta가 공유하는 트리·surface 정보다.

@@ -246,6 +246,53 @@ mod tests {
         );
     }
 
+    /// descriptor는 struct로 바꾸기 전의 json! 생성과 같은 JSON이다. 키와 기능 이름은 글자로 적어 상수·이름 변경을 잡는다.
+    #[test]
+    fn workspace_descriptor_keeps_the_wire_shape_of_the_json_builder() {
+        let (_, mut session) = crate::state::tests::test_state();
+        let engine = session.borrow_mut();
+        let workspace = engine.workspace_at(0).expect("workspace index is valid");
+        let (ws_id, name) = (workspace.id, workspace.name.clone());
+        let class = engine.classify_attach_surfaces(ws_id);
+        let (tree, surfaces) = engine.build_workspace_tree_surfaces(0, &class);
+        assert!(
+            !surfaces.is_empty(),
+            "시험 workspace에 surface가 있어야 비교가 비지 않는다"
+        );
+        let mut capabilities = vec![
+            "ipc.stream.resize-ack",
+            "ipc.stream.input-ack",
+            "ipc.stream.workspace-close",
+            "ipc.stream.inherit-cwd",
+            "ipc.stream.explorer-write",
+            "ipc.stream.agent-children",
+            "ipc.stream.terminal-read",
+            "ipc.stream.file-download",
+            "ipc.stream.html-transfer-v1",
+            "ipc.stream.html-entry-v1",
+            "ipc.stream.html-resources-v1",
+            "ipc.stream.html-http-v1",
+            "ipc.stream.html-https-v1",
+            "ipc.stream.html-http-reload-v1",
+        ];
+        if cfg!(feature = "gui") {
+            capabilities.push("ipc.stream.notification-sound");
+        }
+        let expected = serde_json::json!({
+            "event": "attached_workspace",
+            "workspace_id": ws_id,
+            "name": name,
+            "tree": tree,
+            "surfaces": surfaces,
+            "stream_capabilities": capabilities,
+            "pty_input": if cfg!(windows) { "win32-console" } else { "vt" },
+        });
+        assert_eq!(
+            engine.build_workspace_descriptor(0, ws_id, &class),
+            expected
+        );
+    }
+
     /// 연결마다 응답 보장을 확인할 수 있도록 workspace descriptor가 capability를 싣는다.
     #[test]
     fn workspace_descriptor_announces_the_resize_ack_capability() {
