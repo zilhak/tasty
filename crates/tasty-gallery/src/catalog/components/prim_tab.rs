@@ -294,6 +294,15 @@ mod tests {
                     colors(label)
                 );
             }
+            // 둘째 Stage의 두 줄 모두 옆 rest 탭 제목을 rest 색으로 칠한다(첫 줄의 notif 탭은 따로다).
+            let rest = egui::Color32::from(tab_title_color(&th, None, false));
+            let rests = colors(REST_TAB.label);
+            assert_eq!(
+                rests.iter().filter(|c| **c == rest).count(),
+                ACTIVE_ATTENTION.len(),
+                "{name} {}: {rests:?}",
+                REST_TAB.label
+            );
             let caps = ACTIVE_ATTENTION.map(|(cap, _, _)| cap);
             for cap in caps {
                 assert_eq!(colors(cap).len(), 1, "{name} {cap}");
