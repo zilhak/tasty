@@ -350,25 +350,20 @@ State 셀은 `status_dot`(점 `status_dot_size` 8 + `space-xs` 4 + caption 11px 
 
 - **증상**: 디자인이 아바타·배너에 `color-mix(in srgb, C 18%, surface)`(불투명 블렌드)와
   `color-mix(in srgb, C 11%, transparent)`(알파 감소)를 쓴다. egui 엔 color-mix 가 없다.
-- **처방**: 두 케이스를 분리. 불투명 블렌드 = srgb 바이트 선형보간 `mix_srgb(a, ratio, b)`
-  (비율이 가운데 인자다 — `a` 를 `ratio` 만큼 `b` 에 섞고, 결과 알파는 배경 `b` 의 것을 따른다).
-  transparent 믹스 = 색은 그대로 두고 알파만 낮춘다. 두 가지가 있다. Tag 상태 테두리
-  `tint-*-border`(= accent × tint-border-alpha, transparent)는 강조색 자신의 알파에 t 를 곱한다(정본 식과
-  같다). 채움 `tint()`(`tint-*-bg`)와 DAG 테두리 `dag_cycle_border`·`dag_runner_*_border`도 같다. 그 밖의
-  transparent 믹스 접근자는 강조색 알파를 상수 알파 t 로 덮는다(불투명 강조색에서만 정본과 같다).
-- **근거**: 경우마다 구현이 있다. 불투명 블렌드는
-  `crates/tasty-type-appearance/src/theme.rs` 의 `mix_srgb(a, ratio, b)` 이고, theme.rs 안의 호출자는
-  `plugin_avatar_bg`(PluginAvatar 배경) 하나다. 같은 크레이트의
-  `state_ink.rs`·`dag_mix.rs`(DAG 상태·대기 phase·주기·러너 채움)·`notification_ink.rs`·`approval_danger.rs`
-  도 부른다. `mix_srgb` 는 f32로 보간해 정본 값이 정확히 .5인 채널을 내릴 수 있다. DAG block
-  채움(`dag-*-block-bg`)은 `mix_srgb` 를 부르지 않고 `mix_srgb_premultiplied` 를 쓴다: 불투명·반투명 입력
-  모두 알파를 곱한 값으로 정수 보간해 정본 color-mix 알파와 반올림(.5는 올림)을 따른다. 상수 알파 감소는 `HexColor::with_alpha`(`crates/tasty-type-appearance/src/color.rs`)
-  로 상수 알파를 얹는 형태이고, 최종 변환 `HexColor::to_egui`(같은 파일)가 sRGB 바이트에 알파를
-  곱해 premultiplied 색을 만든다. egui 렌더러가 sRGB 바이트 공간에서 합성하므로 CSS
+- **처방**: 두 케이스 모두 정본 color-mix 식 하나로 계산한다.
+  `crates/tasty-type-appearance/src/theme.rs` 의 `mix_srgb_premultiplied(a, percent, b)` 다(비율이 가운데
+  인자다 — `a` 를 정수 퍼센트만큼 `b` 에 섞는다). 결과 알파는 두 알파를 비율대로 섞은 값이고, 채널은 알파를
+  곱한 값을 정수로 보간한 뒤 결과 알파로 나눠 반올림한다(.5는 올림). 섞은 알파가 0이면 투명 검정이다.
+  불투명 블렌드는 바탕 색을 `b` 로, transparent 믹스는 `b` 를 `CSS_TRANSPARENT`(`state_ink.rs`) 로 준다.
+  transparent 믹스는 채널이 강조색 그대로이고 알파만 강조색 알파 × 비율이 된다. `theme.rs` 의
+  `preset_split_zone_bg`·`explorer_drop_target_bg`·`file_drop_overlay_*`·`plugin_avatar_border` 와
+  `explorer_marquee.rs` 는 아직 강조색 알파를 상수 알파로 덮는다(불투명 강조색에서만 정본과 같다).
+- **근거**: 호출자는 `theme.rs`(`plugin_avatar_bg`)·`state_ink.rs`(`tint()`·`tint_border()` 포함)·
+  `dag_mix.rs`·`notification_ink.rs`·`approval_danger.rs` 다. 최종 변환 `HexColor::to_egui`(`crates/tasty-type-appearance/src/color.rs`)가
+  sRGB 바이트에 알파를 곱해 premultiplied 색을 만든다. egui 렌더러가 sRGB 바이트 공간에서 합성하므로 CSS
   `color-mix(in srgb …, transparent)` 를 배경에 올린 값과 같다. 선형 공간에서 곱하는
   `Color32::from_rgba_unmultiplied` 는 어두운 배경에서 진하게 나온다(accent 12% 가 (43,48,70) 대신
-  (75,93,136)). Tag 상태 보더의 알파 감소는
-  `crates/tasty-type-appearance/src/state_ink.rs` 의 `tint_*_border()` 가 accent 자신의 알파에 곱해 얹는다.
+  (75,93,136)).
 
 ---
 
@@ -606,4 +601,4 @@ State 셀은 `status_dot`(점 `status_dot_size` 8 + `space-xs` 4 + caption 11px 
   (docs/design/systems/theme.md 대로 44 · 48 로 스냅하지 않는다).
 - **근거**: `crates/tasty-ui-widgets/src/plugin_avatar.rs` (위젯 · 두 갈래의 유일한 구현부),
   `crates/tasty-type-appearance/src/theme.rs` 의 `plugin_avatar_bg` · `plugin_avatar_border`
-  (위 color-mix 절의 처방 그대로 — 불투명 블렌드는 `mix_srgb`, `transparent` 항은 알파만).
+  (위 color-mix 절의 처방 그대로 — 둘 다 `mix_srgb_premultiplied`, `transparent` 항은 `CSS_TRANSPARENT`).
