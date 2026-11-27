@@ -204,7 +204,8 @@ function end_leaf() { flush(); leaf = "" }
 function close_to(d) { if (d < nc) { end_leaf(); nc = d } }
 function para_line(l, p) { np++; phead[np] = head(l, p); pbody[np] = body(l, p); leaf = "para" }
 
-{ line[++count] = $0 }
+# GitHub 처럼 CRLF 를 줄 끝으로 본다. 줄 끝의 CR 을 떼고 LF 로 내보낸다.
+{ sub(/\r$/, ""); line[++count] = $0 }
 END {
     HTML_TAGS = " address article aside base basefont blockquote body caption center col colgroup dd details dialog dir div dl dt fieldset figcaption figure footer form frame frameset h1 h2 h3 h4 h5 h6 head header hr html iframe legend li link main menu menuitem nav noframes ol optgroup option p param pre script section source style summary table tbody td textarea tfoot th thead title tr track ul "
     for (k = 1; k <= count; k++) if (index(line[k], "]:")) HAS_DEF = 1

@@ -490,6 +490,10 @@ cat > "$w" <<'EOF'
 EOF
 check '백슬래시가 있는 표는 칸 경계가 애매하므로 표 전체를 엔터티로' "$m" "$w"
 
+printf 'chore: bump version to 9.9.9\r\n\r\n~~~sh\r\necho <ok>\r\n~~~\r\nOutside --secs <s>.\r\n' > "$m"
+printf '~~~sh\necho <ok>\n~~~\nOutside --secs &lt;s&gt;.\n' > "$w"
+check 'CRLF 줄 끝도 줄 끝으로 보아 펜스가 닫히고, 출력은 LF' "$m" "$w"
+
 if [ "$failures" -ne 0 ]; then
     echo "실패 $failures 건" >&2
     exit 1
