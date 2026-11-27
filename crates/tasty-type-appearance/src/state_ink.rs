@@ -14,10 +14,6 @@ const BLACK: HexColor = crate::hex!("#000000");
 const WHITE: HexColor = crate::hex!("#ffffff");
 /// CSS color-mix 결과 알파가 0일 때의 값(투명 검정). 정본 식의 `transparent`와 같다.
 pub(crate) const CSS_TRANSPARENT: HexColor = crate::hex!("#00000000");
-/// 내장 Latte 테마의 `search_match_active_bg`.
-const LATTE_ACTIVE_MATCH: HexColor = crate::hex!("#df8e1d80");
-/// `semantic.search-match-active-selected-bg`의 Latte 값(yellow 80%).
-const LATTE_ACTIVE_MATCH_SELECTED: HexColor = crate::hex!("#df8e1dcc");
 
 impl Theme {
     #[inline]
@@ -508,14 +504,13 @@ impl Theme {
     }
 
     /// 선택 위 현재 매치 바탕. `semantic.search-match-active-selected-bg`.
-    /// 테마 키가 없어 내장 Latte 값일 때만 올린다. 사용자 테마는 자기 현재 매치 바탕을 쓴다.
+    /// Mocha는 현재 매치 바탕 그대로, Latte는 `color-mix(yellow 80%, transparent)`다.
     #[inline]
     pub fn search_match_active_selected_bg(&self) -> HexColor {
-        if self.search_match_active_bg == LATTE_ACTIVE_MATCH {
-            LATTE_ACTIVE_MATCH_SELECTED
-        } else {
-            self.search_match_active_bg
-        }
+        self.band(
+            self.search_match_active_bg,
+            mix_srgb_premultiplied(self.yellow, 80, CSS_TRANSPARENT),
+        )
     }
 
     /// 포커스 받은 surface의 Tasty 소유 바탕. `semantic.surface-bed-focused`.

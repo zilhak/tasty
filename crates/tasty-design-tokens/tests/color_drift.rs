@@ -501,8 +501,12 @@ fn selected_match_roles_match_the_design_values() {
     );
     assert_eq!(latte.search_match_active_selected_bg(), hex("#df8e1dcc"));
 
+    // 사용자 테마: Mocha 쪽은 자기 현재 매치 바탕, Latte 쪽은 자기 yellow 80% + transparent(알파 128 × 80%).
     let mut colors = mocha_fallback_colors();
-    colors.search_match_active_bg = hex("#12345680");
-    let user = Theme::with_colors(colors, true);
-    assert_eq!(user.search_match_active_selected_bg(), hex("#12345680"));
+    colors.search_match_active_bg = hex("#abcdef80");
+    colors.yellow = hex("#12345680");
+    let dark = Theme::with_colors(colors.clone(), false);
+    assert_eq!(dark.search_match_active_selected_bg(), hex("#abcdef80"));
+    let light = Theme::with_colors(colors, true);
+    assert_eq!(light.search_match_active_selected_bg(), hex("#12345666"));
 }

@@ -73,12 +73,16 @@ fn ratio(set: &TokenSet, s: &str, mode: ThemeMode) -> u64 {
     pct as u64
 }
 
-/// 정본 식의 primitive 자리에 넣을 사용자 테마 색(primitive 이름 → 색). 비어 있으면 DTCG 값을 쓴다.
+/// 정본 식에 넣을 사용자 테마 색. primitive 이름 → 색, 또는 테마 필드인 토큰의 전체 경로 → 그 필드 값.
+/// 비어 있으면 DTCG 값을 쓴다.
 type Inputs = HashMap<&'static str, HexColor>;
 
 /// `path` 토큰의 `mode` 값을 계산한다. 별칭과 var 참조를 따라가다 `inputs`에 있는 primitive를 만나면
 /// DTCG 값 대신 그 색을 쓴다.
 fn design_color(set: &TokenSet, path: &str, mode: ThemeMode, inputs: &Inputs) -> HexColor {
+    if let Some(input) = inputs.get(path) {
+        return *input;
+    }
     let token = set
         .get(path)
         .unwrap_or_else(|| panic!("{path} has no token"));
@@ -467,9 +471,12 @@ fn dag_block_fill_of_clear_inputs_is_transparent_black() {
 }
 
 /// 생성기가 건너뛰는 color-mix 토큰과 그 수기 접근자 전부. 테마 필드인 `search-match-bg`·
-/// `search-match-active-bg`와, 내장 Latte 값일 때만 상수로 올리는 `search-match-active-selected-bg`는
-/// 접근자 식이 아니라 넣지 않는다.
+/// `search-match-active-bg`는 접근자 식이 아니라 넣지 않는다.
 const MIX_ACCESSORS: &[(&str, Accessor)] = &[
+    (
+        "semantic.search-match-active-selected-bg",
+        Theme::search_match_active_selected_bg,
+    ),
     ("semantic.text-on-active", Theme::text_on_active),
     ("semantic.accent-data-strong", Theme::accent_data_strong),
     ("semantic.accent-warning-glyph", Theme::accent_warning_glyph),
@@ -683,10 +690,9 @@ const MIX_ACCESSORS: &[(&str, Accessor)] = &[
 
 /// 이 표가 다루지 않는 color-mix 토큰과 그 사유. 표와 합쳐 DTCG의 color-mix 토큰 전부가 된다.
 const MIX_TOKENS_WITHOUT_ACCESSOR: &[&str] = &[
-    // 테마 필드(사용자 테마 TOML 값)이거나 내장 Latte 값일 때만 상수로 올리는 규칙.
+    // 테마 필드(사용자 테마 TOML 값)라 정본 식이 아니라 사용자 값을 쓴다.
     "semantic.search-match-bg",
     "semantic.search-match-active-bg",
-    "semantic.search-match-active-selected-bg",
     // 쓰는 Theme 접근자가 없다.
     "semantic.brand-fill-hover",
     "semantic.brand-fill-press",
@@ -759,6 +765,22 @@ fn primitive_inputs(th: &Theme) -> Inputs {
         .iter()
         .map(|(name, _, _, field)| (*name, field(th)))
         .collect()
+}
+
+/// 테마 필드인 토큰(사용자 테마 TOML 값). 이 토큰을 별칭으로 읽는 식은 정본 식 대신 필드 값을 쓴다.
+const THEME_FIELD_TOKENS: &[(&str, Field)] = &[("semantic.search-match-active-bg", |t| {
+    t.search_match_active_bg
+})];
+
+/// 사용자 테마의 팔레트·강조색과 테마 필드 값.
+fn user_inputs(th: &Theme) -> Inputs {
+    let mut inputs = primitive_inputs(th);
+    inputs.extend(
+        THEME_FIELD_TOKENS
+            .iter()
+            .map(|(path, field)| (*path, field(th))),
+    );
+    inputs
 }
 
 /// 표의 접근자 값이 정본 식 계산값과 다른 자리를 모은다.
@@ -852,7 +874,7 @@ fn every_mix_accessor_matches_the_design_mix_for_a_translucent_user_theme() {
             th.accent_info().a() < u8::MAX,
             "the user accent must stay translucent"
         );
-        bad.extend(mix_mismatches(&th, mode, &primitive_inputs(&th)));
+        bad.extend(mix_mismatches(&th, mode, &user_inputs(&th)));
     }
     assert!(bad.is_empty(), "{}", bad.join("\n"));
 }
