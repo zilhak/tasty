@@ -157,14 +157,15 @@ Tag는 모든 상태 variant가 `tag_bg()` 위에 그리고 테두리는 `tag_in
 ## preset split-zone (preset-editor 경계 hover-split)
 
 디자인 `tokens/components.css:295-296` 의 `--tasty-preset-split-zone-*` 2종. 프리셋 편집기에서
-surface 경계 30% 존을 hover 할 때 뜨는 밴드+분할선 색. accent-primary 는 **테마 가변색**이라
-`from_rgba` 리터럴이 아니라 accent 를 `transparent` 와 섞는 정본 식 `mix_srgb_premultiplied` 로 rgb 를 보존하고
-알파만 accent 알파 × 비율로 파생한다(scrim 은 고정 검정이라 `from_rgba` 지만, 이건 가변 accent 라 접근자 방식이 정답). dtcg 인제스트 완료.
+surface 경계 30% 존을 hover 할 때 뜨는 밴드+분할선 색. 밴드 채움은 **테마 가변색** accent-primary 를
+`transparent` 와 섞는 정본 식 `mix_srgb_premultiplied` 로 rgb 를 보존하고 알파만 accent 알파 × 비율로 파생하는
+수기 접근자다(scrim 은 고정 검정이라 `from_rgba` 지만, 이건 가변 accent 라 접근자 방식이 정답). 분할선은 DTCG 에서
+`semantic.accent-primary-raised` 별칭이라 생성 접근자가 그 값을 돌려준다. dtcg 인제스트 완료.
 
 | 디자인 토큰 | 디자인 체인 | tasty Theme | 비고 |
 |---|---|---|---|
 | `--tasty-preset-split-zone-bg` | `color-mix(accent-primary 22%, transparent)` | `Theme::preset_split_zone_bg()` = `mix_srgb_premultiplied(accent_primary(), 22, CSS_TRANSPARENT)` | 존 밴드 채움(불투명 accent 면 22%×255≈56) |
-| `--tasty-preset-split-zone-border` | `color-mix(accent-primary 55%, transparent)` | `Theme::preset_split_zone_border()` = `accent_primary().with_alpha(140)` | 안쪽 변 2px 분할선(55%×255≈140). `PRESET_SPLIT_ZONE_BORDER_ALPHA`. 굵기는 `--tasty-preset-split-divider-width` → `Theme::preset_split_divider_width()`(= `selection_edge_width`, hairline, 배율 제외) |
+| `--tasty-preset-split-zone-border` | `accent-primary-raised`(Mocha accent-primary, Latte `color-mix(blue 70%, black)`) | `Theme::preset_split_zone_border()` = `accent_primary_raised()`(생성 접근자) | 안쪽 변 2px 분할선. 굵기는 `--tasty-preset-split-divider-width` → `Theme::preset_split_divider_width()`(= `selection_edge_width`, hairline, 배율 제외) |
 | `--tasty-preset-leaf-selected-ring-width` | `focus-ring-width` | `Theme::preset_leaf_selected_ring_width()`(= `focus_ring_width`, 배율 적용) | 선택한 leaf 를 감싸는 2px accent 링 |
 
 미리보기의 분할 영역 비율은 `SPLIT_ZONE_EDGE=0.3`(30%)이며 무차원 f32다. 길이인 `SPLIT_ZONE_MIN` 46px, 닫기 × 14px, 탭 추가 22px 등은 `demo_layout.rs`·`preset_editor.rs`의 LogicalPx 상수를 사용한다. egui에 넘기는 최종 좌표가 f32라는 이유로 내부 길이 타입 규칙에서 제외하지 않는다.
