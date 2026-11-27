@@ -106,3 +106,18 @@ fn every_public_read_of_a_descriptor_checks_the_event() {
         );
     }
 }
+
+#[test]
+fn a_descriptor_missing_a_key_every_server_sends_is_rejected() {
+    for key in ["event", "workspace_id", "name", "tree", "surfaces"] {
+        let mut value = serde_json::to_value(sample()).expect("descriptor serializes");
+        value
+            .as_object_mut()
+            .expect("descriptor is an object")
+            .remove(key);
+        assert!(
+            serde_json::from_value::<AttachedWorkspaceDescriptor>(value).is_err(),
+            "{key}"
+        );
+    }
+}

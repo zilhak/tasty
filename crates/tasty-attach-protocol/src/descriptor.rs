@@ -13,6 +13,9 @@ const EVENT: &str = "attached_workspace";
 /// `tree`·`surfaces`는 [`crate::StreamControl::StructuralDelta`]와 같은 형식이라 JSON 값으로 둔다.
 /// 키 이름 `stream_capabilities`·`pty_input`은 [`crate::DESCRIPTOR_CAPABILITIES`]·[`crate::DESCRIPTOR_PTY_INPUT`]이다.
 ///
+/// 배포된 서버가 만든 descriptor가 계약이다. 서버는 늘 `event`·`workspace_id`·`name`·`tree`·`surfaces`를
+/// 보내므로 이 중 하나라도 빠진 입력은 거부한다. 기본값은 구 서버가 보내지 않던 `stream_capabilities`·`pty_input`에만 있다.
+///
 /// 공개 역직렬화 경로는 [`Deserialize`] impl 하나이고, 그 impl이 `event`를 본다.
 /// 태그를 건너뛰는 고유 `deserialize`는 없다.
 ///
