@@ -297,6 +297,9 @@ mod tests {
         let port = listener.local_addr().expect("addr").port();
         let other = TcpListener::bind("127.0.0.1:0").expect("bind other");
         let other_port = other.local_addr().expect("addr other").port();
+        // 범위 밖 소켓은 OS가 돌려준 값에 기대지 않고 먼저 끈다. 아래 단정은 이음새가 그 뒤 켜지 않았는지만 본다.
+        disable_inherit(&other).expect("disable other");
+        assert!(!is_inheritable(&other).expect("other"), "other not cleared");
         let by_port = seam::arm("socket_inherit.tests.port", Scope::Port(port));
         seam::created("socket_inherit.tests.port", &other, Some(other_port));
         seam::created("socket_inherit.tests.port", &listener, Some(port));
