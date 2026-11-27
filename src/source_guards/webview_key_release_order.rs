@@ -101,7 +101,7 @@ fn every_host_gtk_pump_consumes_the_focus_notices_per_event() {
 /// 콜백이 다음에 읽기 전에 키 쥘 곳을 바꿀 수 있는 자리마다 불린다: 누름 전이 뒤(`press_and_publish`), 전달 키 처리
 /// 뒤(`dispatch_and_apply` 의 `publish_key_holder`), 프레임 동기화(회수 판정 뒤), 창 이벤트 처리 뒤(그리기 제외),
 /// 루프 끝 intent·생명주기 적용 뒤·native 입력 펌프 전, 그리고 GTK 대기 이벤트를 건마다 소비하지 않고 비우는 펌프
-/// (native 메뉴 poll, 맞지 않은 view 의 Drop) 바로 앞(`key_release::publish_before_gtk_pump`). 순서의 효과는 `app::webview_keys` 상태 시험
+/// (native 메뉴 poll, 맞지 않은 view 의 Drop, Linux 만) 바로 앞(`key_release::publish_before_gtk_pump`). 순서의 효과는 `app::webview_keys` 상태 시험
 /// (`a_consumed_shortcut_publishes_before_the_next_edit_key`)이 잰다.
 #[test]
 fn webview_key_holder_publish_sites() {
@@ -187,7 +187,7 @@ fn webview_key_holder_publish_sites() {
         .expect("publish_before_gtk_pump"),
     );
     assert!(
-        pump.ends_with("publish_key_holder(state,core,bridge,&|sid|bound.contains(&sid));pump()}"),
+        pump.ends_with("#[cfg(any(target_os=\"linux\",test))]publish_key_holder(state,core,bridge,&|sid|bound.contains(&sid));#[cfg(not(any(target_os=\"linux\",test)))]let_=(state,core,bridge,bound);pump()}"),
         "펌프 앞 게시가 아니다: {pump}"
     );
     let menu = squeeze(

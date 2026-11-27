@@ -132,8 +132,9 @@ pub(crate) fn publish_key_holder(
 /// GTK 대기 이벤트를 건마다 소비하지 않고 비우는 펌프(native 메뉴 poll, binding 이 맞지 않은 view 의 Drop)를
 /// 지금 상태로 게시한 뒤 돈다. 그 펌프 안의 native 키 신호는 게시값으로 판정하는데, 펌프는 그리기·Draw 효과가 덮개와
 /// 포커스를 바꾼 뒤이자 프레임 동기화 게시 전에 돈다. 앞 게시값으로 판정하면 닫힌 덮개의 표가 유효한 키를 막고 새
-/// 덮개 밑 페이지의 키를 연다.
-/// `bound` 는 펌프 전에 모은 binding 판정(`MainView::current_bindings`)이다.
+/// 덮개 밑 페이지의 키를 연다. 그런 펌프는 Linux(GTK)에만 있어 게시도 Linux 에서만 한다. Windows·macOS 의 메뉴
+/// 조회와 view Drop 은 native 입력을 소비하지 않으므로 펌프만 돈다(시험은 Linux 경로를 잰다). `bound` 는 펌프 전에
+/// 모은 binding 판정(`MainView::current_bindings`)이다.
 pub(crate) fn publish_before_gtk_pump<R>(
     state: &mut MainViewState,
     core: &crate::core::CoreState,
@@ -141,7 +142,11 @@ pub(crate) fn publish_before_gtk_pump<R>(
     bound: &Bindings,
     pump: impl FnOnce() -> R,
 ) -> R {
+    #[cfg(any(target_os = "linux", test))]
     publish_key_holder(state, core, bridge, &|sid| bound.contains(&sid));
+    // 다른 OS 는 게시할 일이 없어 인자를 쓰지 않는다.
+    #[cfg(not(any(target_os = "linux", test)))]
+    let _ = (state, core, bridge, bound);
     pump()
 }
 
