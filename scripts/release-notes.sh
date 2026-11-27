@@ -5,7 +5,10 @@
 # - 코드 펜스(``` ·~~~), 들여쓴 코드 블록, 백틱 코드 스팬 밖의 <, >, & 를 HTML 엔터티로 바꾼다.
 #   GitHub 가 <s> 같은 자리표시를 HTML 태그로 읽지 않게 한다. 코드 표기 안은 엔터티가 글자로 보이므로 그대로 둔다.
 # - 블록 구조는 CommonMark 를 따른다. 인용(>)과 목록 항목 안의 코드 블록은 그 항목의 내용 들여쓰기를 기준으로 보고,
-#   목록·인용이 끝나면 그 안의 코드 블록도 끝난다. 탭은 4칸 탭 정지로 센다. 코드 스팬은 블록 하나 안에서만 짝짓는다.
+#   목록·인용이 끝나면 그 안의 코드 블록도 끝난다. 코드 스팬은 블록 하나 안에서만 짝짓는다.
+# - 본문에 아래 드문 표지가 하나라도 있으면 블록 구조를 읽지 않고 본문 전체의 <, >, & 를 엔터티로 바꾼다(코드 안 포함).
+#   각주 정의 꼴 [^이름]: 이 있는 줄, 탭, 줄 끝 CRLF 를 LF 로 바꾼 뒤에도 남는 CR, 4개 이상 이어진 백틱·물결표,
+#   | 로 시작하는 줄이나 표 구분 행이 있는 블록(빈 줄 사이) 안의 백슬래시.
 # 사용: release-notes.sh <커밋>
 set -eu -o pipefail
 commit="${1:?사용: release-notes.sh <커밋>}"
@@ -159,7 +162,6 @@ function escape_row(s,    out, cell, i, n, c) {
     }
     return out render(cell, 0)
 }
-function row(s) { return tall ? escape_text(s, 1) : escape_row(s) }
 # HTML 블록(CommonMark 1~6종)의 시작 꼴인가. 태그 이름은 cmark-gfm 의 목록이다.
 function html_start(r,    t, c) {
     if (r ~ /^<[!?]/) return 1
@@ -214,6 +216,21 @@ function htmlp(    k, r) {
     for (k = 2; k <= np; k++) { r = pbody[k]; sub(/^[ \t]+/, "", r); if (html_start(r)) return 1 }
     return 0
 }
+# 본문에 드문 표지(머리 주석의 목록)가 있는가. 표는 | 로 시작하는 줄이나 구분 행이 있는 블록 전체(머리 행 포함)에서
+# 백슬래시를 찾는다. GitHub 는 칸을 나누기 전에 \| 를 따로 읽어 \\| 같은 겹 백슬래시에서 칸 경계를 다르게 본다.
+function rare(    k, t, j, tb, bs) {
+    tb = 0; bs = 0
+    for (k = 1; k <= last + 1; k++) {
+        t = line[k]
+        if (index(t, "\t") || index(t, "\r") || index(t, "````") || index(t, "~~~~")) return 1
+        if (k > last || blank(t)) { if (tb && bs) return 1; tb = 0; bs = 0; continue }
+        if ((j = index(t, "[^")) && index(substr(t, j), "]:")) return 1
+        if (index(t, "\\")) bs = 1
+        while (sub(/^([ >]+|[-*+] +|[0-9]+[.)] +)/, "", t)) { }
+        if (substr(t, 1, 1) == "|" || (t ~ /[|:]/ && t ~ /^\|?( *:?-+:? *\|)* *:?-+:? *\|? *$/)) tb = 1
+    }
+    return 0
+}
 function end_leaf() { flush(); leaf = "" }
 function close_to(d) { if (d < nc) { end_leaf(); nc = d } }
 function para_line(l, p) { np++; phead[np] = head(l, p); pbody[np] = body(l, p); leaf = "para" }
@@ -261,6 +278,8 @@ END {
         last = n
         while (last > 0 && blank(line[last])) last--
     }
+
+    if (rare()) { for (k = 1; k <= last; k++) print escape_text(line[k], 1); exit }
 
     # 열린 컨테이너: ctype[d] 는 q(인용) 또는 l(목록 항목), cwidth[d] 는 목록 항목의 내용 들여쓰기.
     # 열린 잎 블록 leaf 는 para·code(들여쓴 코드)·fence 중 하나이고 늘 가장 안쪽 컨테이너에 속한다.
@@ -368,18 +387,14 @@ END {
         if (kind == "table") {
             hh = phead[np]; hb = pbody[np]; np--
             end_leaf()
-            # GitHub 는 칸을 나누기 전에 \| 를 따로 읽어 \\| 같은 겹 백슬래시에서 칸 경계를 다르게 본다.
-            # 머리 행부터 다음 빈 줄까지 백슬래시가 있으면 표 전체를 애매로 보고 칸 안 스팬까지 엔터티로 바꾼다.
-            tall = index(hb, "\\") > 0
-            for (k = i; k <= last && !blank(line[k]); k++) if (index(line[k], "\\")) tall = 1
-            print hh row(hb)
+            print hh escape_row(hb)
             print l
             leaf = "table"
             continue
         }
         if (rest_blank) { end_leaf(); tcons = 0; print l; continue }
         # 표는 빈 줄이나 다른 블록의 시작에서 끝난다. 들여쓴 줄도 행으로 보고 엔터티로 바꾼다.
-        if (leaf == "table") { print head(l, p) row(body(l, p)); continue }
+        if (leaf == "table") { print head(l, p) escape_row(body(l, p)); continue }
         if (s >= 4 && leaf != "para") { end_leaf(); leaf = "code"; print l; continue }
         para_line(l, p)
     }

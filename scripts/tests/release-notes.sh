@@ -122,38 +122,36 @@ check '끝의 트레일러 블록은 뺀다' "$m" "$w"
 cat > "$m" <<'EOF'
 chore: bump version to 9.9.9
 
-````
 ```
 c & <d>
-~~~~
+~~~
 a <b>
-````` & <c>
-`````
+``
+```
 
 Between <s> & more.
 
 ~~~
 x <y>
 ~~
-````
-~~~~ after <z>
+```
+~~~ after <z>
 EOF
 cat > "$w" <<'EOF'
-````
 ```
 c & <d>
-~~~~
+~~~
 a <b>
-````` & <c>
-`````
+``
+```
 
 Between &lt;s&gt; &amp; more.
 
 ~~~
 x <y>
 ~~
-````
-~~~~ after <z>
+```
+~~~ after <z>
 EOF
 check '짧거나 다른 문자의 줄은 펜스를 닫지 않는다' "$m" "$w"
 
@@ -323,9 +321,6 @@ x
     after <fence>
 
 Text <s>.
-
-  	tab <code> & more
- 	still <code>
 EOF
 cat > "$w" <<'EOF'
 - Example
@@ -356,11 +351,8 @@ x
     after <fence>
 
 Text &lt;s&gt;.
-
-  	tab <code> & more
- 	still <code>
 EOF
-check '목록·인용 안 코드 블록은 컨테이너와 함께 끝나고, 제목 뒤·탭 들여쓴 코드는 그대로' "$m" "$w"
+check '목록·인용 안 코드 블록은 컨테이너와 함께 끝나고, 제목 뒤 들여쓴 코드는 그대로' "$m" "$w"
 
 cat > "$m" <<'EOF'
 chore: bump version to 9.9.9
@@ -475,21 +467,27 @@ chore: bump version to 9.9.9
 | A | B |
 | --- | --- |
 | lone ` \\| `<s>` |
+EOF
+cat > "$w" <<'EOF'
+| A | B |
+| --- | --- |
+| lone ` \\| `&lt;s&gt;` |
+EOF
+check '백슬래시가 있는 표는 칸 경계가 애매하므로 본문 전체를 엔터티로' "$m" "$w"
+
+cat > "$m" <<'EOF'
+chore: bump version to 9.9.9
 
 | Flag | Value |
 | --- | --- |
 | `--secs <s>` | <n> |
 EOF
 cat > "$w" <<'EOF'
-| A | B |
-| --- | --- |
-| lone ` \\| `&lt;s&gt;` |
-
 | Flag | Value |
 | --- | --- |
 | `--secs <s>` | &lt;n&gt; |
 EOF
-check '백슬래시가 있는 표는 칸 경계가 애매하므로 표 전체를 엔터티로' "$m" "$w"
+check '백슬래시가 없는 표는 칸 안 코드 스팬을 그대로' "$m" "$w"
 
 printf 'chore: bump version to 9.9.9\r\n\r\n~~~sh\r\necho <ok>\r\n~~~\r\nOutside --secs <s>.\r\n' > "$m"
 printf '~~~sh\necho <ok>\n~~~\nOutside --secs &lt;s&gt;.\n' > "$w"
@@ -621,6 +619,37 @@ Wrap with `` and use `foo` or `--secs &lt;s&gt;`.
 Keep `--secs <s>` and `a & b` as code.
 EOF
 check '짝 없는 백틱 열이 있는 블록은 GitHub 가 스팬을 다르게 짝지을 수 있으므로 모두 엔터티로' "$m" "$w"
+
+# 드문 표지가 있는 본문은 블록 구조를 읽지 않고 본문 전체를 엔터티로 바꾼다(코드 안 포함).
+printf 'chore: bump version to 9.9.9\n\n[^1]\n\n[^1]: x\n\n    <s>\n' > "$m"
+printf '[^1]\n\n[^1]: x\n\n    &lt;s&gt;\n' > "$w"
+check '각주 정의가 있는 본문은 본문 전체를 엔터티로' "$m" "$w"
+
+printf 'chore: bump version to 9.9.9\n\nFixed a crash[^1].\n\n- [^1]: Reported in the forum.\n\n    Run tasty --secs <s> to reproduce.\n' > "$m"
+printf 'Fixed a crash[^1].\n\n- [^1]: Reported in the forum.\n\n    Run tasty --secs &lt;s&gt; to reproduce.\n' > "$w"
+check '목록 표지 뒤의 각주 정의도 표지로 본다' "$m" "$w"
+
+printf 'chore: bump version to 9.9.9\n\n>\t[r]: /u\n> ===\n>     <s>\n\n  \ttab <code> & more\n' > "$m"
+printf '&gt;\t[r]: /u\n&gt; ===\n&gt;     &lt;s&gt;\n\n  \ttab &lt;code&gt; &amp; more\n' > "$w"
+check '탭이 있는 본문은 본문 전체를 엔터티로' "$m" "$w"
+
+printf 'chore: bump version to 9.9.9\n\n`<s>\r\r`\n' > "$m"
+printf '`&lt;s&gt;\r\r`\n' > "$w"
+check '줄 끝이 아닌 CR 이 있는 본문은 본문 전체를 엔터티로' "$m" "$w"
+
+ticks="$(printf '%81s' '' | tr ' ' '`')"
+printf 'chore: bump version to 9.9.9\n\nx %s<s>%s\n' "$ticks" "$ticks" > "$m"
+printf 'x %s&lt;s&gt;%s\n' "$ticks" "$ticks" > "$w"
+check '4개 이상 이어진 백틱이 있는 본문은 본문 전체를 엔터티로' "$m" "$w"
+
+t256="$(printf '%256s' '' | tr ' ' '~')"
+printf 'chore: bump version to 9.9.9\n\n%s\n%s\n<s>\n' "$t256" "${t256%?}" > "$m"
+printf '%s\n%s\n&lt;s&gt;\n' "$t256" "${t256%?}" > "$w"
+check '4개 이상 이어진 물결표가 있는 본문은 본문 전체를 엔터티로' "$m" "$w"
+
+printf 'chore: bump version to 9.9.9\n\n|a\\\\|b|\n|-|-|\n2. ```<s>\n' > "$m"
+printf '|a\\\\|b|\n|-|-|\n2. ```&lt;s&gt;\n' > "$w"
+check '겹 백슬래시로 칸 경계가 애매한 표 뒤의 줄도 엔터티로' "$m" "$w"
 
 if [ "$failures" -ne 0 ]; then
     echo "실패 $failures 건" >&2
