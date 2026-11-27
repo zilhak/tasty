@@ -69,3 +69,60 @@ fn enter_and_space_press_the_focused_menu_row() {
         }
     }
 }
+
+fn key(k: egui::Key) -> egui::Event {
+    egui::Event::Key {
+        key: k,
+        physical_key: Some(k),
+        pressed: true,
+        repeat: false,
+        modifiers: egui::Modifiers::NONE,
+    }
+}
+
+/// [priority · Enter] 접힌 경로에서 루트 링크가 포커스이고 열기 버튼이 켜진 채 Tab 과 Enter 가 한 패스에 오면, Tab 이
+/// `…` 버튼으로 옮긴 포커스에서 Enter 는 확정하지 않고 메뉴를 연다.
+#[test]
+fn tab_then_enter_in_one_pass_opens_the_menu_without_confirming() {
+    let (mut state, mut session) = crate::state::tests::two_pane_fixture();
+    let root = tempfile::tempdir().unwrap();
+    let deep = deep_tree(root.path());
+    open_picker(&mut state, &mut session.borrow_mut(), "open", &deep);
+    let engine = session.borrow_mut();
+    let read = engine.read();
+    let mut app = App::new(&mut state, &read);
+    app.press(egui::Key::ArrowDown);
+    assert_eq!(
+        app.data().selected,
+        vec!["c.txt".to_string()],
+        "열기 버튼이 켜진다"
+    );
+    let link = click_widget_at(&app.ctx, app.at("/").center()).expect("루트 링크");
+    app.ctx.memory_mut(|m| m.request_focus(link));
+    app.frame();
+    assert_eq!(
+        app.ctx.memory(|m| m.focused()),
+        Some(link),
+        "루트 링크 포커스"
+    );
+    let before = app.texts.clone();
+    for k in [egui::Key::Tab, egui::Key::Enter] {
+        app.input.key(app.state, app.read, false, key(k));
+    }
+    let events = app.input.take_pass(app.state, &app.ctx);
+    app.texts = crate::adapters::ui::popup::window_input_test_support::layer_frame(
+        &app.ctx, app.state, app.read, events,
+    );
+    // egui 는 새로 연 메뉴 영역을 첫 프레임에 보이지 않게 잰다. 그다음 프레임에 행을 칠한다.
+    app.frame();
+    app.frame();
+    assert!(app.finished().is_none(), "확정하지 않는다");
+    assert!(
+        super::instances::current(app.state).is_some(),
+        "피커는 열려 있다"
+    );
+    assert!(
+        new_segment(&before, &app.texts).is_some(),
+        "메뉴가 열려 숨은 폴더 행을 칠한다"
+    );
+}

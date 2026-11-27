@@ -285,6 +285,8 @@ pub(super) fn confirm_enabled(p: &super::FilePickerProps<'_>) -> bool {
 /// - Enter: `…` 버튼이 포커스면 위젯 몫(egui 가 메뉴를 연다)이고 그 뒤 키는 빼지 않는다(메뉴가 열린다). 그 밖에는 확정이
 ///   활성이거나, 이름 칸이 포커스이거나(칸이 Enter 로 포커스를 놓지 않게), 같은 패스에 앞선 행 키가 있으면 피커 몫이다.
 ///   확정 가능 여부는 적용 시점에 다시 본다. 셋 다 아니면 위젯 몫(egui 가 Tab 포커스 버튼을 누른다).
+/// - 같은 패스의 Tab 뒤 키는 Tab 이 옮길 포커스를 아직 모른다: 그 Enter 는 확정이 활성이거나 앞선 행 키가 있을 때만
+///   빼고 그린 뒤 [`settle_tab_enter`] 가 `…` 버튼 포커스를 다시 본다. 그 Space 는 위젯 몫이다.
 /// - Space 는 위젯 포커스가 있으면 위젯 몫. 저장 이름 칸이 포커스면 Space·Backspace·Home·End·→ 는 칸 몫.
 /// - 나머지는 피커 몫이라 TextEdit·Button 이 보지 않는다.
 ///
@@ -295,9 +297,9 @@ pub(super) fn take_keys(
     p: &super::FilePickerProps<'_>,
     keys: &mut crate::adapters::ui::popup::keys::PopupKeys,
     ids: WidgetIds,
-) -> Vec<ListKey> {
+) -> Taken {
     if !keys.receives() || !keys.routed_by_window() {
-        return Vec::new();
+        return Taken::default();
     }
     if let Some(hold) = ids.focus_hold {
         ui.memory_mut(|m| {
@@ -321,11 +323,38 @@ pub(super) fn take_keys(
             });
             drop(dropped);
         }
-        return Vec::new();
+        return Taken::default();
     }
     if ui.memory(|m| m.any_popup_open()) {
-        return Vec::new();
+        return Taken::default();
     }
+    // 같은 패스에서 Tab 뒤에 온 키 누름. egui 는 그 Tab 의 포커스 이동을 위젯을 그리면서 반영하므로, 패스 시작에 읽은
+    // 위젯 포커스는 그 누름의 포커스가 아니다.
+    let after_tab: Vec<bool> = ui.input(|i| {
+        let mut tab = false;
+        i.events
+            .iter()
+            .filter_map(|e| match e {
+                egui::Event::Key {
+                    key: egui::Key::Tab,
+                    pressed: true,
+                    ..
+                } => {
+                    tab = true;
+                    None
+                }
+                egui::Event::Key {
+                    key,
+                    pressed: true,
+                    modifiers,
+                    ..
+                } if classify(*modifiers, *key).is_some() => Some(tab),
+                _ => None,
+            })
+            .collect()
+    });
+    let mut press = 0;
+    let mut enter_after_tab = false;
     let confirm = confirm_enabled(p);
     // 앞선 행 키가 선택을 바꿔 확정을 켤 수 있는지. 목록이 Loaded 이고 고를 수 있는 행이 있을 때, 이동은 선택이 따라가는
     // 모드(열기·폴더)에서, Space 는 모든 모드에서다.
@@ -335,17 +364,26 @@ pub(super) fn take_keys(
     let moves_select = !matches!(p.mode, super::FilePickerMode::Save { .. });
     let mut row_key_before = false;
     let mut menu_opening = false;
-    keys.take_keymap_presses(classify, |op| {
+    let keys = keys.take_keymap_presses(classify, |op| {
+        let tabbed = after_tab.get(press).copied().unwrap_or(false);
+        press += 1;
         if menu_opening {
             return false;
         }
         let own = match op {
-            ListKey::Confirm if menu_button_focus => {
+            ListKey::Confirm if menu_button_focus && !tabbed => {
                 menu_opening = true;
                 false
             }
+            // Tab 뒤 Enter 는 그린 뒤 포커스로 다시 가른다([`settle_tab_enter`]). 확정이 꺼져 있으면 Tab 이 옮긴 위젯이
+            // egui 에서 받는다.
+            ListKey::Confirm if tabbed => {
+                let own = confirm || row_key_before;
+                enter_after_tab |= own;
+                own
+            }
             ListKey::Confirm => confirm || text_focus || row_key_before,
-            ListKey::Pick => focused.is_none(),
+            ListKey::Pick => focused.is_none() && !tabbed,
             ListKey::Back | ListKey::Into | ListKey::Move(MoveKey::Home | MoveKey::End) => {
                 !text_focus
             }
@@ -359,7 +397,39 @@ pub(super) fn take_keys(
                 _ => false,
             };
         own
-    })
+    });
+    Taken {
+        keys,
+        enter_after_tab,
+    }
+}
+
+/// [`take_keys`] 가 뺀 피커 몫 키.
+#[derive(Debug, Default)]
+pub(super) struct Taken {
+    /// 도착 순서의 조작.
+    pub(super) keys: Vec<ListKey>,
+    /// 같은 패스의 Tab 뒤에 온 Enter 를 확정 몫으로 뺐다. 그린 뒤 포커스로 다시 가른다.
+    pub(super) enter_after_tab: bool,
+}
+
+/// 그린 뒤 피커 몫 키를 확정한다. 같은 패스의 Tab 이 닫힌 `…` 메뉴 버튼으로 포커스를 옮겼으면 그 뒤 Enter 는 확정하지
+/// 않고 메뉴를 연다(spec 'Enter' 첫 줄). 그 Enter 와 뒤 키는 버린다. `ids` 는 이번 프레임에 그린 위젯 id 다.
+pub(super) fn settle_tab_enter(ui: &egui::Ui, taken: Taken, ids: &WidgetIds) -> Vec<ListKey> {
+    let mut keys = taken.keys;
+    let focused = ui.memory(|m| m.focused());
+    if taken.enter_after_tab
+        && focused.is_some()
+        && focused == ids.menu_button
+        && let Some(menu) = ids.menu
+        && !ui.memory(|m| m.is_popup_open(menu))
+    {
+        if let Some(at) = keys.iter().position(|k| *k == ListKey::Confirm) {
+            keys.truncate(at);
+        }
+        ui.memory_mut(|m| m.open_popup(menu));
+    }
+    keys
 }
 
 /// 이번 패스 화살표가 모두 피커 몫(↑ ↓ → Alt+↑)이었으면 그린 뒤의 위젯 포커스를 다음 프레임에 지킬 값으로 돌려준다.

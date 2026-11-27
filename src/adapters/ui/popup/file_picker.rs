@@ -279,11 +279,12 @@ pub fn draw_file_picker_view(
     keys: &mut super::keys::PopupKeys,
 ) -> FilePickerViewOut {
     // 피커 몫 키는 위젯을 그리기 전에 입력에서 뺀다. 그래서 이름 칸·버튼이 그 키를 보지 않는다.
-    let owned = list_keys::take_keys(ui, props, keys, list_keys::WidgetIds::load(ui));
+    let taken = list_keys::take_keys(ui, props, keys, list_keys::WidgetIds::load(ui));
     // 콘텐츠 영역은 창 가장자리까지 온다. 구역마다 배경·구분선은 전폭으로 두고
     // 내용은 `fp-*` 인셋 안에 그린다.
     let outer = ui.available_rect_before_wrap();
     let (mut out, drawn) = draw_view_sections(ui, props, outer);
+    let owned = list_keys::settle_tab_enter(ui, taken, &drawn.ids);
     list_keys::WidgetIds {
         focus_hold: list_keys::focus_to_hold(ui, &owned, keys),
         ..drawn.ids

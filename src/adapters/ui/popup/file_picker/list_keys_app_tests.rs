@@ -802,7 +802,7 @@ fn split(
                     &crate::adapters::ui::input::edit_key::EditBindings::default(),
                 )
                 .with_window_route(true);
-                out.0 = list_keys::take_keys(ui, &props, &mut keys, ids);
+                out.0 = list_keys::take_keys(ui, &props, &mut keys, ids).keys;
                 out.1 = ui.input(|i| {
                     i.events
                         .iter()
