@@ -3,12 +3,16 @@
 //! 테두리·글자색(`approval_danger_border`·`approval_danger_fg`)은 생성 접근자다.
 
 use crate::color::HexColor;
-use crate::theme::{TINT_FILL_ALPHA, Theme, mix_srgb};
+use crate::theme::{TINT_FILL_ALPHA, Theme, mix_srgb_premultiplied, whole_percent};
 
 impl Theme {
-    /// 위험 선택지 버튼 채움 = accent-danger 12% + bg-panel. 뒤에 무엇이 있든 같은 불투명 색이다.
+    /// 위험 선택지 버튼 채움 = accent-danger 12% + bg-panel. 두 색이 불투명하면 뒤에 무엇이 있든 같은 불투명 색이다.
     #[inline]
     pub fn approval_danger_bg(&self) -> HexColor {
-        mix_srgb(self.accent_danger(), TINT_FILL_ALPHA, self.bg_panel())
+        mix_srgb_premultiplied(
+            self.accent_danger(),
+            whole_percent(TINT_FILL_ALPHA),
+            self.bg_panel(),
+        )
     }
 }
