@@ -446,13 +446,27 @@ impl WebViewKeyBridge {
     /// 항목(누름 알림·전달 키)을 모두 지운다. 그 view 가 붙잡은 원래 키는 view 와 함께 사라지므로, 지운 항목의
     /// 결과는 어느 view 에도 가지 않는다. 같은 surface 의 새 view 는 빈 자리에서 시작한다.
     pub fn retire_view(&self, surface_id: u32) {
+        // 지운 view 의 붙잡은 키는 view 와 함께 사라지므로 끝낼 키 목록이 필요 없다.
+        let _ = self.retire_page(surface_id);
+    }
+
+    /// 그 surface 의 view 가 다른 문서로 바뀌었다(view 는 남는다, 유지한 HTTP 세션의 새 문서). 옛 문서에서 낸 대기열
+    /// 항목(누름 알림·전달 키)을 모두 지우고, 지운 전달 키의 ID 를 돌려준다. 호출자는 그 키를 페이지로 다시 넣지 않고
+    /// 끝낸다. 이 호출 뒤에 같은 surface 가 낸 항목은 새 문서의 것이다.
+    pub fn retire_page(&self, surface_id: u32) -> Vec<u64> {
+        let mut retired = Vec::new();
         self.inputs.borrow_mut().retain(|input| {
-            let sid = match input {
-                NativeInput::Press { surface_id, .. } => *surface_id,
-                NativeInput::Forwarded(ev) => ev.surface_id,
+            let (sid, key) = match input {
+                NativeInput::Press { surface_id, .. } => (*surface_id, None),
+                NativeInput::Forwarded(ev) => (ev.surface_id, Some(ev.id)),
             };
-            sid != surface_id
+            if sid != surface_id {
+                return true;
+            }
+            retired.extend(key);
+            false
         });
+        retired
     }
 
     /// 대기열 앞의 누름 알림만 꺼낸다. 첫 키 뒤의 입력은 남긴다(키는 host 단축키 처리가 있는 소비만 판정한다).

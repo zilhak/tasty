@@ -161,3 +161,48 @@ fn a_press_for_a_webview_a_prior_entry_replaced_is_skipped() {
         );
     }
 }
+
+/// P3b: Given 유지한 HTTP 세션의 B 가 새 문서로 바뀌기 전 대기열이 [B 누름, B 키(1), A 키(2), B 포커스 획득] 이다,
+/// When 동기화가 B 의 새 문서를 맞춰 옛 문서 항목을 지우면(`retire_page`), Then B 의 항목만 지워지고 끝낼 키는 B 의
+/// 키(1)뿐이며 A 의 키는 남는다. 그 뒤 B 가 낸 새 누름은 지워지지 않고 소비된다(직렬 교체 → 같은 surface 의 새 입력).
+#[test]
+fn a_replaced_page_drops_only_its_own_entries_and_takes_new_ones() {
+    use crate::webview::NativeInput;
+    use winit::keyboard::{Key, ModifiersState, NativeKeyCode, PhysicalKey};
+    let bridge = WebViewKeyBridge::new();
+    bridge.set_policy(crate::webview::HostShortcutPolicy::new(
+        crate::webview::ShortcutSources {
+            host: vec!["ctrl+j".to_string()],
+            ..Default::default()
+        },
+    ));
+    bridge.set_key_holder(Some(B));
+    let key = |sid| {
+        bridge.forward_key(
+            sid,
+            Key::Character("j".into()),
+            PhysicalKey::Unidentified(NativeKeyCode::Unidentified),
+            ModifiersState::CONTROL,
+        )
+    };
+    bridge.note_press(B);
+    let old = key(B).expect("B 키가 대기열에 든다");
+    bridge.set_key_holder(Some(A));
+    let kept = key(A).expect("A 키가 대기열에 든다");
+    bridge.note_focus(B);
+    assert_eq!(
+        bridge.retire_page(B),
+        vec![old],
+        "끝낼 키는 B 의 옛 키뿐이다"
+    );
+    bridge.note_press(B);
+    let left: Vec<_> = bridge
+        .take_inputs()
+        .into_iter()
+        .map(|input| match input {
+            NativeInput::Press { surface_id, .. } => (surface_id, None),
+            NativeInput::Forwarded(ev) => (ev.surface_id, Some(ev.id)),
+        })
+        .collect();
+    assert_eq!(left, vec![(A, Some(kept)), (B, None)]);
+}

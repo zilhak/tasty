@@ -279,7 +279,7 @@ fn early_focus_opens_reach_the_handlers_the_state_test_calls() {
 }
 
 /// native WebView 가 넘긴 키의 제품 디스패치는 제품 상태 시험(`app::webview_keys::state_tests`)이 부르는 창 단계를 같은
-/// 순서로 부른다: 게이트·plugin 단축키(`forwarded_gate_and_plugin_steps`, 결과값까지 함께 쓴다) → 새로고침 → 받은
+/// 순서로 부른다: binding 검사(`webview_sync::webview_binding_current`, 어느 효과보다 먼저) → 게이트·plugin 단축키(`forwarded_gate_and_plugin_steps`, 결과값까지 함께 쓴다) → 새로고침 → 받은
 /// surface 의 내장 단축키. 내장 단축키는 `handle_keybinding_shortcuts` 로, 결과 알림의 재전송은 `resends_to_page` 로
 /// 정한다. 시험은 이 단계 안의 변이를 잡고, 이 가드는 제품이 단계를 건너뛰거나 순서를 바꾸는
 /// 우회를 잡는다.
@@ -291,6 +291,10 @@ fn forwarded_webview_keys_go_through_the_window_steps_the_state_test_calls() {
             .expect("dispatch_forwarded_webview_key"),
     );
     let steps = [
+        (
+            "if!crate::app::webview_sync::webview_binding_current(&main.webviews,&main.webview_runtime,&engine.as_ref(),ev.surface_id,){returnForwardedKeyOutcome::Gated;}",
+            "binding 검사(P3b)",
+        ),
         (
             "forwarded_gate_and_plugin_steps(&mutmain.state,&engine,modal_active,self.plugin_manager.as_mut(),|sid|webviews.contains_key(&sid),&ev,){returnoutcome;}",
             "게이트·plugin 단축키",

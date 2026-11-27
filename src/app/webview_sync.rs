@@ -78,6 +78,14 @@ pub(crate) fn synchronize(
             }
         }
         for sid in replaced {
+            // 새 문서는 옛 문서가 낸 대기열 항목을 받지 않는다(옛 binding 의 누름·키는 새 binding 과 구별되지 않는다).
+            // 옛 문서가 붙잡은 키는 페이지로 다시 넣지 않고 끝낸다.
+            let retired = view.webview_key_bridge.retire_page(sid);
+            if let Some(wv) = view.webviews.get(&sid) {
+                for key in retired {
+                    wv.finish_forwarded_key(key, false);
+                }
+            }
             if let Some(binding) =
                 super::html_runtime::NativeWebviewBinding::capture(&engine.as_ref(), sid)
             {

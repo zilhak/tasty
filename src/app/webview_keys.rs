@@ -133,6 +133,16 @@ impl App {
             let Some((main, engine)) = engines_mut!(self).window_pair(id) else {
                 return ForwardedKeyOutcome::Gated;
             };
+            // 앞 입력이 그 surface 의 WebView 를 교체했거나 지웠으면 그 키는 옛 페이지의 것이다. 어느 단계의 효과보다
+            // 먼저 거른다(`webview_sync::webview_binding_current`).
+            if !crate::app::webview_sync::webview_binding_current(
+                &main.webviews,
+                &main.webview_runtime,
+                &engine.as_ref(),
+                ev.surface_id,
+            ) {
+                return ForwardedKeyOutcome::Gated;
+            }
             let webviews = &main.webviews;
             if let Some(outcome) = forwarded_gate_and_plugin_steps(
                 &mut main.state,
