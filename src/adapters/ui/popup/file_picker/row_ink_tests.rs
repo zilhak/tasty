@@ -154,11 +154,11 @@ fn the_file_glyph_reads_the_kit_ink_of_each_row_state() {
     );
 }
 
-/// 행 사각형 안쪽에 그린 테두리 선(링 후보): (도형 순번, 사각형, 반경, 선).
+/// 행 사각형 안쪽에 그린 테두리 선(링 후보): (도형 순번, 사각형, 반경, 선, 선 위치).
 fn strokes_on_row(
     shapes: &[egui::epaint::ClippedShape],
     name: &str,
-) -> Vec<(usize, egui::Rect, f32, egui::Stroke)> {
+) -> Vec<(usize, egui::Rect, f32, egui::Stroke, egui::StrokeKind)> {
     let text = name_rect(shapes, name);
     shapes
         .iter()
@@ -169,7 +169,13 @@ fn strokes_on_row(
                     && r.rect.contains_rect(text)
                     && r.rect.height() < text.height() * 4.0 =>
             {
-                Some((i, r.rect, f32::from(r.corner_radius.nw), r.stroke))
+                Some((
+                    i,
+                    r.rect,
+                    f32::from(r.corner_radius.nw),
+                    r.stroke,
+                    r.stroke_kind,
+                ))
             }
             _ => None,
         })
@@ -212,7 +218,8 @@ fn the_row_focus_ring_is_an_inset_line_inked_by_the_row_ground() {
             let shapes = paint_focused(&th, selection, pointer, Some((FOLDER, true)));
             let rings = strokes_on_row(&shapes, FOLDER);
             assert_eq!(rings.len(), 1, "{case}: 링 하나 {rings:?}");
-            let (i, rect, radius, stroke) = rings[0];
+            let (i, rect, radius, stroke, kind) = rings[0];
+            assert_eq!(kind, egui::StrokeKind::Inside, "{case}: 행 안쪽 선");
             assert_eq!(stroke.color, ink, "{case}: 링 색");
             assert_eq!(
                 stroke.width,
