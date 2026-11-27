@@ -686,6 +686,18 @@ const MIX_ACCESSORS: &[(&str, Accessor)] = &[
     ),
     ("component.approval-danger-bg", Theme::approval_danger_bg),
     ("component.tab-bg-hover", Theme::tab_bg_hover),
+    (
+        "component.tutorial-marker-glow-inner",
+        Theme::tutorial_marker_glow_inner,
+    ),
+    (
+        "component.tutorial-marker-glow-outer",
+        Theme::tutorial_marker_glow_outer,
+    ),
+    (
+        "component.tutorial-topic-selected-border",
+        Theme::tutorial_topic_selected_border,
+    ),
 ];
 
 /// 이 표가 다루지 않는 color-mix 토큰과 그 사유. 표와 합쳐 DTCG의 color-mix 토큰 전부가 된다.
@@ -701,9 +713,6 @@ const MIX_TOKENS_WITHOUT_ACCESSOR: &[&str] = &[
     "semantic.brand-glow",
     "component.address-field-focus-halo",
     "component.address-field-invalid-halo",
-    "component.tutorial-marker-glow-inner",
-    "component.tutorial-marker-glow-outer",
-    "component.tutorial-topic-selected-border",
     "component.fp-host-badge-border",
 ];
 

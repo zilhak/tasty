@@ -30,6 +30,9 @@ mod state_ink;
 /// DAG 표시 색의 color-mix 수기 접근자 (`impl Theme`).
 mod dag_mix;
 
+/// 튜토리얼 마커 발광·주제 선택 테두리의 color-mix 수기 접근자 (`impl Theme`).
+mod tutorial_mix;
+
 /// 값 없는 검색 active 글자색의 도출 (`impl ThemeColors`).
 mod search_ink;
 
