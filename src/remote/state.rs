@@ -308,7 +308,9 @@ impl RemoteState {
         let Some(hub) = &self.notifier else {
             return false;
         };
-        let msg = serde_json::json!({ "event": tasty_ipc::stream::FORCE_DETACHED_EVENT, "reason": reason });
+        let msg = tasty_ipc::stream::ForceDetachedControl {
+            reason: reason.to_string(),
+        };
         let payload = serde_json::to_vec(&msg).unwrap_or_default();
         let frames = vec![
             StreamFrame::new(StreamTag::Control, payload),

@@ -802,3 +802,33 @@ fn an_unknown_event_fails_to_parse_so_a_missed_loss_reads_as_no_loss() {
     let from_a_newer_build = r#"{"event":"a_variant_that_does_not_exist_here","frames":9}"#;
     assert!(serde_json::from_str::<StreamControl>(from_a_newer_build).is_err());
 }
+
+#[test]
+fn the_force_detached_control_writes_the_wire_object() {
+    let control = ForceDetachedControl {
+        reason: "workspace_gone".to_string(),
+    };
+    assert_eq!(
+        serde_json::to_value(&control).unwrap(),
+        serde_json::json!({"event": "force_detached", "reason": "workspace_gone"})
+    );
+    assert_eq!(
+        force_detach_notice(&serde_json::to_vec(&control).unwrap()),
+        Some(ForceDetachNotice::WorkspaceGone)
+    );
+}
+
+#[test]
+fn a_force_detached_control_without_a_string_reason_is_final() {
+    for payload in [
+        r#"{"event":"force_detached"}"#,
+        r#"{"event":"force_detached","reason":3}"#,
+        r#"{"event":"force_detached","reason":"forced"}"#,
+    ] {
+        assert_eq!(
+            force_detach_notice(payload.as_bytes()),
+            Some(ForceDetachNotice::Final),
+            "{payload}"
+        );
+    }
+}

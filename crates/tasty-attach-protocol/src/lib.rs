@@ -83,16 +83,52 @@ pub enum ForceDetachNotice {
 /// Control payload를 JSON으로 읽어 `event`가 [`FORCE_DETACHED_EVENT`]일 때만 통지로 본다.
 /// 다른 Control의 값에 같은 문자열이 들어 있어도(예: 파일 이름) 통지가 아니다.
 pub fn force_detach_notice(payload: &[u8]) -> Option<ForceDetachNotice> {
-    let value = serde_json::from_slice::<serde_json::Value>(payload).ok()?;
-    if value.get("event").and_then(serde_json::Value::as_str) != Some(FORCE_DETACHED_EVENT) {
-        return None;
+    serde_json::from_slice::<ForceDetachedControl>(payload)
+        .ok()
+        .map(|control| control.notice())
+}
+
+/// 서버가 점유를 끊을 때 Detach보다 먼저 보내는 `force_detached` Control. 서버는 사유를 늘 싣는다.
+/// 읽을 때 `event`가 [`FORCE_DETACHED_EVENT`]가 아니면 거절하고, 사유가 없거나 문자열이 아니면 빈 사유로 읽는다.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(remote = "Self", tag = "event", rename = "force_detached")]
+pub struct ForceDetachedControl {
+    /// 끊은 사유. [`FORCE_DETACH_WORKSPACE_GONE`]만 client 동작을 바꾼다.
+    #[serde(default, deserialize_with = "string_or_empty")]
+    pub reason: String,
+}
+
+impl ForceDetachedControl {
+    /// 이 통지가 알리는 끊김의 종류. [`FORCE_DETACH_WORKSPACE_GONE`] 밖의 사유는 모두 강제 끊기다.
+    pub fn notice(&self) -> ForceDetachNotice {
+        if self.reason == FORCE_DETACH_WORKSPACE_GONE {
+            ForceDetachNotice::WorkspaceGone
+        } else {
+            ForceDetachNotice::Final
+        }
     }
-    if value.get("reason").and_then(serde_json::Value::as_str) == Some(FORCE_DETACH_WORKSPACE_GONE)
-    {
-        Some(ForceDetachNotice::WorkspaceGone)
-    } else {
-        Some(ForceDetachNotice::Final)
+}
+
+// 파생 Deserialize는 struct의 tag를 확인하지 않으므로 `event`를 먼저 본 뒤 파생 본문으로 읽는다.
+impl Serialize for ForceDetachedControl {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        ForceDetachedControl::serialize(self, serializer)
     }
+}
+
+impl<'de> Deserialize<'de> for ForceDetachedControl {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = serde_json::Value::deserialize(deserializer)?;
+        if value.get("event").and_then(serde_json::Value::as_str) != Some(FORCE_DETACHED_EVENT) {
+            return Err(serde::de::Error::custom("not a force_detached control"));
+        }
+        ForceDetachedControl::deserialize(value).map_err(serde::de::Error::custom)
+    }
+}
+
+fn string_or_empty<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<String, D::Error> {
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(value.as_str().unwrap_or_default().to_string())
 }
 
 /// 세션 중 전달하는 event 태그 기반 Control 메시지. handshake descriptor는 별도 JSON이다.

@@ -14,12 +14,12 @@ pub use read_failure::ReadFailure;
 // attach Control 메시지·capability 이름·descriptor 키는 tasty-attach-protocol이 정의하고 이 경로로 다시 내보낸다.
 pub use tasty_attach_protocol::{
     AttachedWorkspaceDescriptor, AttentionKindWire, DESCRIPTOR_CAPABILITIES, DESCRIPTOR_PTY_INPUT,
-    FORCE_DETACH_WORKSPACE_GONE, FORCE_DETACHED_EVENT, ForceDetachNotice, ForwardOrigin,
-    INHERIT_CWD_CAPABILITY, INPUT_ACK_CAPABILITY, InheritCwd, NOTIFICATION_SOUND_CAPABILITY,
-    PTY_INPUT_VT, PTY_INPUT_WIN32_CONSOLE, RESIZE_ACK_CAPABILITY, RESIZE_ACK_VERSION,
-    STRUCTURAL_REASON_PATH_NOT_FOUND_PREFIX, STRUCTURAL_REASON_RESTORE_EMPTY, SplitAxis,
-    StreamControl, StructuralOp, WORKSPACE_CLOSE_CAPABILITY, descriptor_wants_win32_console_input,
-    force_detach_notice, local_pty_input,
+    FORCE_DETACH_WORKSPACE_GONE, FORCE_DETACHED_EVENT, ForceDetachNotice, ForceDetachedControl,
+    ForwardOrigin, INHERIT_CWD_CAPABILITY, INPUT_ACK_CAPABILITY, InheritCwd,
+    NOTIFICATION_SOUND_CAPABILITY, PTY_INPUT_VT, PTY_INPUT_WIN32_CONSOLE, RESIZE_ACK_CAPABILITY,
+    RESIZE_ACK_VERSION, STRUCTURAL_REASON_PATH_NOT_FOUND_PREFIX, STRUCTURAL_REASON_RESTORE_EMPTY,
+    SplitAxis, StreamControl, StructuralOp, WORKSPACE_CLOSE_CAPABILITY,
+    descriptor_wants_win32_console_input, force_detach_notice, local_pty_input,
 };
 
 /// Method name whose presence as the first JSON-RPC line upgrades a connection
