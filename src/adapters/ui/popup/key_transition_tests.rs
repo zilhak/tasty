@@ -621,6 +621,7 @@ fn a_passive_plugin_popup_opened_by_the_plugin_keeps_the_focused_webview() {
         crate::state::webview_overlay::OverlayMode::Opaque,
         overlay_open,
         &[(SURFACE_R, &r)],
+        &Default::default(),
     );
     assert_eq!(r.released.get(), 0);
     assert!(r.holds.get());

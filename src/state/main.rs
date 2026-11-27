@@ -188,8 +188,8 @@ pub struct MainViewState {
     /// 막지 않는다.
     #[cfg(feature = "gui")]
     pub(crate) webview_key_released: std::collections::BTreeSet<u32>,
-    /// 프레임 동기화가 뒤에 남은 native 누름 때문에 W2 회수를 미뤘다. 대기열을 다 소비하면 동기화를 한 번 다시
-    /// 예약한다(`webview_sync::key_release::release_retry_due`).
+    /// 프레임 동기화가 뒤에 남은 native 누름의 surface 회수를 미뤘다. 대기열이 비면 동기화를 한 번 다시 예약하고
+    /// (`webview_sync::key_release::release_retry_due`), 그 전에 회수를 적용한 동기화가 지운다.
     #[cfg(feature = "gui")]
     pub(crate) webview_release_due: bool,
     /// 이번 그리기 몫 키들의 사건 시점 복원 안내(안쪽 포커스를 가진 인스턴스, 없으면 `Some(None)`,

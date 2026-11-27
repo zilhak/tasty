@@ -70,13 +70,6 @@ impl App {
     /// 창마다 native 입력(누름 알림·전달 키)을 도착 순서대로 소비한다(`consume_native_inputs`). 누름으로 포커스가
     /// 바뀐 창은 다시 그린다.
     pub(crate) fn consume_webview_focus_requests(&mut self) {
-        let pending = self.view.views.values().any(|w| {
-            w.as_main()
-                .is_some_and(|main| main.webview_key_bridge.has_focus_requests())
-        });
-        if !pending {
-            return;
-        }
         let ids: Vec<winit::window::WindowId> = self
             .view
             .views
@@ -85,8 +78,14 @@ impl App {
             .map(|(id, _)| *id)
             .collect();
         for id in ids {
-            consume_native_inputs(self, id);
-            // 남은 누름 때문에 미룬 W2 회수는 대기열이 비면 다음 동기화로 다시 판정한다.
+            let Some(main) = self.view.views.get(&id).and_then(|w| w.as_main()) else {
+                continue;
+            };
+            if main.webview_key_bridge.has_focus_requests() {
+                consume_native_inputs(self, id);
+            }
+            // 남은 누름 때문에 미룬 W2 회수는 대기열이 비면 다음 동기화로 다시 판정한다. 소비가 없었어도 본다: 그 view 를
+            // 지운 retire 나 동기화의 선두 알림 소비가 대기열을 비웠을 수 있다.
             if let Some(main) = self.view.views.get_mut(&id).and_then(|w| w.as_main_mut())
                 && crate::app::webview_sync::key_release::release_retry_due(
                     &mut main.state,

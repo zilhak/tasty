@@ -415,9 +415,21 @@ impl WebViewKeyBridge {
         self.consuming.get() || !self.inputs.borrow().is_empty()
     }
 
-    /// 대기열에 아직 소비하지 않은 누름 알림이 있는지. 그 누름은 키 쥘 곳을 바꿀 수 있다.
+    /// 시험용: 대기열에 아직 소비하지 않은 누름 알림이 있는지.
+    #[cfg(test)]
     pub fn has_pending_press(&self) -> bool {
         (self.inputs.borrow().iter()).any(|input| matches!(input, NativeInput::Press { .. }))
+    }
+
+    /// 대기열에 아직 소비하지 않은 누름 알림의 surface 들. 그 surface 의 OS 키 포커스 회수는 알림을 적용할 때까지
+    /// 보류한다(`key_release::release_after_native_focus_notices`).
+    pub fn pending_press_surfaces(&self) -> std::collections::BTreeSet<u32> {
+        (self.inputs.borrow().iter())
+            .filter_map(|input| match input {
+                NativeInput::Press { surface_id, .. } => Some(*surface_id),
+                NativeInput::Forwarded(_) => None,
+            })
+            .collect()
     }
 
     /// 시험용: 대기열의 native 입력을 도착 순서대로 모두 꺼낸다.

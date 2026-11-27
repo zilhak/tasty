@@ -58,7 +58,7 @@ fn sync(
     wvs: &[(u32, &FakeWebView)],
 ) {
     let overlay_open = state.has_egui_overlay_open();
-    release_webview_key_focus(state, core, mode, overlay_open, wvs);
+    release_webview_key_focus(state, core, mode, overlay_open, wvs, &Default::default());
 }
 
 /// 창 범위 덮개 정의 `id` 를 등록하고 연다.
@@ -502,5 +502,158 @@ fn a_skipped_webview_release_retries_when_native_input_drains() {
         assert!(!release_retry_due(&mut state, &bridge), "예약은 한 번이다");
         assert_eq!(sync_once(&mut state), Some(SURFACE_R));
         assert_eq!(r.released.get(), 0, "R 은 키 쥘 곳이라 회수하지 않는다");
+    }
+}
+
+/// P4 대기열: L 이 키 쥘 곳인 다리에 [L 의 host 키(Ctrl+J), `press` 의 누름] 을 넣는다. 누름은 키 뒤라 동기화가 먼저
+/// 소비하지 못한다.
+fn key_then_press(press: u32) -> crate::webview::WebViewKeyBridge {
+    use crate::host_api::webview::keys::{HostShortcutPolicy, ShortcutSources, WebViewKeySink};
+    use winit::keyboard::{Key, ModifiersState, NativeKeyCode, PhysicalKey};
+    let bridge = crate::webview::WebViewKeyBridge::default();
+    bridge.set_policy(HostShortcutPolicy::new(ShortcutSources {
+        host: vec!["ctrl+j".to_string()],
+        ..Default::default()
+    }));
+    bridge.set_key_holder(Some(SURFACE_L));
+    let forwarded = bridge.forward_key(
+        SURFACE_L,
+        Key::Character("j".into()),
+        PhysicalKey::Unidentified(NativeKeyCode::Unidentified),
+        ModifiersState::CONTROL,
+    );
+    assert!(forwarded.is_some(), "키가 대기열에 든다");
+    bridge.note_press(press);
+    bridge
+}
+
+/// 동기화의 회수 판정 한 번(`release_after_native_focus_notices`).
+fn sync_with_notices(
+    state: &mut RequestContext,
+    core: &CoreState,
+    bridge: &crate::webview::WebViewKeyBridge,
+    mode: OverlayMode,
+    wvs: &[(u32, &FakeWebView)],
+) {
+    let overlay_open = state.has_egui_overlay_open();
+    crate::app::webview_sync::key_release::release_after_native_focus_notices(
+        state,
+        core,
+        bridge,
+        &|_| true,
+        mode,
+        overlay_open,
+        wvs,
+    );
+}
+
+/// P4 sid 별 보류: Given L 이 포커스 노드이고 R WebView 가 OS 키 포커스를 쥔다, When 키 뒤에 남은 누름이 L 의
+/// 것이면, Then R 은 그 누름과 무관해 바로 회수하고 의무도 없다. 대조: 남은 누름이 R 의 것이면 R 만 보류하고 의무를
+/// 남긴다(앞 키가 덮개를 열거나 닫을 수 있어 지금 덮개로 분류하지 않는다).
+#[test]
+fn a_pending_press_holds_only_the_release_of_its_own_webview() {
+    use crate::app::webview_sync::key_release::release_retry_due;
+    for (press, released) in [(SURFACE_L, 1), (SURFACE_R, 0)] {
+        let (mut state, mut session) = defs_scene();
+        let bridge = key_then_press(press);
+        let r = holding();
+        let engine = session.borrow_mut();
+        sync_with_notices(
+            &mut state,
+            &engine.read(),
+            &bridge,
+            OverlayMode::Opaque,
+            &[(SURFACE_R, &r)],
+        );
+        assert_eq!(r.released.get(), released, "press={press}");
+        assert_eq!(
+            state.webview_release_due,
+            released == 0,
+            "press={press}: 보류한 후보가 있을 때만 의무가 남는다"
+        );
+        bridge.take_inputs();
+        assert_eq!(release_retry_due(&mut state, &bridge), released == 0);
+    }
+}
+
+/// P4 Hide: Given 키 뒤에 R 누름이 남았고 창 범위 팔레트가 열렸다, When 모드가 Hide 라 R 이 이번 프레임에 숨으면,
+/// Then 보류하지 않고 회수한다(숨는 WebView 는 키를 받을 수 없다). 대조: 모드가 Opaque 면 R 을 보류한다.
+#[test]
+fn a_webview_hidden_by_the_overlay_is_released_despite_its_pending_press() {
+    for (mode, released) in [(OverlayMode::Hide, 1), (OverlayMode::Opaque, 0)] {
+        let (mut state, mut session) = defs_scene();
+        let bridge = key_then_press(SURFACE_R);
+        state
+            .popups
+            .open_request(
+                &OpenRequest::new(COMMAND_PALETTE_POPUP_ID, PopupScope::Window)
+                    .centered()
+                    .focused(),
+                true,
+            )
+            .expect("팔레트가 열린다");
+        let r = holding();
+        let engine = session.borrow_mut();
+        sync_with_notices(
+            &mut state,
+            &engine.read(),
+            &bridge,
+            mode,
+            &[(SURFACE_R, &r)],
+        );
+        assert_eq!(r.released.get(), released, "{mode:?}");
+        assert_eq!(state.webview_release_due, released == 0, "{mode:?}");
+    }
+}
+
+/// P4 정산: Given 키 뒤 R 누름 때문에 R 회수를 보류했다, When (a) 회차 끝 소비가 키만 처리한 뒤 R 의 view 를 지워
+/// (`retire_view`) 대기열이 비면, Then 의무가 한 번 다시 판정을 예약한다. When (b) 키만 처리된 뒤 다음 동기화가 남은
+/// R 누름을 선두에서 직접 소비하고 회수를 판정하면, Then 그 판정이 의무를 지워 대기열이 비어도 예약은 0번이다.
+#[test]
+fn a_held_release_settles_where_its_queue_empties_or_its_sync_applies() {
+    use crate::app::webview_sync::key_release::release_retry_due;
+    for retired in [true, false] {
+        let (mut state, mut session) = defs_scene();
+        let bridge = key_then_press(SURFACE_R);
+        let r = holding();
+        let engine = session.borrow_mut();
+        let wvs = [(SURFACE_R, &r)];
+        sync_with_notices(
+            &mut state,
+            &engine.read(),
+            &bridge,
+            OverlayMode::Opaque,
+            &wvs,
+        );
+        assert!(state.webview_release_due, "R 회수를 보류했다");
+        assert!(
+            matches!(
+                bridge.pop_input(),
+                Some(crate::webview::NativeInput::Forwarded(_))
+            ),
+            "회차 끝 소비가 키를 처리했다"
+        );
+        if retired {
+            bridge.retire_view(SURFACE_R);
+            assert!(
+                release_retry_due(&mut state, &bridge),
+                "비면 한 번 예약한다"
+            );
+            assert!(!release_retry_due(&mut state, &bridge), "예약은 한 번이다");
+            continue;
+        }
+        sync_with_notices(
+            &mut state,
+            &engine.read(),
+            &bridge,
+            OverlayMode::Opaque,
+            &wvs,
+        );
+        assert!(!bridge.has_focus_requests(), "동기화가 R 누름을 소비했다");
+        assert_eq!(r.released.get(), 0, "R 은 키 쥘 곳이 됐다");
+        assert!(
+            !release_retry_due(&mut state, &bridge),
+            "회수를 적용한 동기화 뒤 예약은 0번이다"
+        );
     }
 }
