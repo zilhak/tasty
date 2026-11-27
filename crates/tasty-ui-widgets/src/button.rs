@@ -492,7 +492,11 @@ mod tests {
     #[test]
     fn only_a_select_rest_secondary_button_takes_the_select_tokens_at_rest() {
         for theme in [tasty_themes::mocha_fallback(), latte()] {
-            assert_ne!(theme.select_border(), theme.button_secondary_border());
+            // 한 테마에서는 select-border와 button-secondary-border가 같은 값이라 채움·테두리 짝으로 가른다.
+            assert_ne!(
+                (theme.select_bg(), theme.select_border()),
+                (theme.button_secondary_bg(), theme.button_secondary_border())
+            );
             assert_eq!(
                 rest_box(&theme, false),
                 (
