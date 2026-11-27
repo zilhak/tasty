@@ -4,7 +4,8 @@
 #   그 접힌 이어 줄을 뺀다. Git 은 트레일러가 섞인 문장 줄도 같은 블록으로 보므로 그 줄은 남긴다.
 # - 코드 펜스(``` ·~~~), 들여쓴 코드 블록, 백틱 코드 스팬 밖의 <, >, & 를 HTML 엔터티로 바꾼다.
 #   GitHub 가 <s> 같은 자리표시를 HTML 태그로 읽지 않게 한다. 코드 표기 안은 엔터티가 글자로 보이므로 그대로 둔다.
-# - 들여쓴 코드 블록은 빈 줄 뒤의 4칸(또는 탭) 들여쓴 줄에서 시작한다. 목록 안의 들여쓴 줄은 목록 이어 쓰기로 본다.
+# - 블록 구조는 CommonMark 를 따른다. 목록 항목·제목·setext 밑줄·주제 구분선·인용·표 행이 문단을 끊고,
+#   코드 스팬은 블록 하나 안에서만 짝짓는다. 들여쓴 코드 블록은 목록 밖에서 빈 줄 뒤의 4칸(또는 탭) 들여쓴 줄에서 시작한다.
 # 사용: release-notes.sh <커밋>
 set -eu -o pipefail
 commit="${1:?사용: release-notes.sh <커밋>}"
@@ -18,15 +19,15 @@ function blank(s) { return s ~ /^[ \t]*$/ }
 
 # 문단 하나(줄바꿈으로 이은 문자열)에서 코드 스팬 밖의 <, >, & 를 바꾼다.
 # 백틱 n 개로 연 스팬은 다음에 오는 정확히 n 개짜리 백틱 열에서 닫힌다. 닫는 열이 없으면 백틱은 글자다.
-function escape_text(p,    out, i, n, c, k, j, m, stop) {
+function escape_text(p,    out, i, n, c, d, k, j, m, stop) {
     out = ""; i = 1; n = length(p)
     while (i <= n) {
         c = substr(p, i, 1)
-        if (c == "\\" && i < n && index("`<>&", substr(p, i + 1, 1))) {
-            c = substr(p, i + 1, 1)
-            # \` 는 스팬을 열지 않는 글자 백틱이다. \< 같은 이스케이프는 엔터티가 같은 글자를 낸다.
-            if (c == "`") out = out "\\`"
-            else out = out entity(c)
+        if (c == "\\" && i < n && index(PUNCT, substr(p, i + 1, 1))) {
+            d = substr(p, i + 1, 1)
+            # \<, \>, \& 는 엔터티가 같은 글자를 낸다. 다른 이스케이프(\`, \\ 등)는 그대로 두고 두 글자를 함께 넘긴다.
+            if (index("<>&", d)) out = out entity(d)
+            else out = out c d
             i += 2
             continue
         }
@@ -52,18 +53,66 @@ function escape_text(p,    out, i, n, c, k, j, m, stop) {
     }
     return out
 }
+# 표의 행은 칸마다 따로 바꾼다. GitHub 는 \| 가 아닌 | 에서 칸을 나누고 코드 스팬은 칸을 넘지 못한다.
+function escape_row(s,    out, cell, i, n, c) {
+    out = ""; cell = ""; n = length(s)
+    for (i = 1; i <= n; i++) {
+        c = substr(s, i, 1)
+        if (c == "\\" && i < n) { cell = cell c substr(s, i + 1, 1); i++; continue }
+        if (c == "|") { out = out escape_text(cell) "|"; cell = ""; continue }
+        cell = cell c
+    }
+    return out escape_text(cell)
+}
+# 문단을 끊을 수 있는 HTML 블록(CommonMark 1~6종)의 시작인가. 태그 이름은 여러 판의 목록을 합쳐 넉넉히 본다.
+function html_start(r,    t, c) {
+    if (r ~ /^<[!?]/) return 1
+    if (!match(r, /^<\/?[A-Za-z][A-Za-z0-9]*/)) return 0
+    t = tolower(substr(r, 1, RLENGTH)); sub(/^<\/?/, "", t)
+    c = substr(r, RLENGTH + 1, 1)
+    return index(HTML_TAGS, " " t " ") && c !~ /[A-Za-z0-9]/
+}
 function entity(c) {
     if (c == "&") return "&amp;"
     if (c == "<") return "&lt;"
     if (c == ">") return "&gt;"
     return c
 }
-function flush() {
-    if (para != "") print escape_text(para)
-    para = ""; has_para = 0
+
+# 줄의 탭을 4칸으로 펼쳐 X 에 둔다. cmap[열] 은 그 열을 차지한 원래 글자의 위치다.
+function expand(l,    i, n, c, col, w) {
+    X = ""; col = 0; n = length(l)
+    for (i = 1; i <= n; i++) {
+        c = substr(l, i, 1)
+        if (c == "\t") {
+            for (w = 4; w > 0; w--) { X = X " "; cmap[++col] = i }
+        } else { X = X c; cmap[++col] = i }
+    }
+    cmap[col + 1] = n + 1
 }
+# X 의 p 열부터 이어지는 공백 수.
+function indent(p,    q) { q = p; while (substr(X, q, 1) == " ") q++; return q - p }
+# 원래 줄에서 X 의 p 열 앞(컨테이너 표지)과 p 열부터(내용)를 나눈다.
+function head(l, p) { return substr(l, 1, cmap[p] - 1) }
+function body(l, p) { return substr(l, cmap[p]) }
+
+# 모은 문단을 내보낸다. 코드 스팬은 이 문단 안에서만 짝짓는다.
+function flush(    s, k, n, part) {
+    if (np == 0) return
+    s = pbody[1]
+    for (k = 2; k <= np; k++) s = s "\n" pbody[k]
+    n = split(escape_text(s), part, "\n")
+    for (k = 1; k <= np; k++) print phead[k] part[k]
+    np = 0
+}
+function end_leaf() { flush(); leaf = "" }
+function close_to(d) { if (d < nc) { end_leaf(); nc = d } }
+function para_line(l, p) { np++; phead[np] = head(l, p); pbody[np] = body(l, p); leaf = "para" }
+
 { line[++count] = $0 }
 END {
+    HTML_TAGS = " address article aside base basefont blockquote body caption center col colgroup dd details dialog dir div dl dt fieldset figcaption figure footer form frame frameset h1 h2 h3 h4 h5 h6 head header hr html iframe legend li link main menu menuitem meta nav noframes ol optgroup option p param pre script search section source style summary table tbody td textarea tfoot th thead title tr track ul "
+    PUNCT = "!\"#$%&\047()*+,-./:;<=>?@[\\]^_`{|}~"
     last = count
     while (last > 0 && blank(line[last])) last--
     if (strip == 1) {
@@ -81,43 +130,112 @@ END {
         for (k = 1; k <= keep; k++) line[++last] = kept[k]
         while (last > 0 && blank(line[last])) last--
     }
-    fence = ""; para = ""; has_para = 0; code = 0; in_list = 0; after_blank = 1
+    # 열린 컨테이너: ctype[d] 는 q(인용) 또는 l(목록 항목), cwidth[d] 는 목록 항목의 내용 들여쓰기.
+    # 열린 잎 블록 leaf 는 para·code(들여쓴 코드)·fence 중 하나이고 늘 가장 안쪽 컨테이너에 속한다.
+    nc = 0; leaf = ""; np = 0
     for (i = 1; i <= last; i++) {
         l = line[i]
-        if (code) {
-            if (blank(l)) { print l; after_blank = 1; continue }
-            if (l ~ /^(    |\t)/) { print l; after_blank = 0; continue }
-            code = 0
+        expand(l)
+        p = 1; matched = 0
+        for (d = 1; d <= nc; d++) {
+            s = indent(p)
+            if (ctype[d] == "q") {
+                if (s > 3 || substr(X, p + s, 1) != ">") break
+                p += s + 1
+                if (substr(X, p, 1) == " ") p++
+            } else if (substr(X, p) !~ /^ *$/) {
+                if (s < cwidth[d]) break
+                p += cwidth[d]
+            }
+            matched++
         }
-        if (fence != "") {
+        all = (matched == nc)
+        if (leaf == "fence") {
             print l
-            if (match(l, /^(   |  | )?(`+|~+)[ \t]*$/)) {
-                run = l; sub(/^ +/, "", run); sub(/[ \t]+$/, "", run)
-                if (substr(run, 1, 1) == substr(fence, 1, 1) && length(run) >= length(fence)) fence = ""
+            s = indent(p); r = substr(X, p + s)
+            if (s <= 3 && r ~ /^(`+|~+) *$/) {
+                sub(/ +$/, "", r)
+                if (substr(r, 1, 1) == fchar && length(r) >= flen) leaf = ""
             }
             continue
         }
-        if (match(l, /^(   |  | )?(```+|~~~+)/)) {
-            run = substr(l, RSTART, RLENGTH); sub(/^ +/, "", run)
-            rest = substr(l, RSTART + RLENGTH)
-            if (substr(run, 1, 1) != "`" || index(rest, "`") == 0) {
-                flush()
-                fence = run; after_blank = 0
-                print l
+        if (leaf == "code") {
+            if (substr(X, p) ~ /^ *$/ || indent(p) >= 4) { print l; continue }
+            leaf = ""
+        }
+        # 새 블록의 시작을 찾는다. 문단이 열린 채 컨테이너가 다 이어지면(para_open) 문단을 끊을 수 있는 것만 본다.
+        para_open = (all && leaf == "para")
+        started = 0; kind = ""
+        while (1) {
+            s = indent(p); r = substr(X, p + s)
+            if (s >= 4) break
+            if (substr(r, 1, 1) == ">") {
+                end_leaf(); close_to(matched)
+                ctype[++nc] = "q"; matched = nc; started = 1; para_open = 0
+                p += s + 1
+                if (substr(X, p, 1) == " ") p++
                 continue
             }
+            if (r ~ /^(```+|~~~+)/) {
+                match(r, /^(`+|~+)/)
+                if (substr(r, 1, 1) != "`" || index(substr(r, RLENGTH + 1), "`") == 0) {
+                    kind = "fence"; fchar = substr(r, 1, 1); flen = RLENGTH
+                    break
+                }
+            }
+            if (r ~ /^#+( |$)/) {
+                match(r, /^#+/)
+                if (RLENGTH <= 6) { kind = "atx"; break }
+            }
+            if (para_open && r ~ /^(=+|-+) *$/) { kind = "setext"; break }
+            # 표의 구분 행. 문단의 끝 줄이 머리 행이 된다.
+            if (para_open && r ~ /[|:]/ && r ~ /^\|?( *:?-+:? *\|)* *:?-+:? *\|? *$/) { kind = "table"; break }
+            t = r; gsub(/ /, "", t)
+            if (t ~ /^(---+|\*\*\*+|___+)$/) { kind = "hr"; break }
+            if (match(r, /^([-*+]|[0-9]+[.)])( |$)/)) {
+                mlen = RLENGTH - (substr(r, RLENGTH, 1) == " " ? 1 : 0)
+                marker = substr(r, 1, mlen)
+                if (mlen <= 10) {
+                    after = substr(r, mlen + 1)
+                    empty = (after ~ /^ *$/)
+                    ordered = (marker ~ /^[0-9]/)
+                    if (para_open && (empty || (ordered && marker !~ /^0*1[.)]$/))) break
+                    gap = indent(p + s + mlen)
+                    w = s + mlen + ((empty || gap >= 5) ? 1 : gap)
+                    end_leaf(); close_to(matched)
+                    ctype[++nc] = "l"; cwidth[nc] = w; matched = nc; started = 1; para_open = 0
+                    p += w
+                    continue
+                }
+            }
+            break
         }
-        if (blank(l)) { flush(); print l; after_blank = 1; continue }
-        if (l ~ /^(   |  | )?([-*+]|[0-9]+[.)])([ \t]|$)/) in_list = 1
-        else if (after_blank && l !~ /^[ \t]/) in_list = 0
-        if (after_blank && !in_list && l ~ /^(    |\t)/) {
-            code = 1; after_blank = 0
-            print l
+        s = indent(p); rest_blank = (substr(X, p) ~ /^ *$/)
+        # 컨테이너가 다 이어지지 않아도 문단 이어 쓰기(게으른 줄)면 컨테이너와 문단을 그대로 둔다.
+        if (!all && !started && kind == "" && leaf == "para" && !rest_blank) {
+            if (html_start(substr(X, p + s))) flush()
+            para_line(l, p)
             continue
         }
-        after_blank = 0
-        para = has_para ? para "\n" l : l
-        has_para = 1
+        close_to(matched)
+        if (kind == "fence") { end_leaf(); leaf = "fence"; print l; continue }
+        if (kind == "atx") { end_leaf(); print head(l, p) escape_text(body(l, p)); continue }
+        if (kind == "setext" || kind == "hr") { end_leaf(); print l; continue }
+        if (kind == "table") {
+            hh = phead[np]; hb = pbody[np]; np--
+            end_leaf()
+            print hh escape_row(hb)
+            print l
+            leaf = "table"
+            continue
+        }
+        if (rest_blank) { end_leaf(); print l; continue }
+        # 표는 빈 줄이나 다른 블록의 시작에서 끝난다. 들여쓴 줄도 행으로 보고 엔터티로 바꾼다.
+        if (leaf == "table") { print head(l, p) escape_row(body(l, p)); continue }
+        if (s >= 4 && leaf != "para" && nc == 0 && (i == 1 || blank(line[i - 1]))) { end_leaf(); leaf = "code"; print l; continue }
+        # 문단을 끊는 HTML 블록 시작(<div>, <!-- 등)으로 보이는 줄은 앞 줄과 스팬을 짝짓지 않는다.
+        if (leaf == "para" && html_start(substr(X, p + s))) flush()
+        para_line(l, p)
     }
     flush()
 }

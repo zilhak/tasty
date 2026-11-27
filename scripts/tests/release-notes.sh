@@ -236,6 +236,62 @@ replaces it.
 EOF
 check '트레일러가 없는 본문은 끝 문단까지 남긴다' "$m" "$w"
 
+cat > "$m" <<'EOF'
+chore: bump version to 9.9.9
+
+- Quote the ` character in names.
+- Fix --secs <s> parsing with `foo`.
+
+## The ` key
+Fix <s> in `foo`.
+
+Use a ` quote:
+- Fix <s> `x`
+
+Title ` a
+---
+next <s> ` b
+
+Text ` here
+> quoted <s> ` b
+
+- Mention a lone `
+- Run --secs <s> then a lone `
+
+Escaped \\`<s>` stays code.
+
+| Flag ` | Value <s> ` |
+| --- | --- |
+| `a | b` <s> |
+EOF
+cat > "$w" <<'EOF'
+- Quote the ` character in names.
+- Fix --secs &lt;s&gt; parsing with `foo`.
+
+## The ` key
+Fix &lt;s&gt; in `foo`.
+
+Use a ` quote:
+- Fix &lt;s&gt; `x`
+
+Title ` a
+---
+next &lt;s&gt; ` b
+
+Text ` here
+> quoted &lt;s&gt; ` b
+
+- Mention a lone `
+- Run --secs &lt;s&gt; then a lone `
+
+Escaped \\`<s>` stays code.
+
+| Flag ` | Value &lt;s&gt; ` |
+| --- | --- |
+| `a | b` &lt;s&gt; |
+EOF
+check '스팬은 목록 항목·제목·밑줄·인용·표 칸을 넘어 짝짓지 않는다' "$m" "$w"
+
 if [ "$failures" -ne 0 ]; then
     echo "실패 $failures 건" >&2
     exit 1
