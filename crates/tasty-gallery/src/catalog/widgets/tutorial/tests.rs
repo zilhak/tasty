@@ -517,8 +517,9 @@ fn callout_buttons_read_the_app_tutorial_keys_and_the_raised_ghost_ink() {
     }
 }
 
-/// 갤러리 표본(줄바꿈 묶음 안)에서 말풍선 안이 세로로 쌓이는지 그린 도형으로 본다. 말풍선마다 제목은 본문
-/// 위에 있고, 같은 말풍선의 버튼 줄(버튼 배경 Rect의 합)이 있으며 그 줄이 본문 Rect와 겹치지 않는다.
+/// 갤러리 표본(줄바꿈 묶음 안)에서 말풍선 안이 세로로 쌓이는지 그린 도형으로 본다. 말풍선마다 같은 말풍선의
+/// 버튼 줄(버튼 배경 Rect의 합)이 있고 그 줄이 본문 Rect와 겹치지 않는지를 먼저 보고, 그다음 제목이 본문 위에
+/// 있는지 본다.
 #[test]
 fn callout_specimen_stacks_the_body_above_the_button_row() {
     use crate::catalog::components::painted::{mocha_latte, paint};
@@ -559,13 +560,6 @@ fn callout_specimen_stacks_the_body_above_the_button_row() {
         for step in BASICS_STEPS.iter().filter(|s| s.id != "summary") {
             for body in rect_of(t(step.body_key)) {
                 bodies += 1;
-                for title in rect_of(t(step.title_key)) {
-                    assert!(
-                        title.bottom() <= body.top(),
-                        "{name} {}: 제목 {title:?} 이 본문 {body:?} 위에 있지 않다",
-                        step.id
-                    );
-                }
                 // 이 본문을 품은 가장 작은 surface-raised 채움이 그 말풍선 프레임이다.
                 let frame = fills
                     .iter()
@@ -589,6 +583,13 @@ fn callout_specimen_stacks_the_body_above_the_button_row() {
                     "{name} {}: 버튼 줄 {row:?} 이 본문 {body:?} 과 겹친다",
                     step.id
                 );
+                for title in rect_of(t(step.title_key)) {
+                    assert!(
+                        title.bottom() <= body.top(),
+                        "{name} {}: 제목 {title:?} 이 본문 {body:?} 위에 있지 않다",
+                        step.id
+                    );
+                }
             }
         }
         assert_eq!(bodies, 4, "{name}: 표본 본문 수");
