@@ -22,7 +22,8 @@ fn pos(body: &str, needle: &str, what: &str) -> usize {
 
 /// WebView 를 지우는 자리(binding 이 맞지 않은 view, 닫힌 surface 의 view)는 그 surface 의 대기열 항목을 지우고
 /// (`retire_view`), 유지한 HTTP 세션이 새 문서로 바뀐 자리는 새 binding 을 적기 전에 옛 문서 항목을 지운다
-/// (`retire_page`). 제품에서 `view.webviews` 를 지우는 자리는 이 두 곳뿐이다.
+/// (`retire_page`). 제품에서 `view.webviews` 를 지우는 자리는 이 두 곳뿐이다(맞지 않은 view 는
+/// `key_release::drop_stale_views` 가 지운다).
 #[test]
 fn every_webview_removal_and_page_swap_retires_its_queue_entries() {
     let rel = "src/app/webview_sync.rs";
@@ -36,8 +37,19 @@ fn every_webview_removal_and_page_swap_retires_its_queue_entries() {
     assert!(swap < capture, "새 binding 을 적은 뒤에 옛 항목을 지운다");
     pos(
         &sync,
-        "forsurfaceinstale{dropped.extend(view.webviews.remove(&surface));view.webview_key_bridge.retire_view(surface);",
+        "key_release::drop_stale_views(state,engine.core,bridge,&bound,wvs,&stale);",
         "맞지 않은 view 지움",
+    );
+    // view 마다 그 Drop(펌프) 뒤에 그 surface 항목을 지운다. 먼저 모두 지우면 앞 view 의 Drop 펌프 동안 남은 view 가
+    // 넣은 항목이 같은 surface 의 새 view 로 간다.
+    let stale = body_of(
+        "src/app/webview_sync/key_release.rs",
+        "pub(crate) fn drop_stale_views<",
+    );
+    pos(
+        &stale,
+        "for&sidinstale{letview=webviews.remove(&sid);publish_before_gtk_pump(state,core,bridge,bound,||drop(view));bridge.retire_view(sid);}",
+        "view 마다 Drop 뒤 지움",
     );
     let webviews = body_of(rel, "fn sync_webviews(");
     pos(
@@ -48,7 +60,7 @@ fn every_webview_removal_and_page_swap_retires_its_queue_entries() {
     let src = std::fs::read_to_string(repo_root().join(rel)).expect("webview_sync.rs");
     let removals =
         src.matches("view.webviews.remove(").count() + src.matches("view.webviews.retain(").count();
-    assert_eq!(removals, 2, "WebView 를 지우는 새 자리가 생겼다");
+    assert_eq!(removals, 1, "WebView 를 지우는 새 자리가 생겼다");
 }
 
 /// 미룬 회수의 재판정(`release_retry_due`)은 창마다 대기열 소비 여부와 관계없이 본다. 대기열이 이미 비었다는 조기

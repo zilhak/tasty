@@ -145,6 +145,25 @@ pub(crate) fn publish_before_gtk_pump<R>(
     pump()
 }
 
+/// binding 이 맞지 않은 view(`stale`)를 하나씩 지운다: 지금 상태로 게시하고 그 view 를 버린 뒤 그 surface 의 대기열
+/// 항목을 지운다(`WebViewKeyBridge::retire_view`). view 의 Drop 이 펌프를 돌면(`publish_before_gtk_pump`) 아직 남은
+/// 다음 view 가 그 안에서 누름 알림·전달 키를 넣을 수 있다. 모든 view 의 항목을 먼저 지우고 한꺼번에 버리면 그 항목이
+/// 대기열에 남아, 같은 surface 로 새로 만든 view 가 옛 view 의 항목을 받는다(항목에는 view 신원이 없다).
+pub(crate) fn drop_stale_views<W>(
+    state: &mut MainViewState,
+    core: &crate::core::CoreState,
+    bridge: &crate::webview::WebViewKeyBridge,
+    bound: &Bindings,
+    webviews: &mut std::collections::HashMap<u32, W>,
+    stale: &[u32],
+) {
+    for &sid in stale {
+        let view = webviews.remove(&sid);
+        publish_before_gtk_pump(state, core, bridge, bound, || drop(view));
+        bridge.retire_view(sid);
+    }
+}
+
 /// binding 이 맞는 WebView 의 sid 집합(`webview_sync::webview_binding_current`).
 pub(crate) type Bindings = std::collections::HashSet<u32>;
 

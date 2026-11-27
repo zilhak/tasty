@@ -202,20 +202,15 @@ fn webview_key_holder_publish_sites() {
         menu.contains("let(state,bridge)=(&mutself.state,&self.webview_key_bridge);letpolled=publish_before_gtk_pump(state,engine.core,bridge,bound,||handle.poll());"),
         "메뉴 poll 이 게시 뒤가 아니다: {menu}"
     );
-    let synchronize = squeeze(
+    let stale = squeeze(
         &fn_body(
-            &read("src/app/webview_sync.rs"),
-            "pub(crate) fn synchronize(",
+            &read("src/app/webview_sync/key_release.rs"),
+            "pub(crate) fn drop_stale_views<",
         )
-        .expect("synchronize"),
-    );
-    assert_eq!(
-        synchronize.matches("dropped").count(),
-        4,
-        "지운 view 를 다른 자리에서 버린다"
+        .expect("drop_stale_views"),
     );
     assert!(
-        synchronize.contains("let(state,bridge)=(&mutview.state,&view.webview_key_bridge);key_release::publish_before_gtk_pump(state,engine.core,bridge,&bound,||drop(dropped));"),
-        "맞지 않은 view 의 Drop 이 게시 뒤가 아니다: {synchronize}"
+        stale.contains("publish_before_gtk_pump(state,core,bridge,bound,||drop(view));"),
+        "맞지 않은 view 의 Drop 이 게시 뒤가 아니다: {stale}"
     );
 }

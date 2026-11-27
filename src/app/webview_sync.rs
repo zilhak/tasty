@@ -97,20 +97,18 @@ pub(crate) fn synchronize(
     let stale: Vec<_> = (view.webviews.keys().copied())
         .filter(|sid| !bound.contains(sid))
         .collect();
-    let mut dropped = Vec::new();
+    let (state, bridge, wvs) = (
+        &mut view.state,
+        &view.webview_key_bridge,
+        &mut view.webviews,
+    );
+    key_release::drop_stale_views(state, engine.core, bridge, &bound, wvs, &stale);
     for surface in stale {
-        dropped.extend(view.webviews.remove(&surface));
-        view.webview_key_bridge.retire_view(surface);
         view.webview_runtime.remove(&surface);
         view.webview_loaded_urls.remove(&surface);
         view.webview_applied_settings.remove(&surface);
         view.webview_create_attempts.remove(&surface);
         proofs.invalidate(&view.state.webview_identity, surface);
-    }
-    if !dropped.is_empty() {
-        // view 의 Drop 은 GTK 대기 이벤트를 비운다. 그 안의 키 신호는 이 프레임의 덮개·포커스로 판정한다.
-        let (state, bridge) = (&mut view.state, &view.webview_key_bridge);
-        key_release::publish_before_gtk_pump(state, engine.core, bridge, &bound, || drop(dropped));
     }
     #[cfg(any(target_os = "linux", target_os = "macos", windows))]
     view.http_preparing.retain(|_, pending| pending.current());

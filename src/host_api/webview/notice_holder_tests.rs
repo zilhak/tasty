@@ -156,6 +156,45 @@ fn a_gtk_pump_judges_its_edit_keys_with_the_state_before_the_pump() {
     assert!(!ran, "새 창 덮개 밑 B 의 붙여넣기가 펌프 안에서 열린다");
 }
 
+/// Given binding 이 맞지 않은 view A·B 가 있고 A 의 Drop 이 펌프를 돌며 그 안에서 아직 남은 B 가 누름 알림을 넣는다,
+/// When 동기화가 둘을 지우면(`drop_stale_views`), Then 끝난 뒤 대기열에 B 의 항목이 없어 같은 surface 로 새로 만든
+/// view 가 옛 B 의 누름을 받지 않는다. 대조: B 가 지울 view 가 아니면 그 누름은 남는다.
+#[test]
+fn a_press_queued_while_an_earlier_stale_view_drops_is_retired_with_its_view() {
+    use crate::app::webview_sync::key_release::{Bindings, drop_stale_views};
+    struct Pumping<'a> {
+        bridge: &'a WebViewKeyBridge,
+        press: Option<u32>,
+    }
+    impl Drop for Pumping<'_> {
+        fn drop(&mut self) {
+            if let Some(sid) = self.press {
+                self.bridge.note_press(sid);
+            }
+        }
+    }
+    for (stale, left) in [(&[A, B][..], false), (&[A][..], true)] {
+        let (mut state, mut session) = two_surfaces();
+        let engine = session.borrow_mut();
+        let bridge = published(&mut state, engine.core);
+        let pumping = |press| Pumping {
+            bridge: &bridge,
+            press,
+        };
+        let mut views =
+            std::collections::HashMap::from([(A, pumping(Some(B))), (B, pumping(None))]);
+        drop_stale_views(
+            &mut state,
+            engine.core,
+            &bridge,
+            &Bindings::new(),
+            &mut views,
+            stale,
+        );
+        assert_eq!(bridge.has_pending_press(), left, "지운 view {stale:?}");
+    }
+}
+
 /// 알림 순서: 같은 surface 의 누름·포커스 획득은 어느 순서든 그 surface, 뒤 surface 의 포커스 획득은 그 surface, 뒤의
 /// 무효 누름은 앞 값을 지킨다.
 #[test]
