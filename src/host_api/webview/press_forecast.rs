@@ -59,7 +59,7 @@ enum Node {
 }
 
 /// 게시된 키 쥘 곳 `holder` 에서 출발해 `inputs` 의 누름 알림을 도착 순서대로 `forecast` 로 적용한 키 쥘 곳. 무효
-/// 알림은 건너뛴다(앞 값을 되살리지 않는다). 전달 키는 건너뛴다(그 효과는 소비가 게시한다, S6c 질문 2).
+/// 알림은 건너뛴다(앞 값을 되살리지 않는다). 전달 키는 건너뛴다(전달 키의 효과는 그 키를 소비한 자리의 게시가 정한다).
 pub(crate) fn holder_after_notices<'a>(
     forecast: &PressForecast,
     holder: Option<u32>,

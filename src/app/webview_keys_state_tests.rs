@@ -666,7 +666,7 @@ fn a_consumed_shortcut_publishes_before_the_next_edit_key() {
     }
 }
 
-/// X1 한계(S6c 질문 2): Given WebView 가 키 쥘 곳인 창, When Ctrl+Shift+P 가 대기열에 든 채 아직 소비되지 않았을 때 같은
+/// X1 한계: Given WebView 가 키 쥘 곳인 창, When Ctrl+Shift+P 가 대기열에 든 채 아직 소비되지 않았을 때 같은
 /// WebView 의 Ctrl+V 가 native 콜백으로 오면, Then 그 Ctrl+V 는 지금 게시값(그 WebView)으로 판정돼 막히지 않는다. 앞
 /// 단축키가 소비되기 전의 경계는 이 판이 다루지 않는다(그 자리 판정 그대로).
 #[test]
