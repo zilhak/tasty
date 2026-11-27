@@ -19,7 +19,7 @@ use crate::state::MainViewState;
 use crate::theme;
 use crate::theme::Theme;
 use tasty_portscan::PortState;
-use tasty_ui_widgets::tokens::{STRUCT_GAP_1, STRUCT_GAP_2, STRUCT_GAP_4, TAG_PILL_CORNER_RADIUS};
+use tasty_ui_widgets::tokens::{STRUCT_GAP_2, STRUCT_GAP_4, TAG_PILL_CORNER_RADIUS};
 use tasty_ui_widgets::{
     Button, ButtonVariant, ControlSize, IconButton, IconButtonVariant, Input, PortsColumn,
     StatusKind, TableAlign, TableColumn, TableColumnWidth, TableSortDir, checkbox, hspace,
@@ -1112,8 +1112,8 @@ fn draw_header_count_tag(ui: &mut egui::Ui, th: &Theme, text: &str) {
     egui::Frame::default()
         .fill(th.accent_primary().into())
         .corner_radius(TAG_PILL_CORNER_RADIUS)
-        // structural: 검색줄 control-internal nudge (size-4/size-1), spacing 리듬 아님.
-        .inner_margin(margin_sym(STRUCT_GAP_4, STRUCT_GAP_1))
+        // structural: 검색줄 control-internal nudge (size-4), spacing 리듬 아님. 높이는 부른 쪽 칸(tag-size)이다.
+        .inner_margin(margin_sym(STRUCT_GAP_4, LogicalPx(0.0)))
         .show(ui, |ui| {
             ui.label(
                 egui::RichText::new(text)
@@ -1200,7 +1200,9 @@ fn draw_header_row(ui: &mut egui::Ui, props: &PortScannerProps<'_>) -> Option<Po
                 .strong(),
         );
         if let Some(tag) = header_tag_text(props) {
-            draw_header_count_tag(ui, th, &tag);
+            // 가운데 정렬 줄 안의 Frame 은 받은 칸의 높이를 다 채우므로 정본 Tag 높이(tag-size)의 칸에 그린다.
+            let size = egui::vec2(ui.available_width(), th.tag_size().value());
+            ui.allocate_ui_with_layout(size, row_layout, |ui| draw_header_count_tag(ui, th, &tag));
         }
     });
     out
@@ -3296,6 +3298,7 @@ mod tests {
         heading_drawn: egui::Rect,
         heading_visible: egui::Rect,
         count_visible: egui::Rect,
+        pill_drawn: egui::Rect,
     }
 
     fn header_rects(theme: &Theme, width: f32) -> HeaderRects {
@@ -3357,7 +3360,7 @@ mod tests {
                 _ => None,
             })
             .unwrap_or(egui::Rect::NOTHING);
-        let pill_visible = shapes
+        let (pill_drawn, pill_visible) = shapes
             .iter()
             .find_map(|(clip, s)| match s {
                 egui::epaint::Shape::Rect(r)
@@ -3365,11 +3368,11 @@ mod tests {
                         && in_row(&r.rect)
                         && r.rect.left() < filter.left() =>
                 {
-                    Some(r.rect.intersect(*clip))
+                    Some((r.rect, r.rect.intersect(*clip)))
                 }
                 _ => None,
             })
-            .unwrap_or(egui::Rect::NOTHING);
+            .unwrap_or((egui::Rect::NOTHING, egui::Rect::NOTHING));
         let heading_visible = heading_drawn.intersect(heading_clip);
         let left = vec![
             ("port icon", port_icon.intersect(port_clip)),
@@ -3384,6 +3387,7 @@ mod tests {
             heading_drawn,
             heading_visible,
             count_visible,
+            pill_drawn,
         }
     }
 
@@ -3442,6 +3446,19 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// 개수 Tag 배경은 정본 Tag 높이(tag-size)로 그린다. 머리 줄 높이(입력 높이)까지 늘지 않는다.
+    #[test]
+    fn the_count_tag_is_drawn_at_the_tag_size_height() {
+        let theme = test_theme();
+        let h = header_rects(&theme, 660.0);
+        assert_eq!(
+            h.pill_drawn.height(),
+            theme.tag_size().value(),
+            "개수 Tag 배경 높이가 tag-size 가 아니다(필터 높이 {})",
+            h.filter.height()
+        );
     }
 
     // ---- 머리·열 선택기 키 순서(팝업 층 하네스). 문구는 i18n 으로 읽는다. ----
