@@ -55,7 +55,7 @@ Run `tasty claude quiet --secs <s>` or ``a `<s>` b`` before Tom & Jerry.
 
 An unmatched ` backtick keeps <s> escaped.
 
-An escaped \` does not open a span <s>.
+An escaped \` does not open a span <s> before this ` one.
 
 A span can wrap `--secs
 <s>` across lines.
@@ -65,7 +65,7 @@ Run `tasty claude quiet --secs <s>` or ``a `<s>` b`` before Tom &amp; Jerry.
 
 An unmatched ` backtick keeps &lt;s&gt; escaped.
 
-An escaped \` does not open a span &lt;s&gt;.
+An escaped \` does not open a span &lt;s&gt; before this ` one.
 
 A span can wrap `--secs
 <s>` across lines.
@@ -118,6 +118,99 @@ Fix the reported issue.
 Add the new feature.
 EOF
 check '끝의 트레일러 블록은 뺀다' "$m" "$w"
+
+cat > "$m" <<'EOF'
+chore: bump version to 9.9.9
+
+````
+```
+c & <d>
+~~~~
+a <b>
+````` & <c>
+`````
+
+Between <s> & more.
+
+~~~
+x <y>
+~~
+````
+~~~~ after <z>
+EOF
+cat > "$w" <<'EOF'
+````
+```
+c & <d>
+~~~~
+a <b>
+````` & <c>
+`````
+
+Between &lt;s&gt; &amp; more.
+
+~~~
+x <y>
+~~
+````
+~~~~ after <z>
+EOF
+check '짧거나 다른 문자의 줄은 펜스를 닫지 않는다' "$m" "$w"
+
+cat > "$m" <<'EOF'
+chore: bump version to 9.9.9
+
+Run this:
+
+    tasty claude quiet --secs <s> && echo done
+
+    second <line>
+Back to text <s>.
+
+- A list item with <s>
+
+    continued list text <s>
+
+After the list <s>.
+
+    code again <s>
+EOF
+cat > "$w" <<'EOF'
+Run this:
+
+    tasty claude quiet --secs <s> && echo done
+
+    second <line>
+Back to text &lt;s&gt;.
+
+- A list item with &lt;s&gt;
+
+    continued list text &lt;s&gt;
+
+After the list &lt;s&gt;.
+
+    code again <s>
+EOF
+check '들여쓴 코드 블록은 그대로, 목록 이어 쓰기는 엔터티로' "$m" "$w"
+
+cat > "$m" <<'EOF'
+chore: bump version to 9.9.9
+
+Fix the reported issue.
+
+Keep the crash fix note in the release
+notes even next to trailers.
+Signed-off-by: Fixture <fixture@example.invalid>
+Co-Authored-By: Someone
+  <someone@example.invalid>
+EOF
+cat > "$w" <<'EOF'
+Fix the reported issue.
+
+Keep the crash fix note in the release
+notes even next to trailers.
+EOF
+check '섞인 트레일러 블록은 트레일러와 접힌 줄만 뺀다' "$m" "$w"
 
 cat > "$m" <<'EOF'
 chore: bump version to 9.9.9
