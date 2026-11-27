@@ -220,12 +220,13 @@ function htmlp(    k, r) {
 }
 # 본문에 드문 표지(머리 주석의 목록)가 있는가. 표는 | 로 시작하는 줄이나 구분 행이 있는 블록 전체(머리 행 포함)에서
 # 백슬래시를 찾는다. GitHub 는 칸을 나누기 전에 \| 를 따로 읽어 \\| 같은 겹 백슬래시에서 칸 경계를 다르게 본다.
+# 검사 범위는 트레일러를 뺀 뒤 남은 본문 줄 line[1..nb] 전체다(끝의 빈 줄 포함, 지운 트레일러 줄 제외).
 function rare(    k, t, j, tb, bs, c, u) {
     tb = 0; bs = 0
-    for (k = 1; k <= last + 1; k++) {
-        t = line[k]
+    for (k = 1; k <= nb + 1; k++) {
+        t = (k <= nb) ? line[k] : ""
         if (index(t, "\t") || index(t, "\r") || index(t, "````") || index(t, "~~~~")) return 1
-        if (k > last || blank(t)) { if (tb && bs) return 1; tb = 0; bs = 0; continue }
+        if (k > nb || blank(t)) { if (tb && bs) return 1; tb = 0; bs = 0; continue }
         if ((j = index(t, "[^")) && index(substr(t, j), "]:")) return 1
         if (index(t, "\\")) bs = 1
         # 한 줄에서 여는 목록·인용 표지를 센다. GitHub(cmark-gfm)는 한 줄에서 여는 컨테이너 수에 한계가 있다.
@@ -250,6 +251,8 @@ END {
     HTML_TAGS = " address article aside base basefont blockquote body caption center col colgroup dd details dialog dir div dl dt fieldset figcaption figure footer form frame frameset h1 h2 h3 h4 h5 h6 head header hr html iframe legend li link main menu menuitem nav noframes ol optgroup option p param pre script section source style summary table tbody td textarea tfoot th thead title tr track ul "
     for (k = 1; k <= count; k++) if (index(line[k], "]:")) HAS_DEF = 1
     PUNCT = "!\"#$%&\047()*+,-./:;<=>?@[\\]^_`{|}~"
+    # nb 는 남은 본문 줄 수(표지 검사 범위), last 는 끝의 빈 줄을 뺀 줄 수(출력 범위)다.
+    nb = count
     last = count
     while (last > 0 && blank(line[last])) last--
     if (strip == 1) {
@@ -286,6 +289,7 @@ END {
         if (keep == 0) while (tail <= count && blank(line[tail])) tail++
         for (k = tail; k <= count; k++) out[++n] = line[k]
         for (k = 1; k <= n; k++) line[k] = out[k]
+        nb = n
         last = n
         while (last > 0 && blank(line[last])) last--
     }

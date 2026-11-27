@@ -671,6 +671,15 @@ printf 'chore: bump version to 9.9.9\n\n%s```<s>\n' "$deep" > "$m"
 printf '%s```&lt;s&gt;\n' "$deep" > "$w"
 check '한 줄에서 목록 표지를 10개 이상 여는 본문은 본문 전체를 엔터티로' "$m" "$w"
 
+# 표지는 트레일러를 뺀 뒤 남은 본문 줄에서만 찾는다. 메시지 끝에 LF 가 없어 지운 트레일러 줄이 바로 뒤에 남는 경우다.
+printf 'chore: bump version to 9.9.9\n\nFix `<s>` here.\n\nA-b: 1\nB-c: 2\tx\nC-d: 3\n#' > "$m"
+printf 'Fix `<s>` here.\n\n#\n' > "$w"
+check '지운 트레일러 줄의 탭은 표지로 보지 않는다' "$m" "$w"
+
+printf 'chore: bump version to 9.9.9\n\nKeep `<s>`.\n\n\t\n' > "$m"
+printf 'Keep `&lt;s&gt;`.\n' > "$w"
+check '끝의 빈 줄 뒤에만 있는 탭도 표지로 본다' "$m" "$w"
+
 # Git 은 CR 을 줄 끝으로 보지 않는다. 가위 줄·Conflicts: 줄만 CRLF 로 끝나면 Git 에는 그 줄이 그 꼴이 아니다.
 printf 'chore: bump version to 9.9.9\n\nSigned-off-by: A <a@example.invalid>\n\n# ------------------------ >8 ------------------------\r\nCo-Authored-By: B <b@example.invalid>\n' > "$m"
 printf 'Signed-off-by: A &lt;a@example.invalid&gt;\n\n# ------------------------ &gt;8 ------------------------\n' > "$w"
