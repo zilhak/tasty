@@ -278,3 +278,45 @@ fn a_cover_opened_with_the_only_close_keeps_the_closed_floor_for_its_first_pass(
         "패스 끝이 C 를 하한으로 등록했다"
     );
 }
+
+/// Codex 8: Given 팔레트(A)가 그려져 있고 지난 패스 끝 하한이 그 패스 순서에 없는 덮개 B 의 막이 레이어다(B 는 열렸지만
+/// 아직 그려지지 않았다), When 다음 패스 전에 B 를 닫으면, Then 그 아래에 놓일 덮개가 없다(포크는 순서에 없는 레이어를
+/// 순서 있는 레이어보다 낮게 비교한다). 살아 있는 A 가 있으므로 하한 B 를 그대로 둔다(A 로 올리지 않는다). 포크의
+/// 등록(`set_modal_layer`)은 순서 있는 레이어가 이미 등록된 패스에서 순서 없는 B 를 받지 않으므로, 이 시험은 지난 패스 끝
+/// 하한을 포크 패치(`sync_top_modal_layer`)로 B 로 둔다. 대조: B 가 그려진 뒤 닫히면 A 로 내린다
+/// (`a_cover_opened_with_the_close_keeps_the_live_cover_below_as_the_floor`).
+#[test]
+fn a_closed_floor_that_was_never_drawn_has_no_cover_below_it() {
+    use crate::adapters::ui::tutorial::topic_popup::TUTORIAL_TOPICS_POPUP_ID;
+    let (mut state, mut session) = scene(PANE_L);
+    for def in defs::all_defs() {
+        state.popups.register_def(def, 1.0);
+    }
+    let engine = session.borrow_mut();
+    let read = engine.read();
+    let ctx = egui::Context::default();
+    let mut input = WindowInput::default();
+    let mut side = String::new();
+    let palette = open_palette(&mut state);
+    drain(&ctx, &mut state, &read, &mut input, &mut side);
+    drain(&ctx, &mut state, &read, &mut input, &mut side);
+    let topics = open_window(&mut state, TUTORIAL_TOPICS_POPUP_ID);
+    let b = cover_block(TUTORIAL_TOPICS_POPUP_ID, topics);
+    ctx.memory_mut(|m| m.sync_top_modal_layer(Some(b)));
+    assert!(
+        ctx.memory(|m| m.layer_ids().all(|l| l != b)),
+        "대조: B 는 지난 패스 순서에 없다"
+    );
+    state.popups.close_instance(
+        topics,
+        crate::adapters::ui::popup::PopupCloseReason::Command,
+    );
+    state.normalize_focus(&read);
+    let floor = floor_in_pass(&ctx, &mut state, &read, &mut input, &mut side);
+    assert_ne!(
+        floor,
+        Some(cover_block(COMMAND_PALETTE_POPUP_ID, palette)),
+        "순서에 없는 닫힌 하한을 A 로 올렸다"
+    );
+    assert_eq!(floor, Some(b), "살아 있는 덮개가 있는데 하한을 바꿨다");
+}

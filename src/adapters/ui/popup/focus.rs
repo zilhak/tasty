@@ -245,10 +245,9 @@ impl PopupManager {
         let live: Vec<egui::LayerId> = self.window_cover_layers().map(|(layer, _)| layer).collect();
         let below = ctx.memory(|m| {
             let order: Vec<egui::LayerId> = m.layer_ids().collect();
-            let top = order
-                .iter()
-                .position(|l| *l == floor)
-                .unwrap_or(order.len());
+            // 지난 패스에 그려지지 않은 하한은 순서에 없다. 포크는 순서에 없는 레이어를 순서 있는 레이어보다 낮게
+            // 비교하므로 그 하한 아래에 놓일 덮개는 없다.
+            let top = order.iter().position(|l| *l == floor)?;
             (order[..top].iter().rev())
                 .find(|l| live.contains(l) && m.areas().visible_last_frame(l))
                 .copied()
