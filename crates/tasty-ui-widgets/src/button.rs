@@ -475,12 +475,24 @@ mod tests {
                         .show(ui, theme);
                 });
             });
-            boxes = out
+            let rects: Vec<egui::epaint::RectShape> = out
                 .shapes
                 .into_iter()
                 .filter_map(|c| match c.shape {
-                    egui::Shape::Rect(r) if r.stroke.width > 0.0 => Some((r.fill, r.stroke.color)),
+                    egui::Shape::Rect(r) => Some(r),
                     _ => None,
+                })
+                .collect();
+            // Button은 채움과 테두리를 따로 그린다. 테두리 사각형과 같은 자리의 채움 사각형을 짝짓는다.
+            boxes = rects
+                .iter()
+                .filter(|r| r.stroke.width > 0.0)
+                .map(|edge| {
+                    let fill = rects
+                        .iter()
+                        .find(|r| r.rect == edge.rect && r.stroke.width == 0.0)
+                        .map_or(egui::Color32::TRANSPARENT, |r| r.fill);
+                    (fill, edge.stroke.color)
                 })
                 .collect();
         }
