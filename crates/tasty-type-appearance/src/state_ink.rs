@@ -4,7 +4,7 @@
 //! `-on-active`는 선택 행과 그 hover·press에서 등급을 유지한다.
 
 use crate::color::HexColor;
-use crate::theme::{TINT_BORDER_ALPHA, TINT_FILL_ALPHA, Theme, mix_srgb};
+use crate::theme::{TINT_BORDER_ALPHA, TINT_FILL_ALPHA, Theme, mix_srgb_premultiplied};
 
 /// color-mix가 섞는 DTCG `primitive.color-black`.
 const BLACK: HexColor = crate::hex!("#000000");
@@ -38,7 +38,7 @@ impl Theme {
     pub fn text_on_active(&self) -> HexColor {
         self.band(
             self.text_primary(),
-            mix_srgb(self.text_primary(), 0.7, BLACK),
+            mix_srgb_premultiplied(self.text_primary(), 70, BLACK),
         )
     }
 
@@ -46,8 +46,8 @@ impl Theme {
     #[inline]
     pub fn accent_primary_on_active(&self) -> HexColor {
         self.band(
-            mix_srgb(self.accent_primary(), 0.65, WHITE),
-            mix_srgb(self.accent_primary(), 0.65, BLACK),
+            mix_srgb_premultiplied(self.accent_primary(), 65, WHITE),
+            mix_srgb_premultiplied(self.accent_primary(), 65, BLACK),
         )
     }
 
@@ -56,7 +56,7 @@ impl Theme {
     pub fn accent_warning_raised(&self) -> HexColor {
         self.band(
             self.accent_warning(),
-            mix_srgb(self.accent_warning(), 0.5, BLACK),
+            mix_srgb_premultiplied(self.accent_warning(), 50, BLACK),
         )
     }
 
@@ -65,7 +65,7 @@ impl Theme {
     pub fn accent_attention_raised(&self) -> HexColor {
         self.band(
             self.accent_attention(),
-            mix_srgb(self.accent_attention(), 0.55, BLACK),
+            mix_srgb_premultiplied(self.accent_attention(), 55, BLACK),
         )
     }
 
@@ -74,7 +74,7 @@ impl Theme {
     pub fn accent_info_raised(&self) -> HexColor {
         self.band(
             self.accent_info(),
-            mix_srgb(self.accent_info(), 0.55, BLACK),
+            mix_srgb_premultiplied(self.accent_info(), 55, BLACK),
         )
     }
 
@@ -93,7 +93,7 @@ impl Theme {
     pub fn accent_warning_on_active(&self) -> HexColor {
         self.band(
             self.accent_warning(),
-            mix_srgb(self.accent_warning(), 0.45, BLACK),
+            mix_srgb_premultiplied(self.accent_warning(), 45, BLACK),
         )
     }
 
@@ -102,7 +102,7 @@ impl Theme {
     pub fn accent_success_on_active(&self) -> HexColor {
         self.band(
             self.accent_success(),
-            mix_srgb(self.accent_success(), 0.55, BLACK),
+            mix_srgb_premultiplied(self.accent_success(), 55, BLACK),
         )
     }
 
@@ -110,8 +110,8 @@ impl Theme {
     #[inline]
     pub fn accent_danger_on_active(&self) -> HexColor {
         self.band(
-            mix_srgb(self.accent_danger(), 0.6, WHITE),
-            mix_srgb(self.accent_danger(), 0.7, BLACK),
+            mix_srgb_premultiplied(self.accent_danger(), 60, WHITE),
+            mix_srgb_premultiplied(self.accent_danger(), 70, BLACK),
         )
     }
 
@@ -119,8 +119,8 @@ impl Theme {
     #[inline]
     pub fn accent_agent_on_active(&self) -> HexColor {
         self.band(
-            mix_srgb(self.accent_agent(), 0.7, WHITE),
-            mix_srgb(self.accent_agent(), 0.7, BLACK),
+            mix_srgb_premultiplied(self.accent_agent(), 70, WHITE),
+            mix_srgb_premultiplied(self.accent_agent(), 70, BLACK),
         )
     }
 
@@ -135,7 +135,7 @@ impl Theme {
     pub fn accent_attached_raised(&self) -> HexColor {
         self.band(
             self.border_attached(),
-            mix_srgb(self.border_attached(), 0.55, BLACK),
+            mix_srgb_premultiplied(self.border_attached(), 55, BLACK),
         )
     }
 
@@ -143,8 +143,8 @@ impl Theme {
     #[inline]
     pub fn accent_attached_on_active(&self) -> HexColor {
         self.band(
-            mix_srgb(self.border_attached(), 0.85, WHITE),
-            mix_srgb(self.border_attached(), 0.5, BLACK),
+            mix_srgb_premultiplied(self.border_attached(), 85, WHITE),
+            mix_srgb_premultiplied(self.border_attached(), 50, BLACK),
         )
     }
 
@@ -157,7 +157,10 @@ impl Theme {
     /// 빈 컨트롤을 알아보게 하는 테두리. `semantic.border-control`.
     #[inline]
     pub fn border_control(&self) -> HexColor {
-        self.band(self.overlay0, mix_srgb(self.overlay2, 0.85, self.text))
+        self.band(
+            self.overlay0,
+            mix_srgb_premultiplied(self.overlay2, 85, self.text),
+        )
     }
 
     /// raised 위 컨트롤 테두리. `semantic.border-control-raised`.
@@ -199,7 +202,7 @@ impl Theme {
     /// 선택 행의 hover·press 글자. `semantic.text-on-active-hover`.
     #[inline]
     pub fn text_on_active_hover(&self) -> HexColor {
-        self.band(WHITE, mix_srgb(self.text, 0.6, BLACK))
+        self.band(WHITE, mix_srgb_premultiplied(self.text, 60, BLACK))
     }
 
     /// 한발 물러난 글자. `semantic.text-quiet`.
@@ -231,7 +234,7 @@ impl Theme {
     pub fn accent_primary_raised(&self) -> HexColor {
         self.band(
             self.accent_primary(),
-            mix_srgb(self.accent_primary(), 0.7, BLACK),
+            mix_srgb_premultiplied(self.accent_primary(), 70, BLACK),
         )
     }
 
@@ -240,7 +243,7 @@ impl Theme {
     pub fn accent_agent_raised(&self) -> HexColor {
         self.band(
             self.accent_agent(),
-            mix_srgb(self.accent_agent(), 0.8, BLACK),
+            mix_srgb_premultiplied(self.accent_agent(), 80, BLACK),
         )
     }
 
@@ -261,7 +264,7 @@ impl Theme {
     pub fn accent_move_raised(&self) -> HexColor {
         self.band(
             self.accent_move(),
-            mix_srgb(self.accent_move(), 0.55, BLACK),
+            mix_srgb_premultiplied(self.accent_move(), 55, BLACK),
         )
     }
 
@@ -275,8 +278,8 @@ impl Theme {
     #[inline]
     pub fn accent_primary_strong(&self) -> HexColor {
         self.band(
-            mix_srgb(self.accent_primary(), 0.85, WHITE),
-            mix_srgb(self.accent_primary(), 0.65, BLACK),
+            mix_srgb_premultiplied(self.accent_primary(), 85, WHITE),
+            mix_srgb_premultiplied(self.accent_primary(), 65, BLACK),
         )
     }
 
@@ -285,7 +288,7 @@ impl Theme {
     pub fn accent_info_strong(&self) -> HexColor {
         self.band(
             self.accent_info(),
-            mix_srgb(self.accent_info(), 0.45, BLACK),
+            mix_srgb_premultiplied(self.accent_info(), 45, BLACK),
         )
     }
 
@@ -294,7 +297,7 @@ impl Theme {
     pub fn accent_success_strong(&self) -> HexColor {
         self.band(
             self.accent_success(),
-            mix_srgb(self.accent_success(), 0.5, BLACK),
+            mix_srgb_premultiplied(self.accent_success(), 50, BLACK),
         )
     }
 
@@ -303,7 +306,7 @@ impl Theme {
     pub fn accent_warning_strong(&self) -> HexColor {
         self.band(
             self.accent_warning(),
-            mix_srgb(self.accent_warning(), 0.45, BLACK),
+            mix_srgb_premultiplied(self.accent_warning(), 45, BLACK),
         )
     }
 
@@ -312,7 +315,7 @@ impl Theme {
     pub fn accent_attention_strong(&self) -> HexColor {
         self.band(
             self.accent_attention(),
-            mix_srgb(self.accent_attention(), 0.45, BLACK),
+            mix_srgb_premultiplied(self.accent_attention(), 45, BLACK),
         )
     }
 
@@ -320,8 +323,8 @@ impl Theme {
     #[inline]
     pub fn accent_danger_strong(&self) -> HexColor {
         self.band(
-            mix_srgb(self.accent_danger(), 0.75, WHITE),
-            mix_srgb(self.accent_danger(), 0.7, BLACK),
+            mix_srgb_premultiplied(self.accent_danger(), 75, WHITE),
+            mix_srgb_premultiplied(self.accent_danger(), 70, BLACK),
         )
     }
 
@@ -329,8 +332,8 @@ impl Theme {
     #[inline]
     pub fn accent_agent_strong(&self) -> HexColor {
         self.band(
-            mix_srgb(self.accent_agent(), 0.9, WHITE),
-            mix_srgb(self.accent_agent(), 0.65, BLACK),
+            mix_srgb_premultiplied(self.accent_agent(), 90, WHITE),
+            mix_srgb_premultiplied(self.accent_agent(), 65, BLACK),
         )
     }
 
@@ -339,7 +342,7 @@ impl Theme {
     pub fn accent_attached_strong(&self) -> HexColor {
         self.band(
             self.border_attached(),
-            mix_srgb(self.border_attached(), 0.5, BLACK),
+            mix_srgb_premultiplied(self.border_attached(), 50, BLACK),
         )
     }
 
@@ -352,15 +355,18 @@ impl Theme {
     /// `semantic.accent-info-on-active`.
     #[inline]
     pub fn accent_info_on_active(&self) -> HexColor {
-        self.band(self.accent_info(), mix_srgb(self.accent_info(), 0.5, BLACK))
+        self.band(
+            self.accent_info(),
+            mix_srgb_premultiplied(self.accent_info(), 50, BLACK),
+        )
     }
 
     /// `semantic.accent-attention-on-active`.
     #[inline]
     pub fn accent_attention_on_active(&self) -> HexColor {
         self.band(
-            mix_srgb(self.accent_attention(), 0.85, WHITE),
-            mix_srgb(self.accent_attention(), 0.5, BLACK),
+            mix_srgb_premultiplied(self.accent_attention(), 85, WHITE),
+            mix_srgb_premultiplied(self.accent_attention(), 50, BLACK),
         )
     }
 
@@ -369,7 +375,7 @@ impl Theme {
     pub fn accent_move_on_active(&self) -> HexColor {
         self.band(
             self.accent_move(),
-            mix_srgb(self.accent_move(), 0.45, BLACK),
+            mix_srgb_premultiplied(self.accent_move(), 45, BLACK),
         )
     }
 
@@ -384,7 +390,7 @@ impl Theme {
     pub fn accent_success_fill(&self) -> HexColor {
         self.band(
             self.accent_success(),
-            mix_srgb(self.accent_success(), 0.75, BLACK),
+            mix_srgb_premultiplied(self.accent_success(), 75, BLACK),
         )
     }
 
@@ -483,7 +489,7 @@ impl Theme {
     pub fn accent_data_strong(&self) -> HexColor {
         self.band(
             self.accent_data(),
-            mix_srgb(self.accent_data(), 0.85, BLACK),
+            mix_srgb_premultiplied(self.accent_data(), 85, BLACK),
         )
     }
 
@@ -526,7 +532,7 @@ impl Theme {
     /// 포인터가 올라간 비활성 탭. `component.tab-bg-hover`.
     #[inline]
     pub fn tab_bg_hover(&self) -> HexColor {
-        mix_srgb(self.bg_panel(), 0.6, self.bg_sidebar())
+        mix_srgb_premultiplied(self.bg_panel(), 60, self.bg_sidebar())
     }
 }
 
