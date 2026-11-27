@@ -54,7 +54,7 @@ Popup 은 View 내부에 존재하는 가상 창이다 — 터미널과 공존�
 
 | 대상 | 순서 적용 방법 |
 |---|---|
-| 셸 배경·제목·테두리 | raw layer는 호출 순서만으로 정렬되지 않아 `enforce_host_plugin_popup_z_order`가 set_sublayer로 순서를 지정한다. |
+| 셸 배경·제목·테두리 | raw layer는 호출 순서만으로 정렬되지 않아 `enforce_host_plugin_popup_z_order`가 set_sublayer로 순서를 지정한다. 위 묶음 전체를 아래 묶음의 맨 위 레이어 하나에만 건다. 덮는 plugin 팝업의 덮음 막이는 셸 아래에 둔다. |
 | 플러그인 GPU 콘텐츠 | `render_egui_pass_and_mesh_popups`가 같은 판정으로 host egui와 plugin mesh pass 순서를 정한다. |
 | 자기 콘텐츠 보호 | plugin 셸 배경을 콘텐츠를 제외한 네 사각형으로 그려, 먼저 그린 자기 콘텐츠를 덮지 않는다. |
 | 클릭·hover·드래그·닫힘 | `occlusion.rs::point_ownership`이 좌표마다 popup 쌍의 z_seq를 비교한다. |

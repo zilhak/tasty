@@ -176,6 +176,8 @@ Background에도 적용되는 것은 아니다. plugin이 자유 위치 오버�
 기본적으로 raw `layer_painter`를 쓴다. 전체 화면 scrim을 등록된 Foreground 위젯보다
 위에 그리기 위해 Area에 등록하지 않는다. 위젯 트리 없이 `collect_mesh_popup_input`이
 raw 이벤트를 plugin으로 전달하므로 host Area의 스크롤·hover 라우팅도 필요하지 않다.
+덮는 팝업은 셸 아래에 덮음 막이 Area를 둔다. 막이 Area는 다시 보인 패스에 egui가 혼자 맨 위로
+올리므로, 그 패스에는 셸도 함께 올려 막이가 셸 아래에 남게 한다(`popup_render/cover_layers.rs`).
 
 이 popup을 Area에 등록하려면 상대 순서도 함께 정해야 한다. 등록만 하면 먼저 등록된
 Banner나 상태바보다 아래에 그려질 수 있다.
@@ -183,8 +185,11 @@ Banner나 상태바보다 아래에 그려질 수 있다.
 더 나중에 열리거나 클릭된 host popup(`file_picker` 등)은 예외다.
 `enforce_host_plugin_popup_z_order`(`src/gfx/gpu/egui_bridge.rs`)가 공유
 `z_seq`(`tasty_host_plugin::next_popup_z_seq()`)를 비교하고 `ctx.set_sublayer()`로
-host popup을 위에 배치한다. 이 호출은 parent와 child를 모두 `Areas::order`에
-등록한다. host popup이 없거나 그 `z_seq`가 더 작으면 기본 미등록 경로를 쓴다.
+host popup을 위에 배치한다. 부모는 아래 묶음에서 직전 패스 순서상 맨 위인 레이어 하나다.
+덮는 plugin popup은 막이와 셸 두 레이어라, 둘 다 부모로 걸면 (d)의 1단 제약처럼
+`end_pass`의 HashMap 순서에 따라 패스마다 결과가 달라진다. 이 호출은 parent와 child를
+모두 `Areas::order`에 등록한다. host popup이 없으면 기본 미등록 경로를 쓰고, plugin
+popup의 `z_seq`가 더 크면 같은 방식으로 plugin 묶음을 host 묶음 위에 둔다.
 자세한 규칙은 [popup.md의 Host ↔ Plugin popup z-order](../design/systems/popup.md#host--plugin-popup-z-order)를 따른다.
 
 ### `overlay_open` — 정의 3 개
