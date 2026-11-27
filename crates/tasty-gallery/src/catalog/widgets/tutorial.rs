@@ -670,21 +670,7 @@ pub fn draw_marker(ui: &mut egui::Ui, theme: &Theme) {
             ("highlight", "static glow default · pulse opt-in"),
             ("fires on", "Tools → Tutorial only"),
         ],
-        &[
-            TokenChip::new(
-                "accent-primary",
-                "ring + halo",
-                theme.accent_primary().to_egui(),
-            ),
-            TokenChip::without_color("focus-ring-width", "2px stroke"),
-            TokenChip::new("scrim-bg", "spotlight dim", theme.scrim().to_egui()),
-            TokenChip::without_color("radius", "corner"),
-            TokenChip::new(
-                "border-strong",
-                "callout edge",
-                theme.border_strong().to_egui(),
-            ),
-        ],
+        &marker_tokens(theme),
     );
 
     spec::note(
@@ -696,6 +682,30 @@ pub fn draw_marker(ui: &mut egui::Ui, theme: &Theme) {
          is ON by default (user-disableable); pulse is opt-in and falls back to a static \
          ring under reduced-motion.",
     );
+}
+/// 마커 표본의 "Tokens used" 칩. 링은 accent-primary, 발광 두 겹은 glow 두 토큰으로 칠한다(`paint_marker`).
+fn marker_tokens(theme: &Theme) -> Vec<TokenChip> {
+    vec![
+        TokenChip::new("accent-primary", "ring", theme.accent_primary().to_egui()),
+        TokenChip::new(
+            "tutorial-marker-glow-inner",
+            "halo, 3px spread",
+            theme.tutorial_marker_glow_inner().to_egui(),
+        ),
+        TokenChip::new(
+            "tutorial-marker-glow-outer",
+            "halo, 16px blur",
+            theme.tutorial_marker_glow_outer().to_egui(),
+        ),
+        TokenChip::without_color("focus-ring-width", "2px stroke"),
+        TokenChip::new("scrim-bg", "spotlight dim", theme.scrim().to_egui()),
+        TokenChip::without_color("radius", "corner"),
+        TokenChip::new(
+            "border-strong",
+            "callout edge",
+            theme.border_strong().to_egui(),
+        ),
+    ]
 }
 /// basics 주제의 `id` 단계를 본체 순서의 번호와 본체 문구로 그린다.
 fn basics_callout(ui: &mut egui::Ui, theme: &Theme, tail: Tail, id: &str) -> egui::Rect {

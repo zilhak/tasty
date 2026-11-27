@@ -684,3 +684,36 @@ fn selected_topic_row_border_paints_the_design_token() {
         );
     }
 }
+
+/// 마커 표본 칩 가운데 링·발광 칩이 정본(overlays-tutorial 마커 Meta)의 세 칩과 이름·용도·색이 같은지 본다.
+#[test]
+fn marker_token_chips_name_the_ring_and_both_glow_tokens() {
+    for (name, th) in marker_themes() {
+        let chips: Vec<(&str, &str, Option<egui::Color32>)> = super::marker_tokens(&th)
+            .iter()
+            .filter(|c| c.tok == "accent-primary" || c.tok.starts_with("tutorial-marker-glow"))
+            .map(|c| (c.tok, c.use_, c.color))
+            .collect();
+        assert_eq!(
+            chips,
+            vec![
+                (
+                    "accent-primary",
+                    "ring",
+                    Some(th.accent_primary().to_egui())
+                ),
+                (
+                    "tutorial-marker-glow-inner",
+                    "halo, 3px spread",
+                    Some(th.tutorial_marker_glow_inner().to_egui()),
+                ),
+                (
+                    "tutorial-marker-glow-outer",
+                    "halo, 16px blur",
+                    Some(th.tutorial_marker_glow_outer().to_egui()),
+                ),
+            ],
+            "{name}: 마커 칩"
+        );
+    }
+}
