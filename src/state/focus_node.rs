@@ -70,6 +70,16 @@ pub(crate) struct SegmentAfterCut {
 
 mod press_forecast;
 
+/// 누름 하나가 정한 대상(`MainViewState::apply_press_target`).
+enum PressTarget {
+    /// 포인터 대상이거나 누른 surface 경로를 덮는 팝업 노드.
+    Popup(PopupNode),
+    /// surface 본문·창 크롬. native 누름은 누른 surface 다.
+    Body(Option<u32>),
+    /// 포인터 대상이 팝업 사각형이지만 지금 노드가 없다(닫힘). 팝업 포커스를 바꾸지 않는다.
+    Unresolved,
+}
+
 /// 시험이 읽는 몫 하나의 칸(`MainViewState::segment_slots`).
 #[cfg(test)]
 #[derive(Debug, Clone, PartialEq)]
@@ -203,37 +213,53 @@ impl super::MainViewState {
         button: egui::PointerButton,
     ) -> PressSnapshot {
         let snapshot = PressSnapshot::take(self, core, pos, button);
-        match self.popup_pointer_target(pos) {
-            Some(target) => {
-                if let Some(node) = self.node_of_z(target.z_seq) {
-                    self.popups.focus_on_press(Some(node));
-                }
-            }
-            None => self.popups.focus_on_press(None),
-        }
-        // 누름은 말풍선 키보드 포커스를 끈다. 말풍선을 누른 누름이면 그 패스의 그리기(`draw_tutorial_overlay`)가 다시 켠다.
-        self.tutorial.keyboard_focus = false;
-        self.normalize_focus(core);
+        let target = match self.popup_pointer_target(pos) {
+            Some(target) => match self.node_of_z(target.z_seq) {
+                Some(node) => PressTarget::Popup(node),
+                None => PressTarget::Unresolved,
+            },
+            None => PressTarget::Body(None),
+        };
+        self.apply_press_target(core, target);
         snapshot
     }
 
-    /// native 페이지 본문 누름 하나의 포커스 전이. 창 누름(`take_press_snapshot`)의 본문 갈래와 같은 규칙이다. 그
-    /// surface 경로를 덮는 덮개가 있으면 덮개가 누름을 가진다(포커스 위치는 덮개이고 밑 선택은 그대로다). 없으면 팝업
-    /// 포커스를 놓고(`focus_on_press(None)`), 주소 띠 키 포커스를 놓은 뒤(native 페이지 누름은 egui 가 보지 않아 주소 띠
-    /// 입력칸이 스스로 놓지 않는다) 그 surface 로 선택을 옮긴다. 포커스 위치나 선택이 바뀌었으면 참이다.
+    /// native 페이지 본문 누름 하나의 포커스 전이. 창 누름(`take_press_snapshot`)과 같은 전이(`apply_press_target`)를
+    /// 쓴다. 그 surface 경로를 덮는 덮개가 있으면 창 누름이 덮개를 누른 것과 같다(포커스를 받는 덮개면 포커스 위치가
+    /// 되고 passive 가 풀린다. 밑 선택은 그대로다). 없으면 그 surface 본문 누름이다(native 페이지 누름은 egui 가 보지
+    /// 않아 주소 띠 입력칸이 스스로 놓지 않으므로 전이가 놓는다). 포커스 위치나 선택이 바뀌었으면 참이다.
     pub(crate) fn press_surface_body(&mut self, core: &CoreState, surface_id: u32) -> bool {
         let before = (self.popups.focus(), self.html_address.has_keyboard_focus());
         let path = path_of_scope(core, &PopupScope::Surface(surface_id));
-        if let Some(cover) = self.top_cover_over(&path, None) {
-            self.popups.set_focus(Some(cover));
-            self.normalize_focus(core);
-            return before != (self.popups.focus(), self.html_address.has_keyboard_focus());
-        }
-        self.popups.focus_on_press(None);
-        self.html_address.release_focus();
-        let moved = self.focus_surface_by_id(core, surface_id);
-        self.normalize_focus(core);
+        let target = match self.top_cover_over(&path, None) {
+            Some(cover) => PressTarget::Popup(cover),
+            None => PressTarget::Body(Some(surface_id)),
+        };
+        let moved = self.apply_press_target(core, target);
         moved || before != (self.popups.focus(), self.html_address.has_keyboard_focus())
+    }
+
+    /// 누름 대상 하나의 포커스 전이. 창 누름(`take_press_snapshot`)과 native 본문 누름(`press_surface_body`)이 함께
+    /// 쓴다. 팝업(상자 또는 덮개)이면 그 팝업이 포커스 위치가 되고 passive 가 풀린다(`PopupManager::focus_on_press`).
+    /// 본문이면 팝업 포커스를 놓고, native 누름처럼 surface 가 정해졌으면 주소 띠 키 포커스를 놓은 뒤 선택을 그
+    /// surface 로 옮긴다(창 누름은 egui 위젯이 주소 띠와 선택을 맡는다). 어느 쪽이든 말풍선 키보드 포커스를 끄고(말풍선을
+    /// 누른 누름이면 그 패스의 그리기가 다시 켠다) 정규화한다. 선택이 바뀌었으면 참이다.
+    fn apply_press_target(&mut self, core: &CoreState, target: PressTarget) -> bool {
+        let mut moved = false;
+        match target {
+            PressTarget::Popup(node) => self.popups.focus_on_press(Some(node)),
+            PressTarget::Body(surface) => {
+                self.popups.focus_on_press(None);
+                if let Some(sid) = surface {
+                    self.html_address.release_focus();
+                    moved = self.focus_surface_by_id(core, sid);
+                }
+            }
+            PressTarget::Unresolved => {}
+        }
+        self.tutorial.keyboard_focus = false;
+        self.normalize_focus(core);
+        moved
     }
 
     /// 창이 받은 누름의 스냅샷을 그 누름을 처리할 그리기 몫에 남긴다. 한 몫에는 첫 누름만 남긴다. 입력을 끊었으면

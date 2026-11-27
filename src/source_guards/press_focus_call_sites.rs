@@ -117,12 +117,19 @@ fn a_window_press_moves_the_focus_node_through_the_press_snapshot() {
     );
     let focus = read("src/state/focus_node.rs");
     let take = squeeze(&fn_body(&focus, "fn take_press_snapshot(").expect("take_press_snapshot"));
-    let off = at(
+    at(
         &take,
+        "self.apply_press_target(core,target);",
+        "누름 대상 전이",
+    );
+    // 창 누름과 native 본문 누름이 함께 쓰는 누름 대상 전이(`apply_press_target`)가 끄고 정규화한다.
+    let target = squeeze(&fn_body(&focus, "fn apply_press_target(").expect("apply_press_target"));
+    let off = at(
+        &target,
         "self.tutorial.keyboard_focus=false;",
         "누름의 말풍선 포커스 끄기",
     );
-    let renormalize = at(&take, "self.normalize_focus(core);", "누름 뒤 정규화");
+    let renormalize = at(&target, "self.normalize_focus(core);", "누름 뒤 정규화");
     assert!(
         off < renormalize,
         "말풍선 포커스 끄기 → 정규화 순서가 아니다"

@@ -109,6 +109,18 @@ impl PopupManager {
         self.focus = Some(PopupNode::Host(iid));
     }
 
+    /// 그 노드를 누르면 포커스 위치가 그 노드로 바뀌는지(`focus_on_press`). 포커스를 받지 않는 host 팝업과 닫힌
+    /// 인스턴스는 바꾸지 않는다.
+    pub(crate) fn press_takes_focus(&self, node: PopupNode) -> bool {
+        match node {
+            PopupNode::Host(iid) => self
+                .popups
+                .iter()
+                .any(|p| p.open && p.instance == iid && p.arrange.takes_focus),
+            PopupNode::Plugin(_) => true,
+        }
+    }
+
     /// 누름이 정한 포커스 위치. `target`은 누른 좌표의 포인터 대상인 팝업 노드(상자 또는 덮는 범위)이고, 팝업이
     /// 아니면 `None`이다. 팝업이면 그 팝업이 포커스 위치가 되고, 아니면 포커스 위치는 팝업이 아니게 된다(누른
     /// surface·창 크롬). 포커스를 받지 않는 host 팝업(`keyboard = None`)을 누르면 바꾸지 않는다.

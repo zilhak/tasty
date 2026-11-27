@@ -21,7 +21,9 @@ pub struct PressForecast {
     pub free: bool,
     /// 누름이 키 쥘 곳을 그 surface 로 만든다.
     pub click_holds: HashSet<u32>,
-    /// 누름이 그 surface 경로를 덮는 덮개에 간다. 키 쥘 곳이 없어지고 선택은 그대로다.
+    /// 그 surface 경로를 덮개가 덮는다(포커스를 받지 않는 덮개 포함).
+    pub covered: HashSet<u32>,
+    /// 누름이 그 surface 경로를 덮는 덮개에 가서 덮개가 포커스 위치가 된다. 키 쥘 곳이 없어지고 선택은 그대로다.
     pub click_covered: HashSet<u32>,
     /// 포커스 노드가 surface 이거나 경로 밖 팝업일 때, 포커스 획득이 키 쥘 곳을 그 surface 로 만든다(덮이지 않음).
     #[cfg(any(windows, target_os = "macos", test))]

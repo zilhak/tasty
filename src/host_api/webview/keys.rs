@@ -668,9 +668,7 @@ impl WebViewKeySink for WebViewKeyBridge {
     #[cfg(any(target_os = "linux", test))]
     fn edit_reply_blocked(&self, surface_id: u32) -> bool {
         let forecast = self.forecast.borrow();
-        self.modal_open.get()
-            || forecast.window_blocked
-            || forecast.click_covered.contains(&surface_id)
+        self.modal_open.get() || forecast.window_blocked || forecast.covered.contains(&surface_id)
     }
 }
 

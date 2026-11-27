@@ -44,8 +44,12 @@ impl MainViewState {
             let sids = tab.layout_opt.as_ref().map(|l| l.all_surface_ids());
             for sid in sids.into_iter().flatten() {
                 let path = path_of_scope(core, &PopupScope::Surface(sid));
-                if self.top_cover_over(&path, None).is_some() {
-                    forecast.click_covered.insert(sid);
+                if let Some(cover) = self.top_cover_over(&path, None) {
+                    forecast.covered.insert(sid);
+                    // 누름은 덮개를 누른 것과 같다(`apply_press_target`). 포커스를 받지 않는 덮개면 아무것도 바꾸지 않는다.
+                    if self.popups.press_takes_focus(cover) {
+                        forecast.click_covered.insert(sid);
+                    }
                     continue;
                 }
                 forecast.click_holds.insert(sid);

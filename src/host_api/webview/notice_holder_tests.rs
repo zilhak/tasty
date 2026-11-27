@@ -267,3 +267,70 @@ fn a_linux_edit_reply_under_a_new_cover_is_dropped() {
     bridge.set_modal_open(true);
     assert!(bridge.edit_reply_blocked(A), "OS 모달 뒤 응답을 실행한다");
 }
+
+/// P1: 창 누름(`take_press_snapshot`)과 native 본문 누름(`press_surface_body`)은 같은 전이(`apply_press_target`)에
+/// 이른다. 장면 1: B 를 덮는 passive 덮개 위 누름은 두 입구 모두 덮개를 포커스 위치로 하고 passive 를 풀며 선택은 A 다.
+/// 장면 2: 말풍선이 키보드 포커스를 가진 채 본문을 누르면 두 입구 모두 말풍선 포커스를 끈다.
+#[test]
+fn window_and_native_entries_reach_the_same_press_result() {
+    const COVER: crate::adapters::ui::popup::PopupId = "press_entry_cover";
+    let scene = |window_entry: bool, covered: bool| {
+        let (mut state, mut session) = two_surfaces();
+        let engine = session.borrow_mut();
+        state.tutorial.keyboard_focus = true;
+        let pos = egui::pos2(10.0, 10.0);
+        let mut cover = None;
+        if covered {
+            state.popups.register(PopupState::new(
+                COVER,
+                "cover".to_string(),
+                egui::vec2(120.0, 60.0),
+                PopupScope::Surface(B),
+            ));
+            let mut request = crate::intent::OpenRequest::new(COVER, PopupScope::Surface(B));
+            request.covers_scope = Some(true);
+            let iid = state
+                .popups
+                .open_request(&request, false)
+                .expect("덮개가 열린다");
+            assert!(state.popups.is_passive(COVER), "대조: passive 로 열렸다");
+            cover = Some(crate::adapters::ui::popup::focus::PopupNode::Host(iid));
+            let z = state.popups.instance(iid).expect("인스턴스").z_seq;
+            state.host_popup_covers = vec![crate::adapters::ui::popup::occlusion::Occluder {
+                rect: egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(100.0, 100.0)),
+                z_seq: z,
+            }];
+        }
+        if window_entry {
+            state.take_press_snapshot(engine.core, pos, egui::PointerButton::Primary);
+        } else {
+            state.press_surface_body(engine.core, if covered { B } else { A });
+        }
+        // 인스턴스 순번은 장면마다 다르므로 포커스 위치는 "그 장면의 덮개인지"로 비교한다.
+        let node = match state.focus_node(engine.core) {
+            crate::state::focus_node::FocusNode::Popup(p) => {
+                format!("popup cover={}", Some(p) == cover)
+            }
+            other => format!("{other:?}"),
+        };
+        (
+            state.popups.focus().map(|p| Some(p) == cover),
+            state.popups.is_passive(COVER),
+            node,
+            state.focused_surface_id(&engine.read()),
+            state.tutorial.keyboard_focus,
+        )
+    };
+    for covered in [true, false] {
+        let window = scene(true, covered);
+        assert_eq!(scene(false, covered), window, "덮개 {covered}");
+        assert!(!window.4, "누름이 말풍선 포커스를 끄지 않았다");
+        assert_eq!(window.3, Some(A));
+        if covered {
+            assert!(
+                window.0 == Some(true) && !window.1,
+                "덮개가 포커스를 받고 passive 가 풀린다"
+            );
+        }
+    }
+}
