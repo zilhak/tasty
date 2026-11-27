@@ -15,6 +15,10 @@ use crate::listener::PendingConnection;
 /// plugin 이 호스트에 연결하기를 기다리는 한도. 넘기면 기동 실패로 친다.
 pub(crate) const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// 시험 이음새(`tasty_utils::socket_inherit::seam`)의 자리 이름.
+#[cfg(all(test, windows))]
+const SEAM_IO_WRITER: &str = "host-plugin.io-writer";
+
 static SLOT_POISONED: AtomicBool = AtomicBool::new(false);
 const SLOT_WHAT: &str = "plugin connect slot";
 
@@ -202,7 +206,14 @@ fn start_io(
     last_pong: Arc<Mutex<Instant>>,
     waker: &tasty_terminal::waker_factory::SharedWakerFactory,
 ) -> std::io::Result<()> {
-    let writer = stream.try_clone()?;
+    // plugin 수명 내내 사는 송신 복제다. 이 뒤에 뜨는 자식(다른 plugin 등)이 쥐지 않게 한다.
+    let writer = tasty_utils::socket_inherit::try_clone_uninherited(&stream)?;
+    #[cfg(all(test, windows))]
+    tasty_utils::socket_inherit::seam::cleared(
+        SEAM_IO_WRITER,
+        &writer,
+        writer.local_addr().ok().map(|addr| addr.port()),
+    );
     spawn_tx_thread(plugin_id, writer, req_rx)?;
     spawn_rx_thread(
         plugin_id,
@@ -213,3 +224,7 @@ fn start_io(
         event_tx,
     )
 }
+
+#[cfg(all(test, windows))]
+#[path = "connect_inherit_tests.rs"]
+mod inherit_tests;
