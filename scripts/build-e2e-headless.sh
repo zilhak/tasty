@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # GUI feature를 끈 workspace를 별도 target에 빌드하고 번들 플러그인을 준비한 뒤 검사에 사용할 바이너리 경로를 출력한다.
-# target-e2e-headless/debug 위치는 개발용 plugin 탐색의 저장소 경로 계산에 맞춘다.
+# 호스트는 실행 파일 옆 builtin-plugins/를 읽으므로(crates/tasty-host-plugin/src/builtin.rs의 bundle_root_from_exe_dir)
+# 같은 CARGO_TARGET_DIR을 넘겨 실행 파일 옆에 번들을 스테이징한다.
 # 실패하면 stdout에 경로를 내지 않는다. 호출자는 TASTY_E2E_BIN을 설정하지 않고 기본 하네스를 사용할 수 있다.
 # 사용: BIN=$(scripts/build-e2e-headless.sh) && export TASTY_E2E_BIN=$BIN
 set -uo pipefail
