@@ -20,13 +20,14 @@ function blank(s) { return s ~ /^[ \t]*$/ }
 # 블록 하나(줄바꿈으로 이은 문자열)를 바꾼다. 스팬 짝이 GitHub 와 어긋날 수 있으면 블록 전체를 엔터티로 바꾼다.
 function render(s, cons,    o) {
     o = escape_text(s, cons)
-    if (!cons && index(o, "`") && risky(o)) o = escape_text(s, 1)
+    if (!cons && index(o, "`") && risky(o, escape_text(s, 2))) o = escape_text(s, 1)
     return o
 }
 # 스팬 짝을 GitHub 와 다르게 볼 수 있는 블록인가: 링크 목적지·제목 안의 백틱, 링크 참조 정의 줄,
 # 참조 링크 [글][이름], 판마다 HTML 블록 여부가 다른 태그로 시작하는 줄, 백틱까지 이어지는 GFM 자동 링크(www., ://).
-function risky(o,    n, k, ln, t, j, e, z) {
-    if (autolink_tick(o, "www.") || autolink_tick(o, "://")) return 1
+# 자동 링크는 스팬을 가린 m 에서 찾는다. GitHub 는 이미 열린 코드 스팬 안에서 자동 링크를 만들지 않는다.
+function risky(o, m,    n, k, ln, t, j, e, z) {
+    if (autolink_tick(m, "www.") || autolink_tick(m, "://")) return 1
     n = split(o, ln, "\n")
     for (k = 1; k <= n; k++) {
         t = tolower(ln[k]); sub(/^[ \t]+/, "", t)
@@ -88,9 +89,9 @@ function link_end(o, j,    n, k, c, depth, q) {
     }
     return substr(o, k, 1) == ")" ? k : 0
 }
-# 코드 스팬 밖의 <, >, & 를 바꾼다. all 이면 스팬 안도 바꾼다.
+# 코드 스팬 밖의 <, >, & 를 바꾼다. all 이 1 이면 스팬 안도 바꾸고, 2 이면 스팬을 여는 백틱만 두고 안을 공백으로 가린다.
 # 백틱 n 개로 연 스팬은 다음에 오는 정확히 n 개짜리 백틱 열에서 닫힌다. 닫는 열이 없으면 백틱은 글자다.
-function escape_text(p, all,    out, i, n, c, d, k, j, m, stop) {
+function escape_text(p, all,    out, i, n, c, d, k, j, m, stop, seg) {
     out = ""; i = 1; n = length(p)
     while (i <= n) {
         c = substr(p, i, 1)
@@ -115,7 +116,12 @@ function escape_text(p, all,    out, i, n, c, d, k, j, m, stop) {
                 if (k - j == m) { stop = k; break }
                 j = k
             }
-            if (stop) { out = out (all ? escape_all(substr(p, i, stop - i)) : substr(p, i, stop - i)); i = stop }
+            if (stop) {
+                seg = substr(p, i, stop - i)
+                if (all == 2) { gsub(/./, " ", seg); seg = "`" substr(seg, 2) }
+                else if (all) seg = escape_all(seg)
+                out = out seg; i = stop
+            }
             else { out = out substr(p, i, m); i += m }
             continue
         }

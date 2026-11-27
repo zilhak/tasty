@@ -494,6 +494,16 @@ printf 'chore: bump version to 9.9.9\r\n\r\n~~~sh\r\necho <ok>\r\n~~~\r\nOutside
 printf '~~~sh\necho <ok>\n~~~\nOutside --secs &lt;s&gt;.\n' > "$w"
 check 'CRLF 줄 끝도 줄 끝으로 보아 펜스가 닫히고, 출력은 LF' "$m" "$w"
 
+cat > "$m" <<'EOF'
+chore: bump version to 9.9.9
+
+Fetch `https://example.invalid/?a=1&b=2` or `www.example.invalid/?c=3&d=4` then <s>.
+EOF
+cat > "$w" <<'EOF'
+Fetch `https://example.invalid/?a=1&b=2` or `www.example.invalid/?c=3&d=4` then &lt;s&gt;.
+EOF
+check '코드 스팬 안의 URL 은 자동 링크로 보지 않아 스팬이 그대로' "$m" "$w"
+
 if [ "$failures" -ne 0 ]; then
     echo "실패 $failures 건" >&2
     exit 1
