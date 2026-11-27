@@ -134,9 +134,9 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     note(
         ui,
         theme,
-        "The body tab strip (src/adapters/ui/tab_bar/tab.rs) tints the icon with the label \
-         colour; this spec draws the kit icon, text-secondary on an active tab (with its \
-         close) and text-muted on the others.",
+        "Like the body tab strip (src/adapters/ui/tab_bar/tab.rs), this spec draws every tab \
+         icon and the resting close in text-secondary, active or not; the close shows on the \
+         active tab here (hover is left out of the static specimen).",
     );
 }
 
@@ -199,12 +199,9 @@ fn draw_tab(
         egui::pos2(rect.left() + theme.spacing_md.value(), cy - icon * 0.5),
         egui::vec2(icon, icon),
     );
-    // 활성 탭의 아이콘·닫기는 시안 Tab.active 계약의 text-secondary다. 비활성 탭은 text-muted 그대로다.
-    let glyph_ink = if tab.active {
-        egui::Color32::from(theme.text_secondary())
-    } else {
-        egui::Color32::from(theme.text_muted())
-    };
+    // 아이콘과 hover가 아닌 닫기는 활성 여부와 관계없이 text-secondary다(시안 Tab.active·Tab.inactive 계약,
+    // 본체 tab.rs와 같다).
+    let glyph_ink = egui::Color32::from(theme.text_secondary());
     tab.icon.image(icon, glyph_ink).paint_at(ui, icon_rect);
 
     // 오른쪽 끝부터 닫기 · 점 순서로 자리를 잡는다. 닫기는 활성 탭에서만 보인다(hover 는 정적 예제에서 생략).
@@ -305,17 +302,15 @@ mod tests {
                 "{name} {}: {rests:?}",
                 REST_TAB.label
             );
-            // 활성 탭 셋(첫 줄 build.sh와 둘째 Stage 둘)의 아이콘·닫기는 text-secondary, 나머지 아이콘은 text-muted다.
-            // Latte처럼 두 잉크가 같은 테마에서는 합계만 가를 수 있다.
+            // 모든 탭 아이콘과 활성 탭 셋(첫 줄 build.sh와 둘째 Stage 둘)의 닫기는 text-secondary다.
+            // Latte는 text-secondary와 text-muted가 같은 값이라 Mocha에서만 text-muted 0건을 가를 수 있다.
             let tints = |c: egui::Color32| painted.glyphs.iter().filter(|(_, t)| *t == c).count();
-            let active = (1 + ACTIVE_ATTENTION.len()) * 2;
-            let rest_icons = TABS.len() - 1 + ACTIVE_ATTENTION.len();
+            let icons = TABS.len() + ACTIVE_ATTENTION.len() * 2;
+            let closes = 1 + ACTIVE_ATTENTION.len();
             let (secondary, muted) = (th.text_secondary().into(), th.text_muted().into());
-            if secondary == muted {
-                assert_eq!(tints(secondary), active + rest_icons, "{name}");
-            } else {
-                assert_eq!(tints(secondary), active, "{name}");
-                assert_eq!(tints(muted), rest_icons, "{name}");
+            assert_eq!(tints(secondary), icons + closes, "{name}");
+            if secondary != muted {
+                assert_eq!(tints(muted), 0, "{name}");
             }
             let caps = ACTIVE_ATTENTION.map(|(cap, _, _)| cap);
             for cap in caps {
