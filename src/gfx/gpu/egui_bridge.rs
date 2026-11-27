@@ -84,25 +84,53 @@ fn enforce_foreground_z_order(
 /// host·plugin 팝업의 그룹 순서를 set_sublayer로 지정한다. 단순 그리기 호출 순서에 의존하지 않는다.
 /// 두 종류가 번갈아 겹치는 개별 순서는 지원하지 않고 그룹 전체를 위·아래로 배치한다.
 /// host 그룹은 포커스를 받는 팝업만이다.
+///
+/// 위 묶음 전체를 아래 묶음의 레이어 하나([`top_lower_popup_layer`])에만 자식으로 건다. egui `end_pass`는
+/// sublayer 부모를 HashMap 순서로 처리해 나중에 처리한 부모 뒤에 자식을 붙이므로, 부모가 여럿이면 패스마다
+/// 위 묶음이 다른 아래 레이어 뒤에 붙는다. 덮는 팝업은 덮음 막이와 셸 두 레이어라 이 경우가 된다.
 fn enforce_host_plugin_popup_z_order(
     ctx: &egui::Context,
     host_popup_layers: &[egui::LayerId],
     plugin_popup_layers: &[egui::LayerId],
     host_popup_on_top: bool,
 ) {
-    if host_popup_on_top {
-        for plugin_layer in plugin_popup_layers {
-            for host_layer in host_popup_layers {
-                ctx.set_sublayer(*plugin_layer, *host_layer);
-            }
-        }
+    let (lower, upper) = if host_popup_on_top {
+        (plugin_popup_layers, host_popup_layers)
     } else {
-        for host_layer in host_popup_layers {
-            for plugin_layer in plugin_popup_layers {
-                ctx.set_sublayer(*host_layer, *plugin_layer);
-            }
-        }
+        (host_popup_layers, plugin_popup_layers)
+    };
+    if upper.is_empty() {
+        return;
     }
+    let Some(parent) = top_lower_popup_layer(ctx, lower) else {
+        return;
+    };
+    for child in upper {
+        ctx.set_sublayer(parent, *child);
+    }
+}
+
+/// 아래 묶음에서 이번 패스 끝에 맨 위에 올 레이어. 직전 패스 순서(`Memory::layer_ids`)에서 가장 뒤의 것이다.
+/// egui는 순서에 없는 레이어를 순서 있는 레이어를 모두 그린 뒤에 그리므로, 그런 아래 레이어는 위 묶음보다
+/// 위에 남는다. 그래서 순서에 없는 아래 레이어는 여기서 묶음 순서대로 `move_to_top`해 순서에 넣고 그중
+/// 마지막을 부모로 한다. 이번 패스에 올린 레이어는 순서 끝에 붙어 이미 있던 레이어보다 위다.
+fn top_lower_popup_layer(ctx: &egui::Context, lower: &[egui::LayerId]) -> Option<egui::LayerId> {
+    let order: Vec<egui::LayerId> = ctx.memory(|m| m.layer_ids().collect());
+    let missing: Vec<egui::LayerId> = lower
+        .iter()
+        .filter(|l| !order.contains(l))
+        .copied()
+        .collect();
+    if let Some(last) = missing.last() {
+        for layer in &missing {
+            ctx.move_to_top(*layer);
+        }
+        return Some(*last);
+    }
+    lower
+        .iter()
+        .copied()
+        .max_by_key(|l| order.iter().position(|o| o == l))
 }
 
 /// 양쪽 팝업 그룹의 최대 z_seq를 비교한다. 한쪽이 없으면 false다.
@@ -747,3 +775,7 @@ mod tests {
         assert!(!host_popup_should_render_on_top(None, None));
     }
 }
+
+#[cfg(test)]
+#[path = "egui_bridge_popup_order_tests.rs"]
+mod popup_order_tests;
