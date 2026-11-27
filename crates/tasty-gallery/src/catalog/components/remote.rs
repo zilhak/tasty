@@ -182,7 +182,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             // 서로 다른 프로토콜이 둘 이상인 예제이므로 필터 버튼을 표시한다.
             add_bar_region(ui, theme, |ui| {
                 ui.horizontal(|ui| {
-                    Button::new("Add profile")
+                    Button::new(crate::i18n::t("remote_tool.profile_add"))
                         .variant(ButtonVariant::Secondary)
                         .size(tasty_ui_widgets::ControlSize::Sm)
                         .leading_icon(&|ui, rect, c| {
@@ -283,7 +283,7 @@ fn local_ssh_section(ui: &mut egui::Ui, theme: &Theme) {
         ui,
         theme,
         &LocalSshSectionData {
-            heading: "From ssh config",
+            heading: crate::i18n::t("remote_tool.local_ssh_heading"),
             path: "~/.ssh/config",
             in_profiles_tag: crate::i18n::t("remote_tool.local_ssh_in_profiles"),
             add_label: crate::i18n::t("remote_tool.local_ssh_add"),
@@ -302,10 +302,10 @@ fn ssh_state_card(ui: &mut egui::Ui, theme: &Theme, label: &str, message: &str) 
                     ui,
                     theme,
                     &LocalSshSectionData {
-                        heading: "From ssh config",
+                        heading: crate::i18n::t("remote_tool.local_ssh_heading"),
                         path: "~/.ssh/config",
-                        in_profiles_tag: "in profiles",
-                        add_label: "Add profile",
+                        in_profiles_tag: crate::i18n::t("remote_tool.local_ssh_in_profiles"),
+                        add_label: crate::i18n::t("remote_tool.local_ssh_add"),
                         empty_message: message,
                         hosts: &[],
                     },

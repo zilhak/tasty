@@ -438,7 +438,6 @@ src/catalog/components/quit_modal.rs	Quit	button.quit,quit_modal.quit_button,set
 src/catalog/components/remote.rs	(none)	remote_tool.passkey_none
 src/catalog/components/remote.rs	(select a profile)	remote_tool.ssh_ref_none
 src/catalog/components/remote.rs	Add attach	remote_tool.attach_add
-src/catalog/components/remote.rs	Add profile	remote_tool.local_ssh_add,remote_tool.profile_add
 src/catalog/components/remote.rs	Apply	explorer.props.perm.apply,port_scanner.state_filter_apply,preset.popup.apply_button,remote_tool.filter_apply,settings.file_handler.hook_handlers.seq_apply,settings.keybindings.apply_button
 src/catalog/components/remote.rs	Attach	remote_tool.tab_attach
 src/catalog/components/remote.rs	Cancel	button.cancel,download_run.dialog.cancel,explorer.op.cancel,preset.popup.cancel_button,quit_modal.cancel_button,remote_attach.cancel,remote_tool.cancel,transfer.progress.cancel
@@ -447,7 +446,6 @@ src/catalog/components/remote.rs	Deselect all	port_scanner.state_filter_deselect
 src/catalog/components/remote.rs	Executable	remote_tool.field_executable
 src/catalog/components/remote.rs	Filter	remote_tool.filter
 src/catalog/components/remote.rs	Filter by protocol	remote_tool.filter_title
-src/catalog/components/remote.rs	From ssh config	remote_tool.local_ssh_heading
 src/catalog/components/remote.rs	Host	remote_tool.field_host
 src/catalog/components/remote.rs	Label	remote_tool.field_label
 src/catalog/components/remote.rs	Name	explorer.column.name,filepicker.column.name,remote_tool.field_name
@@ -467,7 +465,6 @@ src/catalog/components/remote.rs	Select all	port_scanner.state_filter_select_all
 src/catalog/components/remote.rs	Shell	attach.tab_title_fallback,remote_tool.field_shell,surface.restore.tab_title_fallback
 src/catalog/components/remote.rs	User	remote_tool.field_user
 src/catalog/components/remote.rs	detecting…	remote_tool.detecting
-src/catalog/components/remote.rs	in profiles	remote_tool.local_ssh_in_profiles
 src/catalog/components/remote.rs	inactive	remote_attach.inactive,remote_tool.attach_inactive
 src/catalog/components/remote.rs	inline	remote_tool.attach_tag_inline
 src/catalog/components/remote.rs	passkey missing	remote_tool.passkey_missing
