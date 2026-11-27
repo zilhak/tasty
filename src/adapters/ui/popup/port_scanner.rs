@@ -1144,56 +1144,51 @@ fn draw_header_row(ui: &mut egui::Ui, props: &PortScannerProps<'_>) -> Option<Po
     let (left, cluster) = row.split_left_right_at_x(row.right() - cluster_width);
     let left = left.with_max_x((cluster.left() - gap).max(row.left()));
     let row_layout = egui::Layout::left_to_right(egui::Align::Center);
-    ui.scope_builder(
-        egui::UiBuilder::new().max_rect(cluster).layout(row_layout),
-        |ui| {
-            let mut buf = props.filter.query.to_string();
-            let resp = Input::new()
-                .placeholder(props.label_search_placeholder)
-                .width(filter_width)
-                .icon(&|ui, rect, c| {
-                    icons::SEARCH
-                        .image(th.icon_glyph_size_row_action.value(), c)
-                        .paint_at(ui, rect)
-                })
-                .show(ui, th, &mut buf);
-            if resp.changed() && buf != props.filter.query {
-                out = Some(PortScannerAction::SetQuery(buf));
+    let slot = |rect| egui::UiBuilder::new().max_rect(rect).layout(row_layout);
+    ui.scope_builder(slot(cluster), |ui| {
+        let mut buf = props.filter.query.to_string();
+        let resp = Input::new()
+            .placeholder(props.label_search_placeholder)
+            .width(filter_width)
+            .icon(&|ui, rect, c| {
+                icons::SEARCH
+                    .image(th.icon_glyph_size_row_action.value(), c)
+                    .paint_at(ui, rect)
+            })
+            .show(ui, th, &mut buf);
+        if resp.changed() && buf != props.filter.query {
+            out = Some(PortScannerAction::SetQuery(buf));
+        }
+        if let Some(a) = draw_column_chooser(ui, props) {
+            out = Some(a);
+        }
+        use PortScannerAction::{Close, Refresh};
+        let buttons = [
+            (icons::REFRESH, props.label_refresh, Refresh),
+            (icons::CLOSE, props.label_close, Close),
+        ];
+        for (icon, hover, action) in buttons {
+            let glyph = th.icon_glyph_size_md.value();
+            let paint = |ui: &mut egui::Ui, rect, c| icon.image(glyph, c).paint_at(ui, rect);
+            let button = IconButton::new().variant(IconButtonVariant::Ghost);
+            if button.show(ui, th, &paint).on_hover_text(hover).clicked() {
+                out = Some(action);
             }
-            if let Some(a) = draw_column_chooser(ui, props) {
-                out = Some(a);
-            }
-            use PortScannerAction::{Close, Refresh};
-            let buttons = [
-                (icons::REFRESH, props.label_refresh, Refresh),
-                (icons::CLOSE, props.label_close, Close),
-            ];
-            for (icon, hover, action) in buttons {
-                let glyph = th.icon_glyph_size_md.value();
-                let paint = |ui: &mut egui::Ui, rect, c| icon.image(glyph, c).paint_at(ui, rect);
-                let button = IconButton::new().variant(IconButtonVariant::Ghost);
-                if button.show(ui, th, &paint).on_hover_text(hover).clicked() {
-                    out = Some(action);
-                }
-            }
-        },
-    );
-    ui.scope_builder(
-        egui::UiBuilder::new().max_rect(left).layout(row_layout),
-        |ui| {
-            ui.set_clip_rect(left.intersect(ui.clip_rect()));
-            ui.add(icons::PORT.image(th.icon_glyph_size_md.value(), th.text_muted().into()));
-            ui.label(
-                egui::RichText::new(props.label_heading)
-                    .color(th.text_primary())
-                    .size(th.font_size_max.value())
-                    .strong(),
-            );
-            if let Some(tag) = header_tag_text(props) {
-                draw_header_count_tag(ui, th, &tag);
-            }
-        },
-    );
+        }
+    });
+    ui.scope_builder(slot(left), |ui| {
+        ui.set_clip_rect(left.intersect(ui.clip_rect()));
+        ui.add(icons::PORT.image(th.icon_glyph_size_md.value(), th.text_muted().into()));
+        ui.label(
+            egui::RichText::new(props.label_heading)
+                .color(th.text_primary())
+                .size(th.font_size_max.value())
+                .strong(),
+        );
+        if let Some(tag) = header_tag_text(props) {
+            draw_header_count_tag(ui, th, &tag);
+        }
+    });
     out
 }
 
