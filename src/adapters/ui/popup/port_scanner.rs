@@ -3296,10 +3296,12 @@ mod tests {
         shapes
     }
 
-    /// 머리 요소의 그린 영역. 왼쪽 묶음은 잘림 사각형과 겹친 보이는 부분이다.
+    /// 머리 요소의 그린 영역. 왼쪽 묶음은 잘림 사각형과 겹친 보이는 부분이다. `right` 는 오른쪽 묶음(필터·버튼)의
+    /// 이름·그린 영역·잘림 사각형과 겹친 보이는 영역이다.
     struct HeaderRects {
         filter: egui::Rect,
         buttons: Vec<egui::Rect>,
+        right: Vec<(&'static str, egui::Rect, egui::Rect)>,
         left: Vec<(&'static str, egui::Rect)>,
         heading_drawn: egui::Rect,
         heading_visible: egui::Rect,
@@ -3323,17 +3325,17 @@ mod tests {
                 .unwrap_or_else(|| panic!("{width}: `{wanted}` 글자 도형이 없다"))
         };
         let (_, placeholder) = text(t("port_scanner.search_placeholder"));
-        let filter = shapes
+        let (filter_clip, filter) = shapes
             .iter()
-            .filter_map(|(_, s)| match s {
+            .filter_map(|(clip, s)| match s {
                 egui::epaint::Shape::Rect(r)
                     if r.stroke.width > 0.0 && r.rect.contains_rect(placeholder) =>
                 {
-                    Some(r.rect)
+                    Some((*clip, r.rect))
                 }
                 _ => None,
             })
-            .min_by(|a, b| a.area().total_cmp(&b.area()))
+            .min_by(|a, b| a.1.area().total_cmp(&b.1.area()))
             .unwrap_or_else(|| panic!("{width}: 필터 칸 테두리가 없다"));
         let glyph = theme.icon_glyph_size_md.value();
         let in_row = |r: &egui::Rect| r.center().y > filter.top() && r.center().y < filter.bottom();
@@ -3347,11 +3349,19 @@ mod tests {
             .filter(|(_, r)| (r.width() - glyph).abs() < 0.5 && in_row(r))
             .collect();
         icons.sort_by(|a, b| a.1.left().total_cmp(&b.1.left()));
-        let buttons: Vec<egui::Rect> = icons
+        let button_icons: Vec<(egui::Rect, egui::Rect)> = icons
             .iter()
             .filter(|(_, r)| r.left() >= filter.right())
-            .map(|(_, r)| *r)
+            .copied()
             .collect();
+        let buttons: Vec<egui::Rect> = button_icons.iter().map(|(_, r)| *r).collect();
+        let mut right = vec![("filter", filter, filter.intersect(filter_clip))];
+        right.extend(
+            ["Columns", "Refresh", "Close"]
+                .into_iter()
+                .zip(&button_icons)
+                .map(|(name, (clip, r))| (name, *r, r.intersect(*clip))),
+        );
         let (port_clip, port_icon) = *icons
             .first()
             .filter(|(_, r)| r.left() < filter.left())
@@ -3390,6 +3400,7 @@ mod tests {
         HeaderRects {
             filter,
             buttons,
+            right,
             left,
             heading_drawn,
             heading_visible,
@@ -3445,9 +3456,36 @@ mod tests {
         }
     }
 
+    /// 좁은 폭(390·480)에서 왼쪽 묶음 요소(아이콘·제목·Tag 배경)의 보이는 영역이 서로 겹치지 않고, 오른쪽 묶음
+    /// (필터·버튼)은 보이는 영역이 그린 영역과 같다(잘리지 않는다).
+    fn left_parts_stay_apart_and_the_right_cluster_is_whole(width: f32, h: &HeaderRects) {
+        let parts = [
+            ("port icon", h.left[0].1),
+            ("heading", h.heading_visible),
+            ("count pill", h.pill_visible),
+        ];
+        for (i, (a_name, a)) in parts.iter().enumerate() {
+            for (b_name, b) in &parts[i + 1..] {
+                assert!(
+                    !overlaps(*a, *b),
+                    "{width}: 왼쪽 묶음 {a_name} {a:?} 와 {b_name} {b:?} 의 보이는 영역이 겹친다"
+                );
+            }
+        }
+        for (name, drawn, visible) in &h.right {
+            let same = (visible.min - drawn.min).length() < 0.5
+                && (visible.max - drawn.max).length() < 0.5;
+            assert!(
+                same,
+                "{width}: 오른쪽 묶음 {name} 이 잘렸다(보이는 {visible:?} · 그린 {drawn:?})"
+            );
+        }
+    }
+
     /// 폭 390·480 에서 머리 요소의 그린 영역이 서로 겹치지 않는다. 오른쪽 묶음(필터 200·Columns·Refresh·Close)은
     /// 크기를 지키고, 왼쪽 묶음(아이콘·제목·개수)은 아이콘·제목·Tag 순서로 놓여 남은 폭에서 끝이 잘린다(제목 앞은
-    /// 남고, 480 에서는 Tag 앞부분이 보이고 끝이 잘린다). 넓은 폭에서는 잘리지 않는다.
+    /// 남고, 480 에서는 Tag 앞부분이 보이고 끝이 잘린다). 좁은 폭에서 왼쪽 요소끼리 보이는 영역이 겹치지 않고 오른쪽
+    /// 묶음은 잘리지 않는다. 넓은 폭에서는 잘리지 않는다.
     #[test]
     fn the_narrow_header_keeps_the_right_cluster_and_clips_the_left_group() {
         let theme = test_theme();
@@ -3482,6 +3520,9 @@ mod tests {
                 }
             }
             left_group_runs_in_order_and_is_cut_at_its_end(width, &h);
+            if width < 600.0 {
+                left_parts_stay_apart_and_the_right_cluster_is_whole(width, &h);
+            }
             let cut = h.heading_visible.width() < h.heading_drawn.width() - 0.5;
             if width < 400.0 {
                 assert!(
