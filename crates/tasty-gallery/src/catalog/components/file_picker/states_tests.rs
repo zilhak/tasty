@@ -183,8 +183,9 @@ fn up_and_refresh_clickable(v: Variant) -> (bool, bool) {
     (bar[0].1, bar[1].1)
 }
 
-/// 세션 소실 카드(이름 있는 원격·빈 호스트)는 Up 이 꺼지고, 응답 시간 초과와 로딩 카드는 켜져 있다. Refresh 는 모두 켜져
-/// 있다(정본 fe45514 FilePickerFrame `sessionLost`, 앱 path_bar `up_enabled`).
+/// 세션 소실 카드(이름 있는 원격·빈 호스트)는 Up 이 꺼지고, 응답 시간 초과와 로딩 카드는 켜져 있다. Up 은 정본 fe45514
+/// FilePickerFrame `sessionLost` 와 앱 path_bar `up_enabled` 를 따른다. Refresh 는 앱처럼 모두 켜 둔다(정본
+/// overlay-frames.jsx:3328 은 `sessionLost` 때 끈다 — 후속 후보).
 #[test]
 fn a_session_lost_card_disables_up() {
     for (label, v, lost) in [
