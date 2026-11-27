@@ -206,6 +206,16 @@ surface 경계 30% 존을 hover 할 때 뜨는 밴드+분할선 색. 밴드 채�
 | `--tasty-approval-danger-border` | `accent-danger` | `Theme::approval_danger_border()` | 생성 접근자. 1px |
 | `--tasty-approval-danger-fg` | `text-primary` | `Theme::approval_danger_fg()` | 생성 접근자 |
 
+## 튜토리얼 마커 발광·주제 선택 테두리
+
+`--tasty-tutorial-marker-glow-inner`·`-outer`·`--tasty-tutorial-topic-selected-border`도 accent-primary와 `transparent`를 섞는 식이라 생성기가 건너뛴다. 같은 방식으로 알파만 accent 알파 × 비율로 낮추는 수기 접근자를 `crates/tasty-type-appearance/src/tutorial_mix.rs` 에 둔다. 본체 `src/adapters/ui/tutorial/`와 갤러리 튜토리얼 표본이 같은 접근자를 쓴다. 디자인의 box-shadow 두 항(링 바로 밖 3px spread, 16px blur)을 egui stroke 두 겹으로 근사하므로, 합성이 링 가까이 더 밝도록 링에서 먼 겹에 glow-inner, 가까운 겹에 glow-outer를 칠한다(`paint_marker`).
+
+| 디자인 토큰 | 디자인 체인 | tasty Theme | 비고 |
+|---|---|---|---|
+| `--tasty-tutorial-marker-glow-inner` | `color-mix(accent-primary 22%, transparent)` | `Theme::tutorial_marker_glow_inner()` = `mix_srgb_premultiplied(accent_primary(), 22, CSS_TRANSPARENT)` | 불투명 accent 면 22%×255≈56 |
+| `--tasty-tutorial-marker-glow-outer` | `color-mix(accent-primary 45%, transparent)` | `Theme::tutorial_marker_glow_outer()` = `mix_srgb_premultiplied(accent_primary(), 45, CSS_TRANSPARENT)` | 불투명 accent 면 45%×255≈115 |
+| `--tasty-tutorial-topic-selected-border` | `color-mix(accent-primary 40%, transparent)` | `Theme::tutorial_topic_selected_border()` = `mix_srgb_premultiplied(accent_primary(), 40, CSS_TRANSPARENT)` | 불투명 accent 면 40%×255=102 |
+
 ## preset leaf value summary (preset-editor 미선택 leaf 값 요약)
 
 디자인 `tokens/components.css:335-339`·`tokens/tasty.tokens.json:2007-2023` 의
