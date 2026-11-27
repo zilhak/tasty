@@ -19,6 +19,7 @@ cargo_bin="${CARGO:-$(command -v cargo)}"
 # 패키지:타깃. 저장소 안의 시험 중 임시 폴더에서 git 이나 git 을 부르는 스크립트·바이너리를 띄우는 것.
 targets=(
     "tasty-doc-guards:adr_renumber_bin"
+    "tasty-doc-guards:release_notes_script"
     "tasty:allow_reason_gate"
     "tasty:shared_walk_gate"
     "tasty:plugin_bump_fixup"
