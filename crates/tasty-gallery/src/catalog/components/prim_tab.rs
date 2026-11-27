@@ -306,15 +306,17 @@ mod tests {
                 REST_TAB.label
             );
             // 활성 탭 셋(첫 줄 build.sh와 둘째 Stage 둘)의 아이콘·닫기는 text-secondary, 나머지 아이콘은 text-muted다.
-            assert_ne!(th.text_secondary(), th.text_muted(), "{name}");
+            // Latte처럼 두 잉크가 같은 테마에서는 합계만 가를 수 있다.
             let tints = |c: egui::Color32| painted.glyphs.iter().filter(|(_, t)| *t == c).count();
-            let active = 1 + ACTIVE_ATTENTION.len();
-            assert_eq!(tints(th.text_secondary().into()), active * 2, "{name}");
-            assert_eq!(
-                tints(th.text_muted().into()),
-                TABS.len() - 1 + ACTIVE_ATTENTION.len(),
-                "{name}"
-            );
+            let active = (1 + ACTIVE_ATTENTION.len()) * 2;
+            let rest_icons = TABS.len() - 1 + ACTIVE_ATTENTION.len();
+            let (secondary, muted) = (th.text_secondary().into(), th.text_muted().into());
+            if secondary == muted {
+                assert_eq!(tints(secondary), active + rest_icons, "{name}");
+            } else {
+                assert_eq!(tints(secondary), active, "{name}");
+                assert_eq!(tints(muted), rest_icons, "{name}");
+            }
             let caps = ACTIVE_ATTENTION.map(|(cap, _, _)| cap);
             for cap in caps {
                 assert_eq!(colors(cap).len(), 1, "{name} {cap}");
