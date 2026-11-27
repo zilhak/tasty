@@ -217,6 +217,121 @@ fn tab_never_gives_a_list_row_widget_focus() {
     );
 }
 
+/// 목록 세로 스크롤바의 입력 사각형(끝난 패스의 드래그 감지 위젯 중 키가 크고 폭이 좁은 것).
+fn scrollbar(app: &App<'_>) -> egui::Rect {
+    app.ctx.viewport(|vp| {
+        vp.prev_pass
+            .widgets
+            .layers()
+            .flat_map(|(_, rects)| rects.iter())
+            .filter(|w| {
+                w.sense.senses_drag()
+                    && w.interact_rect.height() > 100.0
+                    && w.interact_rect.width() < 30.0
+            })
+            .map(|w| w.interact_rect)
+            .max_by(|a, b| a.height().total_cmp(&b.height()))
+            .expect("목록 스크롤바")
+    })
+}
+
+/// [row focus · shows · scroll] 스크롤바 클릭과 드래그는 view 만 옮긴다: 열기·폴더 모드에서 선택·행 포커스·링이 그대로다
+/// (폴더 모드는 목록 빈 곳 클릭이 선택을 지우므로 스크롤바가 그 판정에 들지 않아야 한다).
+#[test]
+fn the_scrollbar_moves_only_the_view() {
+    for mode in ["open", "folder"] {
+        let names: Vec<String> = (0..60).map(|i| format!("d{i:02}")).collect();
+        let refs: Vec<&str> = names.iter().map(String::as_str).collect();
+        let (mut state, mut session) = crate::state::tests::two_pane_fixture();
+        let dir = tree(&refs, &[]);
+        open_picker(&mut state, &mut session.borrow_mut(), mode, dir.path());
+        let engine = session.borrow_mut();
+        let read = engine.read();
+        let mut app = App::new(&mut state, &read);
+        let top = app.at("d00").top();
+        app.press(egui::Key::ArrowDown);
+        assert_eq!(app.row_focus(), (some("d00"), true), "{mode}: ↓");
+        let bar = scrollbar(&app);
+        // 트랙 아래쪽 클릭.
+        let low = egui::pos2(bar.center().x, bar.bottom() - 4.0);
+        app.click(low);
+        assert!(
+            painted_texts_top(&app, "d00").is_none_or(|t| t < top),
+            "{mode}: 트랙 클릭이 view 를 내렸다"
+        );
+        assert_eq!(app.row_focus(), (some("d00"), true), "{mode}: 트랙 클릭 뒤");
+        assert_eq!(
+            app.selected(),
+            vec!["d00".to_string()],
+            "{mode}: 트랙 클릭 뒤 선택"
+        );
+        // 손잡이를 위 끝으로 끌어 올린다.
+        let bar = scrollbar(&app);
+        let from = egui::pos2(bar.center().x, bar.bottom() - 4.0);
+        let to = egui::pos2(bar.center().x, bar.top() - 200.0);
+        let button = |pos, pressed| egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        for events in [
+            vec![egui::Event::PointerMoved(from)],
+            vec![button(from, true)],
+            vec![egui::Event::PointerMoved(from + egui::vec2(0.0, -20.0))],
+            vec![egui::Event::PointerMoved(to)],
+            vec![button(to, false)],
+            Vec::new(),
+        ] {
+            app.texts = crate::adapters::ui::popup::window_input_test_support::layer_frame(
+                &app.ctx, app.state, app.read, events,
+            );
+        }
+        assert!(
+            (app.at("d00").top() - top).abs() < 0.5,
+            "{mode}: 드래그가 view 를 맨 위로 올렸다"
+        );
+        assert_eq!(app.row_focus(), (some("d00"), true), "{mode}: 드래그 뒤");
+        assert_eq!(
+            app.selected(),
+            vec!["d00".to_string()],
+            "{mode}: 드래그 뒤 선택"
+        );
+    }
+}
+
+fn painted_texts_top(app: &App<'_>, text: &str) -> Option<f32> {
+    crate::adapters::ui::popup::window_input_test_support::painted_at(&app.texts, text)
+        .map(|r| r.top())
+}
+
+/// [row focus · shows] 저장 모드 목록 빈 곳 클릭은 선택·행 포커스·이름을 두고 링만 숨긴다.
+#[test]
+fn a_save_mode_empty_list_click_keeps_selection_focus_and_name() {
+    let (mut state, mut session) = crate::state::tests::two_pane_fixture();
+    let dir = tree(&[], &["c.txt", "d.txt"]);
+    open_picker(&mut state, &mut session.borrow_mut(), "save", dir.path());
+    let engine = session.borrow_mut();
+    let read = engine.read();
+    let mut app = App::new(&mut state, &read);
+    app.press(egui::Key::ArrowDown);
+    app.press(egui::Key::ArrowDown);
+    app.press(egui::Key::Space);
+    assert_eq!(app.row_focus(), (some("d.txt"), true));
+    assert_eq!(app.selected(), vec!["d.txt".to_string()]);
+    assert_eq!(app.data().save_name.as_deref(), Some("d.txt"));
+    let row_h = app.at("d.txt").top() - app.at("c.txt").top();
+    let below = app.at("d.txt").center() + egui::vec2(0.0, row_h * 1.5);
+    app.click(below);
+    assert_eq!(app.row_focus(), (some("d.txt"), false), "링만 숨긴다");
+    assert_eq!(app.selected(), vec!["d.txt".to_string()], "선택 그대로");
+    assert_eq!(
+        app.data().save_name.as_deref(),
+        Some("d.txt"),
+        "이름 그대로"
+    );
+}
+
 impl App<'_> {
     fn rings(&mut self) -> Vec<egui::Rect> {
         rings(self)
