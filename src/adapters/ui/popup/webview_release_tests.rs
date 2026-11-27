@@ -558,7 +558,7 @@ fn sync_with_notices(
 
 /// P4 sid 별 보류: Given L 이 포커스 노드이고 R WebView 가 OS 키 포커스를 쥔다, When 키 뒤에 남은 누름이 L 의
 /// 것이면, Then R 은 그 누름과 무관해 바로 회수하고 의무도 없다. 대조: 남은 누름이 R 의 것이면 R 만 보류하고 의무를
-/// 남긴다(앞 키가 덮개를 열거나 닫을 수 있어 지금 덮개로 분류하지 않는다).
+/// 남긴다(지금 R 이 덮이지 않아 그 누름이 R 을 키 쥘 곳으로 만든다).
 #[test]
 fn a_pending_press_holds_only_the_release_of_its_own_webview() {
     use crate::app::webview_sync::key_release::release_retry_due;
