@@ -97,7 +97,7 @@ fn tab_then_enter_in_one_pass_opens_the_menu_without_confirming() {
         vec!["c.txt".to_string()],
         "열기 버튼이 켜진다"
     );
-    let link = click_widget_at(&app.ctx, app.at("/").center()).expect("루트 링크");
+    let link = click_widget_at(&app.ctx, app.at(&root_label(&deep)).center()).expect("루트 링크");
     app.ctx.memory_mut(|m| m.request_focus(link));
     app.frame();
     assert_eq!(
@@ -125,4 +125,11 @@ fn tab_then_enter_in_one_pass_opens_the_menu_without_confirming() {
         new_segment(&before, &app.texts).is_some(),
         "메뉴가 열려 숨은 폴더 행을 칠한다"
     );
+}
+
+/// 로컬 `dir` 경로 막대의 루트 크럼 글자. paths.rs 가 만드는 표기(Unix `/`, Windows 드라이브·UNC 루트)다.
+fn root_label(dir: &std::path::Path) -> String {
+    let dir = dir.to_string_lossy();
+    let ancestors = super::paths::path_ancestors(false, &dir);
+    super::paths::crumb_label(false, &ancestors[0])
 }
