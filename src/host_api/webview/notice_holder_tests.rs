@@ -63,7 +63,8 @@ fn agree(
     notify(&bridge, notices);
     let forecast = bridge.holder_after_pending();
     crate::app::webview_keys::consume_native_focus_requests(state, core, &bridge, bound);
-    let real = crate::app::webview_sync::key_release::webview_key_holder(state, core);
+    let real = crate::app::webview_sync::key_release::webview_key_holder(state, core)
+        .filter(|&sid| bound(sid));
     assert_eq!(forecast, real, "예측과 실제 소비 뒤 키 쥘 곳이 다르다");
     forecast
 }
@@ -212,6 +213,36 @@ fn a_press_whose_binding_is_not_current_keeps_the_holder_in_the_forecast() {
             want_bound,
             "{scene}: 대조"
         );
+    }
+}
+
+/// Given 선택된 A 의 binding 이 지금 surface 와 맞지 않는다(엔진이 A 의 실행 인스턴스를 바꿨고 옛 A view 가 남음),
+/// When 게시하면, Then 키 쥘 곳은 없고 옛 A 의 붙여넣기가 막힌다. 대기열이 비었을 때와 옛 A 의 누름이 든 때(무효라
+/// 건너뜀) 둘 다다. 예측은 실제 소비 뒤 같은 판정의 키 쥘 곳과 같다. 대조: binding 이 맞으면 A 다.
+#[test]
+fn a_selected_surface_whose_binding_ended_publishes_no_holder() {
+    let stale_a = |sid| sid != A;
+    for (scene, notices) in [("빈 대기열", &[][..]), ("[Click A]", &[N::Click(A)][..])] {
+        let (mut state, mut session) = two_surfaces();
+        let engine = session.borrow_mut();
+        let bridge = published_bound(&mut state, engine.core, &stale_a);
+        notify(&bridge, notices);
+        assert_eq!(bridge.holder_after_pending(), None, "{scene}: 게시값");
+        assert!(!paste_on(&bridge, A), "{scene}: 옛 A 의 붙여넣기가 열린다");
+        drop(bridge);
+        let (mut state, mut session) = two_surfaces();
+        let engine = session.borrow_mut();
+        assert_eq!(
+            agree(&mut state, engine.core, notices, &stale_a),
+            None,
+            "{scene}"
+        );
+        let (mut state, mut session) = two_surfaces();
+        let engine = session.borrow_mut();
+        let bridge = published(&mut state, engine.core);
+        notify(&bridge, notices);
+        assert_eq!(bridge.holder_after_pending(), Some(A), "{scene}: 대조");
+        assert!(paste_on(&bridge, A), "{scene}: 대조 붙여넣기");
     }
 }
 

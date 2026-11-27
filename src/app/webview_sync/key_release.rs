@@ -114,14 +114,16 @@ pub(crate) fn release_retry_due(
 /// 쥘 곳을 바꿀 수 있는 자리마다 부른다: 창 이벤트 처리 뒤(`App::publish_webview_key_holders`), 루프 끝 소비 전,
 /// 누름 알림 전이 뒤(`webview_keys::press_and_publish`), 전달 키 처리 뒤(`webview_keys::dispatch_and_apply`), 프레임
 /// 동기화. 자리 목록은 원본 가드(`webview_key_holder_publish_sites`)가 고정한다. `bound` 는 실제 소비 입구가 알림을
-/// 거르는 binding 판정(`webview_sync::webview_binding_current`)이고, 결과표가 같은 판정을 따른다.
+/// 거르는 binding 판정(`webview_sync::webview_binding_current`)이고, 게시하는 키 쥘 곳과 결과표가 같은 판정을 따른다.
+/// 선택된 surface 라도 binding 이 맞지 않으면(엔진이 실행 인스턴스를 바꿨고 옛 view 가 남음) 키 쥘 곳은 없다. 옛
+/// view 의 편집 키가 새 인스턴스의 선택으로 열리지 않게 한다.
 pub(crate) fn publish_key_holder(
     state: &mut MainViewState,
     core: &crate::core::CoreState,
     bridge: &crate::webview::WebViewKeyBridge,
     bound: &dyn Fn(u32) -> bool,
 ) {
-    bridge.set_key_holder(webview_key_holder(state, core));
+    bridge.set_key_holder(webview_key_holder(state, core).filter(|&sid| bound(sid)));
     // 키 쥘 곳과 같은 정규화 뒤 상태로 대기 알림의 결과표를 함께 게시한다(N1).
     // TODO: S6c 입력 순서 경계 설계가 대체할 임시 장치.
     bridge.set_press_forecast(state.press_forecast(core, bound));
