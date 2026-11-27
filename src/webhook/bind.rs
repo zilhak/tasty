@@ -82,9 +82,7 @@ impl Reservation {
 
 /// 요청대로 bind를 시도한다. 명시 지정 포트 실패도 리스너 없는 선점 결과로 돌려준다.
 pub fn reserve(request: PortRequest, ip: IpAddr) -> Reservation {
-    match reserve_with(request, ip, |addr| {
-        tiny_http::Server::http(addr).map_err(|e| e.to_string())
-    }) {
+    match reserve_with(request, ip, bind_http) {
         Ok(listener) => Reservation {
             listener,
             explicit_failure: None,
@@ -94,6 +92,29 @@ pub fn reserve(request: PortRequest, ip: IpAddr) -> Reservation {
             explicit_failure: Some(failure),
         },
     }
+}
+
+/// 시험 이음새(`tasty_utils::socket_inherit::seam`)의 자리 이름.
+#[cfg(all(test, windows))]
+const SEAM_LISTENER: &str = "webhook.listener";
+
+/// `tiny_http::Server::http`와 같게 listener 를 bind 해 서버를 만든다. 그 사이에 listener 의 상속을 꺼서
+/// 이 뒤에 std `Command`로 뜨는 자식이 쥐지 않게 한다. 서버가 accept 한 연결과 그 복제는 tiny_http 안에서
+/// 만들어져 여기서 끄지 못한다.
+fn bind_http(addr: SocketAddr) -> Result<tiny_http::Server, String> {
+    let listener = std::net::TcpListener::bind(addr).map_err(|e| e.to_string())?;
+    #[cfg(all(test, windows))]
+    tasty_utils::socket_inherit::seam::created(SEAM_LISTENER, &listener, None);
+    // 끄지 못해도 listener 는 그대로 쓴다. bind 실패로 돌리면 다른 포트를 찾거나 점유로 기록하게 된다.
+    if let Err(e) = tasty_utils::socket_inherit::disable_inherit(&listener) {
+        tracing::warn!(
+            target: "tasty::webhook::listener",
+            "webhook listener {addr}: keeping it out of child processes failed: {e}"
+        );
+    }
+    #[cfg(all(test, windows))]
+    tasty_utils::socket_inherit::seam::cleared(SEAM_LISTENER, &listener, None);
+    tiny_http::Server::from_listener(listener, None).map_err(|e| e.to_string())
 }
 
 /// bind 함수를 받아 순서만 정한다. 시험은 가짜 bind를 넘긴다.
@@ -166,6 +187,31 @@ fn probe<S>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `reserve` 가 만드는 웹훅 listener 는 bind 직후 이음새가 상속을 켜고, 끈 뒤의 값을 본다(Windows).
+    #[cfg(windows)]
+    #[test]
+    fn the_webhook_listener_is_not_inheritable() {
+        use tasty_utils::socket_inherit::seam::{self, Scope};
+        let armed = seam::arm(super::SEAM_LISTENER, Scope::Thread);
+        let reservation = reserve(
+            PortRequest::Explicit {
+                port: 0,
+                source: PortSource::Argument,
+            },
+            LOOPBACK,
+        );
+        assert!(reservation.bound().is_some(), "the listener was bound");
+        let (created, cleared) = (armed.created(), armed.cleared());
+        drop(reservation);
+        assert!(
+            !created.is_empty()
+                && created.iter().all(|seen| seen.inheritable)
+                && !cleared.is_empty()
+                && cleared.iter().all(|seen| !seen.inheritable),
+            "listener set {created:?}, after clearing {cleared:?}"
+        );
+    }
 
     const LOOPBACK: IpAddr = IpAddr::V4(std::net::Ipv4Addr::LOCALHOST);
 
