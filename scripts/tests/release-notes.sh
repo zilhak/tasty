@@ -390,9 +390,10 @@ EOF
 cat > "$w" <<'EOF'
 Fix the reported issue.
 
+(cherry picked from commit 0123456789abcdef0123456789abcdef01234567)
   Keep this indented note.
 EOF
-check 'cherry-pick 줄 뒤의 들여쓴 산문은 이어 줄이 아니므로 남긴다' "$m" "$w"
+check 'Git 이 트레일러로 내지 않는 cherry-pick 줄과 그 뒤 들여쓴 산문은 남긴다' "$m" "$w"
 
 cat > "$m" <<'EOF'
 chore: bump version to 9.9.9

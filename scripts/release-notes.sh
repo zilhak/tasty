@@ -233,14 +233,14 @@ END {
         while (stop > 0 && blank(line[stop])) stop--
         start = stop
         while (start > 0 && !blank(line[start])) start--
-        # Git 처럼 구분자(Key:)가 있는 줄 바로 뒤의 들여쓴 줄만 그 트레일러의 이어 줄로 본다.
+        # git interpret-trailers --parse 가 내는 줄(구분자 Key: 가 있는 트레일러)과 그 바로 뒤의 들여쓴 이어 줄만 뺀다.
+        # (cherry picked from commit ...) 줄은 Git 이 블록 판정에만 쓰고 트레일러로 내지 않으므로 남긴다.
         keep = 0; folded = 0
         for (k = start + 1; k <= stop; k++) {
             l = line[k]
             if (folded && l ~ /^[ \t]/) continue
             folded = 0
             if (l ~ /^[A-Za-z0-9-]+[ \t]*:/) { folded = 1; continue }
-            if (l ~ /^\(cherry picked from commit /) continue
             kept[++keep] = l
         }
         n = 0
