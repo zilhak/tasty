@@ -46,7 +46,7 @@ Rust 기반 네이티브 GUI 앱으로 Windows, macOS, Linux를 모두 지원한
 | Result를 다루거나 로그를 남기기 전 | `docs/dev-guide/error-handling.md` |
 | 기능을 없애거나 저장 형식을 바꾸기 전 | 이 문서 "1.0 전 저장 형식" |
 | 플러그인을 만들거나 권한·민감 데이터를 다루기 전 | `docs/dev-guide/plugin-development.md`(민감 데이터는 "민감 데이터 — regular · secret · keyring 선택" 절), `docs/dev-guide/plugin-permissions.md` |
-| 번들 plugin 코드를 고친 뒤 실행 중 인스턴스에 반영하기 전(새 plugin을 만들지 않아도) | `docs/dev-guide/plugin-development.md` §9.1. 실행 중 프로필 확인 → `disable` → 그 프로필로 `just build-plugins` → `upgrade-builtins` → `enable` 순서다. 공식 플러그인 소스를 고쳤다면 `--from-checkout`으로 공식 플러그인 레포 체크아웃에서 빌드하고, mesh-demo만 고쳤다면 옵션 없이 실행한다. 서명은 release/dist 프로필에서만 붙는다 |
+| 번들 plugin 코드를 고친 뒤 실행 중 인스턴스에 반영하기 전(새 plugin을 만들지 않아도) | `docs/dev-guide/plugin-development.md` §9.1. 실행 중 프로필 확인 → `disable` → 그 프로필로 `just build-plugins` → `upgrade-builtins` → `enable` 순서다. 공식 플러그인 소스를 고쳤다면 `--from-checkout`으로 공식 플러그인 레포 체크아웃에서 빌드한다. 서명은 release/dist 프로필에서만 붙는다 |
 | 빌드 프로필을 고르거나 빌드·검사를 돌리기 전 | `docs/dev-guide/build.md` "빌드 프로필 (3종)"(자체 검증에 `dist`를 쓰지 않는다)·"검증 명령"·"개발 번들"·"도구", `docs/dev-guide/ci-gates.md` |
 | 변경을 검증하기 시작할 때(첫 실행 검증·시나리오 준비 전) | `docs/dev-guide/self-verification.md` "원칙"(검증 가능 여부 판단, 격리 실행). 빌드·테스트 통과와 실제 실행 확인은 구분하고, 격리된 debug 인스턴스로 시나리오를 재현한다 |
 | UI·렌더링·OS·환경별 동작을 검증하기 전 | `docs/ai-verification/index.md`의 해당 항목 문서. UI 변경이면 `docs/ai-verification/screenshot-methods.md` "시각 판정 체크리스트"(체크리스트와 스크린샷 판단 휴리스틱) |

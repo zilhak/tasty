@@ -6,11 +6,11 @@
 
 ## 기여 타입 → 예제 플러그인
 
-공식 플러그인의 소스는 tasty-official-plugins 레포에 있다. 아래 git-viewer·clipboard-viewer·claude·codex 링크는 그 레포의 정본 문서로 간다. image·html·markdown은 surface kind라 이 레포의 `surfaces/` 문서가 정본이고, mesh-demo는 이 레포에 있다.
+공식 플러그인의 소스는 tasty-official-plugins 레포에 있다. 아래 git-viewer·clipboard-viewer·claude·codex 링크는 그 레포의 정본 문서로 간다. image·html·markdown은 surface kind라 이 레포의 `surfaces/` 문서가 정본이다. 이 레포에는 플러그인 소스가 없다.
 
 | 만들고 싶은 것 | 보면 되는 번들 플러그인 | 난이도 |
 |---------------|------------------------|--------|
-| **egui-mesh surface** (자가 렌더 mesh 합성) | [image](../surfaces/image/index.md) · [mesh-demo](egui-mesh-channel.md)(최소 PoC) | ★★ |
+| **egui-mesh surface** (자가 렌더 mesh 합성) | [image](../surfaces/image/index.md) · [egui-mesh 채널](egui-mesh-channel.md)(계약) | ★★ |
 | **webview surface** | [html](../surfaces/html/index.md) · [markdown](../surfaces/markdown/index.md)(+파일 핸들러·settings, docs/design/systems/webview.md) | ★★ |
 | **도구 메뉴 항목 + popup** | [git-viewer](https://github.com/zilhak/tasty-official-plugins/blob/develop/docs/plugins/git-viewer/index.md)(view/logic 분리) · [clipboard-viewer](https://github.com/zilhak/tasty-official-plugins/blob/develop/docs/plugins/clipboard-viewer/index.md)(master-detail) | ★★ |
 | **CLI + IPC namespace** | [codex](https://github.com/zilhak/tasty-official-plugins/blob/develop/docs/plugins/codex/index.md) · [claude](https://github.com/zilhak/tasty-official-plugins/blob/develop/docs/plugins/claude/index.md) | ★★★ |
@@ -92,7 +92,7 @@ contribute 한 항목에 대응하는 콜백만 채우면 된다 — surface 가
 
 ### Surface kind — `rendering` 3 종
 
-- **`rendering = "egui-mesh"`** (번들 예: image/mesh_demo, 그리고 markdown 의 확인 팝업 2 개): 플러그인이 **자기 프로세스에서 egui 를 tessellate** 한 mesh 를 host 가 전용 `egui_wgpu::Renderer` 로 합성. SDK 를 `features=["egui-mesh"]` 로 받아 `paint_surface` 에서 `EguiMeshSurface::paint(...)` 호출. 커스텀 plugin 도 번들 plugin 과 같은 조건(api_version 일치, host 내장·다른 plugin 의 kind 이름과 충돌 없음)으로 등록한다. 조건과 이름 충돌 규칙은 [egui-mesh-channel "개방 정책"](egui-mesh-channel.md#개방-정책).
+- **`rendering = "egui-mesh"`** (번들 예: image, 그리고 markdown 의 확인 팝업 2 개): 플러그인이 **자기 프로세스에서 egui 를 tessellate** 한 mesh 를 host 가 전용 `egui_wgpu::Renderer` 로 합성. SDK 를 `features=["egui-mesh"]` 로 받아 `paint_surface` 에서 `EguiMeshSurface::paint(...)` 호출. 커스텀 plugin 도 번들 plugin 과 같은 조건(api_version 일치, host 내장·다른 plugin 의 kind 이름과 충돌 없음)으로 등록한다. 조건과 이름 충돌 규칙은 [egui-mesh-channel "개방 정책"](egui-mesh-channel.md#개방-정책).
 - **`rendering = "webview"`** (html, markdown — [WebView 호스트 계약](../design/systems/webview.md)): host 의 네이티브 WebView 오버레이로 그림. html 은 surface 의 URL 을 host 가 동기화하고, markdown 은 plugin 이 직접 sanitize 된 HTML 문서를 생성해 로드시킨다. WebView 의 zoom·JS·원격 콘텐츠·색 구성표는 kind 를 등록한 plugin 의 `plugin_settings` 에서 읽으므로 커스텀 plugin 도 설정 페이지에 같은 `storage_key`(`zoom`·`sandbox_scripts`·`allow_remote_content`·`color_scheme`)를 선언해 사용자 설정을 받을 수 있다. 설정 창에 두지 않을 기본값은 kind 선언의 `[surface_kinds.webview_defaults]`(같은 키, webview kind 전용)로 정한다. 우선순위와 `script_gate` 를 선언한 kind 의 문서별 스크립트 게이트의 차이는 [WebView 호스트 계약 "설정 출처"](../design/systems/webview.md#설정-출처--kind-를-등록한-plugin).
 - **`rendering = "remote"` (기본)**: webview 와 같은 `RemoteSurface` stand-in 등록만 하는 marker — host 는 이 kind 의 콘텐츠를 그리지 않는다. `snapshot_surface`/`restore_surface` 로 세션 복원.
 
@@ -752,7 +752,7 @@ openssl pkey -in my-plugin.pem -pubout -outform DER | tail -c 32 > <plugin-dir>/
 - `.pub` 가 없거나 서명 키와 다르면 각각 `missing-pubkey`·`signature-error` 미인증이다. 서명 판정은 매니페스트 한 파일이 그 키로 서명됐는지만 확인한다. 바이너리 내용이나 실행 중 동작은 확인하지 않으며, 원칙의 인증(공식 플러그인은 공식 릴리스 절차로 만든 산출물, 커스텀 플러그인은 마켓플레이스가 소스를 확인하고 직접 빌드한 산출물. 향후 기능)과 다르다.
 - 부팅 탐색은 release 에서 신뢰했거나 사용자가 고른 plugin 만 등록하고, debug 에서는 서명을 건너뛴다. debug 에서 설치가 통과했다는 사실만으로 release 사용자 경험을 확인했다고 보지 않는다.
 
-**번들 플러그인 개발**: 공식 플러그인(`BUILTINS` 중 `source` 가 `OfficialRelease`, `crates/tasty-host-plugin/src/builtin.rs`)의 소스는 공식 플러그인 레포에 있다. 개발 번들(`target/<profile>/builtin-plugins/`)은 `just build-plugins` 가 잠금 파일의 릴리스 산출물을 받아 준비하고, 플러그인 코드를 고칠 때는 그 레포 체크아웃에서 `just build-plugins --from-checkout [DIR]` 로 빌드해 같은 자리에 놓는다. 호스트 계약(SDK·protocol 등)과 플러그인을 함께 바꾸면 `--with-local-tasty` 를 더해 이 체크아웃의 tasty 패키지로 빌드한다. 받은 산출물과 `--with-local-tasty` 없는 빌드는 플러그인 레포가 기준으로 삼은 tasty 커밋의 계약으로 만들어지므로, 그 뒤 이 체크아웃이 바꾼 계약에는 맞지 않을 수 있다. 명령·옵션·서명 순서는 [build.md "Plugin 빌드 / 스테이징"](build.md#plugin-빌드--스테이징)에 있다. 이 workspace 에서 빌드하는 플러그인(mesh-demo)만 debug 빌드에서 호스트가 부팅에 workspace→bundle 자동 sync(`ensure_dev_bundle`)한다 — 루트 `cargo build` 는 본 바이너리만 빌드하므로 mesh-demo 변경은 `cargo build -p tasty-plugin-mesh-demo` 뒤에 반영된다. 공식 플러그인은 workspace 에 같은 크레이트가 남아 있어도 동기화하지 않는다. release/dist 는 `just build --release` 또는 해당 프로필의 `just build-plugins` 로 미리 스테이징해야 한다. bundle→설치 디렉터리 sync(`install_builtins_if_needed`)는 모든 프로필에서 유지된다. 이 복사는 macOS의 `com.apple.quarantine` 같은 확장 속성을 지우지 않는다. 앱 번들 안 파일에 그 속성이 남아 있으면 복사본도 같은 속성을 가질 수 있고, 처리는 사용자가 정한다([본체와 기반 기술](../principles/control-and-data.md#본체와-기반-기술)). **부팅 없이, 실행 중인 tasty 에 플러그인 변경만 반영하는 절차(호스트 재빌드·재시작 불필요)는 아래 §9.1.**
+**번들 플러그인 개발**: 공식 플러그인(`BUILTINS`, `crates/tasty-host-plugin/src/builtin.rs`)의 소스는 공식 플러그인 레포에 있다. 개발 번들(`target/<profile>/builtin-plugins/`)은 `just build-plugins` 가 잠금 파일의 릴리스 산출물을 받아 준비하고, 플러그인 코드를 고칠 때는 그 레포 체크아웃에서 `just build-plugins --from-checkout [DIR]` 로 빌드해 같은 자리에 놓는다. 호스트 계약(SDK·protocol 등)과 플러그인을 함께 바꾸면 `--with-local-tasty` 를 더해 이 체크아웃의 tasty 패키지로 빌드한다. 받은 산출물과 `--with-local-tasty` 없는 빌드는 플러그인 레포가 기준으로 삼은 tasty 커밋의 계약으로 만들어지므로, 그 뒤 이 체크아웃이 바꾼 계약에는 맞지 않을 수 있다. 명령·옵션·서명 순서는 [build.md "Plugin 빌드 / 스테이징"](build.md#plugin-빌드--스테이징)에 있다. 호스트는 어느 프로필에서도 부팅할 때 workspace 의 크레이트를 번들로 옮기지 않으므로, 모든 프로필에서 해당 프로필의 `just build-plugins`(release 는 `just build --release` 도 된다)로 미리 스테이징한다. bundle→설치 디렉터리 sync(`install_builtins_if_needed`)는 모든 프로필에서 유지된다. 이 복사는 macOS의 `com.apple.quarantine` 같은 확장 속성을 지우지 않는다. 앱 번들 안 파일에 그 속성이 남아 있으면 복사본도 같은 속성을 가질 수 있고, 처리는 사용자가 정한다([본체와 기반 기술](../principles/control-and-data.md#본체와-기반-기술)). **부팅 없이, 실행 중인 tasty 에 플러그인 변경만 반영하는 절차(호스트 재빌드·재시작 불필요)는 아래 §9.1.**
 
 디버깅: `tasty plugin logs <id> --follow` / `~/.tasty/plugins-logs/<id>.log` / `RUST_LOG=debug`.
 
@@ -777,7 +777,7 @@ tasty plugin disable com.tasty.<name>
 PROFILE=release just build-plugins --from-checkout     # 실행 중 tasty 와 같은 프로필. 고친 플러그인 레포 체크아웃에서 빌드
 PROFILE=release just build-plugins                     # 잠금 파일의 릴리스 산출물로 되돌릴 때
 ```
-release/dist 프로필은 같은 명령이 키 준비 → 빌드(또는 받기) → `sign-bundle.sh --dir` 서명까지 한다. 서명이 없으면 다음 단계가 `untrusted: UnknownKey` 로 skip 한다. debug 호스트는 서명을 보지 않는다. release/dist 의 `upgrade-builtins` 는 workspace 소스를 읽지 않는다. mesh-demo 만 고쳤다면 옵션 없이 같은 프로필로 `just build-plugins` 를 실행한다(스크립트가 mesh-demo 를 빌드해 놓는다).
+release/dist 프로필은 같은 명령이 키 준비 → 빌드(또는 받기) → `sign-bundle.sh --dir` 서명까지 한다. 서명이 없으면 다음 단계가 `untrusted: UnknownKey` 로 skip 한다. debug 호스트는 서명을 보지 않는다. release/dist 의 `upgrade-builtins` 는 workspace 소스를 읽지 않는다.
 
 **3) 재동기화 → 재기동 (순서 중요)**
 ```bash

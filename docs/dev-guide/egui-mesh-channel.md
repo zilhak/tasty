@@ -41,7 +41,7 @@ epaint 의 `serde` feature 가 꺼져 있어 paint 타입은 JSON 직렬화가 �
 | 보조 핸들 채널 (shared buffer 핸들 전송) | host `crates/tasty-host-plugin/src/handle_channel.rs` · plugin `crates/tasty-plugin-sdk/src/handle_channel.rs` · 매핑 `crates/tasty-shm/` |
 | host 측 surface stand-in | `src/runtime/egui_mesh_surface.rs` |
 | 화이트리스트 + api_version gate + registry 등록 | `src/runtime/surface_registry/egui_mesh.rs` |
-| PoC 소비자 | `crates/tasty-plugin-mesh-demo/` |
+| 소비자 | [공식 플러그인 레포](https://github.com/zilhak/tasty-official-plugins)의 image 플러그인 |
 
 ### 보조 핸들 채널 — shared buffer 를 plugin 에 넘기는 전송 (크로스플랫폼)
 
@@ -268,11 +268,11 @@ latest-wins 라, host 가 중간 frame 을 못 보면 그 frame 의 텍스처 de
    `last_seq` 를 전진시키지 않는다(**AcceptedStale**). 그러면 다음 tick 도 체인 단절로 남아
    full 재전송 요청을 계속 유지하고, 유실로 stale 해진 atlas 는 다음 full frame 으로 정합
    복구된다. mesh(기하)는 최신으로 갱신되므로 리사이즈/split 로 폭이 바뀌어 seq 가 튀어도
-   mesh-demo 등 mesh surface 가 옛 폭에 고정(우측 잘림)되지 않고 즉시 reflow 되고, 그 사이
+   mesh surface 가 옛 폭에 고정(우측 잘림)되지 않고 즉시 reflow 되고, 그 사이
    글리프 uv 만 다음 full 까지 stale atlas 를 가리킨다. 참조가 하나라도 미상주(image plugin
    신규 비트맵 등)거나 delta 가 오버런이면 **NeedsFull** — mesh 도 보류하고 full 을
    재요청한다(오버런은 적용 시 egui-wgpu 가 리사이즈 없이 write 해 크래시하므로 보류가
-   방어선이다). mesh-demo 처럼 텍스처가 없는 순수 위젯 surface 는 참조가 항상 폰트
+   방어선이다). 텍스처가 없는 순수 위젯 surface 는 참조가 항상 폰트
    atlas(상주)라 단절 시 AcceptedStale 경로다.
 
 요청 플래그의 흐름: 렌더 prepare 가 `NeedsFull` 또는 `AcceptedStale` 을 판정하면 `GpuState` 의
@@ -352,7 +352,7 @@ escape 소비를 **먼저** 처리한 뒤, 소비되지 않은 키를 이 forwar
 목적지가 그 surface 일 때만 넘긴다([입력 계층의 키 입력 경로](../architecture/input-layer.md#키-입력-경로)) — 단축키
 선점 순서는 터미널 forward 와 동일하다. IME 는 조합 중 preedit 문자열까지 나르므로
 (commit-only 아님) plugin 의 egui `TextEdit` 이 조합 중간 상태를 인라인 표시한다.
-image/mesh_demo의 키·IME 입력은 이 경로로 전달하며, 호스트 egui에는 넣지 않는다
+image 같은 egui-mesh surface의 키·IME 입력은 이 경로로 전달하며, 호스트 egui에는 넣지 않는다
 (`main.rs`의 host-egui 키 입력에서 제외). 따라서 호스트 egui가 먼저 처리하지 않는다.
 (markdown은 본문 surface가
 [WebView 호스트 계약](../design/systems/webview.md) 로 webview 전환되어 이
@@ -594,7 +594,7 @@ plugin 이 그린 mesh 를 자기 화면에 렌더하고, 자기 입력을 원�
 `tasty-plugin.toml` 의 `[[surface_kinds]]` 에 `rendering = "egui-mesh"` 를 선언하고,
 SDK 를 `features = ["egui-mesh"]` 로 받아 `EguiMeshSurface::paint(&ctx.host,
 &ctx.params, |egui_ctx| { ... })` 를 `Plugin::paint_surface` 에서 호출하면 된다.
-인코딩과 송신은 SDK가 처리한다. 최소 예시는 `crates/tasty-plugin-mesh-demo/src/main.rs`.
+인코딩과 송신은 SDK가 처리한다. 예시는 [공식 플러그인 레포](https://github.com/zilhak/tasty-official-plugins)의 image 플러그인이다.
 
 ## plugin 콘텐츠의 clip 규약 (surface·popup·banner 공통)
 
@@ -699,9 +699,7 @@ egui::ScrollArea::vertical()
 가로 축 하나만 켜져 있어도(`[true, false]`) 같은 증상이 난다 — 문제를 만드는 것은
 스크롤하지 **않는** 축의 크기가 줄어들기 때문이다. 회귀 검증에서는 화면 영역의
 **오른쪽 끝 근처**에서도 휠을 굴려야 한다. 가운데에서만 검사하면 좁아진 판정 영역 안에
-들어가 이 문제를 놓칠 수 있다
-(`crates/tasty-plugin-mesh-demo/src/main.rs` 의
-`the_wheel_scrolls_the_list_from_anywhere_on_the_surface`).
+들어가 이 문제를 놓칠 수 있다.
 
 <a id="egui-mesh-popup-채널-a2"></a>
 
@@ -792,15 +790,14 @@ plugin `api_version` 이 호스트와 일치할 때만 열린다(`open_popup_ins
 | host 라우팅 (popup_mesh_frames / set_context 송신) | `crates/tasty-host-plugin/src/manager/{pump,events,buffer,popup}.rs` |
 | host 셸 + 입력 forward + 영역 수집 + IME 커서 영역 캐시 | `src/plugin_bridge/popup_render.rs` |
 | host 합성 (decode + 전용 Renderer) | `src/gfx/gpu/egui_mesh_prepare.rs` (`render_egui_mesh_popups`) |
-| PoC 소비자 | `crates/tasty-plugin-mesh-demo/` (`popup_id = "demo"`) |
+| 소비자 | [공식 플러그인 레포](https://github.com/zilhak/tasty-official-plugins)의 git-viewer·clipboard-viewer·markdown |
 
 ### plugin 작성
 
 `tasty-plugin.toml` 의 `[[contributes.popup]]` 에 `rendering = "egui-mesh"` 를 선언하고
 `Plugin::paint_popup` 에서 `EguiMeshPopup::paint(&ctx.host,
 &ctx.params, |egui_ctx| { ... })` 를 호출한다. `open_popup`/`on_popup_closed` 로
-인스턴스별 상태를 초기화/정리한다. 최소 예시는 `crates/tasty-plugin-mesh-demo/src/main.rs`
-의 `draw_popup`.
+인스턴스별 상태를 초기화/정리한다. 예시는 [공식 플러그인 레포](https://github.com/zilhak/tasty-official-plugins)의 clipboard-viewer 다.
 
 > egui-mesh 는 plugin popup 콘텐츠의 **유일한 렌더 채널**이다 — git-viewer /
 > clipboard-viewer 가 이 채널로 자가 렌더하며, 옛 UiNode popup 렌더 경로는 존재하지
@@ -897,7 +894,7 @@ surface 에만 배너를 허용한다(`open_plugin_banner` 가 surface→plugin 
 | host 입력 forward + 영역 수집 + reconcile + 잘린 본문 툴팁 | `src/plugin_bridge/banner_render.rs` |
 | host open/close 처리와 소유 검증 | `src/app/dispatch/plugin_banner.rs` |
 | host 합성 (decode + 전용 Renderer) | `src/gfx/gpu/egui_mesh_prepare.rs` (`render_egui_mesh_banners`) |
-| PoC 소비자 | `crates/tasty-plugin-mesh-demo/` (`banner_id = "status"`) |
+| 소비자 | 없음 |
 
 ### plugin 작성
 
@@ -906,16 +903,15 @@ surface 에만 배너를 허용한다(`open_plugin_banner` 가 surface→plugin 
 `EguiMeshBanner::paint(&ctx.host, &ctx.params, |egui_ctx| { ... })` 를 호출한다.
 `open_banner`/`on_banner_closed` 로 인스턴스별 상태를 초기화/정리한다. plugin 은
 `banner.open { banner_id, surface_id }`(자기 소유 surface) 로 띄우고 `banner.close
-{ instance_id }` 로 닫는다. 최소 예시는 `crates/tasty-plugin-mesh-demo/src/main.rs` 의
-`draw_banner`. debug 검증은 `debug.plugin_banner.open/close`.
+{ instance_id }` 로 닫는다. 이 채널을 쓰는 번들 플러그인은 아직 없다. debug 검증은 `debug.plugin_banner.open/close`.
 
 배너 콘텐츠는 항상 배너 문맥 안에서 그려진다. `EguiMeshBanner::run_frame`이 프레임 전체를
 `tasty_ui_widgets::banner_surface_ctx`로 감싸므로 작성자는 아무것도 감싸지 않는다. 공용
 `tasty_ui_widgets::Button`의 Secondary 변형은 배너 위에서 `banner_button_bg`·`banner_button_border`
 박스로 그려진다. 같은 plugin의 surface·popup에는 이 문맥이 적용되지 않는다
-([배너 위 버튼](../design/systems/banner.md#배너-위-버튼)). mesh-demo의 `BUMP` 버튼이 이 경로의 예제다.
+([배너 위 버튼](../design/systems/banner.md#배너-위-버튼)).
 
-> 현 단계는 채널 **인프라 + 검증용 더미 PoC banner** 까지다. 실제 소비자 전환은 별도 작업.
+> 현 단계는 채널 **인프라** 까지다. 이 채널을 쓰는 번들 플러그인은 없다.
 
 ## 이미지 텍스처의 전송
 

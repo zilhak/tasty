@@ -115,7 +115,7 @@ native WebView는 대기 표시를 위해 숨기거나 크기를 줄이지 않�
 | kind | mirror 동작 | 제한 |
 |---|---|---|
 | terminal | 화면 스냅샷과 이후 출력 전달 | 입력은 점유 client만 보낸다 |
-| egui-mesh(번들 image/mesh_demo와 커스텀 plugin의 egui-mesh kind) | mesh 프레임 전달 | 입력 역방향 전달은 headless 서버에서만 지원한다. GUI 서버에서는 콘텐츠만 보인다 |
+| egui-mesh(번들 image와 커스텀 plugin의 egui-mesh kind) | mesh 프레임 전달 | 입력 역방향 전달은 headless 서버에서만 지원한다. GUI 서버에서는 콘텐츠만 보인다 |
 | markdown | 원문을 받아 client의 markdown plugin이 자체 테마·설정으로 렌더 | 원격 상대경로 이미지·링크는 client에 파일이 없어 깨질 수 있다. 주소창에 원격 경로를 넣으면 같은 surface가 그 원격 파일로 바뀌며, 원격에 파일이 없으면 원격이 거절하고 주소창에 실패가 보인다. 최근 목록은 로컬 문서에만 있다 |
 | explorer | `list_dir_request` / `list_dir_result`로 디렉토리 탐색. 파일 더블클릭은 원격에 새 탭으로 연다 | 원격에서 콘텐츠를 mirror하는 kind(markdown 등)만 열 수 있다. 파일 변경(새 폴더·새 파일·이름 변경·휴지통·같은 연결 안의 붙여넣기·끌기)은 server 가 원격 쓰기 capability 를 알린 연결에서만 server 가 실행한다. 시스템에서 열기·새 탭·즐겨찾기 추가는 막는다 |
 | html | Linux X11·Windows·macOS GUI에서 파일 entry를, Linux X11·Windows·macOS 27 이상 GUI에서 원격 HTTP(S)를 native WebView로 표시 | 양쪽 협상과 client HTML plugin이 필요하다. 파일은 같은 root GET, HTTP(S)는 원격 호스트에서 요청한다. native Wayland·macOS 11–26 client는 HTTP(S)를 알리지 않으며 client network fallback은 없다. macOS는 원격 loopback 주소를 별칭으로 열어 페이지의 `location.host`가 다르다 |
@@ -707,10 +707,9 @@ bulk 파일 전송과 mirror 터미널 이미지 붙여넣기 업로드에 대�
 - Given 같은 원격 When GUI 에서 `tasty remote attach --into-gui --workspace <id>`·`--into-gui --new-workspace` 또는 저장된 원격 행을 연결한다 Then 실패 결과가 같은 리스너 없음 안내다(`src/app/ipc/app_methods/remote.rs`·`src/app/auto_attach.rs` 시험, 실측: 저장 행이 없는 두 IPC 경로). 채널 연결 실패 줄 없이 끊긴 경우는 원래 오류를 남긴다.
 - Given 같은 원격 When 원격 연결 팝업이 그 프로필의 workspace 목록을 받는다 Then 팝업 문구에 리스너 없음 안내와 끊긴 원인이 함께 나온다. 채널 연결 실패 줄 없이 끊긴 경우는 원래 문구다(`crates/tasty-remote/src/browser.rs` 시험).
 - Given 부모 Tasty의 `TASTY_SESSION_TOKEN`을 상속한 GUI·CLI When 다른 인스턴스로 원격 브라우징·생성·생존 확인 요청을 보낸다 Then 요청에 세션 토큰이 없고, 원격은 `session_token unknown` 없이 응답한다.
-- Given workspace attach 대상에 egui-mesh surface(번들 image/mesh_demo 또는 커스텀 plugin 의 egui-mesh kind) 가 있음 When client 가 GUI mirror 로 attach Then 그 surface 의 실제 렌더 콘텐츠가 mirror pane 에 표시된다(placeholder 아님). markdown은 아래의 원문 전달 채널을 사용한다.
+- Given workspace attach 대상에 egui-mesh surface(번들 image 또는 커스텀 plugin 의 egui-mesh kind) 가 있음 When client 가 GUI mirror 로 attach Then 그 surface 의 실제 렌더 콘텐츠가 mirror pane 에 표시된다(placeholder 아님). markdown은 아래의 원문 전달 채널을 사용한다.
   - image — 미검증.
-  - mesh_demo — 미검증.
-  - 2종 공통 시각적 렌더 확인(실제 GUI attach client 로 mirror pane 화면 비교) — 미검증.
+  - 시각적 렌더 확인(실제 GUI attach client 로 mirror pane 화면 비교) — 미검증.
 - Given workspace attach 대상에 markdown surface 가 있음 When client 가 attach Then 그 surface 는 placeholder 가 아니라 전용 role 로 도착하고 원격 파일 경로와 탭 제목이 함께 실린다(`tests/attach_markdown_content_loopback.rs`).
 - Given mirror 의 markdown surface When client 가 원문을 요청 Then 서버가 실제 디스크의 원문을 그대로 회신하고, 읽을 수 없는 파일은 연결이 끊기거나 무응답이 되는 대신 사유와 함께 실패로 답한다(`tests/attach_markdown_content_loopback.rs`).
   - client GUI 가 그 원문을 실제로 렌더하는 것 — 실측(GUI 두 인스턴스 loopback attach): client plugin 이 원격 원문으로 HTML 을 만들어 올리고(`markdown surface N: loaded … bytes of HTML`), 화면에 원격 문서의 제목·본문이 그려진다.
@@ -737,7 +736,7 @@ bulk 파일 전송과 mirror 터미널 이미지 붙여넣기 업로드에 대�
 - Given 닫힌 원격 자식 When 서버 plugin 이 닫힌 뒤 10분 안에 그 자식의 결과를 맡긴다 Then 쌓여 client 확인으로 끝나고, 기록이 없으면(서버 재시작·기간 경과) `rejected` 다(`state.rs` 의 `a_closed_child_still_takes_its_last_results_within_the_retention`·`a_child_record_gone_by_expiry_or_restart_rejects_new_results`).
 - Given 자식이 mirror 에 나타났지만 부모 아래 등록하지 못함 When call 이 끝남 Then 성공으로 답하지 않고 plugin 의 late_spawn 으로 넘겨 그 자식을 닫게 한다(`client.rs` 의 `a_child_that_could_not_be_registered_goes_to_the_late_path`).
 - Given 원격 실행을 선언하지 않은 plugin 명령 When 숫자 `--workspace` 와 상대 경로 인자 Then CLI 는 mirror 여부를 묻지 않고 로컬 기준 절대 경로로 바꾼다(`crates/tasty-cli/src/dynamic/tests.rs` 의 `a_method_without_remote_execution_keeps_local_paths_even_for_a_numeric_workspace`).
-- Given mesh mirror pane 이 표시 중 When client 가 그 pane 을 클릭/타이핑 Then 원격 plugin 프로세스의 상태가 실제로 바뀌고 그 결과가 mirror 에 반영된다(예: mesh_demo 클릭 카운터 증가).
+- Given mesh mirror pane 이 표시 중 When client 가 그 pane 을 클릭/타이핑 Then 원격 plugin 프로세스의 상태가 실제로 바뀌고 그 결과가 mirror 에 반영된다.
 - Given mesh mirror pane 에 텍스처 delta 체인 단절(예: 재연결) When client 가 감지 Then `MeshFullResendRequest` 로 전체 텍스처 상태를 재수신해 정상 렌더를 회복한다.
 
 > 프로토콜과 터미널 화면 동기화는 headless로 검증할 수 있다 — 같은 머신에 인스턴스를 띄우고 debug 빌드의 `tasty debug attach --workspace <id> --dump-after <ms>` 로 그 인스턴스의 포트에 SSH 없이 직접 붙어 grid 일치를 확인한다. 포트는 `TASTY_HOME` 이 가리키는 데이터 루트의 포트 파일에서 읽으므로 서버 인스턴스의 `TASTY_HOME` 으로 실행한다. workspace id 는 `tasty remote workspaces --ssh 127.0.0.1:<port>` 로 찾는다.

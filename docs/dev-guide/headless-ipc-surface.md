@@ -76,7 +76,7 @@ GUI 외부 IPC와 plugin host-call도 같은 경계를 사용한다.
 등록 시점은 다르다. GUI는 첫 창을 만들 때 `discover_and_start`를 호출하고
 (`app/window_lifecycle.rs`), 헤드리스는 필요한 plugin만 시작한다. 2026-09-09의
 격리 홈 측정에서는 부팅 직후 내장 kind 넷(`dag_graph`·`empty`·`explorer`·`terminal`),
-markdown 활성화 뒤 다섯, 번들 9개가 실행된 뒤 여덟(`html`·`image`·`mesh_demo` 추가)이었다.
+markdown 활성화 뒤 다섯, 당시 번들 9개가 실행된 뒤 여덟(`html`·`image`와 지금은 없는 개발용 kind 하나 추가)이었다.
 이 측정에서 네 plugin kind는 `registered: true`였고 `effective_rendering`도 선언과 같았다.
 
 `tab.create`·`pane.split`·`workspace.create`가 plugin kind를 요청하면

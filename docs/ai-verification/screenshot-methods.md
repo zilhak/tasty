@@ -9,7 +9,7 @@
 | terminal surface | **있다** — `--surface` 로 grid 크기 오프스크린, `--window` 로도 | 있다 |
 | host egui(chrome · explorer · dag_graph · empty) | **있다** — `--window` | 있다 |
 | 별도 winit 창(설정 · plugin · preset · 종료 확인) | **있다** — `--window <id>` 명시 | 있다 |
-| plugin egui-mesh(image · mesh_demo surface · popup · banner) | **있다** — `--window` | 미측정 (surface 축만 쟀다) |
+| plugin egui-mesh(image surface · popup · banner) | **있다** — `--window` | 미측정 (surface 축만 쟀다) |
 | **native WebView(markdown · html)** | **없다** — host chrome 만 나온다 | **있다 — 여기뿐** |
 | `tasty-gallery` | 없다(갤러리는 IPC 가 없다) | `TASTY_GALLERY_SHOT` env GPU 캡처 — 아래 |
 | 셸 설정 모드 등 IPC 를 못 쓰는 상태 | 없다 | 있다 |
@@ -82,7 +82,7 @@ tasty screenshot --path /abs/win.png --window 2
 |---|---|---|---|
 | GPU 셰이더 | `terminal` | 콘텐츠 나옴 | 콘텐츠 나옴 |
 | host egui | `empty` · `explorer` · `dag_graph` · chrome 전부 · 별도 winit 창(설정·plugin·preset·종료 확인) | 콘텐츠 나옴 | 콘텐츠 나옴 |
-| plugin egui-mesh | `image` · `mesh_demo` surface, plugin popup, plugin banner | 콘텐츠 나옴 | surface 확인. popup·banner는 미측정 |
+| plugin egui-mesh | `image` surface, plugin popup, plugin banner | 콘텐츠 나옴 | surface 확인. popup·banner는 미측정 |
 | **native WebView** | **`markdown` · `html`** | **안 나옴** — 아래 chrome 만 | 콘텐츠 나옴 |
 
 **webview 만 갈리는 이유는 환경이 아니라 구조다.** `ui.screenshot` 은 wgpu swapchain 을
@@ -202,15 +202,10 @@ macOS에서도 기록한 PID와 이번 실행 기록, 실행 파일 경로로 �
 
 ### 측정 전에 — 대상 바이너리가 최신인지 확인한다 (plugin)
 
-루트의 `cargo build`만으로 플러그인 실행 파일이 다시 만들어지지는 않는다. 공식 플러그인은 `just build-plugins`가 `target/<profile>/builtin-plugins/<id>/`에 놓는다. 기본은 잠금 파일의 릴리스 산출물이고, 플러그인 코드를 고친 검증은 공식 플러그인 레포 체크아웃에서 `--from-checkout`으로 빌드해 놓는다(호스트 계약도 바꿨다면 `--with-local-tasty`, [build.md](../dev-guide/build.md#plugin-빌드--스테이징)). 이 workspace에서 빌드하는 mesh-demo는 `cargo build -p tasty-plugin-mesh-demo`로 빌드한다.
+루트의 `cargo build`만으로 플러그인 실행 파일이 다시 만들어지지는 않는다. 공식 플러그인은 `just build-plugins`가 `target/<profile>/builtin-plugins/<id>/`에 놓는다. 기본은 잠금 파일의 릴리스 산출물이고, 플러그인 코드를 고친 검증은 공식 플러그인 레포 체크아웃에서 `--from-checkout`으로 빌드해 놓는다(호스트 계약도 바꿨다면 `--with-local-tasty`, [build.md](../dev-guide/build.md#plugin-빌드--스테이징)).
 
-여기에 스테이징이 겹친다. host 는 **debug 빌드에서 부팅할 때만** mesh-demo 를 `copy_if_newer` 로
-`target/debug/builtin-plugins/` 에 갱신한다. 공식 플러그인은 부팅이 갱신하지 않고 스테이징한 그대로 쓴다. release/dist 는 빌드 단계에서 스테이징한다. 모든 프로필은 번들에서 `<TASTY_HOME>/plugins/` 로
-sync 한다(`crates/tasty-host-plugin/src/builtin.rs`). debug 스테이징 판정(`copy_if_newer`)은
-**mtime 우선**이다(번들 → 홈 sync 는 내용 판정이다) — src 가 새것이면 내용을 안 보고 옮기고, dest 가 새것이면 내용을 안 보고
-건너뛰며, **시각이 같을 때만 내용을 본다.** 그래서 "시각이 같아 조용히 건너뛴다" 는 갈래는
-닫혔지만, **dest 가 더 새것인데 내용이 다른 경우**(src 가 `cp -p` 복원 등으로 더 옛 시각을 달고
-바뀐 경우)는 여전히 못 본다.
+여기에 스테이징이 겹친다. host 는 부팅할 때 번들을 갱신하지 않고 스테이징한 그대로 쓴다. 모든 프로필은 번들에서 `<TASTY_HOME>/plugins/` 로
+sync 한다(`crates/tasty-host-plugin/src/builtin.rs`). 이 sync 는 버전이 같으면 내용으로 판정하고 mtime 은 보지 않는다.
 빌드하지 않은 바이너리는 스테이징이 정상이어도 이전 코드다. 빌드 완료와 스테이징 완료를 따로 확인한다.
 시험 통과는 플러그인 실행 파일 빌드와 번들 준비를 대신하지 않는다. 플러그인 실행 파일을 실행하는 검증은 그 실행 파일을 명시적으로 빌드한 뒤 한다. 다시 빌드됐는지는 `Compiling` 줄이 아니라 소스, 빌드 전 실행 파일, 빌드 후 실행 파일의 mtime 세 값으로 판정한다.
 
@@ -219,7 +214,7 @@ sync 한다(`crates/tasty-host-plugin/src/builtin.rs`). debug 스테이징 판�
 기동 전에 돌린다:
 
 ```bash
-PROFILE=debug just build-plugins                  # 릴리스 산출물로 공식 플러그인 + mesh-demo
+PROFILE=debug just build-plugins                  # 릴리스 산출물로 공식 플러그인
 PROFILE=debug just build-plugins --from-checkout  # 고친 공식 플러그인을 옆 체크아웃에서 빌드
 ```
 

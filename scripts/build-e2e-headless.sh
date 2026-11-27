@@ -16,7 +16,7 @@ if [ $rc -ne 0 ]; then
   exit "$rc"
 fi
 
-# 번들 플러그인이 필요한 스위트를 위해 같은 target 옆에 공식 플러그인과 mesh-demo를 준비한다.
+# 번들 플러그인이 필요한 스위트를 위해 같은 target 옆에 공식 플러그인을 준비한다.
 # stdout은 바이너리 경로 하나만 내야 하므로 준비 출력은 stderr로 보낸다.
 CARGO_TARGET_DIR="$HL_DIR" bash "$ROOT/scripts/stage-dev-plugins.sh" --profile debug >&2
 rc=$?

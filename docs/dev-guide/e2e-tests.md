@@ -6,9 +6,9 @@
 ## 0. 전제: 개발 번들 준비 (필수)
 
 번들을 사용하는 E2E를 실행하기 전에 `PROFILE=debug just build-plugins`로 실행 파일 옆
-`builtin-plugins/`에 공식 플러그인(잠금 파일의 릴리스 산출물)과 mesh-demo를 준비한다.
+`builtin-plugins/`에 공식 플러그인(잠금 파일의 릴리스 산출물)을 준비한다.
 `cargo build --workspace`와 `cargo test --workspace`는 공식 플러그인을 준비하지 않는다.
-debug 부팅이 workspace에서 채우는 것은 mesh-demo뿐이다. 공식 플러그인 코드나 호스트 계약을
+부팅은 workspace에서 번들을 채우지 않는다. 공식 플러그인 코드나 호스트 계약을
 바꾼 작업은 `--from-checkout`(계약도 바꿨다면 `--with-local-tasty`)으로 그 레포 체크아웃에서
 빌드해 준비한다([build.md](build.md#plugin-빌드--스테이징)). 실패 시 stderr의 version drift와
 identity drift를 확인한다.
@@ -45,7 +45,7 @@ cargo test --test shared_instance_harness
 기본 target/debug/tasty와 별도 경로를 사용해야 다음 GUI test 빌드가 override를 덮어쓰지 않는다.
 번들 플러그인도 같은 target에 준비한다. 번들은 exe 옆 builtin-plugins에서 찾는다.
 공식 플러그인은 `scripts/stage-dev-plugins.sh`(`just build-plugins`)가 잠금 파일의 릴리스 산출물로 채우고,
-부팅은 workspace 크레이트로 덮지 않는다. debug 부팅이 exe 위치로 개발 저장소를 찾아 채우는 것은 mesh-demo뿐이다.
+부팅은 workspace 크레이트로 덮지 않는다.
 `scripts/build-e2e-headless.sh`는 빌드 뒤 이 준비까지 한다. 기본 target을 쓰는 스위트는 먼저
 `PROFILE=debug just build-plugins`를 실행한다. 공식 플러그인을 바꾸면 그 레포 체크아웃에서
 `--from-checkout`으로 다시 준비한다([build.md](build.md#plugin-빌드--스테이징)).

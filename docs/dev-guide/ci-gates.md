@@ -133,7 +133,7 @@ CI에 해당 캐시가 없었다면 그 실행으로 캐시가 있는 환경까�
 번들 플러그인이 필요한 통합 시험(`tests/spawn_diag/mod.rs`의 `SUITES_THAT_CALL_BUNDLED_PLUGINS`)을 돌리는 잡은
 시험 전에 `bash scripts/stage-dev-plugins.sh --profile debug`로 `target/debug/builtin-plugins/`를 준비한다.
 `crossplatform-check.yml`의 `check-headless`(`stage official plugins` 단계, 같은 잡의 관측용 gui e2e 단계도 이 폴더를 쓴다)와
-`test.yml`의 `test-linux-x64`(수동 실행)다. 공식 플러그인은 잠금 파일의 릴리스 산출물을 받고 mesh-demo만 workspace에서 빌드한다.
+`test.yml`의 `test-linux-x64`(수동 실행)다. 공식 플러그인은 잠금 파일의 릴리스 산출물을 받는다. workspace에서 빌드하는 번들 플러그인은 없다.
 `check-windows`·`check-macos`는 `--lib --bins`와 지목한 패키지만 돌려 번들이 필요 없으므로 이 단계가 없다.
 
 - 픽스처 대조: `check-headless`는 `cargo test (headless)` 바로 뒤 `check official plugin fixtures` 단계(작업 트리 준비가 성공했으면 앞 단계가 실패해도 돈다)에서 `bash scripts/sync-official-plugin-fixtures.sh --check --shared-cache`를 실행한다. `stage official plugins` 단계가 받은 압축 파일을 전용 폴더로 복사해 다시 검증하고 풀어, 호스트 시험 픽스처가 잠금 산출물과 바이트로 같은지 본다. 다르면 단계가 실패한다. headless 시험 뒤에 두어 픽스처가 어긋난 변경에서도 호스트 시험 결과가 남는다([플러그인 패키징](plugin-packaging.md#호스트-시험-픽스처)).
@@ -459,8 +459,7 @@ self-hosted 러너에서 도는 일반 검사 잡은 이전 실행의 `target/`�
 - 하는 일: 루트 `target`만 빼고 `git reset --hard`와 `git clean -ffdx`를 되살린다. `crates/` 아래에 무시
   파일만 남은 폴더도 여기서 지워진다. `target`을 남기면 그 안에서 Cargo가 관리하지 않는 상태(번들 폴더,
   스테이징 잠금과 임시 폴더, 시험 하네스의 번들 스냅숏, 픽스처 대조 폴더)를 지워 처음부터 빌드한 실행과
-  같게 만든다. workspace 원천 번들 플러그인(mesh-demo)의 실행 파일도 지운다. debug 호스트가 그 파일로 번들을
-  다시 만들기 때문이다. 받기 캐시 `target/official-plugins`는 해시 대조 뒤에만 쓰므로 남긴다. 프로필 폴더나
+  같게 만든다. 받기 캐시 `target/official-plugins`는 해시 대조 뒤에만 쓰므로 남긴다. 프로필 폴더나
   교차 타깃 프로필 폴더가 심볼릭 링크면 링크 대상은 건드리지 않고 링크만 지운다.
 - Windows: 두 Windows 잡은 `pwsh` 스텝에서 `git` 옆의 Git Bash로 같은 스크립트를 부른다. `shell: bash`는 잡의
   PATH에서 bash를 찾으므로 WSL bash가 잡힐 수 있다.
@@ -1128,7 +1127,7 @@ allow 검사에는 cfg_attr 안의 allow와 한글 `이유:` 표지도 포함한
 | pre-commit | 로컬 티켓 인용(T.1) | ✅ doc-guards.yml과 pre-push B.7도 no_todo_file_citation을 실행한다. 이 검사는 staged diff가 아닌 전체 작업 트리를 읽는다. |
 | pre-push | 플러그인 버전 `--range <원격 tip> <로컬 tip>`(B.9) | ✅ plugin-version-check.yml과 같은 스크립트다. Git이 전달한 두 tip을 사용하며 비교 범위를 알 수 없으면 실패한다. staged 변경을 보는 P.1과 구분한다. |
 | pre-push | `cargo clippy --workspace --all-targets -- -D warnings` | 부분 — 훅은 실행하는 호스트의 기본 feature·기본 타깃으로 잰다. Linux 호스트에서 타깃·Cargo 설정이 같으면 `check-headless` 의 `cargo clippy (linux, gui)` 스텝과 같은 조합이고 차이는 `--locked` 뿐이다. Windows 잡과는 OS·타깃에 따라 컴파일되는 코드가 다르다. 둘 다 `--workspace` 라 feature 를 워크스페이스 전체로 통합하지만, `tracing/log` 같은 갈래를 켜는 의존이 생기면 Windows 잡이 그 갈래를 보는지는 그 타깃의 의존 그래프에 달린다. 지금은 켜는 의존이 없다([크레이트를 지목한 clippy](#크레이트를-지목한-clippy-는-push-와-다른-feature-집합을-잰다)) |
-| pre-push | `cargo check --no-default-features` | 부분 — `check-headless` 의 `cargo check (headless)` 는 `cargo check --workspace --no-default-features --locked` 다. 훅(B.6)은 루트에서 `--workspace` 없이 돌고 루트 `Cargo.toml` 에 `default-members` 가 없어 루트 패키지 `tasty` 와 그 의존만 컴파일하며 `--locked` 가 없다. 기본 feature 를 가진 멤버는 루트뿐이라 두 명령 모두 루트의 `gui` 만 끈다. 두 명령 가운데 CI 만 컴파일하는 멤버는 B.6(루트의 기본 lib·bin 검사)의 일반·빌드 의존 경로에서 선택되지 않는 아홉이다 — `tasty-doc-guards`·`tasty-gallery`·`tasty-latency-control`·`tasty-plugin-mesh-demo`·`tasty-plugin-sdk`·`tasty-test-support`(이 가운데 `tasty-doc-guards`·`tasty-latency-control`·`tasty-test-support` 는 루트의 개발 의존이라 시험 빌드에서만 들어온다)와 `gui` 가 켜는 선택 의존 `tasty-egui-theme`·`tasty-key-match`·`tasty-ui-widgets`. 거꾸로 `--workspace` 는 그 멤버들이 켜는 의존 feature 를 통합하므로(예: `tasty-gallery` 가 켜는 `tasty-icons` 의 `egui`), 그 feature 를 끈 공유 의존(예: egui 없는 `tasty-icons`)은 B.6 만 컴파일한다 |
+| pre-push | `cargo check --no-default-features` | 부분 — `check-headless` 의 `cargo check (headless)` 는 `cargo check --workspace --no-default-features --locked` 다. 훅(B.6)은 루트에서 `--workspace` 없이 돌고 루트 `Cargo.toml` 에 `default-members` 가 없어 루트 패키지 `tasty` 와 그 의존만 컴파일하며 `--locked` 가 없다. 기본 feature 를 가진 멤버는 루트뿐이라 두 명령 모두 루트의 `gui` 만 끈다. 두 명령 가운데 CI 만 컴파일하는 멤버는 B.6(루트의 기본 lib·bin 검사)의 일반·빌드 의존 경로에서 선택되지 않는 여덟이다 — `tasty-doc-guards`·`tasty-gallery`·`tasty-latency-control`·`tasty-plugin-sdk`·`tasty-test-support`(이 가운데 `tasty-doc-guards`·`tasty-latency-control`·`tasty-test-support` 는 루트의 개발 의존이라 시험 빌드에서만 들어온다)와 `gui` 가 켜는 선택 의존 `tasty-egui-theme`·`tasty-key-match`·`tasty-ui-widgets`. 거꾸로 `--workspace` 는 그 멤버들이 켜는 의존 feature 를 통합하므로(예: `tasty-gallery` 가 켜는 `tasty-icons` 의 `egui`), 그 feature 를 끈 공유 의존(예: egui 없는 `tasty-icons`)은 B.6 만 컴파일한다 |
 | pre-push | `cargo test -p tasty-doc-guards` | ✅ `doc-guards.yml` — **같은 크레이트를 부른다**. 훅은 push 하는 머신에서만 돌아 worker 머신엔 이 채널이 없다 |
 | pre-push | `cargo check --workspace --release --locked` | ✅ crossplatform-check.yml의 check-release와 같은 명령이다. debug 검사와 별도로 실행하며 bin 하나로 좁히지 않는다. |
 | pre-push | 파일 SLOC·동결 총합 래칫(B.12·B.13) | ✅ `complexity-check.yml`과 같은 스크립트다. 판정기는 B.11이 먼저 빌드한다. |

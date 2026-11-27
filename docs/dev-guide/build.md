@@ -16,7 +16,7 @@ Cargo.toml을 가진 디렉터리 수다. workspace에서 제외된 크레이트
 | **type-\*** primitive | `tasty-type-geometry`(길이), `tasty-type-appearance`(색·theme schema) | 최하위 schema/primitive |
 | 도메인 leaf (GUI-free) | `tasty-model`, `tasty-i18n`, `tasty-settings`, `tasty-themes`, `tasty-terminal`, `tasty-memory`, `tasty-hooks`, `tasty-ipc`, `tasty-ssh`, `tasty-remote`, `tasty-portscan` 등 | 공용 도메인·IO |
 | plugin 인프라 | `tasty-plugin-protocol`, `tasty-plugin-sdk`, `tasty-plugin-manifest`, `tasty-host-plugin` | 호스트↔plugin 와이어·SDK·매니페스트 |
-| 번들 plugin | `tasty-plugin-mesh-demo` | 공식 플러그인 8개는 [공식 플러그인 레포](https://github.com/zilhak/tasty-official-plugins)에서 빌드하고 잠금 파일로 받는다. → [`../plugins/`](../plugins/index.md) |
+| 번들 plugin | (이 workspace 에 없음) | 공식 플러그인 8개는 [공식 플러그인 레포](https://github.com/zilhak/tasty-official-plugins)에서 빌드하고 잠금 파일로 받는다. → [`../plugins/`](../plugins/index.md) |
 | CLI / 테스트 | `tasty-cli`, `tasty-tui-simulator` | |
 
 본 바이너리는 각 크레이트를 재수출해 `crate::model::X` / `crate::theme::theme()` 같은 경로가 그대로 동작한다.
@@ -181,8 +181,8 @@ just run --release          # 동일, release 프로필 (나머지 인자는 호
 trust 게이트가 켜지므로(debug 는 `#[cfg(debug_assertions)]` 로 우회), `build-plugins` 가
 본체 빌드보다 먼저 서명 키를 보장(`scripts/ensure-sign-key.sh`: `SIGN_KEY_PATH` env →
 `release.pem` → `dev.pem`+`gen-dev-key.sh`)하고 임베드 `dev-pubkey.bin` 을 재도출한다.
-받거나 빌드한 공식 플러그인은 서명 없이 오므로 `sign-bundle.sh --dir` 로 그 매니페스트들을,
-mesh-demo 는 스테이징한 매니페스트를 `--manifest` 로 그 키로 서명한다. 순서는 키 준비 → 받기(또는 빌드) → 서명이다.
+받거나 빌드한 공식 플러그인은 서명 없이 오므로 `sign-bundle.sh --dir` 로 그 매니페스트들을
+그 키로 서명한다. 순서는 키 준비 → 받기(또는 빌드) → 서명이다.
 `just build`/`just run`(debug)은 게이트가 꺼져 있어 서명 단계를 건너뛴다(기본
 dev 워크플로에 openssl 의존 미부과). dist 스크립트(`build-*.{sh,ps1}`)는 플러그인을 빌드하지 않고
 잠금 파일의 공식 플러그인 산출물을 받아 같은 키로 서명한다(debug 는 서명 생략) — 상세는
@@ -304,15 +304,14 @@ Cargo에는 별도 의존성 설치 단계가 없고 build/test 때 필요한 �
 ## 개발 번들
 
 루트의 `cargo build`만으로 개발 번들은 준비되지 않는다.
-`PROFILE=debug just build-plugins`가 공식 플러그인(잠금 파일의 릴리스 산출물)과 mesh-demo를 스테이징한다(아래 "Plugin 빌드 / 스테이징").
+`PROFILE=debug just build-plugins`가 공식 플러그인(잠금 파일의 릴리스 산출물)을 스테이징한다(아래 "Plugin 빌드 / 스테이징").
 공식 플러그인 코드를 바꾼 검증은 `--from-checkout`(계약도 바꿨다면 `--with-local-tasty`)으로 옆 체크아웃에서 빌드하고,
 검증할 실행 파일과 번들 사본이 새 코드인지 확인한다.
 공개키와 번들 준비는 빌드 전에 수행한다.
-`cp -p` 등으로 오래된 시각을 복원했다면 내용이 바뀌었어도 갱신이 생략될 수 있다.
 
 ## Plugin 빌드 / 스테이징
 
-공식 플러그인 8개(`bundle = false` 인 agent-stream 포함)는 공식 플러그인 레포에서 얻고, mesh-demo 만 이 workspace 에서 빌드한다. `just build-plugins`(`scripts/stage-dev-plugins.sh`)가 둘을 `${CARGO_TARGET_DIR:-target}/<profile>/builtin-plugins/<id>/` 에 스테이징한다. 번들 plugin 은 부팅 시 `install_builtins_if_needed` 가 `~/.tasty/plugins/<id>/` 로 자동 sync 한다. `bundle_root()` fallback 이 `<exe_dir>/builtin-plugins/`(= `target/<profile>/builtin-plugins/`)라, **그 경로에 스테이징만 해두면** 부팅 시 user dir 까지 흐른다.
+공식 플러그인 8개(`bundle = false` 인 agent-stream 포함)는 공식 플러그인 레포에서 얻는다. 이 workspace 는 번들 플러그인을 빌드하지 않는다. `just build-plugins`(`scripts/stage-dev-plugins.sh`)가 그 산출물을 `${CARGO_TARGET_DIR:-target}/<profile>/builtin-plugins/<id>/` 에 스테이징한다. 번들 plugin 은 부팅 시 `install_builtins_if_needed` 가 `~/.tasty/plugins/<id>/` 로 자동 sync 한다. `bundle_root()` fallback 이 `<exe_dir>/builtin-plugins/`(= `target/<profile>/builtin-plugins/`)라, **그 경로에 스테이징만 해두면** 부팅 시 user dir 까지 흐른다.
 
 ```bash
 PROFILE=debug just build-plugins                       # 잠금 파일의 릴리스 산출물 받기 (기본)
@@ -324,10 +323,10 @@ just build-all                                          # 번들 준비 + 본체
 - **기본(받기)**: `official-plugins.lock.toml` 이 가리키는 릴리스에서 현재 플랫폼 산출물을 받아 SHA-256 을 대조하고 푼다(`scripts/fetch-official-plugins.sh --all`, 형식과 캐시는 [plugin-packaging](plugin-packaging.md)). 패키징과 같은 바이너리이고, 플러그인 빌드가 없으며, 플러그인 레포 체크아웃이 없는 CI·원격 머신에서도 같은 명령이다. 플랫폼은 호스트에서 정하고 `--platform` 으로 바꿀 수 있다.
 - **옆 체크아웃(`--from-checkout [DIR]`)**: 공식 플러그인 레포 체크아웃(기본 `../tasty-official-plugins`)의 `tasty-official-plugins/scripts/dev-bundle.sh --profile <profile> --out <임시 폴더>` 로 빌드한다. 플러그인 레포는 자기 `target` 에 빌드한다(이 workspace 의 `CARGO_TARGET_DIR` 를 넘기지 않는다). `--profile` 은 debug·release·dist 만 받는다.
 - **`--with-local-tasty`**: `--from-checkout` 빌드에 `--tasty <이 체크아웃>` 을 넘겨, 플러그인이 쓰는 tasty 패키지(SDK·protocol 등)를 이 체크아웃으로 바꿔 빌드한다. 호스트 계약과 플러그인을 함께 바꾸는 작업은 이 경로를 쓴다. 받은 산출물과 `--with-local-tasty` 없는 빌드는 둘 다 플러그인 레포가 기준으로 삼은 tasty 커밋의 SDK·protocol 로 만들어진다. 그 뒤 이 체크아웃이 계약을 바꿨다면 새 계약에 기대는 시험은 받은 번들로 통과하지 않는다.
-- **교체 단위**: 공식 플러그인은 `<id>/` 폴더를 통째로 바꾸고, mesh-demo 도 같은 방식으로 다시 놓는다. 그 밖의 폴더는 건드리지 않는다. 교체는 기존 폴더를 옆 이름(`.old-<id>.<pid>`)으로 옮긴 뒤 새 폴더를 놓는다. 새 폴더를 놓지 못하거나 그 사이에 중단되면 옆 이름의 폴더를 되돌리고, 되돌리지 못하면 두 경로를 알리고 실패한다. 실행 중인 Tasty 는 설치 폴더(`~/.tasty/plugins/<id>/`)의 실행 파일을 쓰므로 번들 폴더를 잠그지 않는다. 다른 프로세스(탐색기·백신 등)가 번들 폴더의 파일을 열고 있으면 옮기기가 실패하고 그 폴더는 그대로 남는다. 그 프로그램을 닫고 다시 실행한다. 실행 중인 Tasty 에 반영하는 순서는 [§9.1](plugin-development.md#91-실행-중인-tasty-에-번들-플러그인만-반복-갱신-호스트-재빌드재시작-불필요)에 있다.
-- **임시 폴더와 동시 실행**: 받거나 빌드한 결과는 실행마다 새로 만든 `<profile>/.official-plugins-stage.*`·`.mesh-demo-stage.*` 에 모은 뒤 옮기고, 실패나 중단(INT·TERM)으로 끝나도 지운다. 같은 target·프로필에 동시에 실행하면 `<profile>/builtin-plugins.lock` 잠금 파일을 먼저 만든 실행만 진행하고 나머지는 안내와 함께 실패한다. 잠금은 bash noclobber 리다이렉션으로 만들므로 `mkdir` 구현에 기대지 않는다(`scripts/lib/run-lock.sh`). 잠금 파일은 같은 폴더의 표지 파일 `builtin-plugins.lock.<pid>.<난수>` 를 가리키고, 실행은 잡기를 마친 잠금을 놓을 때 내용 확인 없이 곧바로 지우고, 그 삭제가 실패했거나 잡는 도중이라 소유가 불확실할 때만 잠금이 자기 표지를 가리키는지 보고 지운다. 강제 종료(`kill -9`)로 잠금이 남았다면 진행 중인 실행이 없는 것을 확인하고 잠금과 표지 파일(`builtin-plugins.lock.*`)을 함께 지운다.
-- **debug 부팅 동기화**: debug 빌드만 `ensure_dev_bundle` 이 매 부팅 mtime(동률이면 내용) 비교로 workspace 의 mesh-demo(`target/<profile>/tasty-plugin-mesh-demo`, `crates/tasty-plugin-mesh-demo/` 의 매니페스트·lang)를 bundle 로 sync 한다. 공식 플러그인은 sync 하지 않는다 — workspace 에 같은 크레이트가 남아 있어도 스테이징한 산출물을 그대로 쓴다(`BUILTINS` 의 `source`). release/dist 는 mesh-demo 도 자동 동기화하지 않는다.
-- **최적화 수준**: 이 workspace 는 `[profile.dev.package."*"]` 와 플러그인 크레이트별로 `opt-level = 3` 을 둔다(`Cargo.toml`). 플러그인 레포의 dev 프로필 설정은 그 레포가 정하므로 `--from-checkout` debug 번들은 여기서 빌드하던 debug 플러그인과 속도가 다를 수 있다. 받은 산출물은 릴리스 빌드라 해당 없다.
+- **교체 단위**: 공식 플러그인은 `<id>/` 폴더를 통째로 바꾼다. 그 밖의 폴더는 건드리지 않는다. 교체는 기존 폴더를 옆 이름(`.old-<id>.<pid>`)으로 옮긴 뒤 새 폴더를 놓는다. 새 폴더를 놓지 못하거나 그 사이에 중단되면 옆 이름의 폴더를 되돌리고, 되돌리지 못하면 두 경로를 알리고 실패한다. 실행 중인 Tasty 는 설치 폴더(`~/.tasty/plugins/<id>/`)의 실행 파일을 쓰므로 번들 폴더를 잠그지 않는다. 다른 프로세스(탐색기·백신 등)가 번들 폴더의 파일을 열고 있으면 옮기기가 실패하고 그 폴더는 그대로 남는다. 그 프로그램을 닫고 다시 실행한다. 실행 중인 Tasty 에 반영하는 순서는 [§9.1](plugin-development.md#91-실행-중인-tasty-에-번들-플러그인만-반복-갱신-호스트-재빌드재시작-불필요)에 있다.
+- **임시 폴더와 동시 실행**: 받거나 빌드한 결과는 실행마다 새로 만든 `<profile>/.official-plugins-stage.*` 에 모은 뒤 옮기고, 실패나 중단(INT·TERM)으로 끝나도 지운다. 같은 target·프로필에 동시에 실행하면 `<profile>/builtin-plugins.lock` 잠금 파일을 먼저 만든 실행만 진행하고 나머지는 안내와 함께 실패한다. 잠금은 bash noclobber 리다이렉션으로 만들므로 `mkdir` 구현에 기대지 않는다(`scripts/lib/run-lock.sh`). 잠금 파일은 같은 폴더의 표지 파일 `builtin-plugins.lock.<pid>.<난수>` 를 가리키고, 실행은 잡기를 마친 잠금을 놓을 때 내용 확인 없이 곧바로 지우고, 그 삭제가 실패했거나 잡는 도중이라 소유가 불확실할 때만 잠금이 자기 표지를 가리키는지 보고 지운다. 강제 종료(`kill -9`)로 잠금이 남았다면 진행 중인 실행이 없는 것을 확인하고 잠금과 표지 파일(`builtin-plugins.lock.*`)을 함께 지운다.
+- **부팅 시 workspace 동기화 없음**: 어느 프로필도 부팅할 때 workspace 의 크레이트나 빌드 산출물을 번들로 옮기지 않는다. workspace 에 같은 이름의 크레이트가 남아 있어도 스테이징한 산출물을 그대로 쓴다.
+- **최적화 수준**: 플러그인 레포의 dev 프로필 설정은 그 레포가 정하므로 `--from-checkout` debug 번들의 속도는 이 workspace 의 `Cargo.toml` 프로필 설정을 따르지 않는다. 받은 산출물은 릴리스 빌드라 해당 없다.
 
 산출물: `${CARGO_TARGET_DIR:-target}/<profile>/builtin-plugins/<id>/{tasty-plugin.toml, <bin>, tasty-plugin.toml.sig(non-debug), lang/}`(받은 공식 플러그인은 고지 파일도 담을 수 있다). 스크립트는 `CARGO_TARGET_DIR` 를 cargo 와 같은 자리(호출 위치 기준)에서 읽는다 — 레포 밖 target 을 쓰는 작업 트리에서도 cargo 가 실제로 쓴 자리에 스테이징한다. `--target <triple>` 을 주면 `target/<triple>/<profile>/` 아래에 놓는다.
 

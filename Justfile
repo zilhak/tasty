@@ -98,7 +98,7 @@ e2e-headless-bin:
 # --from-checkout [DIR]은 공식 플러그인 레포 체크아웃(기본 ../tasty-official-plugins)에서 빌드하고,
 # --with-local-tasty를 더하면 그 빌드가 이 체크아웃의 tasty 패키지를 쓴다. 자세한 것은 scripts/stage-dev-plugins.sh.
 
-# 공식 플러그인(잠금 파일의 릴리스 산출물)과 mesh-demo를 실행 파일 옆 builtin-plugins에 준비한다.
+# 공식 플러그인(잠금 파일의 릴리스 산출물)을 실행 파일 옆 builtin-plugins에 준비한다.
 build-plugins *ARGS:
     #!/bin/bash
     set -euo pipefail
