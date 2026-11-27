@@ -665,6 +665,11 @@ cat > "$w" <<'EOF'
 EOF
 check '머리 행에만 백슬래시가 있는 표도 본문 전체를 엔터티로' "$m" "$w"
 
+deep="$(printf '1. %.0s' $(seq 100))"
+printf 'chore: bump version to 9.9.9\n\n%s```<s>\n' "$deep" > "$m"
+printf '%s```&lt;s&gt;\n' "$deep" > "$w"
+check '한 줄에서 목록 표지를 10개 이상 여는 본문은 본문 전체를 엔터티로' "$m" "$w"
+
 # Git 은 CR 을 줄 끝으로 보지 않는다. 가위 줄·Conflicts: 줄만 CRLF 로 끝나면 Git 에는 그 줄이 그 꼴이 아니다.
 printf 'chore: bump version to 9.9.9\n\nSigned-off-by: A <a@example.invalid>\n\n# ------------------------ >8 ------------------------\r\nCo-Authored-By: B <b@example.invalid>\n' > "$m"
 printf 'Signed-off-by: A &lt;a@example.invalid&gt;\n\n# ------------------------ &gt;8 ------------------------\n' > "$w"

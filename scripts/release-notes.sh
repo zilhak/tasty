@@ -8,7 +8,7 @@
 #   목록·인용이 끝나면 그 안의 코드 블록도 끝난다. 코드 스팬은 블록 하나 안에서만 짝짓는다.
 # - 본문에 아래 드문 표지가 하나라도 있으면 블록 구조를 읽지 않고 본문 전체의 <, >, & 를 엔터티로 바꾼다(코드 안 포함).
 #   각주 정의 꼴 [^이름]: 이 있는 줄, 탭, 줄 끝 CRLF 를 LF 로 바꾼 뒤에도 남는 CR, 4개 이상 이어진 백틱·물결표,
-#   | 로 시작하는 줄이나 표 구분 행이 있는 블록(빈 줄 사이) 안의 백슬래시.
+#   | 로 시작하는 줄이나 표 구분 행이 있는 블록(빈 줄 사이) 안의 백슬래시, 목록·인용 표지를 10개 이상 여는 줄.
 # 사용: release-notes.sh <커밋>
 set -eu -o pipefail
 commit="${1:?사용: release-notes.sh <커밋>}"
@@ -220,7 +220,7 @@ function htmlp(    k, r) {
 }
 # 본문에 드문 표지(머리 주석의 목록)가 있는가. 표는 | 로 시작하는 줄이나 구분 행이 있는 블록 전체(머리 행 포함)에서
 # 백슬래시를 찾는다. GitHub 는 칸을 나누기 전에 \| 를 따로 읽어 \\| 같은 겹 백슬래시에서 칸 경계를 다르게 본다.
-function rare(    k, t, j, tb, bs) {
+function rare(    k, t, j, tb, bs, c, u) {
     tb = 0; bs = 0
     for (k = 1; k <= last + 1; k++) {
         t = line[k]
@@ -228,7 +228,14 @@ function rare(    k, t, j, tb, bs) {
         if (k > last || blank(t)) { if (tb && bs) return 1; tb = 0; bs = 0; continue }
         if ((j = index(t, "[^")) && index(substr(t, j), "]:")) return 1
         if (index(t, "\\")) bs = 1
-        while (sub(/^([ >]+|[-*+] +|[0-9]+[.)] +)/, "", t)) { }
+        # 한 줄에서 여는 목록·인용 표지를 센다. GitHub(cmark-gfm)는 한 줄에서 여는 컨테이너 수에 한계가 있다.
+        c = 0
+        while (match(t, /^([ >]+|[-*+] +|[0-9]+[.)] +)/)) {
+            u = substr(t, 1, RLENGTH); t = substr(t, RLENGTH + 1)
+            if (u ~ /^[ >]+$/) c += gsub(/>/, "", u)
+            else c++
+        }
+        if (c >= 10) return 1
         if (substr(t, 1, 1) == "|" || (t ~ /[|:]/ && t ~ /^\|?( *:?-+:? *\|)* *:?-+:? *\|? *$/)) tb = 1
     }
     return 0
