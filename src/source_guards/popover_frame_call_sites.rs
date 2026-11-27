@@ -3,12 +3,14 @@
 //! (menu-bg · menu-border · menu-radius)로 그려진다. 전역 스타일은 tooltip 토큰을 담으므로 감싸지 않은
 //! 팝오버는 tooltip 틀로 그려진다(docs/design/systems/theme.md).
 //!
-//! 주석을 가린 본체·크레이트 소스에서 네 진입 호출을 찾고, 바로 앞 코드가 래퍼 호출의 `|ui| {` 클로저
-//! 시작인지 텍스트로 확인한다. 래퍼를 다른 함수로 한 번 더 감싼 호출, `Frame::popup`을 직접 그리는 경로,
-//! egui 진입 호출을 `use`로 줄여 부른 형태, `as` 별칭으로 바꾼 이름은 보지 않는다. tasty 도우미
-//! `popup_below_widget_unfocused`는 이름 뒤가 `(` 나 turbofish `::<` 인 호출을 경로 유무와 관계없이 센다(정의 `fn` 과
-//! 다른 이름의 꼬리는 빼고, 맨 앞 `::` 까지 붙은 경로를 포함해 래퍼 클로저의 첫 식인지 본다). 이 도우미를 `as` 로
-//! 다른 이름에 가져오면 그 이름의 호출을 셀 수 없으므로 별칭 가져오기 자체를 실패로 막는다.
+//! 주석과 문자열·문자 리터럴을 가린 본체·크레이트 소스에서 네 진입 호출을 찾고, 바로 앞 코드가 래퍼 호출의
+//! `|ui| {` 클로저 시작인지 텍스트로 확인한다. 리터럴 안의 언급은 세지 않는다. 래퍼를 다른 함수로 한 번 더 감싼 호출,
+//! `Frame::popup`을 직접 그리는 경로, egui 진입 호출을 `use`로 줄여 부른 형태, egui 진입의 `as` 별칭은 보지 않는다.
+//! tasty 도우미 `popup_below_widget_unfocused`는 이름이 따로 선 자리(앞뒤가 식별자 글자가 아니다)를 모두 본다. 그
+//! 자리는 정의(`fn` 뒤), `use` 경로의 끝(`;`·`,`·`}` 앞), 호출(이름 바로 뒤가 `(` 또는 turbofish `::<`) 셋 중
+//! 하나여야 한다. 호출은 경로 유무와 관계없이 세고, 맨 앞 `::` 까지 붙은 경로(`::` 앞뒤 공백·주석은 건너뛴다)를
+//! 포함해 래퍼 클로저의 첫 식인지 본다. 그 밖의 꼴(`as` 별칭 가져오기, 값으로 쓰기, 인자로 넘기기, 이름과 `(`·`::`
+//! 사이에 공백·주석이 낀 꼴 등)은 세지 못하므로 실패로 막는다.
 //!
 //! 열린 ComboBox 목록의 행은 공용 옵션 행(`menu_option` · `menu_option_value`)으로 그린다. egui 기본
 //! 선택 행(`selectable_value` · `selectable_label`)은 현재 값을 accent 채움으로 칠하므로 디자인의 선택
@@ -27,8 +29,8 @@ const ENTRIES: &[&str] = &[
     "egui::popup::popup_above_or_below_widget(",
     "egui::ComboBox::from_id_salt(",
 ];
-/// 경로 없이도 세는 진입 이름. `use` 로 가져와 짧은 이름으로 부른 호출이 래퍼 밖에 있으면 걸린다. 이름 뒤가
-/// `(` 또는 turbofish `::<` 이면 호출이다.
+/// 이름이 따로 선 자리를 모두 보는 진입 이름([`Mention`]). `use` 로 가져와 짧은 이름으로 부른 호출이 래퍼 밖에
+/// 있으면 걸린다.
 const NAMED_ENTRIES: &[&str] = &["popup_below_widget_unfocused"];
 /// 기본 둘레 래퍼와 둘레를 받는 래퍼. 어느 쪽이든 메뉴 틀을 정한다.
 const WRAPPERS: &[&str] = &["with_popover_frame(", "with_popover_frame_ring("];
@@ -50,11 +52,16 @@ fn opened_inside_the_wrapper(code: &str, at: usize) -> bool {
     })
 }
 
-/// `at` 의 이름 앞에 붙은 경로(`a::b::`, 맨 앞 `::` 포함)의 시작.
+/// `at` 의 이름 앞에 붙은 경로(`a::b::`, 맨 앞 `::` 포함)의 시작. `::` 앞뒤의 공백(가린 주석 포함)은 건너뛴다.
 fn path_start(code: &str, at: usize) -> usize {
     let mut start = at;
-    while let Some(head) = code[..start].strip_suffix("::") {
-        let ident: usize = head
+    loop {
+        let head = code[..start].trim_end();
+        let Some(head) = head.strip_suffix("::") else {
+            return start;
+        };
+        let rest = head.trim_end();
+        let ident: usize = rest
             .chars()
             .rev()
             .take_while(|c| is_ident(*c))
@@ -63,52 +70,109 @@ fn path_start(code: &str, at: usize) -> usize {
         if ident == 0 {
             return head.len();
         }
-        start = head.len() - ident;
+        start = rest.len() - ident;
     }
-    start
 }
 
-/// `code` 에서 이름 `name` 이 따로 선 자리(앞이 식별자 글자가 아니다)와 그 뒤 꼬리.
-fn named_at<'c>(code: &'c str, name: &str) -> impl Iterator<Item = (usize, &'c str)> {
-    code.match_indices(name).filter_map(move |(at, _)| {
-        let named = !code[..at].chars().next_back().is_some_and(is_ident);
-        named.then(|| (at, &code[at + name.len()..]))
-    })
+/// 가린 소스에서 진입 이름이 놓인 꼴.
+enum Mention {
+    /// `fn` 정의.
+    Definition,
+    /// `use` 경로의 끝(`;`·`,`·`}` 앞).
+    Import,
+    /// 호출(이름 바로 뒤가 `(` 또는 `::<`). 값은 앞에 붙은 경로의 시작.
+    Call(usize),
+    /// `use … as 다른이름`. 그 이름의 호출은 세지 못한다.
+    Aliased,
+    /// 그 밖의 꼴(값으로 쓰기, 인자로 넘기기, 이름과 `(`·`::` 사이 공백·주석 등). 세지 못한다.
+    Unknown,
 }
 
-/// 진입 이름을 `as` 로 다른 이름에 가져온 줄 번호. 그 이름의 호출은 세지 못하므로 가져오기를 막는다.
-fn aliased_imports(src: &str) -> Vec<usize> {
-    let code = tasty_doc_guards::source_text::mask_comments_aligned(src);
+/// `code[at..]` 이 `word` 로 시작하고 앞뒤가 식별자 글자가 아닌가.
+fn word_at(code: &str, at: usize, word: &str) -> bool {
+    code[at..].starts_with(word)
+        && !code[..at].chars().next_back().is_some_and(is_ident)
+        && !code[at + word.len()..].chars().next().is_some_and(is_ident)
+}
+
+/// `at` 이 `use` 선언 안인가. `use` 선언은 `;` 로 끝나고 안에 `;` 가 없으므로, 마지막 `;` 뒤에 `use` 낱말이 있으면
+/// 그 선언 안이다(주석·리터럴은 가렸다).
+fn in_use_declaration(code: &str, at: usize) -> bool {
+    let from = code[..at].rfind(';').map_or(0, |i| i + 1);
+    code[from..at]
+        .match_indices("use")
+        .any(|(i, _)| word_at(code, from + i, "use"))
+}
+
+fn classify(code: &str, at: usize, name: &str) -> Mention {
+    let tail = &code[at + name.len()..];
+    let head = code[..at].trim_end();
+    if head.ends_with("fn") && word_at(code, head.len() - 2, "fn") {
+        return Mention::Definition;
+    }
+    if in_use_declaration(code, at) {
+        let next = tail.trim_start();
+        if next.starts_with([';', ',', '}']) {
+            return Mention::Import;
+        }
+        if next
+            .strip_prefix("as")
+            .is_some_and(|r| r.starts_with(char::is_whitespace))
+        {
+            return Mention::Aliased;
+        }
+        return Mention::Unknown;
+    }
+    if tail.starts_with('(') || tail.starts_with("::<") {
+        return Mention::Call(path_start(code, at));
+    }
+    Mention::Unknown
+}
+
+/// 진입 이름이 따로 선(앞뒤가 식별자 글자가 아닌) 자리와 그 꼴. 주석과 리터럴을 함께 가린 소스에서 찾는다.
+fn mentions(code: &str) -> Vec<(usize, Mention)> {
     NAMED_ENTRIES
         .iter()
-        .flat_map(|name| named_at(&code, name))
-        .filter(|(_, tail)| {
-            tail.trim_start()
-                .strip_prefix("as")
-                .is_some_and(|rest| rest.starts_with(char::is_whitespace))
+        .flat_map(|name| {
+            code.match_indices(name)
+                .filter(|(at, _)| word_at(code, *at, name))
+                .map(|(at, _)| (at, classify(code, at, name)))
         })
-        .map(|(at, _)| code[..at].matches('\n').count() + 1)
+        .collect()
+}
+
+fn line_of(code: &str, at: usize) -> usize {
+    code[..at].matches('\n').count() + 1
+}
+
+/// 정의·`use` 경로·호출이 아닌 진입 이름 자리의 줄 번호와 꼴. 세지 못하는 꼴이므로 막는다.
+fn uncounted_mentions(src: &str) -> Vec<(usize, &'static str)> {
+    let code = tasty_doc_guards::source_text::mask_non_code_aligned(src);
+    mentions(&code)
+        .into_iter()
+        .filter_map(|(at, m)| match m {
+            Mention::Aliased => Some((line_of(&code, at), "as 별칭 가져오기")),
+            Mention::Unknown => Some((line_of(&code, at), "정의·use 경로·호출이 아닌 꼴")),
+            Mention::Definition | Mention::Import | Mention::Call(_) => None,
+        })
         .collect()
 }
 
 /// 감싸지 않은 진입 호출의 줄 번호와 검사한 진입 호출 수.
 fn judge(src: &str) -> (Vec<usize>, usize) {
-    let code = tasty_doc_guards::source_text::mask_comments_aligned(src);
+    let code = tasty_doc_guards::source_text::mask_non_code_aligned(src);
     let mut sites: Vec<usize> = ENTRIES
         .iter()
         .flat_map(|entry| code.match_indices(entry).map(|(at, _)| at))
         .collect();
-    for name in NAMED_ENTRIES {
-        sites.extend(named_at(&code, name).filter_map(|(at, tail)| {
-            let call = tail.starts_with('(') || tail.starts_with("::<");
-            let start = path_start(&code, at);
-            (call && !code[..start].trim_end().ends_with("fn")).then_some(start)
-        }));
-    }
+    sites.extend(mentions(&code).into_iter().filter_map(|(_, m)| match m {
+        Mention::Call(start) => Some(start),
+        _ => None,
+    }));
     let bare = sites
         .iter()
         .filter(|at| !opened_inside_the_wrapper(&code, **at))
-        .map(|at| code[..*at].matches('\n').count() + 1)
+        .map(|at| line_of(&code, *at))
         .collect();
     (bare, sites.len())
 }
@@ -116,7 +180,7 @@ fn judge(src: &str) -> (Vec<usize>, usize) {
 #[test]
 fn every_button_popover_opens_inside_the_menu_frame_wrapper() {
     let mut bare = Vec::new();
-    let mut aliased = Vec::new();
+    let mut uncounted = Vec::new();
     let mut seen = 0;
     for (rel, src) in rust_sources() {
         let rel = rel.to_string_lossy().replace('\\', "/");
@@ -126,17 +190,17 @@ fn every_button_popover_opens_inside_the_menu_frame_wrapper() {
         let (lines, n) = judge(&src);
         seen += n;
         bare.extend(lines.into_iter().map(|l| format!("{rel}:{l}")));
-        aliased.extend(
-            aliased_imports(&src)
+        uncounted.extend(
+            uncounted_mentions(&src)
                 .into_iter()
-                .map(|l| format!("{rel}:{l}")),
+                .map(|(l, kind)| format!("{rel}:{l} ({kind})")),
         );
     }
     assert!(
-        aliased.is_empty(),
-        "`popup_below_widget_unfocused` 를 `as` 로 다른 이름에 가져왔다. 이 검사는 그 이름의 호출을 세지 못하므로 \
-         원래 이름으로 부른다:\n{}",
-        aliased.join("\n")
+        uncounted.is_empty(),
+        "`popup_below_widget_unfocused` 를 정의·use 경로·호출이 아닌 꼴로 썼다. 이 검사는 그 꼴의 호출을 세지 \
+         못하므로 원래 이름으로 바로 부른다:\n{}",
+        uncounted.join("\n")
     );
     assert!(
         seen >= MIN_SITES,
@@ -188,17 +252,68 @@ fn the_judge_counts_the_unfocused_popup_helper_by_its_bare_name() {
     assert_eq!(judge(turbofish), (vec![2], 1));
     let wrapped_turbofish = "with_popover_frame(ui, th, |ui| {\n    tasty_egui_theme::popup_below_widget_unfocused::<()>(ui, id, &r, c, |ui| {})\n});";
     assert_eq!(judge(wrapped_turbofish), (vec![], 1));
-    // 맨 앞 `::` 로 시작하는 경로도 래퍼 첫 식이다.
+    // 맨 앞 `::` 로 시작하는 경로도 래퍼 첫 식이다. `::` 앞뒤에 공백을 둔 꼴도 같다.
     let rooted = "with_popover_frame(ui, th, |ui| {\n    ::tasty_egui_theme::popup_below_widget_unfocused(ui, id, &r, c, |ui| {})\n});";
     assert_eq!(judge(rooted), (vec![], 1));
+    let spaced = "with_popover_frame(ui, th, |ui| {\n    :: tasty_egui_theme :: popup_below_widget_unfocused(ui, id, &r, c, |ui| {})\n});";
+    assert_eq!(judge(spaced), (vec![], 1));
 }
 
 #[test]
 fn the_guard_rejects_an_aliased_import_of_the_unfocused_popup_helper() {
     let aliased = "use tasty_egui_theme::popup_below_widget_unfocused as open_chooser;\nuse tasty_egui_theme::{\n    popup_below_widget_unfocused\n        as other,\n};";
-    assert_eq!(aliased_imports(aliased), vec![1, 3]);
-    let plain = "use tasty_egui_theme::popup_below_widget_unfocused;\nlet asked = popup_below_widget_unfocused(ui, id, &r, c, |ui| {});\n// use x::popup_below_widget_unfocused as y;";
-    assert_eq!(aliased_imports(plain), Vec::<usize>::new());
+    let lines: Vec<usize> = uncounted_mentions(aliased)
+        .into_iter()
+        .map(|(l, _)| l)
+        .collect();
+    assert_eq!(lines, vec![1, 3]);
+    let plain = "use tasty_egui_theme::popup_below_widget_unfocused;\nuse a::{b, popup_below_widget_unfocused};\nlet asked = popup_below_widget_unfocused(ui, id, &r, c, |ui| {});\n// use x::popup_below_widget_unfocused as y;";
+    assert_eq!(uncounted_mentions(plain), vec![]);
+}
+
+#[test]
+fn the_guard_rejects_mentions_it_cannot_count() {
+    let lines = |src: &str| -> Vec<usize> {
+        uncounted_mentions(src)
+            .into_iter()
+            .map(|(l, _)| l)
+            .collect()
+    };
+    // 값으로 쓰기와 인자로 넘기기.
+    assert_eq!(
+        lines("let f = popup_below_widget_unfocused;\nf(ui, id, &r, c, |ui| {});"),
+        vec![1]
+    );
+    assert_eq!(
+        lines("run(tasty_egui_theme::popup_below_widget_unfocused);"),
+        vec![1]
+    );
+    // 이름과 `::<`·`(` 사이에 주석·공백이 낀 꼴.
+    assert_eq!(
+        lines("popup_below_widget_unfocused /* x */ ::<()>(ui, id, &r, c, |ui| {});"),
+        vec![1]
+    );
+    assert_eq!(
+        lines("popup_below_widget_unfocused (ui, id, &r, c, |ui| {});"),
+        vec![1]
+    );
+    // 대조: 정의·use 경로·호출은 막지 않는다.
+    let fine = "pub fn popup_below_widget_unfocused<R>() {}\npub use m::popup_below_widget_unfocused;\npopup_below_widget_unfocused::<()>(ui, id, &r, c, |ui| {});";
+    assert_eq!(lines(fine), Vec::<usize>::new());
+}
+
+#[test]
+fn the_guard_ignores_the_helper_name_inside_string_literals() {
+    let call = "let s = \"popup_below_widget_unfocused::<()>(ui, id, &r, c, |ui| {})\";";
+    assert_eq!(judge(call), (vec![], 0));
+    assert_eq!(uncounted_mentions(call), vec![]);
+    let alias = "let s = \"use tasty_egui_theme::popup_below_widget_unfocused as open_chooser;\";";
+    assert_eq!(uncounted_mentions(alias), vec![]);
+    // 대조: 같은 글자를 코드로 쓰면 센다.
+    assert_eq!(
+        judge("popup_below_widget_unfocused::<()>(ui, id, &r, c, |ui| {});"),
+        (vec![1], 1)
+    );
 }
 
 /// egui 기본 선택 행. 열린 ComboBox 목록 안에서는 쓰지 않는다.
