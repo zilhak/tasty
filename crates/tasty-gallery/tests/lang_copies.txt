@@ -688,6 +688,7 @@ src/catalog/layouts_remote_row.rs	connecting	remote.row.state.connecting
 src/catalog/layouts_remote_row.rs	held	modifier_hint.held
 src/catalog/layouts_remote_row.rs	reconnecting	status_bar.remote_reconnecting
 src/catalog/layouts_remote_row.rs	{}	remote.size_sync.names
+src/catalog/layouts_remote_row_tooltip_tests.rs	{}	remote.size_sync.names
 src/catalog/layouts_settled.rs	Error	dag.detail.error
 src/catalog/layouts_settled.rs	{}	remote.size_sync.names
 src/catalog/overlays_resize.rs	default	file_handler.picker.default_tag
