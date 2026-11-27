@@ -90,6 +90,23 @@ fn stacked_in_order(ctx: &egui::Context, layers: &[egui::LayerId]) -> bool {
     at.is_some_and(|at| at.windows(2).all(|w| w[0] < w[1]))
 }
 
+/// 덮는 팝업 `shell`의 덮음 막이 레이어.
+fn block(shell: egui::LayerId) -> egui::LayerId {
+    egui::LayerId::new(shell.order, shell.id.with("cover_block"))
+}
+
+/// 접힌 팝업의 보기 버튼 가운데(`Shown::Collapsed`의 Area 자리). 덮는 범위 `scope()` 안이다.
+fn view_button() -> egui::Pos2 {
+    egui::pos2(320.0, 260.0)
+}
+
+/// 직전 패스 끝 순서에서 A 보기 버튼 자리의 포인터 레이어가 위 팝업 `upper`의 것(막이나 셸)인가. 올린 패스에는
+/// egui `move_to_top`이 셸을 보인 레이어로 표시해, 접혀 있을 때의 Area 사각형을 지닌 위 팝업 셸이 답할 수 있다.
+fn pointer_on(ctx: &egui::Context, upper: egui::LayerId) -> bool {
+    ctx.layer_id_at(view_button())
+        .is_some_and(|l| l == block(upper) || l == upper)
+}
+
 /// 덮는 팝업은 막이를 먼저, 셸을 뒤에 넣고, 처음 그린 패스에 둘 다 순서에 든다(셸이 첫 누름을 기다리지 않는다).
 /// 덮지 않는 팝업은 셸 하나다.
 #[test]
@@ -155,7 +172,8 @@ fn a_popup_that_shows_again_stays_below_a_later_popup() {
 
 /// Given 덮지 않고 접혀 셸 id의 보기 버튼 Area로 먼저 순서에 든 팝업 A와 그 위의 덮는 팝업 B, When A를 펼쳐
 /// 덮게 되면(막이가 셸 뒤에 처음 등록된다), Then 펼친 패스 하나만 순서가 틀리고 다음 패스부터 A 막이·A 셸·B 막이·
-/// B 셸 순서가 된다. 펼친 패스에는 egui가 처음 보인 막이 Area를 스스로 올려 되돌릴 수 없다.
+/// B 셸 순서가 된다. 펼친 패스에는 egui가 처음 보인 막이 Area를 스스로 올려 되돌릴 수 없다. A 보기 버튼이 있던 자리의
+/// 포인터 레이어도 그 패스만 A 막이고, 다음 패스부터 위 팝업 B의 것이다.
 #[test]
 fn a_collapsed_popup_that_expands_to_cover_puts_its_cover_block_below_its_shell() {
     let ctx = egui::Context::default();
@@ -163,17 +181,79 @@ fn a_collapsed_popup_that_expands_to_cover_puts_its_cover_block_below_its_shell(
     for _ in 0..2 {
         draw_popups(&ctx, &[(a, Shown::Collapsed), (b, Shown::Covering)], false);
     }
-    let mut wrong = Vec::new();
+    let (mut wrong, mut pointer_wrong) = (Vec::new(), Vec::new());
     for pass in 0..6 {
         let layers = draw_pass(&ctx, &[a, b], false);
         if !stacked_in_order(&ctx, &layers) {
             wrong.push(pass);
         }
+        if !pointer_on(&ctx, b) {
+            pointer_wrong.push(pass);
+        }
     }
     // 틀린 패스는 펼친 패스(0) 하나다.
+    // 순서와 포인터 레이어를 함께 본다(앞이 틀려도 뒤가 보이게).
     assert_eq!(
-        wrong,
-        vec![0],
-        "only the expand pass may stack the cover block above its shell"
+        (wrong, pointer_wrong),
+        (vec![0], vec![0]),
+        "(order, pointer) passes: only the expand pass may be wrong"
+    );
+}
+
+/// Given 덮지 않고 접힌 팝업 A(아래)·B(위), When 위 B만 펼쳐 덮게 되면, Then 펼친 패스 하나만 B 막이가 B 셸 위에
+/// 있고 다음 패스부터 A 셸·B 막이·B 셸 순서가 된다. B 범위 안 A 보기 버튼 위의 포인터 레이어는 처음부터 B의 것이다.
+/// 막이를 뺀 plugin 레이어를 모두 올리면 B 막이가 A 셸 아래로 가 A 보기 버튼이 B 범위 안에서 눌린다.
+#[test]
+fn an_upper_popup_that_expands_to_cover_keeps_its_cover_block_over_the_lower_popup() {
+    let ctx = egui::Context::default();
+    let (a, b) = (shell(1), shell(2));
+    for _ in 0..2 {
+        draw_popups(&ctx, &[(a, Shown::Collapsed), (b, Shown::Collapsed)], false);
+    }
+    let (mut wrong, mut pointer_wrong) = (Vec::new(), Vec::new());
+    for pass in 0..6 {
+        let layers = draw_popups(&ctx, &[(a, Shown::Collapsed), (b, Shown::Covering)], false);
+        if !stacked_in_order(&ctx, &layers) {
+            wrong.push(pass);
+        }
+        if !pointer_on(&ctx, b) {
+            pointer_wrong.push(pass);
+        }
+    }
+    // 틀린 패스는 펼친 패스(0) 하나이고, 그 패스에도 B 막이는 A 셸 위다.
+    // 순서와 포인터 레이어를 함께 본다(앞이 틀려도 뒤가 보이게).
+    assert_eq!(
+        (wrong, pointer_wrong),
+        (vec![0], Vec::<usize>::new()),
+        "(order, pointer) passes: only the expand pass may be out of order, A's view button must stay under B"
+    );
+}
+
+/// Given 위 B를 펼친 다음 패스(막이를 되돌릴 패스), When 그 패스에 누름이 들어 plugin 레이어를 모두 올리면, Then 그
+/// 패스는 되돌리지 않고 막이가 B 셸 위에 남으며, 누름이 없는 다음 패스에 되돌린다. 순서가 틀린 패스는 펼친 패스와
+/// 누름 패스 2개다. 모두 올리는 패스에 막이를 빼면 막이가 A 셸 아래로 간다.
+#[test]
+fn a_press_on_the_correction_pass_defers_putting_the_cover_block_back() {
+    let ctx = egui::Context::default();
+    let (a, b) = (shell(1), shell(2));
+    for _ in 0..2 {
+        draw_popups(&ctx, &[(a, Shown::Collapsed), (b, Shown::Collapsed)], false);
+    }
+    let (mut wrong, mut pointer_wrong) = (Vec::new(), Vec::new());
+    for pass in 0..6 {
+        let press = pass == 1;
+        let layers = draw_popups(&ctx, &[(a, Shown::Collapsed), (b, Shown::Covering)], press);
+        if !stacked_in_order(&ctx, &layers) {
+            wrong.push(pass);
+        }
+        if !pointer_on(&ctx, b) {
+            pointer_wrong.push(pass);
+        }
+    }
+    // 순서와 포인터 레이어를 함께 본다(앞이 틀려도 뒤가 보이게).
+    assert_eq!(
+        (wrong, pointer_wrong),
+        (vec![0, 1], Vec::<usize>::new()),
+        "(order, pointer) passes: the fix waits for the first pass without a press, A's view button must stay under B"
     );
 }
