@@ -188,7 +188,11 @@ mod tests {
     #[test]
     fn the_closed_trigger_reads_the_select_rest_tokens_for_icon_and_text() {
         for th in themes() {
-            assert_ne!(th.select_border(), th.button_secondary_border());
+            // 한 테마에서는 select-border와 button-secondary-border가 같은 값이라 채움·테두리 짝으로 가른다.
+            assert_ne!(
+                (th.select_bg(), th.select_border()),
+                (th.button_secondary_bg(), th.button_secondary_border())
+            );
             let want = (th.select_bg().to_egui(), th.select_border().to_egui());
             for current in ["symbol", "alt"] {
                 let p = paint(|ui| {
