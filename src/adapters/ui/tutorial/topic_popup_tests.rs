@@ -1,4 +1,4 @@
-//! 튜토리얼 목록 팝업의 ↓·Enter 는 수식키 없는 누름만 받는다.
+//! 튜토리얼 목록 팝업의 키 입력(↓·Enter 는 수식키 없는 누름만 받는다)과 선택 행의 그린 색.
 
 use super::*;
 use crate::adapters::ui::popup::window_input_test_support::{
@@ -67,5 +67,50 @@ fn modified_enter_is_ignored_by_the_topics() {
         let (_, start, action) = topics_frame(egui::Key::Enter, Some(held));
         assert_eq!(start, None, "{held:?}");
         assert!(matches!(action, PopupAction::None), "{held:?}");
+    }
+}
+
+/// 선택한 주제 행(surface-active 채움)의 테두리가 정본 토큰 색인지 그린 도형으로 본다. 반투명 accent
+/// 테마도 그려, 불투명에서는 같은 값이 되는 고정 알파와 갈리게 한다.
+#[test]
+fn selected_topic_row_border_paints_the_design_token() {
+    fn flatten(shape: &egui::Shape, out: &mut Vec<egui::epaint::RectShape>) {
+        match shape {
+            egui::Shape::Rect(r) => out.push(r.clone()),
+            egui::Shape::Vec(v) => v.iter().for_each(|s| flatten(s, out)),
+            _ => {}
+        }
+    }
+    // 반투명 accent 의 알파. 정본 식은 accent 알파에 비율을 곱한다.
+    const TRANSLUCENT_ACCENT_ALPHA: u8 = 128;
+    let mut colors = tasty_themes::mocha_fallback_colors();
+    colors.blue = colors.blue.with_alpha(TRANSLUCENT_ACCENT_ALPHA);
+    let translucent = tasty_type_appearance::theme::Theme::with_colors_and_zoom(colors, false, 1.0);
+    assert_eq!(translucent.accent_primary().a(), TRANSLUCENT_ACCENT_ALPHA);
+    for (name, th) in [
+        ("mocha", tasty_themes::mocha_fallback()),
+        ("translucent accent", translucent),
+    ] {
+        let ctx = egui::Context::default();
+        let out = ctx.run(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                topic_row(ui, &th, 1, "T", "D", true);
+            });
+        });
+        let mut rects = Vec::new();
+        out.shapes
+            .iter()
+            .for_each(|c| flatten(&c.shape, &mut rects));
+        let active = th.surface_active().to_egui();
+        let borders: Vec<egui::Color32> = rects
+            .iter()
+            .filter(|r| r.fill == active && r.stroke.width > 0.0)
+            .map(|r| r.stroke.color)
+            .collect();
+        assert_eq!(
+            borders,
+            vec![th.tutorial_topic_selected_border().to_egui()],
+            "{name}: 선택 행 테두리"
+        );
     }
 }

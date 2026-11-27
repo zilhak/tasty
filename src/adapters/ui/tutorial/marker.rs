@@ -55,14 +55,16 @@ fn paint_spotlight_scrim(p: &egui::Painter, screen: egui::Rect, hole: egui::Rect
 fn paint_marker(p: &egui::Painter, rect: egui::Rect, theme: &Theme) {
     let accent = theme.accent_primary();
     let radius = theme.corner_radius.value();
-    for (grow, alpha) in [(5.0_f32, 60u8), (2.5, 110)] {
+    // 두 겹은 정본 box-shadow 두 항의 합성(링 바로 밖이 더 밝다)을 근사하므로 바깥 겹이 glow-inner,
+    // 안쪽 겹이 glow-outer 다.
+    for (grow, color) in [
+        (5.0_f32, theme.tutorial_marker_glow_inner()),
+        (2.5, theme.tutorial_marker_glow_outer()),
+    ] {
         p.rect_stroke(
             rect.expand(grow),
             radius + grow,
-            egui::Stroke::new(
-                theme.focus_ring_width.value() + grow,
-                accent.with_alpha(alpha).to_egui(),
-            ),
+            egui::Stroke::new(theme.focus_ring_width.value() + grow, color.to_egui()),
             egui::StrokeKind::Outside,
         );
     }
@@ -148,5 +150,79 @@ mod tests {
             raised > scrim,
             "callout background ({raised}) must be composited after the scrim ({scrim})"
         );
+    }
+
+    /// 반투명 accent 의 알파. 정본 식은 accent 알파에 비율을 곱하므로 고정 알파와 갈린다.
+    const TRANSLUCENT_ACCENT_ALPHA: u8 = 128;
+
+    /// Mocha 와 accent 만 반투명인 Mocha.
+    fn marker_themes() -> [(&'static str, Theme); 2] {
+        let mut colors = tasty_themes::mocha_fallback_colors();
+        colors.blue = colors.blue.with_alpha(TRANSLUCENT_ACCENT_ALPHA);
+        let translucent = Theme::with_colors_and_zoom(colors, false, 1.0);
+        assert_eq!(translucent.accent_primary().a(), TRANSLUCENT_ACCENT_ALPHA);
+        [
+            ("mocha", tasty_themes::mocha_fallback()),
+            ("translucent accent", translucent),
+        ]
+    }
+
+    fn flatten(shape: &egui::Shape, out: &mut Vec<egui::epaint::RectShape>) {
+        match shape {
+            egui::Shape::Rect(r) => out.push(r.clone()),
+            egui::Shape::Vec(v) => v.iter().for_each(|s| flatten(s, out)),
+            _ => {}
+        }
+    }
+
+    /// 실제 경로(paint_spotlight)로 그린 마커의 발광 두 겹이 정본 토큰 색인지 그린 도형으로 본다. 링에서 더 멀리
+    /// 벌린 겹이 glow-inner, 가까운 겹이 glow-outer 다(정본 box-shadow 합성의 근사, `paint_marker`).
+    #[test]
+    fn marker_glow_layers_paint_the_design_glow_tokens() {
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1200.0, 800.0));
+        let hole = egui::Rect::from_min_size(egui::pos2(300.0, 200.0), egui::vec2(240.0, 120.0));
+        for (name, theme) in marker_themes() {
+            let ctx = egui::Context::default();
+            let out = ctx.run(
+                egui::RawInput {
+                    screen_rect: Some(screen),
+                    ..Default::default()
+                },
+                |ctx| paint_spotlight(ctx, screen, hole, &theme),
+            );
+            let mut rects = Vec::new();
+            out.shapes
+                .iter()
+                .for_each(|c| flatten(&c.shape, &mut rects));
+            let ring = theme.accent_primary().to_egui();
+            assert_eq!(
+                rects
+                    .iter()
+                    .filter(|r| r.rect == hole && r.stroke.color == ring)
+                    .count(),
+                1,
+                "{name}: 마커 링"
+            );
+            // 대상과 중심이 같고 더 큰 바깥 stroke 를 발광 겹으로 본다. 벌린 폭은 0.1px 단위로 읽는다.
+            let mut glows: Vec<(f32, egui::Color32)> = rects
+                .iter()
+                .filter(|r| r.stroke.width > 0.0 && r.stroke_kind == egui::StrokeKind::Outside)
+                .filter(|r| (r.rect.center() - hole.center()).length() < 0.01)
+                .map(|r| {
+                    let grow = ((r.rect.width() - hole.width()) / 2.0 * 10.0).round() / 10.0;
+                    (grow, r.stroke.color)
+                })
+                .filter(|(grow, _)| *grow > 0.0)
+                .collect();
+            glows.sort_by(|a, b| a.0.total_cmp(&b.0));
+            assert_eq!(
+                glows,
+                vec![
+                    (2.5, theme.tutorial_marker_glow_outer().to_egui()),
+                    (5.0, theme.tutorial_marker_glow_inner().to_egui()),
+                ],
+                "{name}: 발광 겹(벌린 폭, 색)"
+            );
+        }
     }
 }

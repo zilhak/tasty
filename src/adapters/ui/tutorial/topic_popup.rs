@@ -168,7 +168,7 @@ pub fn draw_tutorial_topics_popup(
 }
 
 /// 주제 행 — 인덱스 캡 + 제목/설명. 클릭되면 `true`(선택). 선택 시 surface-active
-/// + accent 캡 + accent40% 보더.
+/// + accent 캡 + `tutorial-topic-selected-border` 보더.
 fn topic_row(
     ui: &mut egui::Ui,
     th: &tasty_type_appearance::theme::Theme,
@@ -177,12 +177,8 @@ fn topic_row(
     desc: &str,
     sel: bool,
 ) -> bool {
-    // 선택된 토픽 테두리 — accent 의 40% alpha. 대응 토큰 없음.
-    const SELECTED_BORDER_ALPHA: u8 = 102;
     let border = if sel {
-        th.accent_primary()
-            .with_alpha(SELECTED_BORDER_ALPHA)
-            .to_egui()
+        th.tutorial_topic_selected_border().to_egui()
     } else {
         egui::Color32::TRANSPARENT
     };
