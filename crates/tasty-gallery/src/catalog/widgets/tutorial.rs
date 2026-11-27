@@ -263,64 +263,69 @@ fn callout<'a>(
         })
         .show(ui, |ui| {
             ui.set_width((CALLOUT_W - theme.spacing_lg.scaled(2.0)).value());
-            ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
-            ui.label(
-                egui::RichText::new(format!("{step} / {total}"))
-                    .monospace()
-                    .size(theme.font_size_micro.value())
-                    .strong()
-                    .color(theme.accent_primary_raised().to_egui()),
-            );
-            vspace(ui, theme.spacing_xs);
-            ui.label(
-                egui::RichText::new(title)
-                    .size(theme.font_size_body.value())
-                    .strong()
-                    .color(theme.text_primary().to_egui()),
-            );
-            // 디자인의 6px 간격을 공용 토큰으로 계산한다.
-            vspace(ui, theme.spacing_xs * 1.5);
-            ui.label(
-                egui::RichText::new(body)
-                    .size(theme.font_size_caption.value())
-                    .color(theme.text_secondary_raised().to_egui()),
-            );
-            ui.add_space(theme.spacing_md.value());
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
-                for i in 0..total {
-                    let c = if i == step - 1 {
-                        theme.accent_primary().to_egui()
-                    } else {
-                        theme.surface_active().to_egui()
-                    };
-                    // 지름 5는 디자인 값이며 작은 진행 점의 비율을 유지한다.
-                    let (r, _) = ui.allocate_exact_size(egui::vec2(5.0, 5.0), egui::Sense::hover());
-                    ui.painter().circle_filled(r.center(), 2.5, c);
-                }
-                // 본체 callout.rs와 같은 lang 키·변형이다. 마지막 단계의 주 버튼은 btn_done이다.
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let next = if step == total {
-                        tr("tutorial.btn_done")
-                    } else {
-                        tr("tutorial.btn_next")
-                    };
-                    Button::new(next)
-                        .variant(ButtonVariant::Primary)
-                        .size(ControlSize::Sm)
-                        .show(ui, theme);
-                    if !first {
-                        Button::new(tr("tutorial.btn_back"))
-                            .variant(ButtonVariant::Secondary)
+            // 표본은 줄바꿈 묶음(cluster) 안에 놓여 부모 배치가 가로다. 말풍선 안은 본체처럼
+            // 단계·제목·본문·점과 버튼 줄을 세로로 쌓는다.
+            ui.vertical(|ui| {
+                ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
+                ui.label(
+                    egui::RichText::new(format!("{step} / {total}"))
+                        .monospace()
+                        .size(theme.font_size_micro.value())
+                        .strong()
+                        .color(theme.accent_primary_raised().to_egui()),
+                );
+                vspace(ui, theme.spacing_xs);
+                ui.label(
+                    egui::RichText::new(title)
+                        .size(theme.font_size_body.value())
+                        .strong()
+                        .color(theme.text_primary().to_egui()),
+                );
+                // 디자인의 6px 간격을 공용 토큰으로 계산한다.
+                vspace(ui, theme.spacing_xs * 1.5);
+                ui.label(
+                    egui::RichText::new(body)
+                        .size(theme.font_size_caption.value())
+                        .color(theme.text_secondary_raised().to_egui()),
+                );
+                ui.add_space(theme.spacing_md.value());
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
+                    for i in 0..total {
+                        let c = if i == step - 1 {
+                            theme.accent_primary().to_egui()
+                        } else {
+                            theme.surface_active().to_egui()
+                        };
+                        // 지름 5는 디자인 값이며 작은 진행 점의 비율을 유지한다.
+                        let (r, _) =
+                            ui.allocate_exact_size(egui::vec2(5.0, 5.0), egui::Sense::hover());
+                        ui.painter().circle_filled(r.center(), 2.5, c);
+                    }
+                    // 본체 callout.rs와 같은 lang 키·변형이다. 마지막 단계의 주 버튼은 btn_done이다.
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        let next = if step == total {
+                            tr("tutorial.btn_done")
+                        } else {
+                            tr("tutorial.btn_next")
+                        };
+                        Button::new(next)
+                            .variant(ButtonVariant::Primary)
                             .size(ControlSize::Sm)
                             .show(ui, theme);
-                    }
-                    // 말풍선은 raised 바탕이라 ghost 글자도 raised 잉크로 그린다.
-                    Button::new(tr("tutorial.btn_skip"))
-                        .variant(ButtonVariant::Ghost)
-                        .size(ControlSize::Sm)
-                        .ground(Ground::Raised)
-                        .show(ui, theme);
+                        if !first {
+                            Button::new(tr("tutorial.btn_back"))
+                                .variant(ButtonVariant::Secondary)
+                                .size(ControlSize::Sm)
+                                .show(ui, theme);
+                        }
+                        // 말풍선은 raised 바탕이라 ghost 글자도 raised 잉크로 그린다.
+                        Button::new(tr("tutorial.btn_skip"))
+                            .variant(ButtonVariant::Ghost)
+                            .size(ControlSize::Sm)
+                            .ground(Ground::Raised)
+                            .show(ui, theme);
+                    });
                 });
             });
         });

@@ -516,3 +516,60 @@ fn callout_buttons_read_the_app_tutorial_keys_and_the_raised_ghost_ink() {
         }
     }
 }
+
+/// 갤러리 표본(줄바꿈 묶음 안)에서 말풍선 안이 세로로 쌓이는지 그린 글자 Rect로 본다. 제목은 본문 위에 있고,
+/// 버튼 글자는 어느 본문 글자와도 겹치지 않으며 본문 아래에 있다.
+#[test]
+fn callout_specimen_stacks_the_body_above_the_button_row() {
+    use crate::catalog::components::painted::{mocha_latte, paint};
+    use crate::i18n::t;
+    let buttons = [
+        t("tutorial.btn_skip"),
+        t("tutorial.btn_back"),
+        t("tutorial.btn_next"),
+    ];
+    for (name, th) in mocha_latte() {
+        let painted = paint(|ui| super::draw_callout(ui, &th));
+        let rect_of = |s: &str| -> Vec<egui::Rect> {
+            painted
+                .texts
+                .iter()
+                .filter(|p| p.text == s)
+                .map(|p| p.rect)
+                .collect()
+        };
+        let button_rects: Vec<egui::Rect> = buttons.iter().flat_map(|b| rect_of(b)).collect();
+        assert!(!button_rects.is_empty(), "{name}: 버튼 글자 없음");
+        let mut bodies = 0;
+        for step in BASICS_STEPS.iter().filter(|s| s.id != "summary") {
+            for body in rect_of(t(step.body_key)) {
+                bodies += 1;
+                for title in rect_of(t(step.title_key)) {
+                    assert!(
+                        title.bottom() <= body.top(),
+                        "{name} {}: 제목 {title:?} 이 본문 {body:?} 위에 있지 않다",
+                        step.id
+                    );
+                }
+                // 같은 말풍선의 버튼 줄: 본문과 가로 범위가 겹치고 세로로 가까운 버튼 글자.
+                for b in button_rects
+                    .iter()
+                    .filter(|b| b.x_range().intersects(body.x_range()))
+                    .filter(|b| (b.center().y - body.center().y).abs() < 120.0)
+                {
+                    assert!(
+                        !b.intersects(body),
+                        "{name} {}: 버튼 {b:?} 이 본문 {body:?} 과 겹친다",
+                        step.id
+                    );
+                    assert!(
+                        b.top() >= body.bottom(),
+                        "{name} {}: 버튼 {b:?} 이 본문 {body:?} 아래에 있지 않다",
+                        step.id
+                    );
+                }
+            }
+        }
+        assert_eq!(bodies, 4, "{name}: 표본 본문 수");
+    }
+}
