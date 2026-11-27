@@ -1,9 +1,11 @@
 //! 생성기가 건너뛰는 color-mix 토큰의 수기 접근자가 DTCG 식과 같은 색을 내는지 본다.
 //! DTCG 값을 별칭과 `var(--tasty-…)` 참조까지 따라가 srgb color-mix로 계산하고, Mocha·Latte 내장 테마의
-//! 접근자 값과 비교한다. 단계마다 8비트로 반올림하는 것은 앱의 `mix_srgb`·`with_alpha`와 같다.
+//! 접근자 값과 비교한다. 단계마다 8비트로 반올림하는 것은 앱의 `mix_srgb_premultiplied`와 같다.
+
+use std::collections::HashMap;
 
 use tasty_design_tokens::DTCG_JSON;
-use tasty_design_tokens::dtcg::{self, ThemeMode, TokenSet};
+use tasty_design_tokens::dtcg::{self, ThemeMode, Tier, TokenSet};
 use tasty_themes::{LATTE_TOML_TEXT, MOCHA_TOML_TEXT, ThemeFile, mocha_fallback_colors};
 use tasty_type_appearance::color::HexColor;
 use tasty_type_appearance::theme::Theme;
@@ -71,9 +73,33 @@ fn ratio(set: &TokenSet, s: &str, mode: ThemeMode) -> u64 {
     pct as u64
 }
 
+/// 정본 식의 primitive 자리에 넣을 사용자 테마 색(primitive 이름 → 색). 비어 있으면 DTCG 값을 쓴다.
+type Inputs = HashMap<&'static str, HexColor>;
+
+/// `path` 토큰의 `mode` 값을 계산한다. 별칭과 var 참조를 따라가다 `inputs`에 있는 primitive를 만나면
+/// DTCG 값 대신 그 색을 쓴다.
+fn design_color(set: &TokenSet, path: &str, mode: ThemeMode, inputs: &Inputs) -> HexColor {
+    let token = set
+        .get(path)
+        .unwrap_or_else(|| panic!("{path} has no token"));
+    if token.tier == Tier::Primitive
+        && let Some(input) = inputs.get(token.name.as_str())
+    {
+        return *input;
+    }
+    let raw = match (mode, &token.latte) {
+        (ThemeMode::Latte, Some(latte)) => latte.as_str(),
+        _ => token.value.as_str(),
+    };
+    match dtcg::alias_target(raw) {
+        Some(target) => design_color(set, target, mode, inputs),
+        None => color_with(set, raw, mode, inputs),
+    }
+}
+
 /// color-mix 한 항: 색과 (있으면) 비율. 색은 `var(--tasty-…)`, `transparent`, 또는 hex다.
 #[allow(clippy::disallowed_methods)] // reason: DTCG 식의 transparent 항을 계산값으로 조립하며 제품 색을 정의하지 않는다.
-fn term(set: &TokenSet, s: &str, mode: ThemeMode) -> (HexColor, Option<u64>) {
+fn term(set: &TokenSet, s: &str, mode: ThemeMode, inputs: &Inputs) -> (HexColor, Option<u64>) {
     if let Some(rest) = s.strip_prefix("transparent") {
         let r = rest.trim();
         return (
@@ -85,7 +111,7 @@ fn term(set: &TokenSet, s: &str, mode: ThemeMode) -> (HexColor, Option<u64>) {
         let (hex, r) = s.split_once(' ').unwrap_or((s, ""));
         let r = r.trim();
         return (
-            color(set, hex, mode),
+            color_with(set, hex, mode, inputs),
             (!r.is_empty()).then(|| ratio(set, r, mode)),
         );
     }
@@ -93,19 +119,20 @@ fn term(set: &TokenSet, s: &str, mode: ThemeMode) -> (HexColor, Option<u64>) {
         .strip_prefix("var(--tasty-")
         .unwrap_or_else(|| panic!("unsupported color term {s:?}"));
     let close = rest.find(')').expect("var closes");
-    let color = color(
-        set,
-        &resolve(set, &var_path(set, &rest[..close]), mode),
-        mode,
-    );
+    let color = design_color(set, &var_path(set, &rest[..close]), mode, inputs);
     let r = rest[close + 1..].trim();
     (color, (!r.is_empty()).then(|| ratio(set, r, mode)))
 }
 
 /// DTCG 색 값 하나를 계산한다: hex, 또는 srgb color-mix(앞 항 비율 p, 뒤 항 1-p, 미리 곱한 alpha). 정수
 /// 퍼센트와 정수 산술로 정확한 유리수 값을 구한 뒤 반올림한다(.5는 올림).
-#[allow(clippy::disallowed_methods)] // reason: DTCG color-mix 계산 결과를 조립하며 제품 색을 정의하지 않는다.
 fn color(set: &TokenSet, raw: &str, mode: ThemeMode) -> HexColor {
+    color_with(set, raw, mode, &Inputs::new())
+}
+
+/// [`color`]와 같되, 정본 식의 primitive 자리에 `inputs`의 사용자 테마 색을 넣는다.
+#[allow(clippy::disallowed_methods)] // reason: DTCG color-mix 계산 결과를 조립하며 제품 색을 정의하지 않는다.
+fn color_with(set: &TokenSet, raw: &str, mode: ThemeMode, inputs: &Inputs) -> HexColor {
     if raw.starts_with('#') {
         return HexColor::from_hex(raw).unwrap_or_else(|| panic!("bad hex {raw}"));
     }
@@ -116,8 +143,8 @@ fn color(set: &TokenSet, raw: &str, mode: ThemeMode) -> HexColor {
     let parts = split_top_level(inner);
     assert_eq!(parts.len(), 3, "{raw}");
     assert_eq!(parts[0], "in srgb", "{raw}");
-    let (a, pa) = term(set, parts[1], mode);
-    let (b, pb) = term(set, parts[2], mode);
+    let (a, pa) = term(set, parts[1], mode, inputs);
+    let (b, pb) = term(set, parts[2], mode, inputs);
     // 두 항 모두 비율이 있으면 CSS는 두 비율을 합이 1이 되게 정규화한다. 이 계산기는 한 항 비율만
     // 읽으므로 그런 식은 거짓 일치를 내지 않게 거부한다.
     let p = match (pa, pb) {
@@ -437,4 +464,395 @@ fn dag_block_fill_of_clear_inputs_is_transparent_black() {
     let (got, expected) = ready_block_against_design(CLEAR_SKY_AND_GROUND);
     assert_eq!(expected.to_hex(), "#00000000");
     assert_eq!(got, expected);
+}
+
+/// 생성기가 건너뛰는 color-mix 토큰과 그 수기 접근자 전부. 테마 필드인 `search-match-bg`·
+/// `search-match-active-bg`와, 내장 Latte 값일 때만 상수로 올리는 `search-match-active-selected-bg`는
+/// 접근자 식이 아니라 넣지 않는다.
+const MIX_ACCESSORS: &[(&str, Accessor)] = &[
+    ("semantic.text-on-active", Theme::text_on_active),
+    ("semantic.accent-data-strong", Theme::accent_data_strong),
+    ("semantic.accent-warning-glyph", Theme::accent_warning_glyph),
+    ("semantic.accent-danger-raised", Theme::accent_danger_raised),
+    (
+        "semantic.accent-warning-raised",
+        Theme::accent_warning_raised,
+    ),
+    (
+        "semantic.accent-attention-raised",
+        Theme::accent_attention_raised,
+    ),
+    ("semantic.accent-info-raised", Theme::accent_info_raised),
+    (
+        "semantic.accent-primary-on-active",
+        Theme::accent_primary_on_active,
+    ),
+    (
+        "semantic.accent-warning-on-active",
+        Theme::accent_warning_on_active,
+    ),
+    (
+        "semantic.accent-success-on-active",
+        Theme::accent_success_on_active,
+    ),
+    (
+        "semantic.accent-danger-on-active",
+        Theme::accent_danger_on_active,
+    ),
+    (
+        "semantic.accent-agent-on-active",
+        Theme::accent_agent_on_active,
+    ),
+    (
+        "semantic.accent-attached-on-active",
+        Theme::accent_attached_on_active,
+    ),
+    (
+        "semantic.accent-attached-raised",
+        Theme::accent_attached_raised,
+    ),
+    ("semantic.accent-success-ink", Theme::accent_success_ink),
+    ("semantic.notify-warning-fill", Theme::notify_warning_fill),
+    ("semantic.border-control", Theme::border_control),
+    ("semantic.text-on-active-hover", Theme::text_on_active_hover),
+    (
+        "semantic.accent-primary-raised",
+        Theme::accent_primary_raised,
+    ),
+    ("semantic.accent-agent-raised", Theme::accent_agent_raised),
+    ("semantic.accent-move-raised", Theme::accent_move_raised),
+    (
+        "semantic.accent-primary-strong",
+        Theme::accent_primary_strong,
+    ),
+    ("semantic.accent-info-strong", Theme::accent_info_strong),
+    (
+        "semantic.accent-success-strong",
+        Theme::accent_success_strong,
+    ),
+    (
+        "semantic.accent-warning-strong",
+        Theme::accent_warning_strong,
+    ),
+    (
+        "semantic.accent-attention-strong",
+        Theme::accent_attention_strong,
+    ),
+    ("semantic.accent-danger-strong", Theme::accent_danger_strong),
+    ("semantic.accent-agent-strong", Theme::accent_agent_strong),
+    (
+        "semantic.accent-attached-strong",
+        Theme::accent_attached_strong,
+    ),
+    (
+        "semantic.accent-info-on-active",
+        Theme::accent_info_on_active,
+    ),
+    (
+        "semantic.accent-attention-on-active",
+        Theme::accent_attention_on_active,
+    ),
+    (
+        "semantic.accent-move-on-active",
+        Theme::accent_move_on_active,
+    ),
+    ("semantic.accent-success-fill", Theme::accent_success_fill),
+    ("semantic.tint-primary-bg", Theme::tint_primary_bg),
+    ("semantic.tint-info-bg", Theme::tint_info_bg),
+    ("semantic.tint-success-bg", Theme::tint_success_bg),
+    ("semantic.tint-warning-bg", Theme::tint_warning_bg),
+    ("semantic.tint-danger-bg", Theme::tint_danger_bg),
+    ("semantic.tint-agent-bg", Theme::tint_agent_bg),
+    ("semantic.tint-primary-border", Theme::tint_primary_border),
+    ("semantic.tint-info-border", Theme::tint_info_border),
+    ("semantic.tint-success-border", Theme::tint_success_border),
+    ("semantic.tint-warning-border", Theme::tint_warning_border),
+    (
+        "semantic.tint-attention-border",
+        Theme::tint_attention_border,
+    ),
+    ("semantic.tint-danger-border", Theme::tint_danger_border),
+    ("semantic.tint-attached-border", Theme::tint_attached_border),
+    ("component.plugin-avatar-bg", Theme::plugin_avatar_bg),
+    (
+        "component.plugin-avatar-border",
+        Theme::plugin_avatar_border,
+    ),
+    (
+        "component.preset-split-zone-bg",
+        Theme::preset_split_zone_bg,
+    ),
+    (
+        "component.dag-status-running-bg",
+        Theme::dag_status_running_bg,
+    ),
+    (
+        "component.dag-status-failed-bg",
+        Theme::dag_status_failed_bg,
+    ),
+    (
+        "component.dag-status-unknown-bg",
+        Theme::dag_status_unknown_bg,
+    ),
+    (
+        "component.dag-status-partially-failed-bg",
+        Theme::dag_status_partially_failed_bg,
+    ),
+    (
+        "component.dag-phase-awaiting-bg",
+        Theme::dag_phase_awaiting_bg,
+    ),
+    (
+        "component.dag-status-waiting-block-bg",
+        Theme::dag_status_waiting_block_bg,
+    ),
+    (
+        "component.dag-status-ready-block-bg",
+        Theme::dag_status_ready_block_bg,
+    ),
+    (
+        "component.dag-status-running-block-bg",
+        Theme::dag_status_running_block_bg,
+    ),
+    (
+        "component.dag-status-succeeded-block-bg",
+        Theme::dag_status_succeeded_block_bg,
+    ),
+    (
+        "component.dag-status-failed-block-bg",
+        Theme::dag_status_failed_block_bg,
+    ),
+    (
+        "component.dag-status-cancelled-block-bg",
+        Theme::dag_status_cancelled_block_bg,
+    ),
+    (
+        "component.dag-status-skipped-block-bg",
+        Theme::dag_status_skipped_block_bg,
+    ),
+    (
+        "component.dag-status-unknown-block-bg",
+        Theme::dag_status_unknown_block_bg,
+    ),
+    (
+        "component.dag-status-partially-failed-block-bg",
+        Theme::dag_status_partially_failed_block_bg,
+    ),
+    (
+        "component.dag-phase-awaiting-block-bg",
+        Theme::dag_phase_awaiting_block_bg,
+    ),
+    (
+        "component.dag-runner-stalled-border",
+        Theme::dag_runner_stalled_border,
+    ),
+    (
+        "component.dag-runner-stalled-bg",
+        Theme::dag_runner_stalled_bg,
+    ),
+    (
+        "component.dag-runner-crashed-border",
+        Theme::dag_runner_crashed_border,
+    ),
+    (
+        "component.dag-runner-crashed-bg",
+        Theme::dag_runner_crashed_bg,
+    ),
+    ("component.dag-cycle-bg", Theme::dag_cycle_bg),
+    ("component.dag-cycle-border", Theme::dag_cycle_border),
+    (
+        "component.explorer-drop-target-bg",
+        Theme::explorer_drop_target_bg,
+    ),
+    (
+        "component.file-drop-overlay-bg",
+        Theme::file_drop_overlay_bg,
+    ),
+    (
+        "component.file-drop-overlay-border",
+        Theme::file_drop_overlay_border,
+    ),
+    ("component.explorer-marquee-bg", Theme::explorer_marquee_bg),
+    (
+        "component.explorer-marquee-border",
+        Theme::explorer_marquee_border,
+    ),
+    ("component.approval-danger-bg", Theme::approval_danger_bg),
+    ("component.tab-bg-hover", Theme::tab_bg_hover),
+];
+
+/// 이 표가 다루지 않는 color-mix 토큰과 그 사유. 표와 합쳐 DTCG의 color-mix 토큰 전부가 된다.
+const MIX_TOKENS_WITHOUT_ACCESSOR: &[&str] = &[
+    // 테마 필드(사용자 테마 TOML 값)이거나 내장 Latte 값일 때만 상수로 올리는 규칙.
+    "semantic.search-match-bg",
+    "semantic.search-match-active-bg",
+    "semantic.search-match-active-selected-bg",
+    // 쓰는 Theme 접근자가 없다.
+    "semantic.brand-fill-hover",
+    "semantic.brand-fill-press",
+    "semantic.brand-wash",
+    "semantic.brand-tint",
+    "semantic.brand-glow",
+    "component.address-field-focus-halo",
+    "component.address-field-invalid-halo",
+    "component.tutorial-marker-glow-inner",
+    "component.tutorial-marker-glow-outer",
+    "component.tutorial-topic-selected-border",
+    "component.fp-host-badge-border",
+];
+
+/// DTCG의 color-mix 토큰이 위 두 표에 빠짐없이, 한 번씩 들어 있다.
+#[test]
+fn every_design_mix_token_is_listed_once() {
+    let set = dtcg::parse(DTCG_JSON).expect("vendor json must parse");
+    let mut design: Vec<String> = set
+        .iter()
+        .filter(|t| {
+            t.value.contains("color-mix(")
+                || t.latte.as_deref().is_some_and(|l| l.contains("color-mix("))
+        })
+        .map(|t| t.path())
+        .collect();
+    design.sort();
+    let mut listed: Vec<String> = MIX_ACCESSORS
+        .iter()
+        .map(|(p, _)| (*p).to_string())
+        .chain(MIX_TOKENS_WITHOUT_ACCESSOR.iter().map(|p| (*p).to_string()))
+        .collect();
+    listed.sort();
+    assert_eq!(listed, design);
+}
+
+/// 사용자 테마 색을 정본 식의 primitive 자리에 넣는 대응: primitive 이름, 테마 TOML 절과 키, Theme 필드.
+/// 내장 테마에서는 각 색이 DTCG primitive 값과 같다(`primitive_inputs_name_the_builtin_palette`).
+type Field = fn(&Theme) -> HexColor;
+const PALETTE: &[(&str, &str, &str, Field)] = &[
+    ("color-neutral-0", "palette", "crust", |t| t.crust),
+    ("color-neutral-100", "palette", "mantle", |t| t.mantle),
+    ("color-neutral-200", "palette", "base", |t| t.base),
+    ("color-neutral-300", "palette", "surface0", |t| t.surface0),
+    ("color-neutral-400", "palette", "surface1", |t| t.surface1),
+    ("color-neutral-500", "palette", "surface2", |t| t.surface2),
+    ("color-neutral-600", "palette", "overlay0", |t| t.overlay0),
+    ("color-neutral-700", "palette", "overlay1", |t| t.overlay1),
+    ("color-neutral-800", "palette", "overlay2", |t| t.overlay2),
+    ("color-neutral-900", "palette", "subtext0", |t| t.subtext0),
+    ("color-neutral-1000", "palette", "subtext1", |t| t.subtext1),
+    ("color-neutral-1100", "palette", "text", |t| t.text),
+    ("color-blue", "accent", "blue", |t| t.blue),
+    ("color-green", "accent", "green", |t| t.green),
+    ("color-red", "accent", "red", |t| t.red),
+    ("color-yellow", "accent", "yellow", |t| t.yellow),
+    ("color-peach", "accent", "peach", |t| t.peach),
+    ("color-mauve", "accent", "mauve", |t| t.mauve),
+    ("color-teal", "accent", "teal", |t| t.teal),
+    ("color-sky", "accent", "sky", |t| t.sky),
+    ("color-lavender", "accent", "lavender", |t| t.lavender),
+    ("color-flamingo", "accent", "flamingo", |t| t.flamingo),
+    ("color-pink", "accent", "pink", |t| t.pink),
+    ("color-maroon", "accent", "maroon", |t| t.maroon),
+    ("color-rosewater", "accent", "rosewater", |t| t.rosewater),
+];
+
+fn primitive_inputs(th: &Theme) -> Inputs {
+    PALETTE
+        .iter()
+        .map(|(name, _, _, field)| (*name, field(th)))
+        .collect()
+}
+
+/// 표의 접근자 값이 정본 식 계산값과 다른 자리를 모은다.
+fn mix_mismatches(th: &Theme, mode: ThemeMode, inputs: &Inputs) -> Vec<String> {
+    let set = dtcg::parse(DTCG_JSON).expect("vendor json must parse");
+    MIX_ACCESSORS
+        .iter()
+        .filter_map(|(path, accessor)| {
+            let want = design_color(&set, path, mode, inputs);
+            let got = accessor(th);
+            (got != want).then(|| {
+                format!(
+                    "{path} {mode:?}: app {} design {}",
+                    got.to_hex(),
+                    want.to_hex()
+                )
+            })
+        })
+        .collect()
+}
+
+/// 내장 Mocha·Latte에서 모든 color-mix 접근자가 정본 식 계산값과 같다.
+#[test]
+fn every_mix_accessor_matches_the_design_mix_in_the_builtin_themes() {
+    let mut bad = mix_mismatches(
+        &theme(MOCHA_TOML_TEXT, false),
+        ThemeMode::Mocha,
+        &Inputs::new(),
+    );
+    bad.extend(mix_mismatches(
+        &theme(LATTE_TOML_TEXT, true),
+        ThemeMode::Latte,
+        &Inputs::new(),
+    ));
+    assert!(bad.is_empty(), "{}", bad.join("\n"));
+}
+
+/// 내장 테마의 팔레트 색이 대응하는 DTCG primitive와 같다(대응표 자체의 시험).
+#[test]
+fn primitive_inputs_name_the_builtin_palette() {
+    let set = dtcg::parse(DTCG_JSON).expect("vendor json must parse");
+    for (mode, th) in [
+        (ThemeMode::Mocha, theme(MOCHA_TOML_TEXT, false)),
+        (ThemeMode::Latte, theme(LATTE_TOML_TEXT, true)),
+    ] {
+        for (name, input) in primitive_inputs(&th) {
+            let path = format!("primitive.{name}");
+            assert_eq!(
+                design_color(&set, &path, mode, &Inputs::new()),
+                input,
+                "{path} {mode:?}"
+            );
+        }
+    }
+}
+
+/// 내장 테마의 팔레트·강조색을 모두 반투명으로 바꾼 사용자 테마. 색마다 알파를 달리해 앞 항·뒤 항
+/// 알파를 섞는 자리가 서로 다른 값을 낸다.
+fn translucent_user_theme(base: &str, light: bool) -> Theme {
+    let builtin = theme(base, light);
+    let mut overlay = String::new();
+    for section in ["palette", "accent"] {
+        overlay.push_str(&format!("[{section}]\n"));
+        for (i, (_, _, key, field)) in PALETTE
+            .iter()
+            .enumerate()
+            .filter(|(_, (_, s, _, _))| *s == section)
+        {
+            let alpha = TRANSLUCENT_ALPHA_FIRST + TRANSLUCENT_ALPHA_STEP * i as u8;
+            let color = field(&builtin).with_alpha(alpha).to_hex();
+            overlay.push_str(&format!("{key} = \"{color}\"\n"));
+        }
+    }
+    user_theme(base, light, &overlay)
+}
+
+/// 반투명 사용자 테마의 첫 색 알파와 색마다 더하는 폭(25색 → 40..=232).
+const TRANSLUCENT_ALPHA_FIRST: u8 = 40;
+const TRANSLUCENT_ALPHA_STEP: u8 = 8;
+
+/// 팔레트·강조색이 모두 반투명인 사용자 테마에서도 모든 color-mix 접근자가 정본 식 계산값과 같다.
+#[test]
+fn every_mix_accessor_matches_the_design_mix_for_a_translucent_user_theme() {
+    let mut bad = Vec::new();
+    for (base, light, mode) in [
+        (MOCHA_TOML_TEXT, false, ThemeMode::Mocha),
+        (LATTE_TOML_TEXT, true, ThemeMode::Latte),
+    ] {
+        let th = translucent_user_theme(base, light);
+        assert!(
+            th.accent_info().a() < u8::MAX,
+            "the user accent must stay translucent"
+        );
+        bad.extend(mix_mismatches(&th, mode, &primitive_inputs(&th)));
+    }
+    assert!(bad.is_empty(), "{}", bad.join("\n"));
 }
