@@ -70,7 +70,7 @@
 - Given 폴더 이름이 id와 다르고 같은 id의 다른 폴더가 있는 예약 id 항목, When 그 행에서 `Remove`를 확인한다, Then 그 폴더만 지워지고 다른 폴더는 남으며 탭·사이드바 배지가 하나 줄어든다.
 - Given 예약 id 행의 확인 상태, When 그 폴더의 매니페스트가 허용되는 id로 바뀐 뒤 확인한다, Then 폴더는 남고 실패 토스트가 뜨며 바가 평소로 돌아간다.
 - Given 예약 id 폴더, When `tasty plugin remove <id>`, Then 명령은 실패하고 오류가 확인 필요 탭을 안내하며 폴더는 남는다. 목록에 없는 id의 오류는 `not installed`다.
-- Given 공식 목록에서 빠진 `com.tasty.mesh-demo`의 남은 설치 폴더, When 탐색, Then 예약 id 항목으로 확인 필요 탭에 뜨고 실행되지 않으며 폴더는 남는다(`discovery_reserved_tests.rs`).
+- Given 공식 목록에서 빠진 `com.tasty.mesh-demo`의 남은 설치 폴더(매니페스트가 있고 호스트 검증을 통과함. 매니페스트가 없으면 건너뛰고, 검증 실패면 경고 뒤 건너뛴다), When 탐색, Then 예약 id 항목으로 확인 필요 탭에 뜨고 실행되지 않으며 폴더는 남는다(`discovery_reserved_tests.rs`).
 - Given 공식 목록의 id(`com.tasty.agent-stream` 포함) 또는 `com.example.x` 같은 다른 접두, When 설치·탐색, Then 서명 판정만 적용된다.
 
 `enable <id>` / `disable <id>` 는 발견된 설치 패키지가 있는 ID만 받는다. 미설치 ID는

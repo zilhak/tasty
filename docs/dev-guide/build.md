@@ -21,6 +21,8 @@ Cargo.toml을 가진 디렉터리 수다. workspace에서 제외된 크레이트
 
 본 바이너리는 각 크레이트를 재수출해 `crate::model::X` / `crate::theme::theme()` 같은 경로가 그대로 동작한다.
 
+workspace 멤버는 `crates/*` 폴더 전체다. 지운 크레이트의 폴더에 git이 무시하는 파일(예: 옛 서명 `tasty-plugin.toml.sig`)만 남으면 git 체크아웃은 그 폴더를 지우지 않고, workspace가 `Cargo.toml` 없는 폴더를 멤버로 잡아 빌드가 실패할 수 있다. 그런 `crates/<이름>/` 폴더는 지운다.
+
 **루트 패키지는 `lib` 와 `bin` 두 타깃이다.** `src/lib.rs` 가 모듈 트리와 위 재수출을 들고, `src/main.rs` 는 `tasty::boot::run()` 만 부른다.
 
 - **루트 패키지의 단위시험은 전부 lib 타깃에 산다.** `cargo test -p tasty --bin tasty` 로 좁히면 **실행된 시험이 0개인데도 성공으로 끝난다** — 0 건은 통과가 아니라 미측정이다. 좁히려면 `cargo test -p tasty --lib` 다. (`--lib --bins` 를 함께 주는 조합은 예전과 같은 것을 담는다.)

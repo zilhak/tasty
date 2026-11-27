@@ -289,7 +289,7 @@ plugin 작성자가 의미적 변경 시 `tasty-plugin.toml::version` 을 수동
 
 #### 개발용 자동 reload — `TASTY_PLUGIN_AUTO_RELOAD`
 
-dev workspace 에서 `cargo build -p tasty-plugin-X --release` 반복 시 수동 disable/enable 없이 새 binary 즉시 적용. env 가 빈 문자열/`"0"` 아니면 부팅 시 활성(production 기본 off — flag off 면 pump tick 부담 0). 신호: 실행 중 plugin 의 entry binary mtime 또는 매니페스트 version 변화. polling `AUTO_RELOAD_POLL_INTERVAL`(2 초). swap 은 `--restart-running` 과 동일 helper(`plugins.toml::disabled` 미수정). respawn 실패 시 warn + baseline 갱신(무한 swap 차단), 재시도 반복을 막는다. swap은 등록 때 읽은 매니페스트를 그대로 쓰므로 바꾼 매니페스트 선언(`min_tasty_version` 포함)은 반영하지 않는다. 앱을 다시 시작하면 부팅 탐색이 새 선언을 읽는다.
+실행 중 plugin 의 설치된 패키지(`~/.tasty/plugins/<id>/`) entry binary 가 바뀌면 수동 disable/enable 없이 새 binary 를 즉시 적용한다. 이 레포에는 플러그인 크레이트가 없다. 공식 플러그인을 고쳤다면 빌드·스테이징(`just build-plugins --from-checkout`)과 설치본 반영(`upgrade-builtins`)은 따로 한다([plugin-development §9](plugin-development.md#9-빌드--설치)). env 가 빈 문자열/`"0"` 아니면 부팅 시 활성(production 기본 off — flag off 면 pump tick 부담 0). 신호: 실행 중 plugin 의 entry binary mtime 또는 매니페스트 version 변화. polling `AUTO_RELOAD_POLL_INTERVAL`(2 초). swap 은 `--restart-running` 과 동일 helper(`plugins.toml::disabled` 미수정). respawn 실패 시 warn + baseline 갱신(무한 swap 차단), 재시도 반복을 막는다. swap은 등록 때 읽은 매니페스트를 그대로 쓰므로 바꾼 매니페스트 선언(`min_tasty_version` 포함)은 반영하지 않는다. 앱을 다시 시작하면 부팅 탐색이 새 선언을 읽는다.
 
 ### i18n 키 충돌
 
