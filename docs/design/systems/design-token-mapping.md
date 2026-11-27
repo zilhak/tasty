@@ -160,7 +160,7 @@ Tag는 모든 상태 variant가 `tag_bg()` 위에 그리고 테두리는 `tag_in
 surface 경계 30% 존을 hover 할 때 뜨는 밴드+분할선 색. 밴드 채움은 **테마 가변색** accent-primary 를
 `transparent` 와 섞는 정본 식 `mix_srgb_premultiplied` 로 rgb 를 보존하고 알파만 accent 알파 × 비율로 파생하는
 수기 접근자다(scrim 은 고정 검정이라 `from_rgba` 지만, 이건 가변 accent 라 접근자 방식이 정답). 분할선은 DTCG 에서
-`semantic.accent-primary-raised` 별칭이라 생성 접근자가 그 값을 돌려준다. dtcg 인제스트 완료.
+`semantic.accent-primary-raised` 별칭이라 생성 접근자가 그 값을 돌려준다.
 
 | 디자인 토큰 | 디자인 체인 | tasty Theme | 비고 |
 |---|---|---|---|
