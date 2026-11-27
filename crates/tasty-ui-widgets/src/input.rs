@@ -344,7 +344,8 @@ impl<'a> Input<'a> {
             // 세로는 egui 기본값(2)을 그대로 둔다.
             // 덮는 칸은 가로 padding을 TextEdit margin으로 옮기고, 세로 margin을 상자 높이까지 늘린다.
             // TextEdit은 상자 세로 가운데에 놓이므로 위아래 margin이 같으면 글자 자리는 그대로다.
-            // 글자 칸 높이는 egui처럼 줄 높이와 그 GUI 반올림 중 큰 값이다(builder.rs:540·:541).
+            // 글자 칸 높이는 egui처럼 줄 높이와 그 GUI 반올림 중 큰 값이다(egui TextEdit::show_content의
+            // desired_inner_size).
             let (te_pad_x, te_pad_y) = if covers {
                 let row = ui.fonts(|f| f.row_height(&font));
                 let text_h = row.max(row.round_ui());
