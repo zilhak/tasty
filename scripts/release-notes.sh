@@ -158,7 +158,7 @@ function escape_row(s,    out, cell, i, n, c) {
     return out render(cell, 0)
 }
 function row(s) { return tall ? escape_text(s, 1) : escape_row(s) }
-# 문단을 끊을 수 있는 HTML 블록(CommonMark 1~6종)의 시작인가. 태그 이름은 여러 판의 목록을 합쳐 넉넉히 본다.
+# HTML 블록(CommonMark 1~6종)의 시작 꼴인가. 태그 이름은 cmark-gfm 의 목록이다.
 function html_start(r,    t, c) {
     if (r ~ /^<[!?]/) return 1
     if (!match(r, /^<\/?[A-Za-z][A-Za-z0-9]*/)) return 0
@@ -195,7 +195,7 @@ function flush(    s, k, n, part) {
     if (np == 0) return
     s = pbody[1]
     for (k = 2; k <= np; k++) s = s "\n" pbody[k]
-    n = split(render(s, tcons || defp()), part, "\n")
+    n = split(render(s, tcons || defp() || htmlp()), part, "\n")
     for (k = 1; k <= np; k++) print phead[k] part[k]
     np = 0
 }
@@ -204,6 +204,12 @@ function flush(    s, k, n, part) {
 function defp(    k) {
     if (np == 0 || pbody[1] !~ /^ *\[/) return 0
     for (k = 1; k <= np; k++) if (index(pbody[k], "]:")) return 1
+    return 0
+}
+# 열린 문단의 둘째 줄 이후에 HTML 블록 시작 꼴 줄이 있는가. 그 줄의 < 는 엔터티로 바뀌어 출력에서는 HTML 블록이
+# 아니라 앞 줄의 이어 줄이 되고, GitHub 는 앞 줄과 그 줄의 백틱을 짝지을 수 있다. 그런 문단은 블록 전체를 엔터티로 바꾼다.
+function htmlp(    k, r) {
+    for (k = 2; k <= np; k++) { r = pbody[k]; sub(/^[ \t]+/, "", r); if (html_start(r)) return 1 }
     return 0
 }
 function end_leaf() { flush(); leaf = "" }
@@ -350,7 +356,6 @@ END {
         s = indent(p); rest_blank = (substr(X, p) ~ /^ *$/)
         # 컨테이너가 다 이어지지 않아도 문단 이어 쓰기(게으른 줄)면 컨테이너와 문단을 그대로 둔다.
         if (!all && !started && kind == "" && leaf == "para" && !rest_blank) {
-            if (html_start(substr(X, p + s))) flush()
             para_line(l, p)
             continue
         }
@@ -374,8 +379,6 @@ END {
         # 표는 빈 줄이나 다른 블록의 시작에서 끝난다. 들여쓴 줄도 행으로 보고 엔터티로 바꾼다.
         if (leaf == "table") { print head(l, p) row(body(l, p)); continue }
         if (s >= 4 && leaf != "para") { end_leaf(); leaf = "code"; print l; continue }
-        # 문단을 끊는 HTML 블록 시작(<div>, <!-- 등)으로 보이는 줄은 앞 줄과 스팬을 짝짓지 않는다.
-        if (leaf == "para" && html_start(substr(X, p + s))) flush()
         para_line(l, p)
     }
     flush()

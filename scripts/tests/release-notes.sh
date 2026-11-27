@@ -526,6 +526,84 @@ printf 'chore: bump version to 9.9.9\n\nFix the reported issue <s>.\n\nSigned-of
 printf 'Fix the reported issue &lt;s&gt;.\n\nConflicts:\n\tsrc/a &lt;b&gt;.rs\n' > "$w"
 check '끝의 Conflicts: 꼬리를 건너뛴 앞 문단의 트레일러만 뺀다' "$m" "$w"
 
+cat > "$m" <<'EOF'
+chore: bump version to 9.9.9
+
+Lone ` here
+<div> `<s>` ok
+
+Lone ` here
+</div> `<s>` ok
+
+Lone ` here
+<!-- c --> `<s>` ok
+
+Lone ` here
+<script> `<s>` ok
+
+Lone ` here
+<? x ?> `<s>` ok
+
+Lone ` here
+<![CDATA[ x ]]> `<s>` ok
+
+Lone ` here
+<!DOCTYPE html> `<s>` ok
+
+> Lone ` here
+<div> `<s>` ok
+
+> Lone ` here
+> <div> `<s>` ok
+
+- Lone ` here
+<div> `<s>` ok
+
+- Lone ` here
+  </div> `<s>` ok
+
+Text `
+<div> `
+EOF
+cat > "$w" <<'EOF'
+Lone ` here
+&lt;div&gt; `&lt;s&gt;` ok
+
+Lone ` here
+&lt;/div&gt; `&lt;s&gt;` ok
+
+Lone ` here
+&lt;!-- c --&gt; `&lt;s&gt;` ok
+
+Lone ` here
+&lt;script&gt; `&lt;s&gt;` ok
+
+Lone ` here
+&lt;? x ?&gt; `&lt;s&gt;` ok
+
+Lone ` here
+&lt;![CDATA[ x ]]&gt; `&lt;s&gt;` ok
+
+Lone ` here
+&lt;!DOCTYPE html&gt; `&lt;s&gt;` ok
+
+> Lone ` here
+&lt;div&gt; `&lt;s&gt;` ok
+
+> Lone ` here
+> &lt;div&gt; `&lt;s&gt;` ok
+
+- Lone ` here
+&lt;div&gt; `&lt;s&gt;` ok
+
+- Lone ` here
+  &lt;/div&gt; `&lt;s&gt;` ok
+
+Text `
+&lt;div&gt; `
+EOF
+check '둘째 줄 이후에 HTML 블록 시작 꼴 줄(div·주석·script·?·CDATA·DOCTYPE)이 있는 문단·인용·목록 항목은 모두 엔터티로' "$m" "$w"
+
 if [ "$failures" -ne 0 ]; then
     echo "실패 $failures 건" >&2
     exit 1
