@@ -17,6 +17,12 @@
 
 ## [Unreleased]
 
+## [0.14.2] - 2026-11-28
+
+### Added
+
+- **plugin 이벤트 `surface.unfocused`가 생긴다.** 화면에 낸 프레임에서 host 키 포커스가 plugin surface(egui-mesh·webview kind)를 떠나면 그 surface에 한 번 오고, payload는 `surface_id`·`next_surface_id`(키가 키를 가진 팝업·무대로 가면 `null`)다. 다른 surface로 옮겨 가면 그 surface의 `surface.focused`보다 먼저 온다. plugin surface인지는 그 surface를 화면에 낸 프레임에서 정한다. 터미널 등 host 내장 surface와 attach mesh mirror surface에는 오지 않고, 레이아웃에서 사라진 surface에도 오지 않는다. 로컬에서 닫힌 surface는 `surface.closed`가 알리고, 원격 쪽 변경으로 사라진 attach webview mirror 문서는 `surface.closed`를 내지 않고 그 plugin에 `surface.destroy` 요청을 보낸다. `surface.focused` 발행 조건은 그대로다.
+
 ### Changed
 
 - **사용자 테마의 팔레트·강조색에 알파를 주면 그 색으로 만드는 틴트와 혼합 색이 디자인의 color-mix 규칙대로 알파를 섞는다.** 틴트 채움·테두리(git diff 줄 채움, DAG 주기·러너 테두리, 드롭 대상, 파일 드롭 오버레이, 영역 선택 사각형, 프리셋 분할 영역, 플러그인 아바타 테두리)는 Tag 테두리처럼 강조색 알파에 비율을 곱하고, 바탕과 섞는 색(raised·strong·on-active 글자, 알림 잉크, 승인 위험 채움, DAG 상태 채움, 플러그인 아바타 배경, 탭 hover 바탕 등)은 두 색의 알파를 비율대로 섞는다. 전에는 틴트가 강조색 알파를 고정 알파로 덮어썼고, 혼합 색은 바탕의 알파를 그대로 썼다. 계산 결과가 정확히 반 단계인 채널은 올린다. 내장 Mocha·Latte의 값은 그대로다. 불투명한 사용자 색도 전 계산이 정확한 반 단계를 내리던 채널에서는 1 오른다(예: blue `#010101`, surface0 `#b0b0b0`의 플러그인 아바타 배경 채널 144 → 145). 선택 영역 위 현재 찾기 매치 바탕은 라이트 테마에서 그 테마의 yellow 80%를 transparent와 섞은 값이고, 다크 테마에서 그 테마의 `search_match_active_bg`다. 전에는 테마 종류와 상관없이 `search_match_active_bg`가 내장 Latte 값 `#df8e1d80`이면 `#df8e1dcc`를, 아니면 `search_match_active_bg`를 그대로 썼다. 그래서 그 값을 직접 쓴 다크 사용자 테마와, 다른 값을 쓴 라이트 사용자 테마의 이 바탕이 바뀐다.
@@ -36,7 +42,6 @@
 
 ### Added
 
-- **plugin 이벤트 `surface.unfocused`가 생긴다.** 화면에 낸 프레임에서 host 키 포커스가 plugin surface(egui-mesh·webview kind)를 떠나면 그 surface에 한 번 오고, payload는 `surface_id`·`next_surface_id`(키가 키를 가진 팝업·무대로 가면 `null`)다. 다른 surface로 옮겨 가면 그 surface의 `surface.focused`보다 먼저 온다. plugin surface인지는 그 surface를 화면에 낸 프레임에서 정한다. 터미널 등 host 내장 surface와 attach mesh mirror surface에는 오지 않고, 레이아웃에서 사라진 surface에도 오지 않는다. 로컬에서 닫힌 surface는 `surface.closed`가 알리고, 원격 쪽 변경으로 사라진 attach webview mirror 문서는 `surface.closed`를 내지 않고 그 plugin에 `surface.destroy` 요청을 보낸다. `surface.focused` 발행 조건은 그대로다.
 - **IPC `surface.read_since_scan_mark` 응답에 연속성 키와 출처 정보 `text_origins`가 실린다.** 기존 `text`·`surface_id`는 그대로이고, 로컬 터미널이면 `surface.read_since_mark`와 같은 `stream`·`cursor`·`next_cursor`·`raw_bytes`·`retention_start`·`retention_end`·`skipped`를 늘 싣는다. `skipped`는 스캐너 커서가 읽지 않은 사이 보존 한도로 잃은 원문 바이트다. `text_origins`는 `{ranges, gaps}`로, `ranges`가 반환한 `text`의 UTF-8 바이트 범위마다 `normal`·`redraw`(OS 크기 적용 뒤 재그리기)·`mixed`·`unknown`을 빈틈없이 알리고, `gaps`가 폭 0 표시(`trimmed`: 앞이 잘림, `redraw_removed`: `strip_ansi`가 지운 escape에 재그리기 바이트가 있었음)를 알린다. 분류는 출력이 들어올 때 정한다. attach mirror 터미널, 출처를 하나도 정할 수 없는 읽기, 항목이 4096개를 넘는 읽기에서는 `text_origins`가 빠진다. 로컬 터미널이 없는 surface는 전처럼 두 키만 답한다.
 - **`tasty terminal set-nickname --child <n> (--nickname <name> | --clear)`(IPC `terminal.set_nickname`)로 실행 중인 child의 nickname을 다시 시작하지 않고 바꾸거나 지운다.** 부모는 다른 `terminal` 명령처럼 `--surface` 또는 `--parent-external`로 고르고, 바뀐 값은 `terminal children`·`claude children`·`codex children`의 `nickname`에 나온다. 응답은 `{parent, child_index, child_surface_id, nickname}`이며 저장이 끝난 뒤 온다. 빈 nickname, 256 byte를 넘거나 제어문자를 담은 nickname, 없는 child, 다른 창에 열린 child는 `-32602`로 거절한다. Agent는 `surface.write` 권한이 필요하다. mirror workspace의 원격 자식은 이 인스턴스의 기록만 바뀐다.
 - **html과 플러그인 surface가 포커스를 leaf 위쪽 띠로 보인다.** 포커스를 가지면 `surface-focus-edge-focused`, 아니면 `-unfocused`로 칠하고, 띠 행은 두 상태 모두 비워 두어 페이지·플러그인 프레임·주소 띠가 그 아래에서 시작한다. 포커스가 바뀌어도 내용은 움직이지 않는다. 바탕을 host 테마 값으로 칠한다고 `bed_focus`를 선언한 kind(번들 markdown·image)에는 띠가 없다. 띠가 있는 플러그인 `egui-mesh` surface는 `set_context`의 높이가 띠 행만큼 작아진다.
