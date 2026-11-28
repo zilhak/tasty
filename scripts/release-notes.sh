@@ -18,7 +18,9 @@ trailers="$(git log -1 --format=%B "$commit" | git interpret-trailers --parse --
 strip=0
 [ -z "$trailers" ] || strip=1
 
-git log -1 --format=%b "$commit" | awk -v strip="$strip" '
+# BINMODE=3: Windows(Git Bash)의 gawk 는 기본 텍스트 모드로 읽어 줄 끝 CR 을 뗀다. 트레일러 위치를 Git 처럼 CR 을 둔 원문으로
+# 찾으려면 바이트 그대로 읽어야 한다. 다른 플랫폼의 gawk·mawk·busybox awk 에서는 효과가 없는 변수다.
+git log -1 --format=%b "$commit" | awk -v BINMODE=3 -v strip="$strip" '
 function blank(s) { return s ~ /^[ \t]*$/ }
 # Git 2.43 의 공백 줄 판정(isspace). Git 의 문자표는 스페이스·탭·CR·LF 만 공백으로 센다(FF·VT 는 공백이 아니다).
 function gblank(s) { return s ~ /^[ \t\r]*$/ }
