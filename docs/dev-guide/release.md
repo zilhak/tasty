@@ -115,7 +115,7 @@ git push origin release
 본문의 `&` 도 적은 글자 그대로 보이므로 `&amp;` 같은 HTML 엔터티를 쓰지 않는다. 쓰면 엔터티 철자가 그대로 보인다.
 body의 끝 문단이 `Word: text` 꼴의 줄로만 되어 있으면 Git이 트레일러로 보아 노트에서 빠진다.
 트레일러 블록은 Git처럼 끝의 `#` 줄과 빈 줄을 건너뛴 마지막 문단이고, `Key:` 줄 바로 뒤의 들여쓴 줄만 그 트레일러의 이어 줄로 함께 빠진다. 빠지는 줄은 기본 설정 Git 2.43의 `git interpret-trailers --parse --no-divider` 가 내는 트레일러와 같다(`---` 줄을 메시지 끝으로 보지 않는다). 공백 줄과 이어 줄은 Git처럼 스페이스·탭·CR만 공백으로 보고 판정한다. `(cherry picked from commit …)` 줄은 Git이 트레일러로 내지 않으므로 남는다. 블록은 Git 2.43처럼 CR을 줄 끝으로 보지 않고 찾으므로, CRLF로 끝난 가위 줄과 `Conflicts:` 줄은 그 줄로 보지 않는다. 판정은 릴리스 러너의 기본 Git 설정을 가정한다(`trailer.separators` 같은 설정은 보지 않는다).
-기준 Git은 2.43이다. 노트를 만드는 `release.yml` 의 create-release 잡은 self-hosted Linux 러너(Git 2.43)에서 돈다. 스크립트는 트레일러가 있는지만 Git에 묻고, 어느 줄을 뺄지는 위 규칙으로 직접 정한다. Git 2.55(Windows CI 러너)는 CRLF로 끝난 가위 줄을 가위 줄로 보지만, 스크립트는 2.43 규칙으로 뺄 줄을 고른다. 트레일러가 있는지는 러너의 Git이 답한다. 그래서 CRLF로 끝난 가위 줄 뒤에만 트레일러가 있는 본문은 2.55에서 트레일러가 없다고 나와 줄이 빠지지 않는다. `<`·`>`·`&` 를 바꾸는 일은 Git 버전과 상관없다. 본문은 바이트 그대로 읽는다. Windows Git Bash의 awk가 CR을 떼지 않게 `BINMODE=3` 을 준다.
+기준 Git은 2.43이다. 노트를 만드는 `release.yml` 의 create-release 잡은 self-hosted Linux 러너(Git 2.43)에서 돈다. 스크립트는 트레일러가 있는지만 Git에 묻고, 어느 줄을 뺄지는 위 규칙으로 직접 정한다. Git 2.55(Windows CI 러너)는 CRLF로 끝난 가위 줄을 가위 줄로 보지만, 스크립트는 2.43 규칙으로 뺄 줄을 고른다. 트레일러가 있는지는 러너의 Git이 답한다. 그래서 CRLF로 끝난 가위 줄 뒤에만 트레일러가 있는 본문은 2.55에서 트레일러가 없다고 나와 줄이 빠지지 않는다. 안전(코드 밖에 raw HTML이 남지 않는 것)은 Git 버전과 상관없다. 다만 2.55에서는 위 본문의 트레일러가 남고, 남은 줄에 드문 표지(예: 트레일러 값의 탭)가 있으면 본문 전체가 엔터티로 바뀌어 코드 안 표시도 2.43과 달라진다. 본문은 바이트 그대로 읽는다. Windows Git Bash의 awk가 CR을 떼지 않게 `BINMODE=3` 을 준다.
 만들어질 노트는 버전 커밋에서 `bash scripts/release-notes.sh HEAD` 로 미리 본다. 동작은 `scripts/tests/release-notes.sh`(doc-guards `release_notes_script`가 실행)가 확인한다.
 
 ```
